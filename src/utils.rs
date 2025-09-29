@@ -96,7 +96,6 @@ pub fn generate_departures(
     lines: &[Line],
     stations: &[Station],
     current_time: NaiveTime,
-    window_hours: i64,
 ) -> Vec<Departure> {
     let Some(day_end) = NaiveTime::from_hms_opt(23, 59, 59) else {
         return Vec::new();
@@ -149,16 +148,12 @@ pub fn generate_departures(
 pub fn generate_train_journeys(
     lines: &[Line],
     stations: &[Station],
-    _current_time: NaiveTime,
-    _window_hours: i64,
 ) -> Vec<TrainJourney> {
     let Some(day_end) = NaiveTime::from_hms_opt(23, 59, 59) else {
         return Vec::new();
     };
 
     // Show a wider window for the Marey chart
-    let window_start = NaiveTime::from_hms_opt(0, 0, 0).unwrap_or_default();
-    let window_end = NaiveTime::from_hms_opt(23, 59, 59).unwrap_or_default();
 
     let mut journeys = Vec::new();
 
@@ -183,7 +178,7 @@ pub fn generate_train_journeys(
         while departure_time <= day_end {
             // Create a journey with all station times
             let mut station_times = Vec::new();
-            let mut journey_valid = true;
+            let journey_valid = true;
             let mut last_time = departure_time;
 
             for (station_name, offset_time) in &line_stations {
@@ -235,35 +230,3 @@ fn get_station_time(station: &Station, line_id: &str) -> Option<NaiveTime> {
     station.times.get(line_id).and_then(|t| *t)
 }
 
-fn generate_line_departures(
-    line_id: &str,
-    station_name: &str,
-    base_time: NaiveTime,
-    frequency: Duration,
-    window_start: NaiveTime,
-    window_end: NaiveTime,
-    day_end: NaiveTime,
-) -> Vec<Departure> {
-    let mut departures = Vec::new();
-    let mut departure_time = base_time;
-
-    while departure_time <= day_end {
-        if departure_time >= window_start && departure_time <= window_end {
-            departures.push(Departure {
-                line_id: line_id.to_string(),
-                station: station_name.to_string(),
-                time: departure_time,
-            });
-        }
-
-        let (next_time, _) = departure_time.overflowing_add_signed(frequency);
-        departure_time = next_time;
-
-        // Break if we've wrapped around to the next day
-        if departure_time < base_time {
-            break;
-        }
-    }
-
-    departures
-}

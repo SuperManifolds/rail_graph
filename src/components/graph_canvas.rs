@@ -1,12 +1,10 @@
 use leptos::*;
-use chrono::{NaiveTime, Timelike};
-use wasm_bindgen::JsCast;
+use chrono::NaiveTime;
 use web_sys::{MouseEvent, WheelEvent};
-use crate::models::{Line, Station, TrainJourney};
+use crate::models::{Station, TrainJourney};
 
 #[component]
 pub fn GraphCanvas(
-    lines: ReadSignal<Vec<Line>>,
     stations: Vec<Station>,
     train_journeys: ReadSignal<Vec<TrainJourney>>,
     visualization_time: ReadSignal<NaiveTime>,
@@ -24,7 +22,6 @@ pub fn GraphCanvas(
     create_effect(move |_| {
         let journeys = train_journeys.get();
         let current = visualization_time.get();
-        let current_lines = lines.get();
 
         if let Some(canvas) = canvas_ref.get() {
             let zoom = zoom_level.get();
@@ -41,7 +38,12 @@ pub fn GraphCanvas(
                 canvas_elem.set_height(container_height);
             }
 
-            crate::components::time_graph::render_graph(canvas, &current_lines, &stations, &journeys, current, zoom, pan_x, pan_y);
+            let viewport = crate::components::time_graph::ViewportState {
+                zoom_level: zoom,
+                pan_offset_x: pan_x,
+                pan_offset_y: pan_y,
+            };
+            crate::components::time_graph::render_graph(canvas, &stations, &journeys, current, viewport);
         }
     });
 
@@ -128,7 +130,7 @@ pub fn GraphCanvas(
                 let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
 
                 let old_zoom = zoom_level.get();
-                let new_zoom = (old_zoom * zoom_factor).max(0.1).min(10.0);
+                let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 10.0);
 
                 // Calculate zoom point relative to graph area
                 let graph_mouse_x = mouse_x - left_margin;
