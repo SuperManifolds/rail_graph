@@ -188,16 +188,7 @@ pub fn generate_train_journeys(
                     Duration::seconds(offset_time.second() as i64)
                 );
 
-                // If we've wrapped around midnight (time goes backwards), truncate this journey
-                if arrival_time < last_time && last_time.hour() > 20 {
-                    // Only include stations up to midnight
-                    if last_time < day_end {
-                        // Add a final point at 23:59:59 for this station if needed
-                        station_times.push((station_name.clone(), day_end));
-                    }
-                    break;
-                }
-
+                // No longer truncate at midnight - let journeys continue
                 station_times.push((station_name.clone(), arrival_time));
                 last_time = arrival_time;
             }

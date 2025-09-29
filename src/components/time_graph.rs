@@ -162,7 +162,14 @@ fn draw_hour_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions) {
     ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("#2a2a2a"));
     ctx.set_line_width(1.0);
 
-    for i in 0..=24 {
+    // Calculate visible time range based on current view
+    let hours_visible = (dims.graph_width / dims.hour_width).ceil() as i32;
+    // Add padding to ensure we draw beyond visible area for smooth panning
+    let padding_hours = 5;
+    let start_hour = -padding_hours;
+    let end_hour = hours_visible + padding_hours;
+
+    for i in start_hour..=end_hour {
         let x = dims.left_margin + (i as f64 * dims.hour_width);
         draw_vertical_line(ctx, x, dims.top_margin, dims.graph_height);
     }
@@ -182,13 +189,19 @@ fn draw_hour_label(ctx: &CanvasRenderingContext2d, hour: usize, x: f64, top: f64
 }
 
 fn draw_hour_labels(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, zoom_level: f64, pan_offset_x: f64) {
-    for i in 0..24 {
+    // Calculate which hours are potentially visible
+    let start_hour = ((-pan_offset_x) / (dims.hour_width * zoom_level)).floor() as i32 - 1;
+    let end_hour = ((-pan_offset_x + dims.graph_width) / (dims.hour_width * zoom_level)).ceil() as i32 + 1;
+
+    for i in start_hour..=end_hour {
         let base_x = i as f64 * dims.hour_width;
         let adjusted_x = dims.left_margin + (base_x * zoom_level) + pan_offset_x;
 
         // Only draw label if it's within the visible graph area
         if adjusted_x >= dims.left_margin && adjusted_x <= dims.left_margin + dims.graph_width {
-            draw_hour_label(ctx, i, adjusted_x, dims.top_margin);
+            // Handle hours beyond 24 by wrapping around (e.g., hour 25 becomes "01", hour 26 becomes "02")
+            let display_hour = if i >= 0 { i % 24 } else { (24 + (i % 24)) % 24 };
+            draw_hour_label(ctx, display_hour as usize, adjusted_x, dims.top_margin);
         }
     }
 }
@@ -242,8 +255,18 @@ fn draw_station_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
 fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, y: f64) {
     ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("#1a1a1a"));
     ctx.begin_path();
-    ctx.move_to(dims.left_margin, y);
-    ctx.line_to(dims.left_margin + dims.graph_width, y);
+
+    // Calculate the same extended range as the hour grid
+    let hours_visible = (dims.graph_width / dims.hour_width).ceil() as i32;
+    let padding_hours = 5;
+    let start_hour = -padding_hours;
+    let end_hour = hours_visible + padding_hours;
+
+    let start_x = dims.left_margin + (start_hour as f64 * dims.hour_width);
+    let end_x = dims.left_margin + (end_hour as f64 * dims.hour_width);
+
+    ctx.move_to(start_x, y);
+    ctx.line_to(end_x, y);
     ctx.stroke();
 }
 
@@ -262,19 +285,18 @@ fn draw_train_journeys(
         ctx.begin_path();
 
         let mut first_point = true;
-        let mut prev_time_fraction = 0.0;
+        let mut prev_x = 0.0;
 
         for (station_name, arrival_time) in &journey.station_times {
             if let Some(station_idx) = stations.iter().position(|s| s == station_name) {
                 let time_fraction = time_to_fraction(*arrival_time);
+                let mut x = dims.left_margin + (time_fraction * dims.hour_width);
 
-                // Detect wrap-around: if current time is much earlier than previous, we've wrapped
-                if !first_point && time_fraction < prev_time_fraction - 0.5 {
-                    // Stop drawing this line - it would wrap around
-                    break;
+                // If this x position is much less than the previous x (indicating midnight wrap),
+                // add the width of one full day to continue the line
+                if !first_point && x < prev_x - dims.graph_width * 0.5 {
+                    x += dims.graph_width;
                 }
-
-                let x = dims.left_margin + (time_fraction * dims.hour_width);
                 let y = dims.top_margin + (station_idx as f64 * station_height) + (station_height / 2.0);
 
                 if first_point {
@@ -284,31 +306,33 @@ fn draw_train_journeys(
                     ctx.line_to(x, y);
                 }
 
-                prev_time_fraction = time_fraction;
+                prev_x = x;
             }
         }
 
         ctx.stroke();
 
         // Draw small dots at each station stop
-        let mut prev_time = NaiveTime::from_hms_opt(0, 0, 0).unwrap_or_default();
+        let mut prev_x = 0.0;
         for (station_name, arrival_time) in &journey.station_times {
-            // Stop drawing dots if we detect a wrap-around
-            if *arrival_time < prev_time && prev_time.hour() > 20 {
-                break;
-            }
-
             if let Some(station_idx) = stations.iter().position(|s| s == station_name) {
                 let time_fraction = time_to_fraction(*arrival_time);
-                let x = dims.left_margin + (time_fraction * dims.hour_width);
+                let mut x = dims.left_margin + (time_fraction * dims.hour_width);
+
+                // Handle midnight wrap-around for station dots
+                if prev_x > 0.0 && x < prev_x - dims.graph_width * 0.5 {
+                    x += dims.graph_width;
+                }
+
                 let y = dims.top_margin + (station_idx as f64 * station_height) + (station_height / 2.0);
 
                 ctx.set_fill_style(&wasm_bindgen::JsValue::from_str(&journey.color));
                 ctx.begin_path();
                 let _ = ctx.arc(x, y, 3.0, 0.0, std::f64::consts::PI * 2.0);
                 ctx.fill();
+
+                prev_x = x;
             }
-            prev_time = *arrival_time;
         }
     }
 
@@ -332,26 +356,49 @@ fn draw_current_train_positions(
 
         for (station_name, arrival_time) in &journey.station_times {
             if let Some(station_idx) = stations.iter().position(|s| s == station_name) {
-                if *arrival_time <= visualization_time {
+                // Handle midnight crossing: if visualization_time is late (>20:00) and arrival_time is early (<6:00),
+                // treat arrival_time as next day
+                let is_next_day_arrival = visualization_time.hour() >= 20 && arrival_time.hour() < 6;
+
+                if !is_next_day_arrival && *arrival_time <= visualization_time {
                     prev_station = Some((station_name, *arrival_time, station_idx));
-                } else if next_station.is_none() {
+                } else if is_next_day_arrival || next_station.is_none() {
                     next_station = Some((station_name, *arrival_time, station_idx));
-                    break;
+                    if !is_next_day_arrival {
+                        break;
+                    }
                 }
             }
         }
 
         // If train is between two stations, interpolate its position
         if let (Some((_, prev_time, prev_idx)), Some((_, next_time, next_idx))) = (prev_station, next_station) {
-            let segment_duration = next_time.signed_duration_since(prev_time).num_seconds() as f64;
-            let elapsed = visualization_time.signed_duration_since(prev_time).num_seconds() as f64;
+            // Handle midnight crossing in duration calculation
+            let segment_duration = if next_time < prev_time {
+                // Crossed midnight: add 24 hours to next_time for calculation
+                (next_time.num_seconds_from_midnight() + 24 * 3600) as f64 - prev_time.num_seconds_from_midnight() as f64
+            } else {
+                next_time.signed_duration_since(prev_time).num_seconds() as f64
+            };
+
+            let elapsed = if visualization_time.hour() >= 20 && next_time.hour() < 6 {
+                // Visualization time is late, next time is early (crossing midnight)
+                visualization_time.signed_duration_since(prev_time).num_seconds() as f64
+            } else {
+                visualization_time.signed_duration_since(prev_time).num_seconds() as f64
+            };
             let progress = (elapsed / segment_duration).clamp(0.0, 1.0);
 
-            let prev_x = dims.left_margin + (time_to_fraction(prev_time) * dims.hour_width);
+            let mut prev_x = dims.left_margin + (time_to_fraction(prev_time) * dims.hour_width);
             let prev_y = dims.top_margin + (prev_idx as f64 * station_height) + (station_height / 2.0);
 
-            let next_x = dims.left_margin + (time_to_fraction(next_time) * dims.hour_width);
+            let mut next_x = dims.left_margin + (time_to_fraction(next_time) * dims.hour_width);
             let next_y = dims.top_margin + (next_idx as f64 * station_height) + (station_height / 2.0);
+
+            // Handle midnight wrap-around for train position dots
+            if next_x < prev_x - dims.graph_width * 0.5 {
+                next_x += dims.graph_width;
+            }
 
             let current_x = prev_x + (next_x - prev_x) * progress;
             let current_y = prev_y + (next_y - prev_y) * progress;
