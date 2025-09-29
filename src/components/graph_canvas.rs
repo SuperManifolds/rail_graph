@@ -62,7 +62,8 @@ pub fn GraphCanvas(
             } else {
                 // Check if click is near the time line (within 10px) for time scrubbing
                 let left_margin = 120.0;
-                let graph_width = 1250.0;
+                let canvas_width = canvas.width() as f64;
+                let graph_width = canvas_width - left_margin - 20.0;
 
                 if x >= left_margin && x <= left_margin + graph_width {
                     set_is_dragging.set(true);
@@ -92,7 +93,8 @@ pub fn GraphCanvas(
                 set_last_mouse_pos.set((x, y));
             } else if is_dragging.get() {
                 let left_margin = 120.0;
-                let graph_width = 1250.0;
+                let canvas_width = canvas.width() as f64;
+                let graph_width = canvas_width - left_margin - 20.0;
 
                 if x >= left_margin && x <= left_margin + graph_width {
                     update_time_from_x(x, left_margin, graph_width, set_visualization_time);
