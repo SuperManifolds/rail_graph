@@ -547,7 +547,7 @@ fn draw_current_train_positions(
     }
 }
 
-fn time_to_fraction(time: chrono::NaiveDateTime) -> f64 {
+pub fn time_to_fraction(time: chrono::NaiveDateTime) -> f64 {
     // Calculate hours from the base date (2024-01-01 00:00:00)
     let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
     let base_datetime = base_date.and_hms_opt(0, 0, 0).expect("Valid datetime");
@@ -559,12 +559,13 @@ fn time_to_fraction(time: chrono::NaiveDateTime) -> f64 {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Conflict {
-    time: NaiveDateTime,
-    position: f64, // Position between stations (0.0 to 1.0)
-    station1_idx: usize,
-    station2_idx: usize,
-    journey1_id: String,
-    journey2_id: String,
+    pub time: NaiveDateTime,
+    pub position: f64, // Position between stations (0.0 to 1.0)
+    pub station1_idx: usize,
+    pub station2_idx: usize,
+    pub journey1_id: String,
+    pub journey2_id: String,
+    pub is_overtaking: bool, // True for same-direction conflicts, false for crossing
 }
 
 pub fn detect_line_conflicts(
@@ -685,6 +686,14 @@ pub fn detect_line_conflicts(
                                             station2_idx: s1_idx.max(s2_idx),
                                             journey1_id: journey1.line_id.clone(),
                                             journey2_id: journey2.line_id.clone(),
+                                            // Determine if it's overtaking by checking if trains are going same direction on same segment
+                                            is_overtaking: if is_same_segment {
+                                                let journey1_direction = s1_idx < s2_idx;
+                                                let journey2_direction = s3_idx < s4_idx;
+                                                journey1_direction == journey2_direction
+                                            } else {
+                                                false
+                                            },
                                         });
                                     }
                                 }

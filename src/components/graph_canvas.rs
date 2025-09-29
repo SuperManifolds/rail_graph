@@ -19,6 +19,7 @@ pub fn GraphCanvas(
     let (pan_offset_y, set_pan_offset_y) = create_signal(0.0);
     let (is_panning, set_is_panning) = create_signal(false);
     let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
+    let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(crate::components::time_graph::Conflict, f64, f64)>);
 
     // Clone stations for use in render closure
     let stations_for_render = stations.clone();
@@ -62,6 +63,10 @@ pub fn GraphCanvas(
         }
     });
 
+    // Clone stations for closures
+    let stations_for_mouse_down = stations.clone();
+    let stations_for_mouse_move = stations.clone();
+
     // Handle mouse events for dragging the time indicator and panning
     let handle_mouse_down = move |ev: MouseEvent| {
         if let Some(canvas_elem) = canvas_ref.get() {
@@ -80,7 +85,7 @@ pub fn GraphCanvas(
                 let canvas_height = canvas.height() as f64;
 
                 if let Some(clicked_segment) = check_toggle_click(
-                    x, y, canvas_height, &stations,
+                    x, y, canvas_height, &stations_for_mouse_down,
                     zoom_level.get(), pan_offset_y.get()
                 ) {
                     // Toggle the segment state
@@ -131,6 +136,15 @@ pub fn GraphCanvas(
                 if x >= left_margin && x <= left_margin + graph_width {
                     update_time_from_x(x, left_margin, graph_width, zoom_level.get(), pan_offset_x.get(), set_visualization_time);
                 }
+            } else {
+                // Check for conflict hover
+                let current_conflicts = conflicts.get();
+                let hovered = check_conflict_hover(
+                    x, y, &current_conflicts, &stations_for_mouse_move,
+                    canvas.width() as f64, canvas.height() as f64,
+                    zoom_level.get(), pan_offset_x.get(), pan_offset_y.get()
+                );
+                set_hovered_conflict.set(hovered);
             }
         }
     };
@@ -138,6 +152,12 @@ pub fn GraphCanvas(
     let handle_mouse_up = move |_ev: MouseEvent| {
         set_is_dragging.set(false);
         set_is_panning.set(false);
+    };
+
+    let handle_mouse_leave = move |_ev: MouseEvent| {
+        set_is_dragging.set(false);
+        set_is_panning.set(false);
+        set_hovered_conflict.set(None);
     };
 
     let handle_wheel = move |ev: WheelEvent| {
@@ -185,17 +205,58 @@ pub fn GraphCanvas(
     };
 
     view! {
-        <div class="canvas-container">
+        <div class="canvas-container" style="position: relative;">
             <canvas
                 node_ref=canvas_ref
                 on:mousedown=handle_mouse_down
                 on:mousemove=handle_mouse_move
                 on:mouseup=handle_mouse_up
-                on:mouseleave=handle_mouse_up
+                on:mouseleave=handle_mouse_leave
                 on:wheel=handle_wheel
                 on:contextmenu=|ev| ev.prevent_default()
                 style="cursor: crosshair;"
             ></canvas>
+
+            // Conflict tooltip
+            {move || {
+                if let Some((conflict, tooltip_x, tooltip_y)) = hovered_conflict.get() {
+                    // Use the stored flag to determine conflict type
+                    let conflict_type = if conflict.is_overtaking {
+                        "overtakes"
+                    } else {
+                        "conflicts with"
+                    };
+
+                    let (first_train, second_train) = if conflict_type == "overtakes" {
+                        // For overtaking, swap the order
+                        (&conflict.journey2_id, &conflict.journey1_id)
+                    } else {
+                        // For crossing conflicts, keep original order
+                        (&conflict.journey1_id, &conflict.journey2_id)
+                    };
+
+                    let tooltip_text = format!(
+                        "{} {} {} at {}",
+                        first_train,
+                        conflict_type,
+                        second_train,
+                        conflict.time.format("%H:%M")
+                    );
+
+                    view! {
+                        <div
+                            style=format!(
+                                "position: absolute; left: {}px; top: {}px; background: rgba(0,0,0,0.9); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; z-index: 1000;",
+                                tooltip_x + 10.0, tooltip_y - 30.0
+                            )
+                        >
+                            {tooltip_text}
+                        </div>
+                    }.into_view()
+                } else {
+                    view! { <div style="display: none;"></div> }.into_view()
+                }
+            }}
         </div>
     }
 }
@@ -263,6 +324,59 @@ fn check_toggle_click(
             if mouse_y >= adjusted_y - toggle_size/2.0 && mouse_y <= adjusted_y + toggle_size/2.0 {
                 return Some(segment_index);
             }
+        }
+    }
+
+    None
+}
+
+#[allow(clippy::too_many_arguments)]
+fn check_conflict_hover(
+    mouse_x: f64,
+    mouse_y: f64,
+    conflicts: &[crate::components::time_graph::Conflict],
+    stations: &[Station],
+    canvas_width: f64,
+    canvas_height: f64,
+    zoom_level: f64,
+    pan_offset_x: f64,
+    pan_offset_y: f64,
+) -> Option<(crate::components::time_graph::Conflict, f64, f64)> {
+    let left_margin = 120.0;
+    let top_margin = 60.0;
+    let graph_width = canvas_width - left_margin - 20.0;
+    let graph_height = canvas_height - top_margin - 20.0;
+
+    // Check if mouse is within the graph area first
+    if mouse_x < left_margin || mouse_x > left_margin + graph_width ||
+       mouse_y < top_margin || mouse_y > top_margin + graph_height {
+        return None;
+    }
+
+    for conflict in conflicts {
+        // Calculate conflict position in screen coordinates
+        // The canvas uses: translate(left_margin, top_margin) + translate(pan) + scale(zoom)
+        let time_fraction = crate::components::time_graph::time_to_fraction(conflict.time);
+        let total_hours = 48.0;
+        let hour_width = graph_width / total_hours;
+
+        // Position in zoomed coordinate system (before translation)
+        let x_in_zoomed = time_fraction * hour_width;
+
+        let station_height = graph_height / stations.len() as f64;
+        let y_in_zoomed = (conflict.station1_idx as f64 * station_height) +
+            (station_height / 2.0) +
+            (conflict.position * station_height * (conflict.station2_idx - conflict.station1_idx) as f64);
+
+        // Transform to screen coordinates
+        let screen_x = left_margin + (x_in_zoomed * zoom_level) + pan_offset_x;
+        let screen_y = top_margin + (y_in_zoomed * zoom_level) + pan_offset_y;
+
+        // Check if mouse is within conflict marker bounds
+        let size = 15.0;
+        if mouse_x >= screen_x - size && mouse_x <= screen_x + size &&
+           mouse_y >= screen_y - size && mouse_y <= screen_y + size {
+            return Some((conflict.clone(), mouse_x, mouse_y));
         }
     }
 
