@@ -5,6 +5,7 @@ use wasm_bindgen::JsCast;
 use crate::models::{Station, TrainJourney};
 use crate::utils::{parse_csv_data, generate_train_journeys};
 use crate::components::{line_controls::LineControls, graph_canvas::GraphCanvas};
+use crate::storage::{save_lines_to_storage, load_lines_from_storage};
 
 #[derive(Clone)]
 struct GraphDimensions {
@@ -45,6 +46,24 @@ pub fn TimeGraph() -> impl IntoView {
 
     // Create the main lines signal at the top level
     let (lines, set_lines) = create_signal(lines_data);
+
+    // Auto-load saved configuration on component mount
+    create_effect(move |_| {
+        if let Ok(saved_lines) = load_lines_from_storage() {
+            set_lines.set(saved_lines);
+        }
+    });
+
+    // Auto-save configuration whenever lines change
+    create_effect(move |_| {
+        let current_lines = lines.get();
+        // Skip saving on initial load to avoid overwriting with default data
+        if !current_lines.is_empty() {
+            if let Err(e) = save_lines_to_storage(&current_lines) {
+                web_sys::console::error_1(&format!("Auto-save failed: {}", e).into());
+            }
+        }
+    });
 
     let (visualization_time, set_visualization_time) = create_signal(chrono::Local::now().time());
     let (train_journeys, set_train_journeys) = create_signal(Vec::<TrainJourney>::new());

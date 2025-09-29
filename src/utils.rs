@@ -251,7 +251,7 @@ pub fn generate_train_journeys(
                 // Only add journey if it has at least 2 stations
                 if station_times.len() >= 2 && journey_valid {
                     journeys.push(TrainJourney {
-                        line_id: format!("{}_return", line.id),
+                        line_id: line.id.clone(),
                         departure_time: return_departure_time,
                         station_times,
                         color: line.color.clone(),
