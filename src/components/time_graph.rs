@@ -1,5 +1,5 @@
 use leptos::*;
-use chrono::{NaiveDateTime, Timelike};
+use chrono::{NaiveDate, NaiveDateTime, Timelike};
 use web_sys::CanvasRenderingContext2d;
 use wasm_bindgen::JsCast;
 use crate::models::{Station, TrainJourney};
@@ -29,13 +29,14 @@ impl GraphDimensions {
         let top_margin = 60.0;
         let graph_width = canvas_width - left_margin - 20.0;
         let graph_height = canvas_height - top_margin - 20.0;
+        let total_hours = 48.0; // Show 48 hours to support past-midnight
 
         Self {
             left_margin,
             top_margin,
             graph_width,
             graph_height,
-            hour_width: graph_width / 24.0,
+            hour_width: graph_width / total_hours,
         }
     }
 }
@@ -201,10 +202,20 @@ fn draw_vertical_line(ctx: &CanvasRenderingContext2d, x: f64, top: f64, height: 
     ctx.stroke();
 }
 
-fn draw_hour_label(ctx: &CanvasRenderingContext2d, hour: usize, x: f64, top: f64) {
+fn draw_hour_label_with_day(ctx: &CanvasRenderingContext2d, hour: usize, day: i32, x: f64, top: f64) {
     ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#888"));
     ctx.set_font("12px monospace");
-    let _ = ctx.fill_text(&format!("{:02}:00", hour), x - 15.0, top - 10.0);
+
+    if day == 0 {
+        // First day, just show time
+        let _ = ctx.fill_text(&format!("{:02}:00", hour), x - 15.0, top - 10.0);
+    } else {
+        // Past midnight, show day indicator
+        let _ = ctx.fill_text(&format!("{:02}:00", hour), x - 15.0, top - 10.0);
+        ctx.set_font("10px monospace");
+        ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#666"));
+        let _ = ctx.fill_text(&format!("+{}", day), x - 10.0, top + 5.0);
+    }
 }
 
 fn draw_hour_labels(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, zoom_level: f64, pan_offset_x: f64) {
@@ -217,11 +228,12 @@ fn draw_hour_labels(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, zoom
         let adjusted_x = dims.left_margin + (base_x * zoom_level) + pan_offset_x;
 
         // Only draw label if it's within the visible graph area
-        if adjusted_x >= dims.left_margin && adjusted_x <= dims.left_margin + dims.graph_width {
-            // Handle hours beyond 24 by wrapping around (e.g., hour 25 becomes "01", hour 26 becomes "02")
-            let display_hour = if i >= 0 { i % 24 } else { (24 + (i % 24)) % 24 };
-            draw_hour_label(ctx, display_hour as usize, adjusted_x, dims.top_margin);
-        }
+        if adjusted_x >= dims.left_margin && adjusted_x <= dims.left_margin + dims.graph_width
+            && i >= 0 {
+                let day = i / 24;
+                let hour_in_day = i % 24;
+                draw_hour_label_with_day(ctx, hour_in_day as usize, day, adjusted_x, dims.top_margin);
+            }
     }
 }
 
@@ -442,10 +454,13 @@ fn draw_current_train_positions(
 }
 
 fn time_to_fraction(time: chrono::NaiveDateTime) -> f64 {
-    let hours = time.hour() as f64;
-    let minutes = time.minute() as f64;
-    let seconds = time.second() as f64;
-    hours + (minutes / 60.0) + (seconds / 3600.0)
+    // Calculate hours from the base date (2024-01-01 00:00:00)
+    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
+    let base_datetime = base_date.and_hms_opt(0, 0, 0).expect("Valid datetime");
+
+    let duration_since_base = time.signed_duration_since(base_datetime);
+    let total_seconds = duration_since_base.num_seconds() as f64;
+    total_seconds / 3600.0 // Convert to hours
 }
 
 fn draw_time_indicator(

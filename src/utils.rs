@@ -143,7 +143,7 @@ pub fn generate_departures(
                     }
 
                     // Move to next departure based on frequency
-                    base_departure = base_departure + line.frequency;
+                    base_departure += line.frequency;
 
                     if base_departure.hour() > 22 {
                         break; // Stop generating after 10 PM
@@ -194,7 +194,6 @@ pub fn generate_train_journeys(
             // Create a journey with all station times
             let mut station_times = Vec::new();
             let journey_valid = true;
-            let mut last_time = departure_time;
 
             for (station_name, offset_time) in &line_stations {
                 let offset_duration = Duration::hours(offset_time.hour() as i64) +
@@ -205,7 +204,6 @@ pub fn generate_train_journeys(
 
                 // No longer truncate at midnight - let journeys continue
                 station_times.push((station_name.clone(), arrival_time));
-                last_time = arrival_time;
             }
 
             // Only add journey if it has at least 2 stations
@@ -220,7 +218,7 @@ pub fn generate_train_journeys(
             }
 
             // Move to next departure
-            departure_time = departure_time + line.frequency;
+            departure_time += line.frequency;
 
             // Stop if we're getting too late
             if departure_time.hour() > 22 {
@@ -269,7 +267,7 @@ pub fn generate_train_journeys(
                     return_journey_count += 1;
                 }
 
-                return_departure_time = return_departure_time + line.frequency;
+                return_departure_time += line.frequency;
 
                 // Stop if we're getting too late
                 if return_departure_time.hour() > 22 {

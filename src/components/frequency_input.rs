@@ -19,7 +19,7 @@ fn parse_hhmmss(input: &str) -> Option<Duration> {
     let minutes: i64 = parts[1].parse().ok()?;
     let seconds: i64 = parts[2].parse().ok()?;
 
-    if hours < 0 || minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60 {
+    if hours < 0 || !(0..60).contains(&minutes) || !(0..60).contains(&seconds) {
         return None;
     }
 

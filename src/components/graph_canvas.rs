@@ -170,13 +170,20 @@ pub fn GraphCanvas(
 
 fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, set_time: WriteSignal<NaiveDateTime>) {
     let fraction = (x - left_margin) / graph_width;
-    let total_minutes = (fraction * 24.0 * 60.0) as u32;
-    let hours = (total_minutes / 60).min(23);
-    let minutes = (total_minutes % 60).min(59);
+    let total_hours = fraction * 48.0; // 48 hours to support past-midnight
+    let total_minutes = (total_hours * 60.0) as u32;
+
+    // Calculate days, hours, and minutes
+    let days = total_minutes / (24 * 60);
+    let remaining_minutes = total_minutes % (24 * 60);
+    let hours = remaining_minutes / 60;
+    let minutes = remaining_minutes % 60;
 
     let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
+    let target_date = base_date + chrono::Duration::days(days as i64);
+
     if let Some(new_time) = chrono::NaiveTime::from_hms_opt(hours, minutes, 0) {
-        let new_datetime = base_date.and_time(new_time);
+        let new_datetime = target_date.and_time(new_time);
         set_time.set(new_datetime);
     }
 }
