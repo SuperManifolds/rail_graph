@@ -389,49 +389,26 @@ fn draw_current_train_positions(
 
         for (station_name, arrival_time) in &journey.station_times {
             if let Some(station_idx) = stations.iter().position(|s| s == station_name) {
-                // Handle midnight crossing: if visualization_time is late (>20:00) and arrival_time is early (<6:00),
-                // treat arrival_time as next day
-                let is_next_day_arrival = visualization_time.hour() >= 20 && arrival_time.hour() < 6;
-
-                if !is_next_day_arrival && *arrival_time <= visualization_time {
+                if *arrival_time <= visualization_time {
                     prev_station = Some((station_name, *arrival_time, station_idx));
-                } else if is_next_day_arrival || next_station.is_none() {
+                } else if next_station.is_none() {
                     next_station = Some((station_name, *arrival_time, station_idx));
-                    if !is_next_day_arrival {
-                        break;
-                    }
+                    break;
                 }
             }
         }
 
         // If train is between two stations, interpolate its position
         if let (Some((_, prev_time, prev_idx)), Some((_, next_time, next_idx))) = (prev_station, next_station) {
-            // Handle midnight crossing in duration calculation
-            let segment_duration = if next_time < prev_time {
-                // Crossed midnight: add 24 hours to next_time for calculation
-                (next_time.num_seconds_from_midnight() + 24 * 3600) as f64 - prev_time.num_seconds_from_midnight() as f64
-            } else {
-                next_time.signed_duration_since(prev_time).num_seconds() as f64
-            };
-
-            let elapsed = if visualization_time.hour() >= 20 && next_time.hour() < 6 {
-                // Visualization time is late, next time is early (crossing midnight)
-                visualization_time.signed_duration_since(prev_time).num_seconds() as f64
-            } else {
-                visualization_time.signed_duration_since(prev_time).num_seconds() as f64
-            };
+            let segment_duration = next_time.signed_duration_since(prev_time).num_seconds() as f64;
+            let elapsed = visualization_time.signed_duration_since(prev_time).num_seconds() as f64;
             let progress = (elapsed / segment_duration).clamp(0.0, 1.0);
 
             let prev_x = dims.left_margin + (time_to_fraction(prev_time) * dims.hour_width);
             let prev_y = dims.top_margin + (prev_idx as f64 * station_height) + (station_height / 2.0);
 
-            let mut next_x = dims.left_margin + (time_to_fraction(next_time) * dims.hour_width);
+            let next_x = dims.left_margin + (time_to_fraction(next_time) * dims.hour_width);
             let next_y = dims.top_margin + (next_idx as f64 * station_height) + (station_height / 2.0);
-
-            // Handle midnight wrap-around for train position dots
-            if next_x < prev_x - dims.graph_width * 0.5 {
-                next_x += dims.graph_width;
-            }
 
             let current_x = prev_x + (next_x - prev_x) * progress;
             let current_y = prev_y + (next_y - prev_y) * progress;
