@@ -44,6 +44,8 @@ fn create_lines(line_ids: &[String]) -> Vec<Line> {
             color: LINE_COLORS[i % LINE_COLORS.len()].to_string(),
             first_departure: NaiveTime::from_hms_opt(5, i as u32 * 15, 0)
                 .unwrap_or_else(|| NaiveTime::from_hms_opt(5, 0, 0).expect("Valid time")),
+            return_first_departure: NaiveTime::from_hms_opt(6, i as u32 * 15, 0)
+                .unwrap_or_else(|| NaiveTime::from_hms_opt(6, 0, 0).expect("Valid time")),
         })
         .collect()
 }
@@ -174,8 +176,10 @@ pub fn generate_train_journeys(
 
         // Generate multiple train journeys throughout the day
         let mut departure_time = line.first_departure;
+        let mut journey_count = 0;
+        const MAX_JOURNEYS_PER_LINE: i32 = 100; // Limit to prevent performance issues
 
-        while departure_time <= day_end {
+        while departure_time <= day_end && journey_count < MAX_JOURNEYS_PER_LINE {
             // Create a journey with all station times
             let mut station_times = Vec::new();
             let journey_valid = true;
@@ -201,6 +205,7 @@ pub fn generate_train_journeys(
                     station_times,
                     color: line.color.clone(),
                 });
+                journey_count += 1;
             }
 
             // Move to next departure
@@ -210,6 +215,57 @@ pub fn generate_train_journeys(
             // Stop if we're getting too late
             if departure_time.hour() > 22 {
                 break;
+            }
+        }
+
+        // Generate return journeys (reverse direction)
+        let mut return_stations = line_stations.clone();
+        return_stations.reverse();
+
+        // Calculate return journey offsets (time from last station back to first)
+        if let Some((_, last_time)) = line_stations.last() {
+            let mut return_departure_time = line.return_first_departure;
+            let mut return_journey_count = 0;
+
+            while return_departure_time <= day_end && return_journey_count < MAX_JOURNEYS_PER_LINE {
+                // Create a return journey with all station times in reverse order
+                let mut station_times = Vec::new();
+                let journey_valid = true;
+
+                for (i, (station_name, _)) in return_stations.iter().enumerate() {
+                    // Calculate offset from the end: last station is at 0 offset, first station gets the full journey time
+                    let return_offset = if let Some((_, original_time)) = line_stations.get(return_stations.len() - 1 - i) {
+                        Duration::hours(last_time.hour() as i64 - original_time.hour() as i64) +
+                        Duration::minutes(last_time.minute() as i64 - original_time.minute() as i64) +
+                        Duration::seconds(last_time.second() as i64 - original_time.second() as i64)
+                    } else {
+                        Duration::zero()
+                    };
+
+                    let (arrival_time, _) = return_departure_time.overflowing_add_signed(return_offset);
+
+                    // No longer truncate at midnight - let journeys continue
+                    station_times.push((station_name.clone(), arrival_time));
+                }
+
+                // Only add journey if it has at least 2 stations
+                if station_times.len() >= 2 && journey_valid {
+                    journeys.push(TrainJourney {
+                        line_id: format!("{}_return", line.id),
+                        departure_time: return_departure_time,
+                        station_times,
+                        color: line.color.clone(),
+                    });
+                    return_journey_count += 1;
+                }
+
+                let (next_departure, _) = return_departure_time.overflowing_add_signed(line.frequency);
+                return_departure_time = next_departure;
+
+                // Stop if we're getting too late
+                if return_departure_time.hour() > 22 {
+                    break;
+                }
             }
         }
     }

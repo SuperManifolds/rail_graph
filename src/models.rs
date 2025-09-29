@@ -16,6 +16,8 @@ pub struct Line {
     pub color: String,
     #[serde(with = "naive_time_serde")]
     pub first_departure: NaiveTime,
+    #[serde(with = "naive_time_serde")]
+    pub return_first_departure: NaiveTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

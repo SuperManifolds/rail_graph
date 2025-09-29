@@ -1,6 +1,7 @@
 use leptos::*;
 use chrono::{Duration, NaiveTime};
 use crate::models::Line;
+use crate::components::frequency_input::FrequencyInput;
 
 #[component]
 pub fn LineControls(
@@ -108,35 +109,54 @@ pub fn LineControl(
                         }
                     />
                 </label>
+                <FrequencyInput
+                    frequency={
+                        let id = line_id.clone();
+                        Signal::derive(move || {
+                            let current_lines = lines.get();
+                            if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
+                                current_line.frequency
+                            } else {
+                                Duration::minutes(30)
+                            }
+                        })
+                    }
+                    on_change={
+                        let id = line_id.clone();
+                        move |new_frequency| {
+                            set_lines.update(|lines_vec| {
+                                if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
+                                    line.frequency = new_frequency;
+                                }
+                            });
+                        }
+                    }
+                />
                 <label>
-                    "Frequency (min): "
+                    "Return departure: "
                     <input
-                        type="number"
-                        min="1"
-                        max="180"
+                        type="time"
                         prop:value={
                             let id = line_id.clone();
                             move || {
                                 let current_lines = lines.get();
                                 if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
-                                    current_line.frequency.num_minutes().to_string()
+                                    current_line.return_first_departure.format("%H:%M").to_string()
                                 } else {
-                                    "30".to_string()
+                                    "06:00".to_string()
                                 }
                             }
                         }
                         on:input={
                             let id = line_id.clone();
                             move |ev| {
-                                let freq_str = event_target_value(&ev);
-                                if let Ok(minutes) = freq_str.parse::<i64>() {
-                                    if minutes > 0 {
-                                        set_lines.update(|lines_vec| {
-                                            if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
-                                                line.frequency = Duration::minutes(minutes);
-                                            }
-                                        });
-                                    }
+                                let time_str = event_target_value(&ev);
+                                if let Ok(new_time) = NaiveTime::parse_from_str(&format!("{}:00", time_str), "%H:%M:%S") {
+                                    set_lines.update(|lines_vec| {
+                                        if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
+                                            line.return_first_departure = new_time;
+                                        }
+                                    });
                                 }
                             }
                         }
