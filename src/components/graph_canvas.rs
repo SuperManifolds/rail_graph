@@ -18,6 +18,13 @@ pub fn GraphCanvas(
     let (is_panning, set_is_panning) = create_signal(false);
     let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
 
+    // Compute conflicts only when train journeys change, not on every render
+    let station_names: Vec<String> = stations.iter().map(|s| s.name.clone()).collect();
+    let conflicts = create_memo(move |_| {
+        let journeys = train_journeys.get();
+        crate::components::time_graph::detect_line_conflicts(&journeys, &station_names)
+    });
+
     // Render the graph whenever train journeys change
     create_effect(move |_| {
         let journeys = train_journeys.get();
@@ -43,7 +50,8 @@ pub fn GraphCanvas(
                 pan_offset_x: pan_x,
                 pan_offset_y: pan_y,
             };
-            crate::components::time_graph::render_graph(canvas, &stations, &journeys, current, viewport);
+            let current_conflicts = conflicts.get();
+            crate::components::time_graph::render_graph(canvas, &stations, &journeys, current, viewport, &current_conflicts);
         }
     });
 

@@ -1,5 +1,5 @@
 use leptos::*;
-use chrono::{NaiveDate, NaiveDateTime, Timelike};
+use chrono::{NaiveDate, NaiveDateTime};
 use web_sys::CanvasRenderingContext2d;
 use wasm_bindgen::JsCast;
 use crate::models::{Station, TrainJourney};
@@ -112,6 +112,7 @@ pub fn render_graph(
     train_journeys: &[TrainJourney],
     current_time: chrono::NaiveDateTime,
     viewport: ViewportState,
+    conflicts: &[Conflict],
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
     let canvas_width = canvas_element.width() as f64;
@@ -155,7 +156,7 @@ pub fn render_graph(
     draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level);
     let unique_stations = get_visible_stations(stations, stations.len());
     draw_station_grid(&ctx, &zoomed_dimensions, &unique_stations);
-    draw_train_journeys(&ctx, &zoomed_dimensions, &unique_stations, train_journeys, current_time, viewport.zoom_level);
+    draw_train_journeys(&ctx, &zoomed_dimensions, &unique_stations, train_journeys, current_time, viewport.zoom_level, conflicts);
 
     // Restore canvas context
     ctx.restore();
@@ -308,6 +309,7 @@ fn draw_train_journeys(
     train_journeys: &[TrainJourney],
     current_time: NaiveDateTime,
     zoom_level: f64,
+    conflicts: &[Conflict],
 ) {
     let station_height = dims.graph_height / stations.len() as f64;
 
@@ -367,6 +369,9 @@ fn draw_train_journeys(
             }
         }
     }
+
+    // Draw conflict highlights
+    draw_conflict_highlights(ctx, dims, conflicts, station_height, zoom_level);
 
     // Draw current train positions
     draw_current_train_positions(ctx, dims, stations, train_journeys, station_height, current_time, zoom_level);
@@ -438,6 +443,219 @@ fn time_to_fraction(time: chrono::NaiveDateTime) -> f64 {
     let duration_since_base = time.signed_duration_since(base_datetime);
     let total_seconds = duration_since_base.num_seconds() as f64;
     total_seconds / 3600.0 // Convert to hours
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Conflict {
+    time: NaiveDateTime,
+    position: f64, // Position between stations (0.0 to 1.0)
+    station1_idx: usize,
+    station2_idx: usize,
+    journey1_id: String,
+    journey2_id: String,
+}
+
+pub fn detect_line_conflicts(
+    train_journeys: &[TrainJourney],
+    stations: &[String],
+) -> Vec<Conflict> {
+    let mut conflicts = Vec::new();
+    let station_margin = chrono::Duration::minutes(1); // 1 minute margin around stations
+    let max_conflicts = 1000; // Stop after finding 1000 conflicts for performance
+
+    // Compare each pair of journeys
+    for (i, journey1) in train_journeys.iter().enumerate() {
+        if conflicts.len() >= max_conflicts {
+            break;
+        }
+        for journey2 in train_journeys.iter().skip(i + 1) {
+            if conflicts.len() >= max_conflicts {
+                break;
+            }
+            // Check each segment of journey1 against each segment of journey2
+            for window1 in journey1.station_times.windows(2) {
+                let (station1_name, time1_start) = &window1[0];
+                let (station2_name, time1_end) = &window1[1];
+
+                // Get station indices for journey1 segment
+                let station1_idx = stations.iter().position(|s| s == station1_name);
+                let station2_idx = stations.iter().position(|s| s == station2_name);
+
+                if let (Some(s1_idx), Some(s2_idx)) = (station1_idx, station2_idx) {
+                    for window2 in journey2.station_times.windows(2) {
+                        let (station3_name, time2_start) = &window2[0];
+                        let (station4_name, time2_end) = &window2[1];
+
+                        // Get station indices for journey2 segment
+                        let station3_idx = stations.iter().position(|s| s == station3_name);
+                        let station4_idx = stations.iter().position(|s| s == station4_name);
+
+                        if let (Some(s3_idx), Some(s4_idx)) = (station3_idx, station4_idx) {
+                            // Check if lines cross (different directions between same stations or crossing paths)
+                            let lines_cross = (s1_idx < s2_idx && s3_idx > s4_idx &&
+                                              ((s1_idx <= s3_idx && s2_idx >= s4_idx) ||
+                                               (s3_idx <= s1_idx && s4_idx >= s2_idx))) ||
+                                             (s1_idx > s2_idx && s3_idx < s4_idx &&
+                                              ((s1_idx >= s3_idx && s2_idx <= s4_idx) ||
+                                               (s3_idx >= s1_idx && s4_idx <= s2_idx))) ||
+                                             // Check for crossing when lines go in same direction
+                                             (s1_idx != s3_idx && s2_idx != s4_idx &&
+                                              ((s1_idx as i32 - s3_idx as i32) * (s2_idx as i32 - s4_idx as i32)) < 0);
+
+                            if lines_cross {
+                                // Calculate intersection point
+                                if let Some(intersection) = calculate_intersection(
+                                    *time1_start, *time1_end, s1_idx, s2_idx,
+                                    *time2_start, *time2_end, s3_idx, s4_idx
+                                ) {
+                                    // Check if intersection is outside station margin
+                                    let mut is_near_station = false;
+
+                                    // Check proximity to all stations
+                                    for (station_name, station_time) in journey1.station_times.iter()
+                                        .chain(journey2.station_times.iter())
+                                    {
+                                        if stations.contains(station_name) {
+                                            let time_diff = intersection.time.signed_duration_since(*station_time).num_seconds().abs();
+                                            if time_diff <= station_margin.num_seconds() {
+                                                is_near_station = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    if !is_near_station {
+                                        conflicts.push(Conflict {
+                                            time: intersection.time,
+                                            position: intersection.position,
+                                            station1_idx: s1_idx.min(s2_idx),
+                                            station2_idx: s1_idx.max(s2_idx),
+                                            journey1_id: journey1.line_id.clone(),
+                                            journey2_id: journey2.line_id.clone(),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    conflicts
+}
+
+#[derive(Debug)]
+struct Intersection {
+    time: NaiveDateTime,
+    position: f64, // Position between stations (0.0 to 1.0)
+}
+
+fn calculate_intersection(
+    t1_start: NaiveDateTime, t1_end: NaiveDateTime, s1_start: usize, s1_end: usize,
+    t2_start: NaiveDateTime, t2_end: NaiveDateTime, s2_start: usize, s2_end: usize,
+) -> Option<Intersection> {
+    // Convert times to fractions
+    let x1_start = time_to_fraction(t1_start);
+    let x1_end = time_to_fraction(t1_end);
+    let y1_start = s1_start as f64;
+    let y1_end = s1_end as f64;
+
+    let x2_start = time_to_fraction(t2_start);
+    let x2_end = time_to_fraction(t2_end);
+    let y2_start = s2_start as f64;
+    let y2_end = s2_end as f64;
+
+    // Calculate line intersection using parametric equations
+    let denom = (x1_start - x1_end) * (y2_start - y2_end) - (y1_start - y1_end) * (x2_start - x2_end);
+
+    if denom.abs() < 0.0001 {
+        return None; // Lines are parallel
+    }
+
+    let t = ((x1_start - x2_start) * (y2_start - y2_end) - (y1_start - y2_start) * (x2_start - x2_end)) / denom;
+    let u = -((x1_start - x1_end) * (y1_start - y2_start) - (y1_start - y1_end) * (x1_start - x2_start)) / denom;
+
+    // Check if intersection is within both segments
+    if t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0 {
+        let x_intersect = x1_start + t * (x1_end - x1_start);
+        let y_intersect = y1_start + t * (y1_end - y1_start);
+
+        // Convert back to time
+        let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
+        let base_datetime = base_date.and_hms_opt(0, 0, 0).expect("Valid datetime");
+        let intersection_time = base_datetime + chrono::Duration::seconds((x_intersect * 3600.0) as i64);
+
+        // Calculate position between stations
+        let position = (y_intersect - y_intersect.floor()) % 1.0;
+
+        Some(Intersection {
+            time: intersection_time,
+            position,
+        })
+    } else {
+        None
+    }
+}
+
+fn draw_conflict_highlights(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    conflicts: &[Conflict],
+    station_height: f64,
+    zoom_level: f64,
+) {
+    // Limit to first 1000 conflicts to prevent performance issues
+    let max_conflicts = 1000;
+    for conflict in conflicts.iter().take(max_conflicts) {
+        let time_fraction = time_to_fraction(conflict.time);
+        let x = dims.left_margin + (time_fraction * dims.hour_width);
+
+        // Calculate y position based on the conflict position between stations
+        let y = dims.top_margin +
+            (conflict.station1_idx as f64 * station_height) +
+            (station_height / 2.0) +
+            (conflict.position * station_height * (conflict.station2_idx - conflict.station1_idx) as f64);
+
+        // Draw a warning triangle at the conflict point
+        let size = 15.0 / zoom_level;
+        ctx.set_line_width(1.5 / zoom_level);
+
+        // Draw filled triangle
+        ctx.begin_path();
+        ctx.move_to(x, y - size);  // Top point
+        ctx.line_to(x - size * 0.866, y + size * 0.5);  // Bottom left
+        ctx.line_to(x + size * 0.866, y + size * 0.5);  // Bottom right
+        ctx.close_path();
+
+        // Fill with warning color
+        ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(255, 200, 0, 0.9)"));
+        ctx.fill();
+
+        // Stroke with thick black border
+        ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("rgba(0, 0, 0, 0.8)"));
+        ctx.stroke();
+
+        // Draw exclamation mark inside triangle
+        ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#000"));
+        ctx.set_font(&format!("bold {}px sans-serif", 12.0 / zoom_level));
+        let _ = ctx.fill_text("!", x - 2.0 / zoom_level, y + 4.0 / zoom_level);
+
+        // Draw conflict details (simplified - just show line IDs)
+        ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(255, 255, 255, 0.9)"));
+        ctx.set_font(&format!("{}px monospace", 9.0 / zoom_level));
+        let label = format!("{} × {}", conflict.journey1_id, conflict.journey2_id);
+        let _ = ctx.fill_text(&label, x + size + 5.0 / zoom_level, y);
+    }
+
+    // If there are more conflicts than displayed, show a count
+    if conflicts.len() > max_conflicts {
+        ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(255, 0, 0, 0.8)"));
+        ctx.set_font(&format!("bold {}px monospace", 14.0 / zoom_level));
+        let warning_text = format!("⚠ {} more conflicts not shown", conflicts.len() - max_conflicts);
+        let _ = ctx.fill_text(&warning_text, 10.0, dims.top_margin - 10.0);
+    }
 }
 
 fn draw_time_indicator(
