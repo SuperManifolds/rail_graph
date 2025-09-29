@@ -35,6 +35,13 @@ pub struct TrainJourney {
     pub color: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SegmentState {
+    // Key is the index of the second station in the segment
+    // So segment between stations[i] and stations[i+1] is stored at key i+1
+    pub double_tracked_segments: std::collections::HashSet<usize>,
+}
+
 mod duration_serde {
     use chrono::Duration;
     use serde::{Deserialize, Deserializer, Serializer};

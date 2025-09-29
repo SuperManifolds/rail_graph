@@ -2,10 +2,11 @@ use leptos::*;
 use chrono::{NaiveDate, NaiveDateTime};
 use web_sys::CanvasRenderingContext2d;
 use wasm_bindgen::JsCast;
-use crate::models::{Station, TrainJourney};
+use crate::models::{Station, TrainJourney, SegmentState};
 use crate::utils::{parse_csv_data, generate_train_journeys};
 use crate::components::{line_controls::LineControls, graph_canvas::GraphCanvas};
 use crate::storage::{save_lines_to_storage, load_lines_from_storage};
+use std::collections::HashSet;
 
 #[derive(Clone)]
 struct GraphDimensions {
@@ -69,6 +70,11 @@ pub fn TimeGraph() -> impl IntoView {
     let (visualization_time, set_visualization_time) = create_signal(chrono::Local::now().naive_local());
     let (train_journeys, set_train_journeys) = create_signal(Vec::<TrainJourney>::new());
 
+    // Segment state for double tracking
+    let (segment_state, set_segment_state) = create_signal(SegmentState {
+        double_tracked_segments: HashSet::new(),
+    });
+
     let stations_clone = stations.clone();
 
     // Update train journeys only when lines configuration changes
@@ -94,6 +100,8 @@ pub fn TimeGraph() -> impl IntoView {
                     train_journeys=train_journeys
                     visualization_time=visualization_time
                     set_visualization_time=set_visualization_time
+                    segment_state=segment_state
+                    set_segment_state=set_segment_state
                 />
             </div>
             <div class="sidebar">
@@ -113,6 +121,7 @@ pub fn render_graph(
     current_time: chrono::NaiveDateTime,
     viewport: ViewportState,
     conflicts: &[Conflict],
+    segment_state: &SegmentState,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
     let canvas_width = canvas_element.width() as f64;
@@ -156,6 +165,7 @@ pub fn render_graph(
     draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level);
     let unique_stations = get_visible_stations(stations, stations.len());
     draw_station_grid(&ctx, &zoomed_dimensions, &unique_stations);
+    draw_double_track_indicators(&ctx, &zoomed_dimensions, &unique_stations, segment_state);
     draw_train_journeys(&ctx, &zoomed_dimensions, &unique_stations, train_journeys, current_time, viewport.zoom_level, conflicts);
 
     // Restore canvas context
@@ -164,6 +174,7 @@ pub fn render_graph(
     // Draw labels at normal size but with adjusted positions for zoom/pan
     draw_hour_labels(&ctx, &dimensions, viewport.zoom_level, viewport.pan_offset_x);
     draw_station_labels(&ctx, &dimensions, &unique_stations, viewport.zoom_level, viewport.pan_offset_y);
+    draw_segment_toggles(&ctx, &dimensions, &unique_stations, segment_state, viewport.zoom_level, viewport.pan_offset_y);
 
     // Draw time indicator on top (adjusted for zoom/pan)
     draw_time_indicator(&ctx, &dimensions, current_time, viewport.zoom_level, viewport.pan_offset_x);
@@ -284,6 +295,50 @@ fn draw_station_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
     let _ = ctx.fill_text(station, 5.0, y + 3.0);
 }
 
+fn draw_segment_toggles(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    stations: &[String],
+    segment_state: &SegmentState,
+    zoom_level: f64,
+    pan_offset_y: f64,
+) {
+    let station_height = dims.graph_height / stations.len() as f64;
+
+    for i in 1..stations.len() {
+        let segment_index = i;
+        let is_double_tracked = segment_state.double_tracked_segments.contains(&segment_index);
+
+        // Calculate position between the two stations
+        let base_y1 = ((i - 1) as f64 * station_height) + (station_height / 2.0);
+        let base_y2 = (i as f64 * station_height) + (station_height / 2.0);
+        let center_y = (base_y1 + base_y2) / 2.0;
+        let adjusted_y = dims.top_margin + (center_y * zoom_level) + pan_offset_y;
+
+        // Only draw if visible
+        if adjusted_y >= dims.top_margin && adjusted_y <= dims.top_margin + dims.graph_height {
+            let x = 85.0; // Position to the right of station labels
+            let size = 12.0;
+
+            // Draw button background
+            let bg_color = if is_double_tracked { "#4a90e2" } else { "#333" };
+            ctx.set_fill_style(&wasm_bindgen::JsValue::from_str(bg_color));
+            ctx.fill_rect(x - size/2.0, adjusted_y - size/2.0, size, size);
+
+            // Draw button border
+            ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("#666"));
+            ctx.set_line_width(1.0);
+            ctx.stroke_rect(x - size/2.0, adjusted_y - size/2.0, size, size);
+
+            // Draw icon
+            ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#fff"));
+            ctx.set_font("10px monospace");
+            let icon = if is_double_tracked { "≡" } else { "─" };
+            let _ = ctx.fill_text(icon, x - 4.0, adjusted_y + 3.0);
+        }
+    }
+}
+
 fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, y: f64) {
     ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("#1a1a1a"));
     ctx.begin_path();
@@ -300,6 +355,40 @@ fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, 
     ctx.move_to(start_x, y);
     ctx.line_to(end_x, y);
     ctx.stroke();
+}
+
+fn draw_double_track_indicators(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    stations: &[String],
+    segment_state: &SegmentState,
+) {
+    let station_height = dims.graph_height / stations.len() as f64;
+
+    // Draw lighter background for double-tracked segments
+    for &segment_idx in &segment_state.double_tracked_segments {
+        if segment_idx > 0 && segment_idx < stations.len() {
+            // Calculate the Y positions for the two stations
+            let station1_y = calculate_station_y(dims, segment_idx - 1, station_height);
+            let station2_y = calculate_station_y(dims, segment_idx, station_height);
+
+            // Cover the entire area between the two stations
+            let top_y = station1_y.min(station2_y);
+            let height = (station2_y - station1_y).abs();
+
+            // Calculate the same extended range as other grid elements
+            let hours_visible = (dims.graph_width / dims.hour_width).ceil() as i32;
+            let padding_hours = 5;
+            let start_hour = -padding_hours;
+            let end_hour = hours_visible + padding_hours;
+            let start_x = dims.left_margin + (start_hour as f64 * dims.hour_width);
+            let width = (end_hour - start_hour) as f64 * dims.hour_width;
+
+            // Draw lighter background rectangle
+            ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(255, 255, 255, 0.03)")); // Very subtle lighter background
+            ctx.fill_rect(start_x, top_y, width, height);
+        }
+    }
 }
 
 fn draw_train_journeys(
@@ -458,6 +547,7 @@ pub struct Conflict {
 pub fn detect_line_conflicts(
     train_journeys: &[TrainJourney],
     stations: &[String],
+    segment_state: &SegmentState,
 ) -> Vec<Conflict> {
     let mut conflicts = Vec::new();
     let station_margin = chrono::Duration::minutes(1); // 1 minute margin around stations
@@ -482,6 +572,13 @@ pub fn detect_line_conflicts(
                 let station2_idx = stations.iter().position(|s| s == station2_name);
 
                 if let (Some(s1_idx), Some(s2_idx)) = (station1_idx, station2_idx) {
+                    // Check if this segment is double-tracked (skip conflict detection if it is)
+                    // Segment index is the higher station index (destination station)
+                    let segment1_idx = s1_idx.max(s2_idx);
+                    if segment_state.double_tracked_segments.contains(&segment1_idx) {
+                        continue; // Skip this segment as it's double-tracked
+                    }
+
                     for window2 in journey2.station_times.windows(2) {
                         let (station3_name, time2_start) = &window2[0];
                         let (station4_name, time2_end) = &window2[1];
@@ -491,6 +588,12 @@ pub fn detect_line_conflicts(
                         let station4_idx = stations.iter().position(|s| s == station4_name);
 
                         if let (Some(s3_idx), Some(s4_idx)) = (station3_idx, station4_idx) {
+                            // Check if the second segment is also double-tracked
+                            let segment2_idx = s3_idx.max(s4_idx);
+                            if segment_state.double_tracked_segments.contains(&segment2_idx) {
+                                continue; // Skip this segment as it's double-tracked
+                            }
+
                             // Check if lines cross (different directions between same stations or crossing paths)
                             let lines_cross = (s1_idx < s2_idx && s3_idx > s4_idx &&
                                               ((s1_idx <= s3_idx && s2_idx >= s4_idx) ||

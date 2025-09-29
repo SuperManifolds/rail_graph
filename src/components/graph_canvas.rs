@@ -1,7 +1,7 @@
 use leptos::*;
 use chrono::{NaiveDate, NaiveDateTime};
 use web_sys::{MouseEvent, WheelEvent};
-use crate::models::{Station, TrainJourney};
+use crate::models::{Station, TrainJourney, SegmentState};
 
 #[component]
 pub fn GraphCanvas(
@@ -9,6 +9,8 @@ pub fn GraphCanvas(
     train_journeys: ReadSignal<Vec<TrainJourney>>,
     visualization_time: ReadSignal<NaiveDateTime>,
     set_visualization_time: WriteSignal<NaiveDateTime>,
+    segment_state: ReadSignal<SegmentState>,
+    set_segment_state: WriteSignal<SegmentState>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
@@ -18,11 +20,15 @@ pub fn GraphCanvas(
     let (is_panning, set_is_panning) = create_signal(false);
     let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
 
+    // Clone stations for use in render closure
+    let stations_for_render = stations.clone();
+
     // Compute conflicts only when train journeys change, not on every render
     let station_names: Vec<String> = stations.iter().map(|s| s.name.clone()).collect();
     let conflicts = create_memo(move |_| {
         let journeys = train_journeys.get();
-        crate::components::time_graph::detect_line_conflicts(&journeys, &station_names)
+        let seg_state = segment_state.get();
+        crate::components::time_graph::detect_line_conflicts(&journeys, &station_names, &seg_state)
     });
 
     // Render the graph whenever train journeys change
@@ -51,7 +57,8 @@ pub fn GraphCanvas(
                 pan_offset_y: pan_y,
             };
             let current_conflicts = conflicts.get();
-            crate::components::time_graph::render_graph(canvas, &stations, &journeys, current, viewport, &current_conflicts);
+            let current_segment_state = segment_state.get();
+            crate::components::time_graph::render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_segment_state);
         }
     });
 
@@ -68,14 +75,31 @@ pub fn GraphCanvas(
                 set_is_panning.set(true);
                 set_last_mouse_pos.set((x, y));
             } else {
-                // Check if click is near the time line (within 10px) for time scrubbing
-                let left_margin = 120.0;
+                // Check for toggle button clicks first
                 let canvas_width = canvas.width() as f64;
-                let graph_width = canvas_width - left_margin - 20.0;
+                let canvas_height = canvas.height() as f64;
 
-                if x >= left_margin && x <= left_margin + graph_width {
-                    set_is_dragging.set(true);
-                    update_time_from_x(x, left_margin, graph_width, zoom_level.get(), pan_offset_x.get(), set_visualization_time);
+                if let Some(clicked_segment) = check_toggle_click(
+                    x, y, canvas_height, &stations,
+                    zoom_level.get(), pan_offset_y.get()
+                ) {
+                    // Toggle the segment state
+                    set_segment_state.update(move |state| {
+                        if state.double_tracked_segments.contains(&clicked_segment) {
+                            state.double_tracked_segments.remove(&clicked_segment);
+                        } else {
+                            state.double_tracked_segments.insert(clicked_segment);
+                        }
+                    });
+                } else {
+                    // Check if click is near the time line (within 10px) for time scrubbing
+                    let left_margin = 120.0;
+                    let graph_width = canvas_width - left_margin - 20.0;
+
+                    if x >= left_margin && x <= left_margin + graph_width {
+                        set_is_dragging.set(true);
+                        update_time_from_x(x, left_margin, graph_width, zoom_level.get(), pan_offset_x.get(), set_visualization_time);
+                    }
                 }
             }
         }
@@ -206,4 +230,41 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
         let new_datetime = target_date.and_time(new_time);
         set_time.set(new_datetime);
     }
+}
+
+fn check_toggle_click(
+    mouse_x: f64,
+    mouse_y: f64,
+    canvas_height: f64,
+    stations: &[Station],
+    zoom_level: f64,
+    pan_offset_y: f64,
+) -> Option<usize> {
+    let top_margin = 60.0;
+    let graph_height = canvas_height - top_margin - 20.0;
+
+    let station_height = graph_height / stations.len() as f64;
+    let toggle_x = 85.0; // Same as in draw_segment_toggles
+    let toggle_size = 12.0;
+
+    // Check if click is in the toggle area horizontally
+    if mouse_x >= toggle_x - toggle_size/2.0 && mouse_x <= toggle_x + toggle_size/2.0 {
+        // Check each segment toggle
+        for i in 1..stations.len() {
+            let segment_index = i;
+
+            // Calculate position between the two stations (same logic as draw_segment_toggles)
+            let base_y1 = ((i - 1) as f64 * station_height) + (station_height / 2.0);
+            let base_y2 = (i as f64 * station_height) + (station_height / 2.0);
+            let center_y = (base_y1 + base_y2) / 2.0;
+            let adjusted_y = top_margin + (center_y * zoom_level) + pan_offset_y;
+
+            // Check if click is within this toggle button
+            if mouse_y >= adjusted_y - toggle_size/2.0 && mouse_y <= adjusted_y + toggle_size/2.0 {
+                return Some(segment_index);
+            }
+        }
+    }
+
+    None
 }
