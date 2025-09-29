@@ -121,7 +121,7 @@ pub fn render_graph(
     ctx.rect(dimensions.left_margin, dimensions.top_margin, dimensions.graph_width, dimensions.graph_height);
     ctx.clip();
 
-    // Apply transformation within the clipped area
+    // Apply transformation within the clipped area - use canvas scaling but compensate visual elements
     let _ = ctx.translate(dimensions.left_margin, dimensions.top_margin);
     let _ = ctx.translate(viewport.pan_offset_x, viewport.pan_offset_y);
     let _ = ctx.scale(viewport.zoom_level, viewport.zoom_level);
@@ -132,10 +132,10 @@ pub fn render_graph(
     zoomed_dimensions.top_margin = 0.0;
 
     // Draw grid and content in zoomed coordinate system
-    draw_hour_grid(&ctx, &zoomed_dimensions);
+    draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level);
     let unique_stations = get_visible_stations(stations, stations.len());
     draw_station_grid(&ctx, &zoomed_dimensions, &unique_stations);
-    draw_train_journeys(&ctx, &zoomed_dimensions, &unique_stations, train_journeys, current_time);
+    draw_train_journeys(&ctx, &zoomed_dimensions, &unique_stations, train_journeys, current_time, viewport.zoom_level);
 
     // Restore canvas context
     ctx.restore();
@@ -158,9 +158,9 @@ fn draw_background(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
 }
 
 
-fn draw_hour_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions) {
+fn draw_hour_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, zoom_level: f64) {
     ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("#2a2a2a"));
-    ctx.set_line_width(1.0);
+    ctx.set_line_width(1.0 / zoom_level);
 
     // Calculate visible time range based on current view
     let hours_visible = (dims.graph_width / dims.hour_width).ceil() as i32;
@@ -232,7 +232,7 @@ fn get_visible_stations(stations: &[Station], max_count: usize) -> Vec<String> {
 fn draw_station_grid(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[String]
+    stations: &[String],
 ) {
     let station_height = dims.graph_height / stations.len() as f64;
 
@@ -276,12 +276,13 @@ fn draw_train_journeys(
     stations: &[String],
     train_journeys: &[TrainJourney],
     current_time: NaiveTime,
+    zoom_level: f64,
 ) {
     let station_height = dims.graph_height / stations.len() as f64;
 
     for journey in train_journeys {
         ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str(&journey.color));
-        ctx.set_line_width(2.0);
+        ctx.set_line_width(2.0 / zoom_level);
         ctx.begin_path();
 
         let mut first_point = true;
@@ -328,7 +329,7 @@ fn draw_train_journeys(
 
                 ctx.set_fill_style(&wasm_bindgen::JsValue::from_str(&journey.color));
                 ctx.begin_path();
-                let _ = ctx.arc(x, y, 3.0, 0.0, std::f64::consts::PI * 2.0);
+                let _ = ctx.arc(x, y, 3.0 / zoom_level, 0.0, std::f64::consts::PI * 2.0);
                 ctx.fill();
 
                 prev_x = x;
@@ -337,7 +338,7 @@ fn draw_train_journeys(
     }
 
     // Draw current train positions
-    draw_current_train_positions(ctx, dims, stations, train_journeys, station_height, current_time);
+    draw_current_train_positions(ctx, dims, stations, train_journeys, station_height, current_time, zoom_level);
 }
 
 fn draw_current_train_positions(
@@ -347,6 +348,7 @@ fn draw_current_train_positions(
     train_journeys: &[TrainJourney],
     station_height: f64,
     visualization_time: NaiveTime,
+    zoom_level: f64,
 ) {
 
     for journey in train_journeys {
@@ -389,7 +391,7 @@ fn draw_current_train_positions(
             };
             let progress = (elapsed / segment_duration).clamp(0.0, 1.0);
 
-            let mut prev_x = dims.left_margin + (time_to_fraction(prev_time) * dims.hour_width);
+            let prev_x = dims.left_margin + (time_to_fraction(prev_time) * dims.hour_width);
             let prev_y = dims.top_margin + (prev_idx as f64 * station_height) + (station_height / 2.0);
 
             let mut next_x = dims.left_margin + (time_to_fraction(next_time) * dims.hour_width);
@@ -406,15 +408,15 @@ fn draw_current_train_positions(
             // Draw train as a larger dot with an outline
             ctx.set_fill_style(&wasm_bindgen::JsValue::from_str(&journey.color));
             ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("#fff"));
-            ctx.set_line_width(2.0);
+            ctx.set_line_width(2.0 / zoom_level);
             ctx.begin_path();
-            let _ = ctx.arc(current_x, current_y, 6.0, 0.0, std::f64::consts::PI * 2.0);
+            let _ = ctx.arc(current_x, current_y, 6.0 / zoom_level, 0.0, std::f64::consts::PI * 2.0);
             ctx.fill();
             ctx.stroke();
 
             // Draw train ID label
             ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#fff"));
-            ctx.set_font("bold 10px monospace");
+            ctx.set_font(&format!("bold {}px monospace", (10.0 / zoom_level).max(8.0)));
             let _ = ctx.fill_text(&journey.line_id, current_x - 12.0, current_y - 10.0);
         }
     }
