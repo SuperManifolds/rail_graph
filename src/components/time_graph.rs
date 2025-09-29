@@ -1,5 +1,5 @@
 use leptos::*;
-use chrono::{NaiveTime, Timelike};
+use chrono::{NaiveDateTime, Timelike};
 use web_sys::CanvasRenderingContext2d;
 use wasm_bindgen::JsCast;
 use crate::models::{Station, TrainJourney};
@@ -65,7 +65,7 @@ pub fn TimeGraph() -> impl IntoView {
         }
     });
 
-    let (visualization_time, set_visualization_time) = create_signal(chrono::Local::now().time());
+    let (visualization_time, set_visualization_time) = create_signal(chrono::Local::now().naive_local());
     let (train_journeys, set_train_journeys) = create_signal(Vec::<TrainJourney>::new());
 
     let stations_clone = stations.clone();
@@ -109,7 +109,7 @@ pub fn render_graph(
     canvas: leptos::HtmlElement<leptos::html::Canvas>,
     stations: &[Station],
     train_journeys: &[TrainJourney],
-    current_time: chrono::NaiveTime,
+    current_time: chrono::NaiveDateTime,
     viewport: ViewportState,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
@@ -294,7 +294,7 @@ fn draw_train_journeys(
     dims: &GraphDimensions,
     stations: &[String],
     train_journeys: &[TrainJourney],
-    current_time: NaiveTime,
+    current_time: NaiveDateTime,
     zoom_level: f64,
 ) {
     let station_height = dims.graph_height / stations.len() as f64;
@@ -366,14 +366,14 @@ fn draw_current_train_positions(
     stations: &[String],
     train_journeys: &[TrainJourney],
     station_height: f64,
-    visualization_time: NaiveTime,
+    visualization_time: NaiveDateTime,
     zoom_level: f64,
 ) {
 
     for journey in train_journeys {
         // Find which segment the train is currently on
-        let mut prev_station: Option<(&String, NaiveTime, usize)> = None;
-        let mut next_station: Option<(&String, NaiveTime, usize)> = None;
+        let mut prev_station: Option<(&String, NaiveDateTime, usize)> = None;
+        let mut next_station: Option<(&String, NaiveDateTime, usize)> = None;
 
         for (station_name, arrival_time) in &journey.station_times {
             if let Some(station_idx) = stations.iter().position(|s| s == station_name) {
@@ -441,7 +441,7 @@ fn draw_current_train_positions(
     }
 }
 
-fn time_to_fraction(time: chrono::NaiveTime) -> f64 {
+fn time_to_fraction(time: chrono::NaiveDateTime) -> f64 {
     let hours = time.hour() as f64;
     let minutes = time.minute() as f64;
     let seconds = time.second() as f64;
@@ -451,7 +451,7 @@ fn time_to_fraction(time: chrono::NaiveTime) -> f64 {
 fn draw_time_indicator(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    time: NaiveTime,
+    time: NaiveDateTime,
     zoom_level: f64,
     pan_offset_x: f64,
 ) {

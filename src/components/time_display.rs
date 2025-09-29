@@ -1,8 +1,8 @@
 use leptos::*;
-use chrono::NaiveTime;
+use chrono::NaiveDateTime;
 
 #[component]
-pub fn TimeDisplay(current_time: ReadSignal<NaiveTime>) -> impl IntoView {
+pub fn TimeDisplay(current_time: ReadSignal<NaiveDateTime>) -> impl IntoView {
     view! {
         <div class="current-time">
             "Current Time: "

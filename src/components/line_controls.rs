@@ -1,5 +1,5 @@
 use leptos::*;
-use chrono::{Duration, NaiveTime};
+use chrono::{Duration, NaiveDate, NaiveDateTime};
 use crate::models::Line;
 use crate::components::frequency_input::FrequencyInput;
 
@@ -98,10 +98,12 @@ pub fn LineControl(
                             let id = line_id.clone();
                             move |ev| {
                                 let time_str = event_target_value(&ev);
-                                if let Ok(new_time) = NaiveTime::parse_from_str(&format!("{}:00", time_str), "%H:%M:%S") {
+                                if let Ok(naive_time) = chrono::NaiveTime::parse_from_str(&format!("{}:00", time_str), "%H:%M:%S") {
+                                    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
+                                    let new_datetime = base_date.and_time(naive_time);
                                     set_lines.update(|lines_vec| {
                                         if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
-                                            line.first_departure = new_time;
+                                            line.first_departure = new_datetime;
                                         }
                                     });
                                 }
@@ -151,10 +153,12 @@ pub fn LineControl(
                             let id = line_id.clone();
                             move |ev| {
                                 let time_str = event_target_value(&ev);
-                                if let Ok(new_time) = NaiveTime::parse_from_str(&format!("{}:00", time_str), "%H:%M:%S") {
+                                if let Ok(naive_time) = chrono::NaiveTime::parse_from_str(&format!("{}:00", time_str), "%H:%M:%S") {
+                                    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
+                                    let new_datetime = base_date.and_time(naive_time);
                                     set_lines.update(|lines_vec| {
                                         if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
-                                            line.return_first_departure = new_time;
+                                            line.return_first_departure = new_datetime;
                                         }
                                     });
                                 }

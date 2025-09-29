@@ -1,11 +1,11 @@
-use chrono::{Duration, NaiveTime};
+use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Station {
     pub name: String,
-    pub times: HashMap<String, Option<NaiveTime>>,
+    pub times: HashMap<String, Option<NaiveDateTime>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -14,24 +14,24 @@ pub struct Line {
     #[serde(with = "duration_serde")]
     pub frequency: Duration,
     pub color: String,
-    #[serde(with = "naive_time_serde")]
-    pub first_departure: NaiveTime,
-    #[serde(with = "naive_time_serde")]
-    pub return_first_departure: NaiveTime,
+    #[serde(with = "naive_datetime_serde")]
+    pub first_departure: NaiveDateTime,
+    #[serde(with = "naive_datetime_serde")]
+    pub return_first_departure: NaiveDateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Departure {
     pub line_id: String,
     pub station: String,
-    pub time: NaiveTime,
+    pub time: NaiveDateTime,
 }
 
 #[derive(Debug, Clone)]
 pub struct TrainJourney {
     pub line_id: String,
-    pub departure_time: NaiveTime,
-    pub station_times: Vec<(String, NaiveTime)>, // (station_name, arrival_time)
+    pub departure_time: NaiveDateTime,
+    pub station_times: Vec<(String, NaiveDateTime)>, // (station_name, arrival_time)
     pub color: String,
 }
 
@@ -55,23 +55,23 @@ mod duration_serde {
     }
 }
 
-mod naive_time_serde {
-    use chrono::NaiveTime;
+mod naive_datetime_serde {
+    use chrono::NaiveDateTime;
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S>(time: &NaiveTime, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(datetime: &NaiveDateTime, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serializer.serialize_str(&time.format("%H:%M:%S").to_string())
+        serializer.serialize_str(&datetime.format("%Y-%m-%d %H:%M:%S").to_string())
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<NaiveTime, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<NaiveDateTime, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        NaiveTime::parse_from_str(&s, "%H:%M:%S")
+        NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
             .map_err(serde::de::Error::custom)
     }
 }

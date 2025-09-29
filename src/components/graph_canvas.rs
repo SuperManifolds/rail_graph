@@ -1,5 +1,5 @@
 use leptos::*;
-use chrono::NaiveTime;
+use chrono::{NaiveDate, NaiveDateTime};
 use web_sys::{MouseEvent, WheelEvent};
 use crate::models::{Station, TrainJourney};
 
@@ -7,8 +7,8 @@ use crate::models::{Station, TrainJourney};
 pub fn GraphCanvas(
     stations: Vec<Station>,
     train_journeys: ReadSignal<Vec<TrainJourney>>,
-    visualization_time: ReadSignal<NaiveTime>,
-    set_visualization_time: WriteSignal<NaiveTime>,
+    visualization_time: ReadSignal<NaiveDateTime>,
+    set_visualization_time: WriteSignal<NaiveDateTime>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
@@ -168,13 +168,15 @@ pub fn GraphCanvas(
     }
 }
 
-fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, set_time: WriteSignal<NaiveTime>) {
+fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, set_time: WriteSignal<NaiveDateTime>) {
     let fraction = (x - left_margin) / graph_width;
     let total_minutes = (fraction * 24.0 * 60.0) as u32;
     let hours = (total_minutes / 60).min(23);
     let minutes = (total_minutes % 60).min(59);
 
-    if let Some(new_time) = NaiveTime::from_hms_opt(hours, minutes, 0) {
-        set_time.set(new_time);
+    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
+    if let Some(new_time) = chrono::NaiveTime::from_hms_opt(hours, minutes, 0) {
+        let new_datetime = base_date.and_time(new_time);
+        set_time.set(new_datetime);
     }
 }
