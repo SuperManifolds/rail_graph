@@ -422,10 +422,10 @@ fn draw_current_train_positions(
             ctx.fill();
             ctx.stroke();
 
-            // Draw train ID label
+            // Draw train ID label with zoom-compensated font size
             ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#fff"));
-            ctx.set_font(&format!("bold {}px monospace", (10.0 / zoom_level).max(8.0)));
-            let _ = ctx.fill_text(&journey.line_id, current_x - 12.0, current_y - 10.0);
+            ctx.set_font(&format!("bold {}px monospace", 10.0 / zoom_level));
+            let _ = ctx.fill_text(&journey.line_id, current_x - 12.0 / zoom_level, current_y - 10.0 / zoom_level);
         }
     }
 }
