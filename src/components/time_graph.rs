@@ -595,12 +595,6 @@ pub fn detect_line_conflicts(
                 let station2_idx = stations.iter().position(|s| s == station2_name);
 
                 if let (Some(s1_idx), Some(s2_idx)) = (station1_idx, station2_idx) {
-                    // Check if this segment is double-tracked (skip conflict detection if it is)
-                    // Segment index is the higher station index (destination station)
-                    let segment1_idx = s1_idx.max(s2_idx);
-                    if segment_state.double_tracked_segments.contains(&segment1_idx) {
-                        continue; // Skip this segment as it's double-tracked
-                    }
 
                     for window2 in journey2.station_times.windows(2) {
                         let (station3_name, time2_start) = &window2[0];
@@ -611,29 +605,62 @@ pub fn detect_line_conflicts(
                         let station4_idx = stations.iter().position(|s| s == station4_name);
 
                         if let (Some(s3_idx), Some(s4_idx)) = (station3_idx, station4_idx) {
-                            // Check if the second segment is also double-tracked
+                            // Check if segments are double-tracked
+                            let segment1_idx = s1_idx.max(s2_idx);
                             let segment2_idx = s3_idx.max(s4_idx);
-                            if segment_state.double_tracked_segments.contains(&segment2_idx) {
-                                continue; // Skip this segment as it's double-tracked
-                            }
+                            let is_same_segment = segment1_idx == segment2_idx;
+                            let segment1_is_double_tracked = segment_state.double_tracked_segments.contains(&segment1_idx);
+                            // Handle different conflict scenarios
+                            let lines_cross;
+                            if is_same_segment && segment1_is_double_tracked {
+                                // Same segment, and it's double-tracked: check for overtaking
+                                let journey1_direction = s1_idx < s2_idx; // true = forward, false = backward
+                                let journey2_direction = s3_idx < s4_idx;
 
-                            // Check if lines cross (different directions between same stations or crossing paths)
-                            let lines_cross = (s1_idx < s2_idx && s3_idx > s4_idx &&
-                                              ((s1_idx <= s3_idx && s2_idx >= s4_idx) ||
-                                               (s3_idx <= s1_idx && s4_idx >= s2_idx))) ||
-                                             (s1_idx > s2_idx && s3_idx < s4_idx &&
-                                              ((s1_idx >= s3_idx && s2_idx <= s4_idx) ||
-                                               (s3_idx >= s1_idx && s4_idx <= s2_idx))) ||
-                                             // Check for crossing when lines go in same direction
-                                             (s1_idx != s3_idx && s2_idx != s4_idx &&
-                                              ((s1_idx as i32 - s3_idx as i32) * (s2_idx as i32 - s4_idx as i32)) < 0);
+                                // Only detect conflicts if trains are going in the same direction (overtaking)
+                                if journey1_direction != journey2_direction {
+                                    continue; // Different directions on double track - no conflict
+                                }
+
+                                // For same direction on same segment, check if the time windows overlap
+                                let time1_range = (*time1_start.min(time1_end), *time1_start.max(time1_end));
+                                let time2_range = (*time2_start.min(time2_end), *time2_start.max(time2_end));
+
+                                // Check if time ranges overlap
+                                lines_cross = time1_range.0 < time2_range.1 && time2_range.0 < time1_range.1;
+                            } else {
+                                // Regular conflict detection for all other cases
+                                // First check if the segments actually intersect or overlap
+                                let segments_intersect =
+                                    // Same segment
+                                    is_same_segment ||
+                                    // Overlapping segments
+                                    (s1_idx.min(s2_idx) <= s3_idx.max(s4_idx) && s3_idx.min(s4_idx) <= s1_idx.max(s2_idx));
+
+                                if segments_intersect {
+                                    lines_cross = (s1_idx < s2_idx && s3_idx > s4_idx &&
+                                                  ((s1_idx <= s3_idx && s2_idx >= s4_idx) ||
+                                                   (s3_idx <= s1_idx && s4_idx >= s2_idx))) ||
+                                                 (s1_idx > s2_idx && s3_idx < s4_idx &&
+                                                  ((s1_idx >= s3_idx && s2_idx <= s4_idx) ||
+                                                   (s3_idx >= s1_idx && s4_idx <= s2_idx))) ||
+                                                 // Check for crossing when lines go in same direction
+                                                 (s1_idx != s3_idx && s2_idx != s4_idx &&
+                                                  ((s1_idx as i32 - s3_idx as i32) * (s2_idx as i32 - s4_idx as i32)) < 0);
+                                } else {
+                                    lines_cross = false; // No intersection if segments don't overlap
+                                }
+                            }
 
                             if lines_cross {
                                 // Calculate intersection point
-                                if let Some(intersection) = calculate_intersection(
+                                // Calculate intersection point using regular geometric calculation
+                                let intersection = calculate_intersection(
                                     *time1_start, *time1_end, s1_idx, s2_idx,
                                     *time2_start, *time2_end, s3_idx, s4_idx
-                                ) {
+                                );
+
+                                if let Some(intersection) = intersection {
                                     // Check if intersection is outside station margin
                                     let mut is_near_station = false;
 
@@ -678,6 +705,7 @@ struct Intersection {
     position: f64, // Position between stations (0.0 to 1.0)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn calculate_intersection(
     t1_start: NaiveDateTime, t1_end: NaiveDateTime, s1_start: usize, s1_end: usize,
     t2_start: NaiveDateTime, t2_end: NaiveDateTime, s2_start: usize, s2_end: usize,
@@ -704,7 +732,7 @@ fn calculate_intersection(
     let u = -((x1_start - x1_end) * (y1_start - y2_start) - (y1_start - y1_end) * (x1_start - x2_start)) / denom;
 
     // Check if intersection is within both segments
-    if t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0 {
+    if (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u) {
         let x_intersect = x1_start + t * (x1_end - x1_start);
         let y_intersect = y1_start + t * (y1_end - y1_start);
 
