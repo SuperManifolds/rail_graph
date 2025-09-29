@@ -67,7 +67,7 @@ pub fn GraphCanvas(
 
                 if x >= left_margin && x <= left_margin + graph_width {
                     set_is_dragging.set(true);
-                    update_time_from_x(x, left_margin, graph_width, set_visualization_time);
+                    update_time_from_x(x, left_margin, graph_width, zoom_level.get(), pan_offset_x.get(), set_visualization_time);
                 }
             }
         }
@@ -97,7 +97,7 @@ pub fn GraphCanvas(
                 let graph_width = canvas_width - left_margin - 20.0;
 
                 if x >= left_margin && x <= left_margin + graph_width {
-                    update_time_from_x(x, left_margin, graph_width, set_visualization_time);
+                    update_time_from_x(x, left_margin, graph_width, zoom_level.get(), pan_offset_x.get(), set_visualization_time);
                 }
             }
         }
@@ -168,8 +168,20 @@ pub fn GraphCanvas(
     }
 }
 
-fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, set_time: WriteSignal<NaiveDateTime>) {
-    let fraction = (x - left_margin) / graph_width;
+fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f64, pan_offset_x: f64, set_time: WriteSignal<NaiveDateTime>) {
+    // Transform mouse coordinates to account for zoom and pan
+    // Reverse the transformations applied in render_graph:
+    // 1. Remove left margin offset to get graph-relative position
+    let graph_x = x - left_margin;
+    // 2. Account for pan offset (subtract because pan moves the content)
+    let panned_x = graph_x - pan_offset_x;
+    // 3. Account for zoom (divide because zoom scales the content up)
+    let zoomed_x = panned_x / zoom_level;
+
+    // Now calculate fraction based on the base (unzoomed) graph width
+    let base_graph_width = graph_width;
+    let fraction = zoomed_x / base_graph_width;
+
     let total_hours = fraction * 48.0; // 48 hours to support past-midnight
     let total_minutes = (total_hours * 60.0) as u32;
 
