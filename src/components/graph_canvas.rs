@@ -3,6 +3,14 @@ use chrono::{NaiveDate, NaiveDateTime};
 use web_sys::{MouseEvent, WheelEvent};
 use crate::models::{Station, TrainJourney, SegmentState};
 
+// Layout constants for the graph canvas
+const LEFT_MARGIN: f64 = 120.0;
+const TOP_MARGIN: f64 = 60.0;
+const RIGHT_PADDING: f64 = 20.0;
+const BOTTOM_PADDING: f64 = 20.0;
+const TOGGLE_X: f64 = 85.0;
+const TOGGLE_SIZE: f64 = 12.0;
+
 #[component]
 pub fn GraphCanvas(
     stations: Vec<Station>,
@@ -98,12 +106,11 @@ pub fn GraphCanvas(
                     });
                 } else {
                     // Check if click is near the time line (within 10px) for time scrubbing
-                    let left_margin = 120.0;
-                    let graph_width = canvas_width - left_margin - 20.0;
+                    let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
 
-                    if x >= left_margin && x <= left_margin + graph_width {
+                    if x >= LEFT_MARGIN && x <= LEFT_MARGIN + graph_width {
                         set_is_dragging.set(true);
-                        update_time_from_x(x, left_margin, graph_width, zoom_level.get(), pan_offset_x.get(), set_visualization_time);
+                        update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level.get(), pan_offset_x.get(), set_visualization_time);
                     }
                 }
             }
@@ -129,12 +136,11 @@ pub fn GraphCanvas(
                 set_pan_offset_y.set(current_pan_y + dy);
                 set_last_mouse_pos.set((x, y));
             } else if is_dragging.get() {
-                let left_margin = 120.0;
                 let canvas_width = canvas.width() as f64;
-                let graph_width = canvas_width - left_margin - 20.0;
+                let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
 
-                if x >= left_margin && x <= left_margin + graph_width {
-                    update_time_from_x(x, left_margin, graph_width, zoom_level.get(), pan_offset_x.get(), set_visualization_time);
+                if x >= LEFT_MARGIN && x <= LEFT_MARGIN + graph_width {
+                    update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level.get(), pan_offset_x.get(), set_visualization_time);
                 }
             } else {
                 // Check for conflict hover
@@ -170,15 +176,13 @@ pub fn GraphCanvas(
             let mouse_y = ev.client_y() as f64 - rect.top();
 
             // Only zoom if mouse is within the graph area
-            let left_margin = 120.0;
-            let top_margin = 60.0;
             let canvas_width = canvas.width() as f64;
             let canvas_height = canvas.height() as f64;
-            let graph_width = canvas_width - left_margin - 20.0;
-            let graph_height = canvas_height - top_margin - 20.0;
+            let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
+            let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
 
-            if mouse_x >= left_margin && mouse_x <= left_margin + graph_width &&
-               mouse_y >= top_margin && mouse_y <= top_margin + graph_height {
+            if mouse_x >= LEFT_MARGIN && mouse_x <= LEFT_MARGIN + graph_width &&
+               mouse_y >= TOP_MARGIN && mouse_y <= TOP_MARGIN + graph_height {
 
                 let delta = ev.delta_y();
                 let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
@@ -187,8 +191,8 @@ pub fn GraphCanvas(
                 let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 10.0);
 
                 // Calculate zoom point relative to graph area
-                let graph_mouse_x = mouse_x - left_margin;
-                let graph_mouse_y = mouse_y - top_margin;
+                let graph_mouse_x = mouse_x - LEFT_MARGIN;
+                let graph_mouse_y = mouse_y - TOP_MARGIN;
 
                 // Zoom towards mouse position within graph
                 let pan_x = pan_offset_x.get();
@@ -301,15 +305,12 @@ fn check_toggle_click(
     zoom_level: f64,
     pan_offset_y: f64,
 ) -> Option<usize> {
-    let top_margin = 60.0;
-    let graph_height = canvas_height - top_margin - 20.0;
+    let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
 
     let station_height = graph_height / stations.len() as f64;
-    let toggle_x = 85.0; // Same as in draw_segment_toggles
-    let toggle_size = 12.0;
 
     // Check if click is in the toggle area horizontally
-    if mouse_x >= toggle_x - toggle_size/2.0 && mouse_x <= toggle_x + toggle_size/2.0 {
+    if mouse_x >= TOGGLE_X - TOGGLE_SIZE/2.0 && mouse_x <= TOGGLE_X + TOGGLE_SIZE/2.0 {
         // Check each segment toggle
         for i in 1..stations.len() {
             let segment_index = i;
@@ -318,10 +319,10 @@ fn check_toggle_click(
             let base_y1 = ((i - 1) as f64 * station_height) + (station_height / 2.0);
             let base_y2 = (i as f64 * station_height) + (station_height / 2.0);
             let center_y = (base_y1 + base_y2) / 2.0;
-            let adjusted_y = top_margin + (center_y * zoom_level) + pan_offset_y;
+            let adjusted_y = TOP_MARGIN + (center_y * zoom_level) + pan_offset_y;
 
             // Check if click is within this toggle button
-            if mouse_y >= adjusted_y - toggle_size/2.0 && mouse_y <= adjusted_y + toggle_size/2.0 {
+            if mouse_y >= adjusted_y - TOGGLE_SIZE/2.0 && mouse_y <= adjusted_y + TOGGLE_SIZE/2.0 {
                 return Some(segment_index);
             }
         }
@@ -342,20 +343,18 @@ fn check_conflict_hover(
     pan_offset_x: f64,
     pan_offset_y: f64,
 ) -> Option<(crate::components::time_graph::Conflict, f64, f64)> {
-    let left_margin = 120.0;
-    let top_margin = 60.0;
-    let graph_width = canvas_width - left_margin - 20.0;
-    let graph_height = canvas_height - top_margin - 20.0;
+    let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
+    let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
 
     // Check if mouse is within the graph area first
-    if mouse_x < left_margin || mouse_x > left_margin + graph_width ||
-       mouse_y < top_margin || mouse_y > top_margin + graph_height {
+    if mouse_x < LEFT_MARGIN || mouse_x > LEFT_MARGIN + graph_width ||
+       mouse_y < TOP_MARGIN || mouse_y > TOP_MARGIN + graph_height {
         return None;
     }
 
     for conflict in conflicts {
         // Calculate conflict position in screen coordinates
-        // The canvas uses: translate(left_margin, top_margin) + translate(pan) + scale(zoom)
+        // The canvas uses: translate(LEFT_MARGIN, TOP_MARGIN) + translate(pan) + scale(zoom)
         let time_fraction = crate::components::time_graph::time_to_fraction(conflict.time);
         let total_hours = 48.0;
         let hour_width = graph_width / total_hours;
@@ -369,8 +368,8 @@ fn check_conflict_hover(
             (conflict.position * station_height * (conflict.station2_idx - conflict.station1_idx) as f64);
 
         // Transform to screen coordinates
-        let screen_x = left_margin + (x_in_zoomed * zoom_level) + pan_offset_x;
-        let screen_y = top_margin + (y_in_zoomed * zoom_level) + pan_offset_y;
+        let screen_x = LEFT_MARGIN + (x_in_zoomed * zoom_level) + pan_offset_x;
+        let screen_y = TOP_MARGIN + (y_in_zoomed * zoom_level) + pan_offset_y;
 
         // Check if mouse is within conflict marker bounds
         let size = 15.0;
