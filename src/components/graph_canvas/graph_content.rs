@@ -1,6 +1,7 @@
 use web_sys::CanvasRenderingContext2d;
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::NaiveDateTime;
 use crate::models::{SegmentState, TrainJourney};
+use crate::constants::BASE_DATE;
 use super::types::GraphDimensions;
 
 // Background constants
@@ -261,7 +262,7 @@ pub fn draw_current_train_positions(
 pub fn draw_conflict_highlights(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    conflicts: &[super::conflicts::Conflict],
+    conflicts: &[crate::models::Conflict],
     station_height: f64,
     zoom_level: f64,
 ) {
@@ -374,8 +375,7 @@ pub fn draw_time_indicator(
 
 pub fn time_to_fraction(time: chrono::NaiveDateTime) -> f64 {
     // Calculate hours from the base date (2024-01-01 00:00:00)
-    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
-    let base_datetime = base_date.and_hms_opt(0, 0, 0).expect("Valid datetime");
+    let base_datetime = BASE_DATE.and_hms_opt(0, 0, 0).expect("Valid datetime");
 
     let duration_since_base = time.signed_duration_since(base_datetime);
     let total_seconds = duration_since_base.num_seconds() as f64;

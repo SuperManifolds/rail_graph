@@ -2,11 +2,10 @@ use crate::components::{
     graph_canvas::{
         GraphCanvas, GraphDimensions, ViewportState,
         station_labels, time_labels, graph_content,
-        Conflict,
     },
     line_controls::LineControls
 };
-use crate::models::{SegmentState, Station, TrainJourney};
+use crate::models::{Conflict, SegmentState, Station, TrainJourney};
 use crate::storage::{
     load_lines_from_storage, load_segment_state_from_storage, save_lines_to_storage,
     save_segment_state_to_storage,

@@ -1,5 +1,6 @@
-use chrono::{NaiveDate, NaiveDateTime};
-use crate::models::{SegmentState, TrainJourney};
+use chrono::NaiveDateTime;
+use super::{SegmentState, TrainJourney};
+use crate::constants::BASE_DATE;
 
 // Conflict detection constants
 const STATION_MARGIN_MINUTES: i64 = 1;
@@ -172,8 +173,7 @@ fn calculate_intersection(
         let y_intersect = y1_start + t * (y1_end - y1_start);
 
         // Convert back to time
-        let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
-        let base_datetime = base_date.and_hms_opt(0, 0, 0).expect("Valid datetime");
+        let base_datetime = BASE_DATE.and_hms_opt(0, 0, 0).expect("Valid datetime");
         let intersection_time =
             base_datetime + chrono::Duration::seconds((x_intersect * 3600.0) as i64);
 
@@ -191,8 +191,7 @@ fn calculate_intersection(
 
 fn time_to_fraction(time: chrono::NaiveDateTime) -> f64 {
     // Calculate hours from the base date (2024-01-01 00:00:00)
-    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
-    let base_datetime = base_date.and_hms_opt(0, 0, 0).expect("Valid datetime");
+    let base_datetime = BASE_DATE.and_hms_opt(0, 0, 0).expect("Valid datetime");
 
     let duration_since_base = time.signed_duration_since(base_datetime);
     let total_seconds = duration_since_base.num_seconds() as f64;

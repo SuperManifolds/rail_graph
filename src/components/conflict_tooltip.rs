@@ -1,6 +1,6 @@
 use leptos::*;
-use crate::components::graph_canvas::{Conflict, LEFT_MARGIN, TOP_MARGIN, RIGHT_PADDING, BOTTOM_PADDING};
-use crate::models::Station;
+use crate::components::graph_canvas::{LEFT_MARGIN, TOP_MARGIN, RIGHT_PADDING, BOTTOM_PADDING};
+use crate::models::{Conflict, Station};
 
 #[component]
 pub fn ConflictTooltip(

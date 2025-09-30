@@ -1,9 +1,10 @@
 use leptos::*;
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent};
 use crate::models::{Station, TrainJourney, SegmentState};
 use crate::components::conflict_tooltip::{ConflictTooltip, check_conflict_hover};
 use crate::components::doubletrack_toggle::check_toggle_click;
+use crate::constants::BASE_DATE;
 
 // Layout constants for the graph canvas
 pub const LEFT_MARGIN: f64 = 120.0;
@@ -27,7 +28,7 @@ pub fn GraphCanvas(
     let (pan_offset_y, set_pan_offset_y) = create_signal(0.0);
     let (is_panning, set_is_panning) = create_signal(false);
     let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
-    let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(super::conflicts::Conflict, f64, f64)>);
+    let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(crate::models::Conflict, f64, f64)>);
 
     // Clone stations for use in render closure
     let stations_for_render = stations.clone();
@@ -37,7 +38,7 @@ pub fn GraphCanvas(
     let conflicts = create_memo(move |_| {
         let journeys = train_journeys.get();
         let seg_state = segment_state.get();
-        super::conflicts::detect_line_conflicts(&journeys, &station_names, &seg_state)
+        crate::models::detect_line_conflicts(&journeys, &station_names, &seg_state)
     });
 
     // Render the graph whenever train journeys change
@@ -249,8 +250,7 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
     let hours = remaining_minutes / 60;
     let minutes = remaining_minutes % 60;
 
-    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
-    let target_date = base_date + chrono::Duration::days(days as i64);
+    let target_date = BASE_DATE + chrono::Duration::days(days as i64);
 
     if let Some(new_time) = chrono::NaiveTime::from_hms_opt(hours, minutes, 0) {
         let new_datetime = target_date.and_time(new_time);
