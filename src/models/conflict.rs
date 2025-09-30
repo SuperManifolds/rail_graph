@@ -18,13 +18,30 @@ pub struct Conflict {
     pub is_overtaking: bool, // True for same-direction conflicts, false for crossing
 }
 
+struct JourneySegment {
+    time_start: NaiveDateTime,
+    time_end: NaiveDateTime,
+    idx_start: usize,
+    idx_end: usize,
+}
+
+struct ConflictContext<'a> {
+    stations: &'a [String],
+    segment_state: &'a SegmentState,
+    station_margin: chrono::Duration,
+}
+
 pub fn detect_line_conflicts(
     train_journeys: &[TrainJourney],
     stations: &[String],
     segment_state: &SegmentState,
 ) -> Vec<Conflict> {
     let mut conflicts = Vec::new();
-    let station_margin = chrono::Duration::minutes(STATION_MARGIN_MINUTES);
+    let ctx = ConflictContext {
+        stations,
+        segment_state,
+        station_margin: chrono::Duration::minutes(STATION_MARGIN_MINUTES),
+    };
 
     // Compare each pair of journeys
     for (i, journey1) in train_journeys.iter().enumerate() {
@@ -32,97 +49,152 @@ pub fn detect_line_conflicts(
             break;
         }
         for journey2 in train_journeys.iter().skip(i + 1) {
+            check_journey_pair(journey1, journey2, &ctx, &mut conflicts);
             if conflicts.len() >= MAX_CONFLICTS {
                 break;
-            }
-
-            // For each pair of consecutive stations in journey1
-            let mut prev1: Option<(&String, NaiveDateTime, usize)> = None;
-            for (station1, time1) in &journey1.station_times {
-                if let Some(station1_idx) = stations.iter().position(|s| s == station1) {
-                    if let Some((_prev_station1, prev_time1, prev_idx1)) = prev1 {
-                        // Check if this segment is double-tracked
-                        let segment_idx = station1_idx.max(prev_idx1);
-                        let is_double_tracked = segment_state
-                            .double_tracked_segments
-                            .contains(&segment_idx);
-
-                        if !is_double_tracked {
-                            // For each pair of consecutive stations in journey2
-                            let mut prev2: Option<(&String, NaiveDateTime, usize)> = None;
-                            for (station2, time2) in &journey2.station_times {
-                                if let Some(station2_idx) = stations.iter().position(|s| s == station2)
-                                {
-                                    if let Some((_prev_station2, prev_time2, prev_idx2)) = prev2 {
-                                        // Check if the segments overlap in space
-                                        let seg1_min = prev_idx1.min(station1_idx);
-                                        let seg1_max = prev_idx1.max(station1_idx);
-                                        let seg2_min = prev_idx2.min(station2_idx);
-                                        let seg2_max = prev_idx2.max(station2_idx);
-
-                                        if seg1_max > seg2_min && seg2_max > seg1_min {
-                                            // Calculate intersection point
-                                            if let Some(intersection) = calculate_intersection(
-                                                prev_time1,
-                                                *time1,
-                                                prev_idx1,
-                                                station1_idx,
-                                                prev_time2,
-                                                *time2,
-                                                prev_idx2,
-                                                station2_idx,
-                                            ) {
-                                                // Don't count conflicts that happen very close to stations
-                                                let is_near_station = journey1
-                                                    .station_times
-                                                    .iter()
-                                                    .any(|(_, t)| {
-                                                        (*t - intersection.time).abs()
-                                                            < station_margin
-                                                    })
-                                                    || journey2.station_times.iter().any(
-                                                        |(_, t)| {
-                                                            (*t - intersection.time).abs()
-                                                                < station_margin
-                                                        },
-                                                    );
-
-                                                if !is_near_station {
-                                                    // Determine if it's an overtaking or crossing conflict
-                                                    let is_overtaking = (prev_idx1 < station1_idx
-                                                        && prev_idx2 < station2_idx)
-                                                        || (prev_idx1 > station1_idx
-                                                            && prev_idx2 > station2_idx);
-
-                                                    conflicts.push(Conflict {
-                                                        time: intersection.time,
-                                                        position: intersection.position,
-                                                        station1_idx: seg1_min,
-                                                        station2_idx: seg1_max,
-                                                        journey1_id: journey1.line_id.clone(),
-                                                        journey2_id: journey2.line_id.clone(),
-                                                        is_overtaking,
-                                                    });
-
-                                                    if conflicts.len() >= MAX_CONFLICTS {
-                                                        return conflicts;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    prev2 = Some((station2, *time2, station2_idx));
-                                }
-                            }
-                        }
-                    }
-                    prev1 = Some((station1, *time1, station1_idx));
-                }
             }
         }
     }
 
     conflicts
+}
+
+fn check_journey_pair(
+    journey1: &TrainJourney,
+    journey2: &TrainJourney,
+    ctx: &ConflictContext,
+    conflicts: &mut Vec<Conflict>,
+) {
+    let mut prev1: Option<(&String, NaiveDateTime, usize)> = None;
+
+    for (station1, time1) in &journey1.station_times {
+        let Some(station1_idx) = ctx.stations.iter().position(|s| s == station1) else {
+            continue;
+        };
+
+        if let Some((_prev_station1, prev_time1, prev_idx1)) = prev1 {
+            let segment1 = JourneySegment {
+                time_start: prev_time1,
+                time_end: *time1,
+                idx_start: prev_idx1,
+                idx_end: station1_idx,
+            };
+            check_segment_against_journey(&segment1, journey1, journey2, ctx, conflicts);
+        }
+        prev1 = Some((station1, *time1, station1_idx));
+    }
+}
+
+fn check_segment_against_journey(
+    segment1: &JourneySegment,
+    journey1: &TrainJourney,
+    journey2: &TrainJourney,
+    ctx: &ConflictContext,
+    conflicts: &mut Vec<Conflict>,
+) {
+    // Check if this segment is double-tracked
+    let segment_idx = segment1.idx_end.max(segment1.idx_start);
+    if ctx.segment_state.double_tracked_segments.contains(&segment_idx) {
+        return;
+    }
+
+    let seg1_min = segment1.idx_start.min(segment1.idx_end);
+    let seg1_max = segment1.idx_start.max(segment1.idx_end);
+
+    let mut prev2: Option<(&String, NaiveDateTime, usize)> = None;
+
+    for (station2, time2) in &journey2.station_times {
+        let Some(station2_idx) = ctx.stations.iter().position(|s| s == station2) else {
+            continue;
+        };
+
+        if let Some((_prev_station2, prev_time2, prev_idx2)) = prev2 {
+            let segment2 = JourneySegment {
+                time_start: prev_time2,
+                time_end: *time2,
+                idx_start: prev_idx2,
+                idx_end: station2_idx,
+            };
+
+            if let Some(conflict) = check_segment_pair(
+                segment1,
+                &segment2,
+                seg1_min,
+                seg1_max,
+                journey1,
+                journey2,
+                ctx,
+            ) {
+                conflicts.push(conflict);
+                if conflicts.len() >= MAX_CONFLICTS {
+                    return;
+                }
+            }
+        }
+        prev2 = Some((station2, *time2, station2_idx));
+    }
+}
+
+fn check_segment_pair(
+    segment1: &JourneySegment,
+    segment2: &JourneySegment,
+    seg1_min: usize,
+    seg1_max: usize,
+    journey1: &TrainJourney,
+    journey2: &TrainJourney,
+    ctx: &ConflictContext,
+) -> Option<Conflict> {
+    // Check if the segments overlap in space
+    let seg2_min = segment2.idx_start.min(segment2.idx_end);
+    let seg2_max = segment2.idx_start.max(segment2.idx_end);
+
+    if seg1_max <= seg2_min || seg2_max <= seg1_min {
+        return None;
+    }
+
+    // Calculate intersection point
+    let intersection = calculate_intersection(
+        segment1.time_start,
+        segment1.time_end,
+        segment1.idx_start,
+        segment1.idx_end,
+        segment2.time_start,
+        segment2.time_end,
+        segment2.idx_start,
+        segment2.idx_end,
+    )?;
+
+    // Don't count conflicts that happen very close to stations
+    if is_near_station(&intersection, journey1, journey2, ctx.station_margin) {
+        return None;
+    }
+
+    // Determine if it's an overtaking or crossing conflict
+    let is_overtaking = (segment1.idx_start < segment1.idx_end && segment2.idx_start < segment2.idx_end)
+        || (segment1.idx_start > segment1.idx_end && segment2.idx_start > segment2.idx_end);
+
+    Some(Conflict {
+        time: intersection.time,
+        position: intersection.position,
+        station1_idx: seg1_min,
+        station2_idx: seg1_max,
+        journey1_id: journey1.line_id.clone(),
+        journey2_id: journey2.line_id.clone(),
+        is_overtaking,
+    })
+}
+
+fn is_near_station(
+    intersection: &Intersection,
+    journey1: &TrainJourney,
+    journey2: &TrainJourney,
+    station_margin: chrono::Duration,
+) -> bool {
+    journey1.station_times.iter().any(|(_, t)| {
+        (*t - intersection.time).abs() < station_margin
+    }) || journey2.station_times.iter().any(|(_, t)| {
+        (*t - intersection.time).abs() < station_margin
+    })
 }
 
 #[derive(Debug)]
