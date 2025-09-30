@@ -2,6 +2,7 @@ use leptos::*;
 use chrono::{NaiveDate, NaiveDateTime};
 use web_sys::{MouseEvent, WheelEvent};
 use crate::models::{Station, TrainJourney, SegmentState};
+use crate::components::conflict_tooltip::ConflictTooltip;
 
 // Layout constants for the graph canvas
 const LEFT_MARGIN: f64 = 120.0;
@@ -221,46 +222,7 @@ pub fn GraphCanvas(
                 style="cursor: crosshair;"
             ></canvas>
 
-            // Conflict tooltip
-            {move || {
-                if let Some((conflict, tooltip_x, tooltip_y)) = hovered_conflict.get() {
-                    // Use the stored flag to determine conflict type
-                    let conflict_type = if conflict.is_overtaking {
-                        "overtakes"
-                    } else {
-                        "conflicts with"
-                    };
-
-                    let (first_train, second_train) = if conflict_type == "overtakes" {
-                        // For overtaking, swap the order
-                        (&conflict.journey2_id, &conflict.journey1_id)
-                    } else {
-                        // For crossing conflicts, keep original order
-                        (&conflict.journey1_id, &conflict.journey2_id)
-                    };
-
-                    let tooltip_text = format!(
-                        "{} {} {} at {}",
-                        first_train,
-                        conflict_type,
-                        second_train,
-                        conflict.time.format("%H:%M")
-                    );
-
-                    view! {
-                        <div
-                            style=format!(
-                                "position: absolute; left: {}px; top: {}px; background: rgba(0,0,0,0.9); color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; white-space: nowrap; pointer-events: none; z-index: 1000;",
-                                tooltip_x + 10.0, tooltip_y - 30.0
-                            )
-                        >
-                            {tooltip_text}
-                        </div>
-                    }.into_view()
-                } else {
-                    view! { <div style="display: none;"></div> }.into_view()
-                }
-            }}
+            <ConflictTooltip hovered_conflict=hovered_conflict />
         </div>
     }
 }

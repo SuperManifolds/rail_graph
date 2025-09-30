@@ -163,6 +163,22 @@ body {
     }
 }
 
+.conflict-tooltip {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 1000;
+}
+
+.conflict-tooltip-hidden {
+    display: none;
+}
+
 @media (max-width: 768px) {
     .time-graph-container {
         .info-panel {
