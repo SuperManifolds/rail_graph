@@ -104,19 +104,12 @@ impl TrainJourney {
                 let mut station_times = Vec::new();
 
                 for (i, (station_name, _)) in return_stations.iter().enumerate() {
-                    let return_offset = if let Some((_, original_time)) =
-                        line_stations.get(return_stations.len() - 1 - i)
-                    {
-                        Duration::hours(last_time.hour() as i64 - original_time.hour() as i64)
-                            + Duration::minutes(
-                                last_time.minute() as i64 - original_time.minute() as i64,
-                            )
-                            + Duration::seconds(
-                                last_time.second() as i64 - original_time.second() as i64,
-                            )
-                    } else {
-                        Duration::zero()
-                    };
+                    let return_offset = calculate_return_offset(
+                        last_time,
+                        line_stations,
+                        &return_stations,
+                        i,
+                    );
 
                     let arrival_time = return_departure_time + return_offset;
                     station_times.push((station_name.clone(), arrival_time));
@@ -142,3 +135,17 @@ impl TrainJourney {
     }
 }
 
+fn calculate_return_offset(
+    last_time: &chrono::NaiveDateTime,
+    line_stations: &[(String, chrono::NaiveDateTime)],
+    return_stations: &[(String, chrono::NaiveDateTime)],
+    index: usize,
+) -> Duration {
+    let Some((_, original_time)) = line_stations.get(return_stations.len() - 1 - index) else {
+        return Duration::zero();
+    };
+
+    Duration::hours(last_time.hour() as i64 - original_time.hour() as i64)
+        + Duration::minutes(last_time.minute() as i64 - original_time.minute() as i64)
+        + Duration::seconds(last_time.second() as i64 - original_time.second() as i64)
+}

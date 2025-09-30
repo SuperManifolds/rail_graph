@@ -100,22 +100,9 @@ pub fn GraphCanvas(
                     x, y, canvas_height, &stations_for_mouse_down,
                     zoom_level.get(), pan_offset_y.get()
                 ) {
-                    // Toggle the segment state
-                    set_segment_state.update(move |state| {
-                        if state.double_tracked_segments.contains(&clicked_segment) {
-                            state.double_tracked_segments.remove(&clicked_segment);
-                        } else {
-                            state.double_tracked_segments.insert(clicked_segment);
-                        }
-                    });
+                    toggle_segment_state(clicked_segment, set_segment_state);
                 } else {
-                    // Check if click is near the time line (within 10px) for time scrubbing
-                    let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
-
-                    if x >= LEFT_MARGIN && x <= LEFT_MARGIN + graph_width {
-                        set_is_dragging.set(true);
-                        update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level.get(), pan_offset_x.get(), set_visualization_time);
-                    }
+                    handle_time_scrubbing(x, canvas_width, zoom_level.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
                 }
             }
         }
@@ -401,3 +388,28 @@ fn get_visible_stations(stations: &[Station], max_count: usize) -> Vec<String> {
         .collect()
 }
 
+fn toggle_segment_state(clicked_segment: usize, set_segment_state: WriteSignal<SegmentState>) {
+    set_segment_state.update(move |state| {
+        if state.double_tracked_segments.contains(&clicked_segment) {
+            state.double_tracked_segments.remove(&clicked_segment);
+        } else {
+            state.double_tracked_segments.insert(clicked_segment);
+        }
+    });
+}
+
+fn handle_time_scrubbing(
+    x: f64,
+    canvas_width: f64,
+    zoom_level: f64,
+    pan_offset_x: f64,
+    set_is_dragging: WriteSignal<bool>,
+    set_visualization_time: WriteSignal<NaiveDateTime>,
+) {
+    let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
+
+    if x >= LEFT_MARGIN && x <= LEFT_MARGIN + graph_width {
+        set_is_dragging.set(true);
+        update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level, pan_offset_x, set_visualization_time);
+    }
+}

@@ -30,40 +30,60 @@ impl Departure {
 
         for line in lines {
             for station in stations {
-                if let Some(offset_time) = station.get_time(&line.id) {
-                    // Generate multiple departures throughout the day based on frequency
-                    let mut base_departure = line.first_departure;
-
-                    // Calculate the time offset from the offset_time (assuming it's relative to start of day)
-                    let offset_duration = Duration::hours(offset_time.hour() as i64)
-                        + Duration::minutes(offset_time.minute() as i64)
-                        + Duration::seconds(offset_time.second() as i64);
-
-                    // Add the offset to get the actual arrival time at this station
-                    while base_departure <= day_end {
-                        let arrival_time = base_departure + offset_duration;
-
-                        if arrival_time >= window_start && arrival_time <= window_end {
-                            departures.push(Departure {
-                                line_id: line.id.clone(),
-                                station: station.name.clone(),
-                                time: arrival_time,
-                            });
-                        }
-
-                        // Move to next departure based on frequency
-                        base_departure += line.frequency;
-
-                        if base_departure.hour() > GENERATION_END_HOUR {
-                            break; // Stop generating after 10 PM
-                        }
-                    }
-                }
+                generate_station_departures(
+                    line,
+                    station,
+                    day_end,
+                    window_start,
+                    window_end,
+                    &mut departures,
+                );
             }
         }
 
         departures.sort_by_key(|d| (d.time, d.line_id.clone(), d.station.clone()));
         departures
+    }
+}
+
+fn generate_station_departures(
+    line: &Line,
+    station: &Station,
+    day_end: NaiveDateTime,
+    window_start: NaiveDateTime,
+    window_end: NaiveDateTime,
+    departures: &mut Vec<Departure>,
+) {
+    let Some(offset_time) = station.get_time(&line.id) else {
+        return;
+    };
+
+    // Generate multiple departures throughout the day based on frequency
+    let mut base_departure = line.first_departure;
+
+    // Calculate the time offset from the offset_time (assuming it's relative to start of day)
+    let offset_duration = Duration::hours(offset_time.hour() as i64)
+        + Duration::minutes(offset_time.minute() as i64)
+        + Duration::seconds(offset_time.second() as i64);
+
+    // Add the offset to get the actual arrival time at this station
+    while base_departure <= day_end {
+        let arrival_time = base_departure + offset_duration;
+
+        if arrival_time >= window_start && arrival_time <= window_end {
+            departures.push(Departure {
+                line_id: line.id.clone(),
+                station: station.name.clone(),
+                time: arrival_time,
+            });
+        }
+
+        // Move to next departure based on frequency
+        base_departure += line.frequency;
+
+        if base_departure.hour() > GENERATION_END_HOUR {
+            break; // Stop generating after 10 PM
+        }
     }
 }
 
