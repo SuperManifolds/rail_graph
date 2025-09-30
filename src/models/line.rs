@@ -16,6 +16,12 @@ pub struct Line {
     pub first_departure: NaiveDateTime,
     #[serde(with = "naive_datetime_serde")]
     pub return_first_departure: NaiveDateTime,
+    #[serde(default = "default_visible")]
+    pub visible: bool,
+}
+
+fn default_visible() -> bool {
+    true
 }
 
 impl Line {
@@ -32,6 +38,7 @@ impl Line {
                     .unwrap_or_else(|| BASE_DATE.and_hms_opt(5, 0, 0).expect("Valid time")),
                 return_first_departure: BASE_DATE.and_hms_opt(6, i as u32 * 15, 0)
                     .unwrap_or_else(|| BASE_DATE.and_hms_opt(6, 0, 0).expect("Valid time")),
+                visible: true,
             })
             .collect()
     }

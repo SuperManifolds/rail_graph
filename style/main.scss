@@ -89,22 +89,53 @@ body {
                         justify-content: space-between;
                         align-items: center;
 
-                        .color-picker {
-                            width: 32px;
-                            height: 32px;
-                            border: 1px solid #333;
-                            border-radius: 4px;
-                            cursor: pointer;
-                            background: transparent;
-                            padding: 2px;
+                        .line-header-controls {
+                            display: flex;
+                            align-items: center;
+                            gap: 0.5rem;
 
-                            &:hover {
-                                border-color: #555;
+                            .visibility-toggle {
+                                background: none;
+                                border: none;
+                                color: #999;
+                                cursor: pointer;
+                                padding: 0.25rem;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                font-size: 0.9rem;
+                                transition: color 0.2s;
+
+                                &:hover {
+                                    color: #fff;
+                                }
+
+                                &:focus {
+                                    outline: none;
+                                }
+
+                                i {
+                                    pointer-events: none;
+                                }
                             }
 
-                            &:focus {
-                                outline: none;
-                                border-color: #666;
+                            .color-picker {
+                                width: 32px;
+                                height: 32px;
+                                border: 1px solid #333;
+                                border-radius: 4px;
+                                cursor: pointer;
+                                background: transparent;
+                                padding: 2px;
+
+                                &:hover {
+                                    border-color: #555;
+                                }
+
+                                &:focus {
+                                    outline: none;
+                                    border-color: #666;
+                                }
                             }
                         }
                     }

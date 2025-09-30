@@ -80,8 +80,13 @@ pub fn TimeGraph() -> impl IntoView {
         let current_lines = lines.get();
         let stations_for_journeys = stations_clone.clone();
 
+        // Filter to only visible lines
+        let visible_lines: Vec<_> = current_lines.into_iter()
+            .filter(|line| line.visible)
+            .collect();
+
         // Generate journeys for the full day starting from midnight
-        let new_journeys = TrainJourney::generate_journeys(&current_lines, &stations_for_journeys);
+        let new_journeys = TrainJourney::generate_journeys(&visible_lines, &stations_for_journeys);
         set_train_journeys.set(new_journeys);
     });
 

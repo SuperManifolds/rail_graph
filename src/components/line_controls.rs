@@ -58,32 +58,78 @@ pub fn LineControl(
         >
             <div class="line-header">
                 <strong>{line_id.clone()}</strong>
-                <input
-                    type="color"
-                    class="color-picker"
-                    prop:value={
-                        let id = line_id.clone();
-                        move || {
-                            let current_lines = lines.get();
-                            if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
-                                current_line.color.clone()
-                            } else {
-                                DEFAULT_COLOR.to_string()
+                <div class="line-header-controls">
+                    <button
+                        class="visibility-toggle"
+                        on:click={
+                            let id = line_id.clone();
+                            move |_| {
+                                set_lines.update(|lines_vec| {
+                                    if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
+                                        line.visible = !line.visible;
+                                    }
+                                });
                             }
                         }
-                    }
-                    on:change={
-                        let id = line_id.clone();
-                        move |ev| {
-                            let new_color = event_target_value(&ev);
-                            set_lines.update(|lines_vec| {
-                                if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
-                                    line.color = new_color;
+                        title={
+                            let id = line_id.clone();
+                            move || {
+                                let current_lines = lines.get();
+                                if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
+                                    if current_line.visible {
+                                        "Hide line"
+                                    } else {
+                                        "Show line"
+                                    }
+                                } else {
+                                    "Toggle visibility"
                                 }
-                            });
+                            }
                         }
-                    }
-                />
+                    >
+                        <i class={
+                            let id = line_id.clone();
+                            move || {
+                                let current_lines = lines.get();
+                                if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
+                                    if current_line.visible {
+                                        "fa-solid fa-eye"
+                                    } else {
+                                        "fa-solid fa-eye-slash"
+                                    }
+                                } else {
+                                    "fa-solid fa-eye"
+                                }
+                            }
+                        }></i>
+                    </button>
+                    <input
+                        type="color"
+                        class="color-picker"
+                        prop:value={
+                            let id = line_id.clone();
+                            move || {
+                                let current_lines = lines.get();
+                                if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
+                                    current_line.color.clone()
+                                } else {
+                                    DEFAULT_COLOR.to_string()
+                                }
+                            }
+                        }
+                        on:change={
+                            let id = line_id.clone();
+                            move |ev| {
+                                let new_color = event_target_value(&ev);
+                                set_lines.update(|lines_vec| {
+                                    if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
+                                        line.color = new_color;
+                                    }
+                                });
+                            }
+                        }
+                    />
+                </div>
             </div>
             <div class="control-row">
                 <TimeInput
