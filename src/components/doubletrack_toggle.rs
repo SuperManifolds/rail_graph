@@ -19,7 +19,7 @@ pub fn check_toggle_click(
     let station_height = graph_height / stations.len() as f64;
 
     // Check if click is in the toggle area horizontally
-    if mouse_x >= TOGGLE_X - TOGGLE_SIZE/2.0 && mouse_x <= TOGGLE_X + TOGGLE_SIZE/2.0 {
+    if (TOGGLE_X - TOGGLE_SIZE/2.0..=TOGGLE_X + TOGGLE_SIZE/2.0).contains(&mouse_x) {
         // Check each segment toggle
         for i in 1..stations.len() {
             let segment_index = i;
@@ -31,7 +31,7 @@ pub fn check_toggle_click(
             let adjusted_y = TOP_MARGIN + (center_y * zoom_level) + pan_offset_y;
 
             // Check if click is within this toggle button
-            if mouse_y >= adjusted_y - TOGGLE_SIZE/2.0 && mouse_y <= adjusted_y + TOGGLE_SIZE/2.0 {
+            if (adjusted_y - TOGGLE_SIZE/2.0..=adjusted_y + TOGGLE_SIZE/2.0).contains(&mouse_y) {
                 return Some(segment_index);
             }
         }

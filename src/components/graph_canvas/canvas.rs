@@ -27,7 +27,7 @@ pub fn GraphCanvas(
     let (pan_offset_y, set_pan_offset_y) = create_signal(0.0);
     let (is_panning, set_is_panning) = create_signal(false);
     let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
-    let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(crate::components::time_graph::Conflict, f64, f64)>);
+    let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(super::conflicts::Conflict, f64, f64)>);
 
     // Clone stations for use in render closure
     let stations_for_render = stations.clone();
@@ -37,7 +37,7 @@ pub fn GraphCanvas(
     let conflicts = create_memo(move |_| {
         let journeys = train_journeys.get();
         let seg_state = segment_state.get();
-        crate::components::time_graph::detect_line_conflicts(&journeys, &station_names, &seg_state)
+        super::conflicts::detect_line_conflicts(&journeys, &station_names, &seg_state)
     });
 
     // Render the graph whenever train journeys change

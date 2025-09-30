@@ -1,7 +1,6 @@
 use leptos::*;
-use crate::components::time_graph::Conflict;
+use crate::components::graph_canvas::{Conflict, LEFT_MARGIN, TOP_MARGIN, RIGHT_PADDING, BOTTOM_PADDING};
 use crate::models::Station;
-use crate::components::graph_canvas::{LEFT_MARGIN, TOP_MARGIN, RIGHT_PADDING, BOTTOM_PADDING};
 
 #[component]
 pub fn ConflictTooltip(
@@ -72,7 +71,7 @@ pub fn check_conflict_hover(
     for conflict in conflicts {
         // Calculate conflict position in screen coordinates
         // The canvas uses: translate(LEFT_MARGIN, TOP_MARGIN) + translate(pan) + scale(zoom)
-        let time_fraction = crate::components::time_graph::time_to_fraction(conflict.time);
+        let time_fraction = crate::components::graph_canvas::graph_content::time_to_fraction(conflict.time);
         let total_hours = 48.0;
         let hour_width = graph_width / total_hours;
 
