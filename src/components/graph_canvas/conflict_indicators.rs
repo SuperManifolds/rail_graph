@@ -1,6 +1,6 @@
-use web_sys::CanvasRenderingContext2d;
-use crate::models::{Conflict, Station};
 use super::types::GraphDimensions;
+use crate::models::{Conflict, Station, StationCrossing};
+use web_sys::CanvasRenderingContext2d;
 
 // Conflict highlight constants
 const CONFLICT_TRIANGLE_SIZE: f64 = 15.0;
@@ -14,6 +14,12 @@ const CONFLICT_LABEL_FONT_SIZE: f64 = 9.0;
 const CONFLICT_WARNING_COLOR: &str = "rgba(255, 0, 0, 0.8)";
 const CONFLICT_WARNING_FONT_SIZE: f64 = 14.0;
 const MAX_CONFLICTS_DISPLAYED: usize = 1000;
+
+// Station crossing constants
+const CROSSING_CIRCLE_RADIUS: f64 = 9.0;
+const CROSSING_FILL_COLOR: &str = "rgba(0, 200, 100, 0.3)";
+const CROSSING_STROKE_COLOR: &str = "rgba(0, 150, 75, 0.6)";
+const CROSSING_LINE_WIDTH: f64 = 2.0;
 
 pub fn draw_conflict_highlights(
     ctx: &CanvasRenderingContext2d,
@@ -57,12 +63,18 @@ pub fn draw_conflict_highlights(
 
         // Draw exclamation mark inside triangle
         ctx.set_fill_style_str(CONFLICT_ICON_COLOR);
-        ctx.set_font(&format!("bold {}px sans-serif", CONFLICT_ICON_FONT_SIZE / zoom_level));
+        ctx.set_font(&format!(
+            "bold {}px sans-serif",
+            CONFLICT_ICON_FONT_SIZE / zoom_level
+        ));
         let _ = ctx.fill_text("!", x - 2.0 / zoom_level, y + 4.0 / zoom_level);
 
         // Draw conflict details (simplified - just show line IDs)
         ctx.set_fill_style_str(CONFLICT_LABEL_COLOR);
-        ctx.set_font(&format!("{}px monospace", CONFLICT_LABEL_FONT_SIZE / zoom_level));
+        ctx.set_font(&format!(
+            "{}px monospace",
+            CONFLICT_LABEL_FONT_SIZE / zoom_level
+        ));
         let label = format!("{} × {}", conflict.journey1_id, conflict.journey2_id);
         let _ = ctx.fill_text(&label, x + size + 5.0 / zoom_level, y);
     }
@@ -70,7 +82,10 @@ pub fn draw_conflict_highlights(
     // If there are more conflicts than displayed, show a count
     if conflicts.len() > MAX_CONFLICTS_DISPLAYED {
         ctx.set_fill_style_str(CONFLICT_WARNING_COLOR);
-        ctx.set_font(&format!("bold {}px monospace", CONFLICT_WARNING_FONT_SIZE / zoom_level));
+        ctx.set_font(&format!(
+            "bold {}px monospace",
+            CONFLICT_WARNING_FONT_SIZE / zoom_level
+        ));
         let warning_text = format!(
             "⚠ {} more conflicts not shown",
             conflicts.len() - MAX_CONFLICTS_DISPLAYED
@@ -91,15 +106,18 @@ pub fn check_conflict_hover(
     pan_offset_x: f64,
     pan_offset_y: f64,
 ) -> Option<(Conflict, f64, f64)> {
-    use super::canvas::{LEFT_MARGIN, TOP_MARGIN, RIGHT_PADDING, BOTTOM_PADDING};
+    use super::canvas::{BOTTOM_PADDING, LEFT_MARGIN, RIGHT_PADDING, TOP_MARGIN};
     use crate::time::time_to_fraction;
 
     let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
     let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
 
     // Check if mouse is within the graph area first
-    if mouse_x < LEFT_MARGIN || mouse_x > LEFT_MARGIN + graph_width ||
-       mouse_y < TOP_MARGIN || mouse_y > TOP_MARGIN + graph_height {
+    if mouse_x < LEFT_MARGIN
+        || mouse_x > LEFT_MARGIN + graph_width
+        || mouse_y < TOP_MARGIN
+        || mouse_y > TOP_MARGIN + graph_height
+    {
         return None;
     }
 
@@ -114,9 +132,11 @@ pub fn check_conflict_hover(
         let x_in_zoomed = time_fraction * hour_width;
 
         let station_height = graph_height / stations.len() as f64;
-        let y_in_zoomed = (conflict.station1_idx as f64 * station_height) +
-            (station_height / 2.0) +
-            (conflict.position * station_height * (conflict.station2_idx - conflict.station1_idx) as f64);
+        let y_in_zoomed = (conflict.station1_idx as f64 * station_height)
+            + (station_height / 2.0)
+            + (conflict.position
+                * station_height
+                * (conflict.station2_idx - conflict.station1_idx) as f64);
 
         // Transform to screen coordinates
         let screen_x = LEFT_MARGIN + (x_in_zoomed * zoom_level) + pan_offset_x;
@@ -124,11 +144,47 @@ pub fn check_conflict_hover(
 
         // Check if mouse is within conflict marker bounds
         let size = 15.0;
-        if mouse_x >= screen_x - size && mouse_x <= screen_x + size &&
-           mouse_y >= screen_y - size && mouse_y <= screen_y + size {
+        if mouse_x >= screen_x - size
+            && mouse_x <= screen_x + size
+            && mouse_y >= screen_y - size
+            && mouse_y <= screen_y + size
+        {
             return Some((conflict.clone(), mouse_x, mouse_y));
         }
     }
 
     None
 }
+
+pub fn draw_station_crossings(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    station_crossings: &[StationCrossing],
+    station_height: f64,
+    zoom_level: f64,
+    time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
+) {
+    for crossing in station_crossings {
+        let time_fraction = time_to_fraction(crossing.time);
+        let x = dims.left_margin + (time_fraction * dims.hour_width);
+        // Use station_height / 2.0 offset to center on the station line
+        let y = dims.top_margin
+            + (crossing.station_idx as f64 * station_height)
+            + (station_height / 2.0);
+
+        // Draw a translucent green circle at the crossing point
+        let radius = CROSSING_CIRCLE_RADIUS / zoom_level;
+        ctx.begin_path();
+        let _ = ctx.arc(x, y, radius, 0.0, 2.0 * std::f64::consts::PI);
+
+        // Fill with translucent green
+        ctx.set_fill_style_str(CROSSING_FILL_COLOR);
+        ctx.fill();
+
+        // Stroke with darker green border
+        ctx.set_stroke_style_str(CROSSING_STROKE_COLOR);
+        ctx.set_line_width(CROSSING_LINE_WIDTH / zoom_level);
+        ctx.stroke();
+    }
+}
+

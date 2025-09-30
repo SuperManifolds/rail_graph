@@ -19,6 +19,14 @@ pub struct Conflict {
     pub is_overtaking: bool, // True for same-direction conflicts, false for crossing
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct StationCrossing {
+    pub time: NaiveDateTime,
+    pub station_idx: usize,
+    pub journey1_id: String,
+    pub journey2_id: String,
+}
+
 struct JourneySegment {
     time_start: NaiveDateTime,
     time_end: NaiveDateTime,
@@ -36,8 +44,9 @@ pub fn detect_line_conflicts(
     train_journeys: &[TrainJourney],
     stations: &[String],
     segment_state: &SegmentState,
-) -> Vec<Conflict> {
+) -> (Vec<Conflict>, Vec<StationCrossing>) {
     let mut conflicts = Vec::new();
+    let mut station_crossings = Vec::new();
 
     // Pre-compute station name to index mapping for O(1) lookups
     let station_indices: HashMap<&str, usize> = stations
@@ -58,14 +67,14 @@ pub fn detect_line_conflicts(
             break;
         }
         for journey2 in train_journeys.iter().skip(i + 1) {
-            check_journey_pair(journey1, journey2, &ctx, &mut conflicts);
+            check_journey_pair(journey1, journey2, &ctx, &mut conflicts, &mut station_crossings);
             if conflicts.len() >= MAX_CONFLICTS {
                 break;
             }
         }
     }
 
-    conflicts
+    (conflicts, station_crossings)
 }
 
 fn check_journey_pair(
@@ -73,6 +82,7 @@ fn check_journey_pair(
     journey2: &TrainJourney,
     ctx: &ConflictContext,
     conflicts: &mut Vec<Conflict>,
+    station_crossings: &mut Vec<StationCrossing>,
 ) {
     let mut prev1: Option<(NaiveDateTime, usize)> = None;
 
@@ -88,7 +98,7 @@ fn check_journey_pair(
                 idx_start: prev_idx1,
                 idx_end: station1_idx,
             };
-            check_segment_against_journey(&segment1, journey1, journey2, ctx, conflicts);
+            check_segment_against_journey(&segment1, journey1, journey2, ctx, conflicts, station_crossings);
         }
         prev1 = Some((*time1, station1_idx));
     }
@@ -100,6 +110,7 @@ fn check_segment_against_journey(
     journey2: &TrainJourney,
     ctx: &ConflictContext,
     conflicts: &mut Vec<Conflict>,
+    station_crossings: &mut Vec<StationCrossing>,
 ) {
     let seg1_min = segment1.idx_start.min(segment1.idx_end);
     let seg1_max = segment1.idx_start.max(segment1.idx_end);
@@ -119,7 +130,7 @@ fn check_segment_against_journey(
                 idx_end: station2_idx,
             };
 
-            if let Some(conflict) = check_segment_pair(
+            check_segment_pair(
                 segment1,
                 &segment2,
                 seg1_min,
@@ -127,11 +138,11 @@ fn check_segment_against_journey(
                 journey1,
                 journey2,
                 ctx,
-            ) {
-                conflicts.push(conflict);
-                if conflicts.len() >= MAX_CONFLICTS {
-                    return;
-                }
+                conflicts,
+                station_crossings,
+            );
+            if conflicts.len() >= MAX_CONFLICTS {
+                return;
             }
         }
         prev2 = Some((*time2, station2_idx));
@@ -146,17 +157,19 @@ fn check_segment_pair(
     journey1: &TrainJourney,
     journey2: &TrainJourney,
     ctx: &ConflictContext,
-) -> Option<Conflict> {
+    conflicts: &mut Vec<Conflict>,
+    station_crossings: &mut Vec<StationCrossing>,
+) {
     // Check if the segments overlap in space
     let seg2_min = segment2.idx_start.min(segment2.idx_end);
     let seg2_max = segment2.idx_start.max(segment2.idx_end);
 
     if seg1_max <= seg2_min || seg2_max <= seg1_min {
-        return None;
+        return;
     }
 
     // Calculate intersection point
-    let intersection = calculate_intersection(
+    let Some(intersection) = calculate_intersection(
         segment1.time_start,
         segment1.time_end,
         segment1.idx_start,
@@ -165,11 +178,21 @@ fn check_segment_pair(
         segment2.time_end,
         segment2.idx_start,
         segment2.idx_end,
-    )?;
+    ) else {
+        return;
+    };
 
-    // Don't count conflicts that happen very close to stations
+    // Check if crossing happens very close to a station
     if is_near_station(&intersection, segment1, segment2, ctx.station_margin) {
-        return None;
+        // This is a successful station crossing - add it to the list
+        let station_idx = find_nearest_station(&intersection, segment1, segment2);
+        station_crossings.push(StationCrossing {
+            time: intersection.time,
+            station_idx,
+            journey1_id: journey1.line_id.clone(),
+            journey2_id: journey2.line_id.clone(),
+        });
+        return;
     }
 
     // Determine if it's an overtaking or crossing conflict
@@ -180,11 +203,11 @@ fn check_segment_pair(
     if !is_overtaking {
         let segment_idx = seg1_max;
         if ctx.segment_state.double_tracked_segments.contains(&segment_idx) {
-            return None;
+            return;
         }
     }
 
-    Some(Conflict {
+    conflicts.push(Conflict {
         time: intersection.time,
         position: intersection.position,
         station1_idx: seg1_min,
@@ -192,7 +215,7 @@ fn check_segment_pair(
         journey1_id: journey1.line_id.clone(),
         journey2_id: journey2.line_id.clone(),
         is_overtaking,
-    })
+    });
 }
 
 fn is_near_station(
@@ -212,6 +235,26 @@ fn is_near_station(
     times.iter().any(|t| {
         (*t - intersection.time).abs() < station_margin
     })
+}
+
+fn find_nearest_station(
+    intersection: &Intersection,
+    segment1: &JourneySegment,
+    segment2: &JourneySegment,
+) -> usize {
+    // Check which station is closest to the intersection time
+    let times_with_idx = [
+        (segment1.time_start, segment1.idx_start),
+        (segment1.time_end, segment1.idx_end),
+        (segment2.time_start, segment2.idx_start),
+        (segment2.time_end, segment2.idx_end),
+    ];
+
+    times_with_idx
+        .iter()
+        .min_by_key(|(t, _)| (*t - intersection.time).abs())
+        .map(|(_, idx)| *idx)
+        .unwrap_or(segment1.idx_start)
 }
 
 #[derive(Debug)]

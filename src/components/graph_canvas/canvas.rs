@@ -2,7 +2,7 @@ use leptos::*;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::JsCast;
-use crate::models::{Conflict, Station, TrainJourney, SegmentState};
+use crate::models::{Conflict, StationCrossing, Station, TrainJourney, SegmentState};
 use crate::components::conflict_tooltip::ConflictTooltip;
 use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
@@ -36,9 +36,9 @@ pub fn GraphCanvas(
     // Clone stations for use in render closure
     let stations_for_render = stations.clone();
 
-    // Compute conflicts only when train journeys change, not on every render
+    // Compute conflicts and station crossings only when train journeys change, not on every render
     let station_names: Vec<String> = stations.iter().map(|s| s.name.clone()).collect();
-    let conflicts = create_memo(move |_| {
+    let conflicts_and_crossings = create_memo(move |_| {
         let journeys = train_journeys.get();
         let seg_state = segment_state.get();
         crate::models::detect_line_conflicts(&journeys, &station_names, &seg_state)
@@ -69,9 +69,9 @@ pub fn GraphCanvas(
                 pan_offset_x: pan_x,
                 pan_offset_y: pan_y,
             };
-            let current_conflicts = conflicts.get();
+            let (current_conflicts, current_station_crossings) = conflicts_and_crossings.get();
             let current_segment_state = segment_state.get();
-            render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_segment_state);
+            render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_station_crossings, &current_segment_state);
         }
     });
 
@@ -135,7 +135,7 @@ pub fn GraphCanvas(
                 }
             } else {
                 // Check for conflict hover
-                let current_conflicts = conflicts.get();
+                let (current_conflicts, _) = conflicts_and_crossings.get();
                 let hovered = conflict_indicators::check_conflict_hover(
                     x, y, &current_conflicts, &stations_for_mouse_move,
                     canvas.width() as f64, canvas.height() as f64,
@@ -255,6 +255,7 @@ fn render_graph(
     current_time: chrono::NaiveDateTime,
     viewport: ViewportState,
     conflicts: &[Conflict],
+    station_crossings: &[StationCrossing],
     segment_state: &SegmentState,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
@@ -322,6 +323,16 @@ fn render_graph(
         &ctx,
         &zoomed_dimensions,
         conflicts,
+        station_height,
+        viewport.zoom_level,
+        time_to_fraction,
+    );
+
+    // Draw station crossings
+    conflict_indicators::draw_station_crossings(
+        &ctx,
+        &zoomed_dimensions,
+        station_crossings,
         station_height,
         viewport.zoom_level,
         time_to_fraction,
