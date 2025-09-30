@@ -16,7 +16,6 @@ const CONFLICT_WARNING_FONT_SIZE: f64 = 14.0;
 const MAX_CONFLICTS_DISPLAYED: usize = 1000;
 
 // Station crossing constants
-const CROSSING_CIRCLE_RADIUS: f64 = 9.0;
 const CROSSING_FILL_COLOR: &str = "rgba(0, 200, 100, 0.3)";
 const CROSSING_STROKE_COLOR: &str = "rgba(0, 150, 75, 0.6)";
 const CROSSING_LINE_WIDTH: f64 = 2.0;
@@ -173,7 +172,11 @@ pub fn draw_station_crossings(
             + (station_height / 2.0);
 
         // Draw a translucent green circle at the crossing point
-        let radius = CROSSING_CIRCLE_RADIUS / zoom_level;
+        // Radius represents the 1-minute margin used in conflict detection
+        // Scale based on hour_width to represent time on the graph
+        let one_minute_width = dims.hour_width / 60.0;
+        let radius = one_minute_width * 5.0;  // Make visible at typical zoom levels
+
         ctx.begin_path();
         let _ = ctx.arc(x, y, radius, 0.0, 2.0 * std::f64::consts::PI);
 
