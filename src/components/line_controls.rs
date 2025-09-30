@@ -1,7 +1,14 @@
 use leptos::*;
-use chrono::{Duration, NaiveDate};
+use chrono::Duration;
 use crate::models::Line;
 use crate::components::frequency_input::FrequencyInput;
+use crate::constants::BASE_DATE;
+
+// Default values for line controls
+const DEFAULT_COLOR: &str = "#000000";
+const DEFAULT_FIRST_DEPARTURE: &str = "00:00";
+const DEFAULT_RETURN_DEPARTURE: &str = "06:00";
+const DEFAULT_FREQUENCY_MINUTES: i64 = 30;
 
 #[component]
 pub fn LineControls(
@@ -61,7 +68,7 @@ pub fn LineControl(
                             if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
                                 current_line.color.clone()
                             } else {
-                                "#000000".to_string()
+                                DEFAULT_COLOR.to_string()
                             }
                         }
                     }
@@ -90,7 +97,7 @@ pub fn LineControl(
                                 if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
                                     current_line.first_departure.format("%H:%M").to_string()
                                 } else {
-                                    "00:00".to_string()
+                                    DEFAULT_FIRST_DEPARTURE.to_string()
                                 }
                             }
                         }
@@ -99,8 +106,7 @@ pub fn LineControl(
                             move |ev| {
                                 let time_str = event_target_value(&ev);
                                 if let Ok(naive_time) = chrono::NaiveTime::parse_from_str(&format!("{}:00", time_str), "%H:%M:%S") {
-                                    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
-                                    let new_datetime = base_date.and_time(naive_time);
+                                    let new_datetime = BASE_DATE.and_time(naive_time);
                                     set_lines.update(|lines_vec| {
                                         if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
                                             line.first_departure = new_datetime;
@@ -119,7 +125,7 @@ pub fn LineControl(
                             if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
                                 current_line.frequency
                             } else {
-                                Duration::minutes(30)
+                                Duration::minutes(DEFAULT_FREQUENCY_MINUTES)
                             }
                         })
                     }
@@ -145,7 +151,7 @@ pub fn LineControl(
                                 if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
                                     current_line.return_first_departure.format("%H:%M").to_string()
                                 } else {
-                                    "06:00".to_string()
+                                    DEFAULT_RETURN_DEPARTURE.to_string()
                                 }
                             }
                         }
@@ -154,8 +160,7 @@ pub fn LineControl(
                             move |ev| {
                                 let time_str = event_target_value(&ev);
                                 if let Ok(naive_time) = chrono::NaiveTime::parse_from_str(&format!("{}:00", time_str), "%H:%M:%S") {
-                                    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
-                                    let new_datetime = base_date.and_time(naive_time);
+                                    let new_datetime = BASE_DATE.and_time(naive_time);
                                     set_lines.update(|lines_vec| {
                                         if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
                                             line.return_first_departure = new_datetime;
