@@ -4,7 +4,7 @@ use crate::storage::{
     load_lines_from_storage, load_segment_state_from_storage, save_lines_to_storage,
     save_segment_state_to_storage,
 };
-use crate::utils::{generate_train_journeys, parse_csv_data};
+use crate::data::parse_csv_data;
 use chrono::{NaiveDate, NaiveDateTime};
 use leptos::*;
 use std::collections::HashSet;
@@ -110,7 +110,7 @@ pub fn TimeGraph() -> impl IntoView {
         let stations_for_journeys = stations_clone.clone();
 
         // Generate journeys for the full day starting from midnight
-        let new_journeys = generate_train_journeys(&current_lines, &stations_for_journeys);
+        let new_journeys = TrainJourney::generate_journeys(&current_lines, &stations_for_journeys);
         set_train_journeys.set(new_journeys);
     });
 

@@ -1,12 +1,9 @@
-use chrono::{Duration, NaiveDateTime};
+use chrono::{Duration, NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Station {
-    pub name: String,
-    pub times: HashMap<String, Option<NaiveDateTime>>,
-}
+const LINE_COLORS: &[&str] = &[
+    "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FECA57"
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Line {
@@ -20,26 +17,24 @@ pub struct Line {
     pub return_first_departure: NaiveDateTime,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Departure {
-    pub line_id: String,
-    pub station: String,
-    pub time: NaiveDateTime,
-}
-
-#[derive(Debug, Clone)]
-pub struct TrainJourney {
-    pub line_id: String,
-    pub departure_time: NaiveDateTime,
-    pub station_times: Vec<(String, NaiveDateTime)>, // (station_name, arrival_time)
-    pub color: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct SegmentState {
-    // Key is the index of the second station in the segment
-    // So segment between stations[i] and stations[i+1] is stored at key i+1
-    pub double_tracked_segments: std::collections::HashSet<usize>,
+impl Line {
+    /// Create lines from IDs with default settings
+    pub fn create_from_ids(line_ids: &[String]) -> Vec<Line> {
+        let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
+        line_ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| Line {
+                id: id.clone(),
+                frequency: Duration::minutes(30), // Default, configurable by user
+                color: LINE_COLORS[i % LINE_COLORS.len()].to_string(),
+                first_departure: base_date.and_hms_opt(5, i as u32 * 15, 0)
+                    .unwrap_or_else(|| base_date.and_hms_opt(5, 0, 0).expect("Valid time")),
+                return_first_departure: base_date.and_hms_opt(6, i as u32 * 15, 0)
+                    .unwrap_or_else(|| base_date.and_hms_opt(6, 0, 0).expect("Valid time")),
+            })
+            .collect()
+    }
 }
 
 mod duration_serde {
