@@ -101,12 +101,6 @@ fn check_segment_against_journey(
     ctx: &ConflictContext,
     conflicts: &mut Vec<Conflict>,
 ) {
-    // Check if this segment is double-tracked
-    let segment_idx = segment1.idx_end.max(segment1.idx_start);
-    if ctx.segment_state.double_tracked_segments.contains(&segment_idx) {
-        return;
-    }
-
     let seg1_min = segment1.idx_start.min(segment1.idx_end);
     let seg1_max = segment1.idx_start.max(segment1.idx_end);
 
@@ -181,6 +175,14 @@ fn check_segment_pair(
     // Determine if it's an overtaking or crossing conflict
     let is_overtaking = (segment1.idx_start < segment1.idx_end && segment2.idx_start < segment2.idx_end)
         || (segment1.idx_start > segment1.idx_end && segment2.idx_start > segment2.idx_end);
+
+    // Double-tracked segments only prevent crossing conflicts, not overtaking
+    if !is_overtaking {
+        let segment_idx = seg1_max;
+        if ctx.segment_state.double_tracked_segments.contains(&segment_idx) {
+            return None;
+        }
+    }
 
     Some(Conflict {
         time: intersection.time,
