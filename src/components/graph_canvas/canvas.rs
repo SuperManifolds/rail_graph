@@ -17,7 +17,7 @@ pub const BOTTOM_PADDING: f64 = 20.0;
 
 #[component]
 pub fn GraphCanvas(
-    stations: Vec<Station>,
+    stations: ReadSignal<Vec<Station>>,
     train_journeys: ReadSignal<Vec<TrainJourney>>,
     visualization_time: ReadSignal<NaiveDateTime>,
     set_visualization_time: WriteSignal<NaiveDateTime>,
@@ -36,13 +36,11 @@ pub fn GraphCanvas(
     let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
     let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(crate::models::Conflict, f64, f64)>);
 
-    // Clone stations for use in render closure
-    let stations_for_render = stations.clone();
-
-    // Render the graph whenever train journeys change
+    // Render the graph whenever train journeys or stations change
     create_effect(move |_| {
         let journeys = train_journeys.get();
         let current = visualization_time.get();
+        let stations_for_render = stations.get();
 
         if let Some(canvas) = canvas_ref.get() {
             let zoom = zoom_level.get();
@@ -72,10 +70,6 @@ pub fn GraphCanvas(
         }
     });
 
-    // Clone stations for closures
-    let stations_for_mouse_down = stations.clone();
-    let stations_for_mouse_move = stations.clone();
-
     // Handle mouse events for dragging the time indicator and panning
     let handle_mouse_down = move |ev: MouseEvent| {
         if let Some(canvas_elem) = canvas_ref.get() {
@@ -92,9 +86,10 @@ pub fn GraphCanvas(
                 // Check for toggle button clicks first
                 let canvas_width = canvas.width() as f64;
                 let canvas_height = canvas.height() as f64;
+                let current_stations = stations.get();
 
                 if let Some(clicked_segment) = station_labels::check_toggle_click(
-                    x, y, canvas_height, &stations_for_mouse_down,
+                    x, y, canvas_height, &current_stations,
                     zoom_level.get(), pan_offset_y.get()
                 ) {
                     toggle_segment_state(clicked_segment, set_segment_state);
@@ -133,8 +128,9 @@ pub fn GraphCanvas(
             } else {
                 // Check for conflict hover
                 let (current_conflicts, _) = conflicts_and_crossings.get();
+                let current_stations = stations.get();
                 let hovered = conflict_indicators::check_conflict_hover(
-                    x, y, &current_conflicts, &stations_for_mouse_move,
+                    x, y, &current_conflicts, &current_stations,
                     canvas.width() as f64, canvas.height() as f64,
                     zoom_level.get(), pan_offset_x.get(), pan_offset_y.get()
                 );

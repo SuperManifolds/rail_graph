@@ -32,7 +32,7 @@ impl Line {
             .enumerate()
             .map(|(i, id)| Line {
                 id: id.clone(),
-                frequency: Duration::minutes(30), // Default, configurable by user
+                frequency: Duration::hours(1), // Default, configurable by user
                 color: LINE_COLORS[i % LINE_COLORS.len()].to_string(),
                 first_departure: BASE_DATE.and_hms_opt(5, i as u32 * 15, 0)
                     .unwrap_or_else(|| BASE_DATE.and_hms_opt(5, 0, 0).expect("Valid time")),

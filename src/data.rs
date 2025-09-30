@@ -3,7 +3,11 @@ use crate::models::{Line, Station};
 /// Parse CSV data into lines and stations
 pub fn parse_csv_data() -> (Vec<Line>, Vec<Station>) {
     let csv_content = include_str!("../lines.csv");
+    parse_csv_string(csv_content)
+}
 
+/// Parse CSV string into lines and stations
+pub fn parse_csv_string(csv_content: &str) -> (Vec<Line>, Vec<Station>) {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(csv_content.as_bytes());
