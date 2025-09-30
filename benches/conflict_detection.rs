@@ -13,8 +13,28 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
         double_tracked_segments: HashSet::new(),
     };
 
+    // Benchmark journey generation
+    c.bench_function("generate_journeys", |b| {
+        b.iter(|| {
+            TrainJourney::generate_journeys(black_box(&lines), black_box(&stations))
+        });
+    });
+
+    // Benchmark conflict detection
     c.bench_function("conflict_detection", |b| {
         b.iter(|| {
+            detect_line_conflicts(
+                black_box(&journeys),
+                black_box(&station_names),
+                black_box(&segment_state),
+            )
+        });
+    });
+
+    // Benchmark the full pipeline (what happens on every change)
+    c.bench_function("full_pipeline", |b| {
+        b.iter(|| {
+            let journeys = TrainJourney::generate_journeys(black_box(&lines), black_box(&stations));
             detect_line_conflicts(
                 black_box(&journeys),
                 black_box(&station_names),
