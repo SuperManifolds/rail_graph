@@ -15,8 +15,8 @@ pub fn Legend(
 
     view! {
         <div class="legend-container">
-            <button class="legend-button" on:click=toggle_popover>
-                "Legend"
+            <button class="legend-button" on:click=toggle_popover title="Display Options">
+                <i class="fa-solid fa-eye"></i>
             </button>
 
             <Show when=move || is_open.get()>

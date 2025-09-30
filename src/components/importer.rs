@@ -39,24 +39,23 @@ pub fn Importer(
     };
 
     view! {
-        <div class="importer">
-            <input
-                type="file"
-                accept=".csv"
-                node_ref=file_input_ref
-                on:change=handle_file_change
-                style="display: none;"
-            />
-            <button
-                class="import-button"
-                on:click=move |_| {
-                    if let Some(input) = file_input_ref.get() {
-                        input.click();
-                    }
+        <input
+            type="file"
+            accept=".csv"
+            node_ref=file_input_ref
+            on:change=handle_file_change
+            style="display: none;"
+        />
+        <button
+            class="import-button"
+            on:click=move |_| {
+                if let Some(input) = file_input_ref.get() {
+                    input.click();
                 }
-            >
-                "Import CSV"
-            </button>
-        </div>
+            }
+            title="Import CSV"
+        >
+            <i class="fa-solid fa-file-import"></i>
+        </button>
     }
 }
