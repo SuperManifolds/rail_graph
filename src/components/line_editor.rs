@@ -26,6 +26,9 @@ pub fn LineEditor(
     let (position, set_position) = create_signal((0.0, 0.0));
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (drag_offset, set_drag_offset) = create_signal((0.0, 0.0));
+    let (size, set_size) = create_signal((500.0, 400.0));
+    let (is_resizing, set_is_resizing) = create_signal(false);
+    let (resize_start, set_resize_start) = create_signal((0.0, 0.0));
 
     let on_save = Rc::new(on_save);
 
@@ -48,6 +51,23 @@ pub fn LineEditor(
 
     let handle_mouse_up = move |_: web_sys::MouseEvent| {
         set_is_dragging.set(false);
+        set_is_resizing.set(false);
+    };
+
+    let handle_resize_down = move |ev: web_sys::MouseEvent| {
+        ev.stop_propagation();
+        set_is_resizing.set(true);
+        let (width, height) = size.get_untracked();
+        set_resize_start.set((ev.client_x() as f64 - width, ev.client_y() as f64 - height));
+    };
+
+    let handle_resize_move = move |ev: web_sys::MouseEvent| {
+        if is_resizing.get_untracked() {
+            let (start_x, start_y) = resize_start.get_untracked();
+            let new_width = (ev.client_x() as f64 - start_x).max(250.0);
+            let new_height = (ev.client_y() as f64 - start_y).max(200.0);
+            set_size.set((new_width, new_height));
+        }
     };
 
     create_effect(move |_| {
@@ -56,7 +76,8 @@ pub fn LineEditor(
             let body = document.body().unwrap();
 
             let move_handler = Closure::wrap(Box::new(move |ev: web_sys::MouseEvent| {
-                handle_mouse_move(ev);
+                handle_mouse_move(ev.clone());
+                handle_resize_move(ev);
             }) as Box<dyn FnMut(_)>);
 
             let up_handler = Closure::wrap(Box::new(move |ev: web_sys::MouseEvent| {
@@ -83,7 +104,8 @@ pub fn LineEditor(
                             class="line-editor-dialog"
                             style=move || {
                                 let (x, y) = position.get();
-                                format!("left: {}px; top: {}px;", x, y)
+                                let (width, height) = size.get();
+                                format!("left: {}px; top: {}px; width: {}px; height: {}px;", x, y, width, height)
                             }
                         >
                             <div class="line-editor-header" on:mousedown=handle_mouse_down>
@@ -185,6 +207,8 @@ pub fn LineEditor(
                             />
                         </div>
                     </div>
+
+                    <div class="resize-handle" on:mousedown=handle_resize_down></div>
 
                         </div>
                     }
