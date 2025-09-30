@@ -3,14 +3,13 @@ use chrono::{NaiveDate, NaiveDateTime};
 use web_sys::{MouseEvent, WheelEvent};
 use crate::models::{Station, TrainJourney, SegmentState};
 use crate::components::conflict_tooltip::{ConflictTooltip, check_conflict_hover};
+use crate::components::doubletrack_toggle::check_toggle_click;
 
 // Layout constants for the graph canvas
 pub const LEFT_MARGIN: f64 = 120.0;
 pub const TOP_MARGIN: f64 = 60.0;
 pub const RIGHT_PADDING: f64 = 20.0;
 pub const BOTTOM_PADDING: f64 = 20.0;
-const TOGGLE_X: f64 = 85.0;
-const TOGGLE_SIZE: f64 = 12.0;
 
 #[component]
 pub fn GraphCanvas(
@@ -259,37 +258,4 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
     }
 }
 
-fn check_toggle_click(
-    mouse_x: f64,
-    mouse_y: f64,
-    canvas_height: f64,
-    stations: &[Station],
-    zoom_level: f64,
-    pan_offset_y: f64,
-) -> Option<usize> {
-    let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
-
-    let station_height = graph_height / stations.len() as f64;
-
-    // Check if click is in the toggle area horizontally
-    if mouse_x >= TOGGLE_X - TOGGLE_SIZE/2.0 && mouse_x <= TOGGLE_X + TOGGLE_SIZE/2.0 {
-        // Check each segment toggle
-        for i in 1..stations.len() {
-            let segment_index = i;
-
-            // Calculate position between the two stations (same logic as draw_segment_toggles)
-            let base_y1 = ((i - 1) as f64 * station_height) + (station_height / 2.0);
-            let base_y2 = (i as f64 * station_height) + (station_height / 2.0);
-            let center_y = (base_y1 + base_y2) / 2.0;
-            let adjusted_y = TOP_MARGIN + (center_y * zoom_level) + pan_offset_y;
-
-            // Check if click is within this toggle button
-            if mouse_y >= adjusted_y - TOGGLE_SIZE/2.0 && mouse_y <= adjusted_y + TOGGLE_SIZE/2.0 {
-                return Some(segment_index);
-            }
-        }
-    }
-
-    None
-}
 
