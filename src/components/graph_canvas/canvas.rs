@@ -60,7 +60,7 @@ pub fn GraphCanvas(
                 canvas_elem.set_height(container_height);
             }
 
-            let viewport = crate::components::time_graph::ViewportState {
+            let viewport = super::types::ViewportState {
                 zoom_level: zoom,
                 pan_offset_x: pan_x,
                 pan_offset_y: pan_y,

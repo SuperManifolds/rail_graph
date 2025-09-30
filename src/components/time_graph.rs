@@ -1,4 +1,7 @@
-use crate::components::{graph_canvas::GraphCanvas, line_controls::LineControls};
+use crate::components::{
+    graph_canvas::{GraphCanvas, GraphDimensions, ViewportState},
+    line_controls::LineControls
+};
 use crate::models::{SegmentState, Station, TrainJourney};
 use crate::storage::{
     load_lines_from_storage, load_segment_state_from_storage, save_lines_to_storage,
@@ -10,40 +13,6 @@ use leptos::*;
 use std::collections::HashSet;
 use wasm_bindgen::JsCast;
 use web_sys::CanvasRenderingContext2d;
-
-#[derive(Clone)]
-struct GraphDimensions {
-    left_margin: f64,
-    top_margin: f64,
-    graph_width: f64,
-    graph_height: f64,
-    hour_width: f64,
-}
-
-#[derive(Clone)]
-pub struct ViewportState {
-    pub zoom_level: f64,
-    pub pan_offset_x: f64,
-    pub pan_offset_y: f64,
-}
-
-impl GraphDimensions {
-    fn new(canvas_width: f64, canvas_height: f64) -> Self {
-        let left_margin = 120.0;
-        let top_margin = 60.0;
-        let graph_width = canvas_width - left_margin - 20.0;
-        let graph_height = canvas_height - top_margin - 20.0;
-        let total_hours = 48.0; // Show 48 hours to support past-midnight
-
-        Self {
-            left_margin,
-            top_margin,
-            graph_width,
-            graph_height,
-            hour_width: graph_width / total_hours,
-        }
-    }
-}
 
 #[component]
 pub fn TimeGraph() -> impl IntoView {
