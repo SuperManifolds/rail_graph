@@ -1,11 +1,12 @@
-mod station;
-mod line;
 mod departure;
-mod train_journey;
+mod line;
 mod segment_state;
+mod station;
+mod train_journey;
 
-pub use station::Station;
-pub use line::Line;
 pub use departure::Departure;
-pub use train_journey::TrainJourney;
+pub use line::Line;
 pub use segment_state::SegmentState;
+pub use station::Station;
+pub use train_journey::TrainJourney;
+

@@ -1,5 +1,6 @@
-use chrono::{Duration, NaiveDate, NaiveDateTime, Timelike};
 use crate::models::{Line, Station};
+use crate::constants::{BASE_DATE, GENERATION_END_HOUR};
+use chrono::{Duration, NaiveDateTime, Timelike};
 
 const MAX_JOURNEYS_PER_LINE: i32 = 100; // Limit to prevent performance issues
 
@@ -13,12 +14,8 @@ pub struct TrainJourney {
 
 impl TrainJourney {
     /// Generate train journeys for all lines throughout the day
-    pub fn generate_journeys(
-        lines: &[Line],
-        stations: &[Station],
-    ) -> Vec<TrainJourney> {
-        let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
-        let Some(day_end) = base_date.and_hms_opt(23, 59, 59) else {
+    pub fn generate_journeys(lines: &[Line], stations: &[Station]) -> Vec<TrainJourney> {
+        let Some(day_end) = BASE_DATE.and_hms_opt(23, 59, 59) else {
             return Vec::new();
         };
 
@@ -29,7 +26,9 @@ impl TrainJourney {
             let line_stations: Vec<(String, NaiveDateTime)> = stations
                 .iter()
                 .filter_map(|station| {
-                    station.times.get(&line.id)
+                    station
+                        .times
+                        .get(&line.id)
                         .and_then(|&time_opt| time_opt)
                         .map(|time| (station.name.clone(), time))
                 })
@@ -40,20 +39,10 @@ impl TrainJourney {
             }
 
             // Generate forward journeys
-            Self::generate_forward_journeys(
-                &mut journeys,
-                line,
-                &line_stations,
-                day_end,
-            );
+            Self::generate_forward_journeys(&mut journeys, line, &line_stations, day_end);
 
             // Generate return journeys
-            Self::generate_return_journeys(
-                &mut journeys,
-                line,
-                &line_stations,
-                day_end,
-            );
+            Self::generate_return_journeys(&mut journeys, line, &line_stations, day_end);
         }
 
         journeys
@@ -72,9 +61,9 @@ impl TrainJourney {
             let mut station_times = Vec::new();
 
             for (station_name, offset_time) in line_stations {
-                let offset_duration = Duration::hours(offset_time.hour() as i64) +
-                    Duration::minutes(offset_time.minute() as i64) +
-                    Duration::seconds(offset_time.second() as i64);
+                let offset_duration = Duration::hours(offset_time.hour() as i64)
+                    + Duration::minutes(offset_time.minute() as i64)
+                    + Duration::seconds(offset_time.second() as i64);
 
                 let arrival_time = departure_time + offset_duration;
                 station_times.push((station_name.clone(), arrival_time));
@@ -92,7 +81,7 @@ impl TrainJourney {
 
             departure_time += line.frequency;
 
-            if departure_time.hour() > 22 {
+            if departure_time.hour() > GENERATION_END_HOUR {
                 break;
             }
         }
@@ -115,10 +104,16 @@ impl TrainJourney {
                 let mut station_times = Vec::new();
 
                 for (i, (station_name, _)) in return_stations.iter().enumerate() {
-                    let return_offset = if let Some((_, original_time)) = line_stations.get(return_stations.len() - 1 - i) {
-                        Duration::hours(last_time.hour() as i64 - original_time.hour() as i64) +
-                        Duration::minutes(last_time.minute() as i64 - original_time.minute() as i64) +
-                        Duration::seconds(last_time.second() as i64 - original_time.second() as i64)
+                    let return_offset = if let Some((_, original_time)) =
+                        line_stations.get(return_stations.len() - 1 - i)
+                    {
+                        Duration::hours(last_time.hour() as i64 - original_time.hour() as i64)
+                            + Duration::minutes(
+                                last_time.minute() as i64 - original_time.minute() as i64,
+                            )
+                            + Duration::seconds(
+                                last_time.second() as i64 - original_time.second() as i64,
+                            )
                     } else {
                         Duration::zero()
                     };
@@ -139,10 +134,11 @@ impl TrainJourney {
 
                 return_departure_time += line.frequency;
 
-                if return_departure_time.hour() > 22 {
+                if return_departure_time.hour() > GENERATION_END_HOUR {
                     break;
                 }
             }
         }
     }
 }
+

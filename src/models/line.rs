@@ -1,5 +1,6 @@
-use chrono::{Duration, NaiveDate, NaiveDateTime};
+use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
+use crate::constants::BASE_DATE;
 
 const LINE_COLORS: &[&str] = &[
     "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FECA57"
@@ -20,7 +21,6 @@ pub struct Line {
 impl Line {
     /// Create lines from IDs with default settings
     pub fn create_from_ids(line_ids: &[String]) -> Vec<Line> {
-        let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
         line_ids
             .iter()
             .enumerate()
@@ -28,10 +28,10 @@ impl Line {
                 id: id.clone(),
                 frequency: Duration::minutes(30), // Default, configurable by user
                 color: LINE_COLORS[i % LINE_COLORS.len()].to_string(),
-                first_departure: base_date.and_hms_opt(5, i as u32 * 15, 0)
-                    .unwrap_or_else(|| base_date.and_hms_opt(5, 0, 0).expect("Valid time")),
-                return_first_departure: base_date.and_hms_opt(6, i as u32 * 15, 0)
-                    .unwrap_or_else(|| base_date.and_hms_opt(6, 0, 0).expect("Valid time")),
+                first_departure: BASE_DATE.and_hms_opt(5, i as u32 * 15, 0)
+                    .unwrap_or_else(|| BASE_DATE.and_hms_opt(5, 0, 0).expect("Valid time")),
+                return_first_departure: BASE_DATE.and_hms_opt(6, i as u32 * 15, 0)
+                    .unwrap_or_else(|| BASE_DATE.and_hms_opt(6, 0, 0).expect("Valid time")),
             })
             .collect()
     }

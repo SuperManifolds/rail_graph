@@ -1,0 +1,288 @@
+use crate::models::{Departure, Line, Station, TrainJourney};
+use chrono::{Duration, NaiveDate, NaiveDateTime, Timelike};
+use std::collections::HashMap;
+
+const LINE_COLORS: &[&str] = &["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FECA57"];
+
+const MAX_JOURNEYS_PER_LINE: usize = 10;
+const GENERATION_END_HOUR: u32 = 22;
+
+pub fn parse_csv_data() -> (Vec<Line>, Vec<Station>) {
+    let csv_content = include_str!("../lines.csv");
+
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(csv_content.as_bytes());
+
+    let mut records = reader.records();
+
+    let Some(Ok(header)) = records.next() else {
+        return (Vec::new(), Vec::new());
+    };
+
+    let line_ids = extract_line_ids(&header);
+    let lines = create_lines(&line_ids);
+    let stations = parse_stations(records, &line_ids);
+
+    (lines, stations)
+}
+
+fn extract_line_ids(header: &csv::StringRecord) -> Vec<String> {
+    header
+        .iter()
+        .skip(1)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+fn create_lines(line_ids: &[String]) -> Vec<Line> {
+    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
+    line_ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| Line {
+            id: id.clone(),
+            frequency: Duration::minutes(30), // Default, configurable by user
+            color: LINE_COLORS[i % LINE_COLORS.len()].to_string(),
+            first_departure: base_date
+                .and_hms_opt(5, i as u32 * 15, 0)
+                .unwrap_or_else(|| base_date.and_hms_opt(5, 0, 0).expect("Valid time")),
+            return_first_departure: base_date
+                .and_hms_opt(6, i as u32 * 15, 0)
+                .unwrap_or_else(|| base_date.and_hms_opt(6, 0, 0).expect("Valid time")),
+        })
+        .collect()
+}
+
+fn parse_stations(records: csv::StringRecordsIter<&[u8]>, line_ids: &[String]) -> Vec<Station> {
+    let mut stations = Vec::new();
+
+    for record in records {
+        let Ok(row) = record else { continue };
+
+        let Some(station_name) = row.get(0) else {
+            continue;
+        };
+        if station_name.is_empty() {
+            continue;
+        }
+
+        let times = parse_station_times(&row, line_ids);
+
+        stations.push(Station {
+            name: station_name.to_string(),
+            times,
+        });
+    }
+
+    stations
+}
+
+fn parse_station_times(
+    row: &csv::StringRecord,
+    line_ids: &[String],
+) -> HashMap<String, Option<NaiveDateTime>> {
+    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
+    let mut times = HashMap::new();
+
+    for (i, line_id) in line_ids.iter().enumerate() {
+        let time = row.get(i + 1).filter(|s| !s.is_empty()).and_then(|s| {
+            // Parse as time and combine with base date
+            if let Ok(naive_time) = chrono::NaiveTime::parse_from_str(s, "%H:%M:%S") {
+                Some(base_date.and_time(naive_time))
+            } else {
+                None
+            }
+        });
+
+        times.insert(line_id.clone(), time);
+    }
+
+    times
+}
+
+pub fn generate_departures(
+    lines: &[Line],
+    stations: &[Station],
+    current_time: NaiveDateTime,
+) -> Vec<Departure> {
+    let base_date = current_time.date();
+    let Some(day_end) = base_date.and_hms_opt(23, 59, 59) else {
+        return Vec::new();
+    };
+
+    // Show a wider window for debugging
+    let window_start = base_date.and_hms_opt(0, 0, 0).unwrap_or(current_time);
+    let window_end = base_date.and_hms_opt(23, 59, 59).unwrap_or(current_time);
+
+    let mut departures = Vec::new();
+
+    for line in lines {
+        for station in stations {
+            if let Some(offset_time) = get_station_time(station, &line.id) {
+                // Generate multiple departures throughout the day based on frequency
+                let mut base_departure = line.first_departure;
+
+                // Calculate the time offset from the offset_time (assuming it's relative to start of day)
+                let offset_duration = Duration::hours(offset_time.hour() as i64)
+                    + Duration::minutes(offset_time.minute() as i64)
+                    + Duration::seconds(offset_time.second() as i64);
+
+                // Add the offset to get the actual arrival time at this station
+                while base_departure <= day_end {
+                    let arrival_time = base_departure + offset_duration;
+
+                    if arrival_time >= window_start && arrival_time <= window_end {
+                        departures.push(Departure {
+                            line_id: line.id.clone(),
+                            station: station.name.clone(),
+                            time: arrival_time,
+                        });
+                    }
+
+                    // Move to next departure based on frequency
+                    base_departure += line.frequency;
+
+                    if base_departure.hour() > GENERATION_END_HOUR {
+                        break; // Stop generating after 10 PM
+                    }
+                }
+            }
+        }
+    }
+
+    departures.sort_by_key(|d| (d.time, d.line_id.clone(), d.station.clone()));
+    departures
+}
+
+pub fn generate_train_journeys(lines: &[Line], stations: &[Station]) -> Vec<TrainJourney> {
+    let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
+    let Some(day_end) = base_date.and_hms_opt(23, 59, 59) else {
+        return Vec::new();
+    };
+
+    // Show a wider window for the Marey chart
+
+    let mut journeys = Vec::new();
+
+    for line in lines {
+        // Get all stations that this line serves, in order
+        let line_stations: Vec<(String, NaiveDateTime)> = stations
+            .iter()
+            .filter_map(|station| {
+                station
+                    .times
+                    .get(&line.id)
+                    .and_then(|&time_opt| time_opt)
+                    .map(|time| (station.name.clone(), time))
+            })
+            .collect();
+
+        if line_stations.is_empty() {
+            continue;
+        }
+
+        // Generate multiple train journeys throughout the day
+        let mut departure_time = line.first_departure;
+        let mut journey_count = 0;
+
+        while departure_time <= day_end && journey_count < MAX_JOURNEYS_PER_LINE {
+            // Create a journey with all station times
+            let mut station_times = Vec::new();
+            let journey_valid = true;
+
+            for (station_name, offset_time) in &line_stations {
+                let offset_duration = Duration::hours(offset_time.hour() as i64)
+                    + Duration::minutes(offset_time.minute() as i64)
+                    + Duration::seconds(offset_time.second() as i64);
+
+                let arrival_time = departure_time + offset_duration;
+
+                // No longer truncate at midnight - let journeys continue
+                station_times.push((station_name.clone(), arrival_time));
+            }
+
+            // Only add journey if it has at least 2 stations
+            if station_times.len() >= 2 && journey_valid {
+                journeys.push(TrainJourney {
+                    line_id: line.id.clone(),
+                    departure_time,
+                    station_times,
+                    color: line.color.clone(),
+                });
+                journey_count += 1;
+            }
+
+            // Move to next departure
+            departure_time += line.frequency;
+
+            // Stop if we're getting too late
+            if departure_time.hour() > GENERATION_END_HOUR {
+                break;
+            }
+        }
+
+        // Generate return journeys (reverse direction)
+        let mut return_stations = line_stations.clone();
+        return_stations.reverse();
+
+        // Calculate return journey offsets (time from last station back to first)
+        if let Some((_, last_time)) = line_stations.last() {
+            let mut return_departure_time = line.return_first_departure;
+            let mut return_journey_count = 0;
+
+            while return_departure_time <= day_end && return_journey_count < MAX_JOURNEYS_PER_LINE {
+                // Create a return journey with all station times in reverse order
+                let mut station_times = Vec::new();
+                let journey_valid = true;
+
+                for (i, (station_name, _)) in return_stations.iter().enumerate() {
+                    // Calculate offset from the end: last station is at 0 offset, first station gets the full journey time
+                    let return_offset = if let Some((_, original_time)) =
+                        line_stations.get(return_stations.len() - 1 - i)
+                    {
+                        Duration::hours(last_time.hour() as i64 - original_time.hour() as i64)
+                            + Duration::minutes(
+                                last_time.minute() as i64 - original_time.minute() as i64,
+                            )
+                            + Duration::seconds(
+                                last_time.second() as i64 - original_time.second() as i64,
+                            )
+                    } else {
+                        Duration::zero()
+                    };
+
+                    let arrival_time = return_departure_time + return_offset;
+
+                    // No longer truncate at midnight - let journeys continue
+                    station_times.push((station_name.clone(), arrival_time));
+                }
+
+                // Only add journey if it has at least 2 stations
+                if station_times.len() >= 2 && journey_valid {
+                    journeys.push(TrainJourney {
+                        line_id: line.id.clone(),
+                        departure_time: return_departure_time,
+                        station_times,
+                        color: line.color.clone(),
+                    });
+                    return_journey_count += 1;
+                }
+
+                return_departure_time += line.frequency;
+
+                // Stop if we're getting too late
+                if return_departure_time.hour() > GENERATION_END_HOUR {
+                    break;
+                }
+            }
+        }
+    }
+
+    journeys
+}
+
+fn get_station_time(station: &Station, line_id: &str) -> Option<NaiveDateTime> {
+    station.times.get(line_id).and_then(|t| *t)
+}
