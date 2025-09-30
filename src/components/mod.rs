@@ -6,3 +6,4 @@ pub mod graph_canvas;
 pub mod frequency_input;
 pub mod conflict_tooltip;
 pub mod doubletrack_toggle;
+pub mod time_input;

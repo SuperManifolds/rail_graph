@@ -2,7 +2,7 @@ use leptos::*;
 use chrono::Duration;
 use crate::models::Line;
 use crate::components::frequency_input::FrequencyInput;
-use crate::constants::BASE_DATE;
+use crate::components::time_input::TimeInput;
 
 // Default values for line controls
 const DEFAULT_COLOR: &str = "#000000";
@@ -86,37 +86,33 @@ pub fn LineControl(
                 />
             </div>
             <div class="control-row">
-                <label>
-                    "First departure: "
-                    <input
-                        type="time"
-                        prop:value={
-                            let id = line_id.clone();
-                            move || {
-                                let current_lines = lines.get();
-                                if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
-                                    current_line.first_departure.format("%H:%M").to_string()
-                                } else {
-                                    DEFAULT_FIRST_DEPARTURE.to_string()
-                                }
+                <TimeInput
+                    label="First departure: "
+                    value={
+                        let id = line_id.clone();
+                        Signal::derive(move || {
+                            let current_lines = lines.get();
+                            if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
+                                current_line.first_departure
+                            } else {
+                                chrono::NaiveTime::parse_from_str(&format!("{}:00", DEFAULT_FIRST_DEPARTURE), "%H:%M:%S")
+                                    .map(|t| crate::constants::BASE_DATE.and_time(t))
+                                    .unwrap()
                             }
-                        }
-                        on:input={
-                            let id = line_id.clone();
-                            move |ev| {
-                                let time_str = event_target_value(&ev);
-                                if let Ok(naive_time) = chrono::NaiveTime::parse_from_str(&format!("{}:00", time_str), "%H:%M:%S") {
-                                    let new_datetime = BASE_DATE.and_time(naive_time);
-                                    set_lines.update(|lines_vec| {
-                                        if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
-                                            line.first_departure = new_datetime;
-                                        }
-                                    });
+                        })
+                    }
+                    default_time=DEFAULT_FIRST_DEPARTURE
+                    on_change={
+                        let id = line_id.clone();
+                        Box::new(move |new_datetime| {
+                            set_lines.update(|lines_vec| {
+                                if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
+                                    line.first_departure = new_datetime;
                                 }
-                            }
-                        }
-                    />
-                </label>
+                            });
+                        })
+                    }
+                />
                 <FrequencyInput
                     frequency={
                         let id = line_id.clone();
@@ -140,37 +136,33 @@ pub fn LineControl(
                         }
                     }
                 />
-                <label>
-                    "Return departure: "
-                    <input
-                        type="time"
-                        prop:value={
-                            let id = line_id.clone();
-                            move || {
-                                let current_lines = lines.get();
-                                if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
-                                    current_line.return_first_departure.format("%H:%M").to_string()
-                                } else {
-                                    DEFAULT_RETURN_DEPARTURE.to_string()
-                                }
+                <TimeInput
+                    label="Return departure: "
+                    value={
+                        let id = line_id.clone();
+                        Signal::derive(move || {
+                            let current_lines = lines.get();
+                            if let Some(current_line) = current_lines.iter().find(|l| l.id == id) {
+                                current_line.return_first_departure
+                            } else {
+                                chrono::NaiveTime::parse_from_str(&format!("{}:00", DEFAULT_RETURN_DEPARTURE), "%H:%M:%S")
+                                    .map(|t| crate::constants::BASE_DATE.and_time(t))
+                                    .unwrap()
                             }
-                        }
-                        on:input={
-                            let id = line_id.clone();
-                            move |ev| {
-                                let time_str = event_target_value(&ev);
-                                if let Ok(naive_time) = chrono::NaiveTime::parse_from_str(&format!("{}:00", time_str), "%H:%M:%S") {
-                                    let new_datetime = BASE_DATE.and_time(naive_time);
-                                    set_lines.update(|lines_vec| {
-                                        if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
-                                            line.return_first_departure = new_datetime;
-                                        }
-                                    });
+                        })
+                    }
+                    default_time=DEFAULT_RETURN_DEPARTURE
+                    on_change={
+                        let id = line_id.clone();
+                        Box::new(move |new_datetime| {
+                            set_lines.update(|lines_vec| {
+                                if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
+                                    line.return_first_departure = new_datetime;
                                 }
-                            }
-                        }
-                    />
-                </label>
+                            });
+                        })
+                    }
+                />
             </div>
         </div>
     }
