@@ -1,5 +1,6 @@
 use crate::components::{
     graph_canvas::GraphCanvas,
+    legend::Legend,
     line_controls::LineControls
 };
 use crate::models::{SegmentState, TrainJourney};
@@ -39,6 +40,10 @@ pub fn TimeGraph() -> impl IntoView {
     let (visualization_time, set_visualization_time) =
         create_signal(chrono::Local::now().naive_local());
     let (train_journeys, set_train_journeys) = create_signal(Vec::<TrainJourney>::new());
+
+    // Legend visibility toggles
+    let (show_station_crossings, set_show_station_crossings) = create_signal(true);
+    let (show_conflicts, set_show_conflicts) = create_signal(true);
 
     // Segment state for double tracking
     let (segment_state, set_segment_state) = create_signal(SegmentState {
@@ -90,11 +95,19 @@ pub fn TimeGraph() -> impl IntoView {
                     set_visualization_time=set_visualization_time
                     segment_state=segment_state
                     set_segment_state=set_segment_state
+                    show_station_crossings=show_station_crossings
+                    show_conflicts=show_conflicts
                 />
             </div>
             <div class="sidebar">
                 <div class="sidebar-header">
                     <h2>"Railway Time Graph"</h2>
+                    <Legend
+                        show_station_crossings=show_station_crossings
+                        set_show_station_crossings=set_show_station_crossings
+                        show_conflicts=show_conflicts
+                        set_show_conflicts=set_show_conflicts
+                    />
                 </div>
                 <LineControls lines=lines set_lines=set_lines />
             </div>

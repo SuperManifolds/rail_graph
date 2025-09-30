@@ -23,6 +23,8 @@ pub fn GraphCanvas(
     set_visualization_time: WriteSignal<NaiveDateTime>,
     segment_state: ReadSignal<SegmentState>,
     set_segment_state: WriteSignal<SegmentState>,
+    show_station_crossings: ReadSignal<bool>,
+    show_conflicts: ReadSignal<bool>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
@@ -71,7 +73,9 @@ pub fn GraphCanvas(
             };
             let (current_conflicts, current_station_crossings) = conflicts_and_crossings.get();
             let current_segment_state = segment_state.get();
-            render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_station_crossings, &current_segment_state);
+            let show_crossings = show_station_crossings.get();
+            let show_conf = show_conflicts.get();
+            render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_station_crossings, &current_segment_state, show_crossings, show_conf);
         }
     });
 
@@ -257,6 +261,8 @@ fn render_graph(
     conflicts: &[Conflict],
     station_crossings: &[StationCrossing],
     segment_state: &SegmentState,
+    show_station_crossings: bool,
+    show_conflicts: bool,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
     let canvas_width = canvas_element.width() as f64;
@@ -318,25 +324,29 @@ fn render_graph(
         time_to_fraction,
     );
 
-    // Draw conflicts
-    conflict_indicators::draw_conflict_highlights(
-        &ctx,
-        &zoomed_dimensions,
-        conflicts,
-        station_height,
-        viewport.zoom_level,
-        time_to_fraction,
-    );
+    // Draw conflicts if enabled
+    if show_conflicts {
+        conflict_indicators::draw_conflict_highlights(
+            &ctx,
+            &zoomed_dimensions,
+            conflicts,
+            station_height,
+            viewport.zoom_level,
+            time_to_fraction,
+        );
+    }
 
-    // Draw station crossings
-    conflict_indicators::draw_station_crossings(
-        &ctx,
-        &zoomed_dimensions,
-        station_crossings,
-        station_height,
-        viewport.zoom_level,
-        time_to_fraction,
-    );
+    // Draw station crossings if enabled
+    if show_station_crossings {
+        conflict_indicators::draw_station_crossings(
+            &ctx,
+            &zoomed_dimensions,
+            station_crossings,
+            station_height,
+            viewport.zoom_level,
+            time_to_fraction,
+        );
+    }
 
     // Draw current train positions
     train_positions::draw_current_train_positions(
