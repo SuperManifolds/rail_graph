@@ -7,6 +7,26 @@ const LINE_COLORS: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ScheduleMode {
+    Auto,
+    Manual,
+}
+
+impl Default for ScheduleMode {
+    fn default() -> Self {
+        ScheduleMode::Auto
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ManualDeparture {
+    #[serde(with = "naive_datetime_serde")]
+    pub time: NaiveDateTime,
+    pub from_station: String,
+    pub to_station: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Line {
     pub id: String,
     #[serde(with = "duration_serde")]
@@ -18,6 +38,10 @@ pub struct Line {
     pub return_first_departure: NaiveDateTime,
     #[serde(default = "default_visible")]
     pub visible: bool,
+    #[serde(default)]
+    pub schedule_mode: ScheduleMode,
+    #[serde(default)]
+    pub manual_departures: Vec<ManualDeparture>,
 }
 
 fn default_visible() -> bool {
@@ -39,6 +63,8 @@ impl Line {
                 return_first_departure: BASE_DATE.and_hms_opt(6, i as u32 * 15, 0)
                     .unwrap_or_else(|| BASE_DATE.and_hms_opt(6, 0, 0).expect("Valid time")),
                 visible: true,
+                schedule_mode: ScheduleMode::Auto,
+                manual_departures: Vec::new(),
             })
             .collect()
     }

@@ -1,4 +1,4 @@
-use crate::models::{Line, Station};
+use crate::models::{Line, Station, ScheduleMode};
 use crate::constants::GENERATION_END_HOUR;
 use chrono::{Duration, NaiveDateTime, Timelike};
 use serde::{Deserialize, Serialize};
@@ -58,31 +58,65 @@ fn generate_station_departures(
         return;
     };
 
-    // Generate multiple departures throughout the day based on frequency
-    let mut base_departure = line.first_departure;
+    match line.schedule_mode {
+        ScheduleMode::Auto => {
+            // Generate multiple departures throughout the day based on frequency
+            let mut base_departure = line.first_departure;
 
-    // Calculate the time offset from the offset_time (assuming it's relative to start of day)
-    let offset_duration = Duration::hours(offset_time.hour() as i64)
-        + Duration::minutes(offset_time.minute() as i64)
-        + Duration::seconds(offset_time.second() as i64);
+            // Calculate the time offset from the offset_time (assuming it's relative to start of day)
+            let offset_duration = Duration::hours(offset_time.hour() as i64)
+                + Duration::minutes(offset_time.minute() as i64)
+                + Duration::seconds(offset_time.second() as i64);
 
-    // Add the offset to get the actual arrival time at this station
-    while base_departure <= day_end {
-        let arrival_time = base_departure + offset_duration;
+            // Add the offset to get the actual arrival time at this station
+            while base_departure <= day_end {
+                let arrival_time = base_departure + offset_duration;
 
-        if arrival_time >= window_start && arrival_time <= window_end {
-            departures.push(Departure {
-                line_id: line.id.clone(),
-                station: station.name.clone(),
-                time: arrival_time,
-            });
+                if arrival_time >= window_start && arrival_time <= window_end {
+                    departures.push(Departure {
+                        line_id: line.id.clone(),
+                        station: station.name.clone(),
+                        time: arrival_time,
+                    });
+                }
+
+                // Move to next departure based on frequency
+                base_departure += line.frequency;
+
+                if base_departure.hour() > GENERATION_END_HOUR {
+                    break; // Stop generating after 10 PM
+                }
+            }
         }
+        ScheduleMode::Manual => {
+            // Generate departures from manual departure list
+            for manual_dep in &line.manual_departures {
+                // Only generate departure if this station is either the from or to station
+                if station.name != manual_dep.from_station && station.name != manual_dep.to_station {
+                    continue;
+                }
 
-        // Move to next departure based on frequency
-        base_departure += line.frequency;
+                // Calculate the time offset from the offset_time
+                let offset_duration = Duration::hours(offset_time.hour() as i64)
+                    + Duration::minutes(offset_time.minute() as i64)
+                    + Duration::seconds(offset_time.second() as i64);
 
-        if base_departure.hour() > GENERATION_END_HOUR {
-            break; // Stop generating after 10 PM
+                // The manual departure time is the departure from the from_station
+                let arrival_time = if station.name == manual_dep.from_station {
+                    manual_dep.time
+                } else {
+                    // For other stations, add the offset
+                    manual_dep.time + offset_duration
+                };
+
+                if arrival_time >= window_start && arrival_time <= window_end {
+                    departures.push(Departure {
+                        line_id: line.id.clone(),
+                        station: station.name.clone(),
+                        time: arrival_time,
+                    });
+                }
+            }
         }
     }
 }

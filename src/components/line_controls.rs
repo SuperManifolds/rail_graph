@@ -1,5 +1,5 @@
 use leptos::*;
-use crate::models::Line;
+use crate::models::{Line, Station};
 use crate::components::line_editor::LineEditor;
 
 
@@ -7,6 +7,7 @@ use crate::components::line_editor::LineEditor;
 pub fn LineControls(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
+    stations: ReadSignal<Vec<Station>>,
 ) -> impl IntoView {
     let (is_editor_open, set_is_editor_open) = create_signal(false);
     let (editing_line_id, set_editing_line_id) = create_signal(None::<String>);
@@ -44,6 +45,7 @@ pub fn LineControls(
             initial_line=current_editing_line
             is_open=is_editor_open
             set_is_open=set_is_editor_open
+            stations=stations
             on_save={
                 move |edited_line: Line| {
                     set_lines.update(|lines_vec| {

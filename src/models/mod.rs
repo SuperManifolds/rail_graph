@@ -7,7 +7,7 @@ mod train_journey;
 mod conflict;
 
 pub use departure::Departure;
-pub use line::Line;
+pub use line::{Line, ScheduleMode, ManualDeparture};
 pub use project::Project;
 pub use segment_state::SegmentState;
 pub use station::Station;

@@ -158,4 +158,81 @@
             border-color: transparent transparent #666 transparent;
         }
     }
+
+    .manual-departures-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+        max-height: 200px;
+        overflow-y: auto;
+
+        .manual-departure-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            background-color: #222;
+            border: 1px solid #444;
+            border-radius: 4px;
+
+            .station-input {
+                background-color: #2a2a2a;
+                border: 1px solid #444;
+                border-radius: 4px;
+                padding: 0.4rem;
+                color: #fff;
+                font-size: 0.85rem;
+                flex: 1;
+                cursor: pointer;
+
+                &:focus {
+                    outline: none;
+                    border-color: #555;
+                    background-color: #333;
+                }
+
+                option {
+                    background-color: #2a2a2a;
+                    color: #fff;
+                }
+            }
+
+            .arrow {
+                color: #999;
+                font-size: 0.9rem;
+            }
+
+            .remove-departure {
+                background: none;
+                border: none;
+                color: #999;
+                font-size: 1.2rem;
+                cursor: pointer;
+                padding: 0;
+                line-height: 1;
+                width: 20px;
+                height: 20px;
+                flex-shrink: 0;
+
+                &:hover {
+                    color: #f66;
+                }
+            }
+        }
+    }
+
+    .add-departure {
+        background-color: #2a2a2a;
+        border: 1px solid #444;
+        border-radius: 4px;
+        color: #fff;
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+        font-size: 0.85rem;
+
+        &:hover {
+            background-color: #333;
+        }
+    }
 }
