@@ -1,10 +1,14 @@
 use leptos::*;
 use chrono::NaiveDateTime;
-use web_sys::{MouseEvent, WheelEvent};
-use crate::models::{Station, TrainJourney, SegmentState};
+use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
+use wasm_bindgen::JsCast;
+use crate::models::{Conflict, Station, TrainJourney, SegmentState};
 use crate::components::conflict_tooltip::{ConflictTooltip, check_conflict_hover};
 use crate::components::doubletrack_toggle::check_toggle_click;
 use crate::constants::BASE_DATE;
+use crate::time::time_to_fraction;
+use super::{station_labels, time_labels, conflict_indicators, train_positions, train_journeys, time_scrubber, graph_content};
+use super::types::{GraphDimensions, ViewportState};
 
 // Layout constants for the graph canvas
 pub const LEFT_MARGIN: f64 = 120.0;
@@ -61,14 +65,14 @@ pub fn GraphCanvas(
                 canvas_elem.set_height(container_height);
             }
 
-            let viewport = super::types::ViewportState {
+            let viewport = ViewportState {
                 zoom_level: zoom,
                 pan_offset_x: pan_x,
                 pan_offset_y: pan_y,
             };
             let current_conflicts = conflicts.get();
             let current_segment_state = segment_state.get();
-            crate::components::time_graph::render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_segment_state);
+            render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_segment_state);
         }
     });
 
@@ -258,4 +262,143 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
     }
 }
 
+fn render_graph(
+    canvas: leptos::HtmlElement<leptos::html::Canvas>,
+    stations: &[Station],
+    train_journeys: &[TrainJourney],
+    current_time: chrono::NaiveDateTime,
+    viewport: ViewportState,
+    conflicts: &[Conflict],
+    segment_state: &SegmentState,
+) {
+    let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
+    let canvas_width = canvas_element.width() as f64;
+    let canvas_height = canvas_element.height() as f64;
+
+    let Ok(Some(context)) = canvas_element.get_context("2d") else {
+        leptos::logging::warn!("Failed to get 2D context");
+        return;
+    };
+
+    let Ok(ctx) = context.dyn_into::<web_sys::CanvasRenderingContext2d>() else {
+        leptos::logging::warn!("Failed to cast to 2D rendering context");
+        return;
+    };
+
+    // Create dimensions that scale with canvas size
+    let dimensions = GraphDimensions::new(canvas_width, canvas_height);
+
+    clear_canvas(&ctx, canvas_width, canvas_height);
+    graph_content::draw_background(&ctx, canvas_width, canvas_height);
+
+    // Apply zoom and pan transformation for all graph content (including grids)
+    ctx.save();
+
+    // Clip to graph area only
+    ctx.begin_path();
+    ctx.rect(
+        dimensions.left_margin,
+        dimensions.top_margin,
+        dimensions.graph_width,
+        dimensions.graph_height,
+    );
+    ctx.clip();
+
+    // Apply transformation within the clipped area - use canvas scaling but compensate visual elements
+    let _ = ctx.translate(dimensions.left_margin, dimensions.top_margin);
+    let _ = ctx.translate(viewport.pan_offset_x, viewport.pan_offset_y);
+    let _ = ctx.scale(viewport.zoom_level, viewport.zoom_level);
+
+    // Create adjusted dimensions for the zoomed coordinate system
+    let mut zoomed_dimensions = dimensions.clone();
+    zoomed_dimensions.left_margin = 0.0; // We've already translated to the graph origin
+    zoomed_dimensions.top_margin = 0.0;
+
+    // Draw grid and content in zoomed coordinate system
+    time_labels::draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level);
+    let unique_stations = get_visible_stations(stations, stations.len());
+    graph_content::draw_station_grid(&ctx, &zoomed_dimensions, &unique_stations);
+    graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, &unique_stations, segment_state);
+
+    // Draw train journeys
+    let station_height = zoomed_dimensions.graph_height / unique_stations.len() as f64;
+    train_journeys::draw_train_journeys(
+        &ctx,
+        &zoomed_dimensions,
+        &unique_stations,
+        train_journeys,
+        viewport.zoom_level,
+        time_to_fraction,
+    );
+
+    // Draw conflicts
+    conflict_indicators::draw_conflict_highlights(
+        &ctx,
+        &zoomed_dimensions,
+        conflicts,
+        station_height,
+        viewport.zoom_level,
+        time_to_fraction,
+    );
+
+    // Draw current train positions
+    train_positions::draw_current_train_positions(
+        &ctx,
+        &zoomed_dimensions,
+        &unique_stations,
+        train_journeys,
+        station_height,
+        current_time,
+        viewport.zoom_level,
+        time_to_fraction,
+    );
+
+    // Restore canvas context
+    ctx.restore();
+
+    // Draw labels at normal size but with adjusted positions for zoom/pan
+    time_labels::draw_hour_labels(
+        &ctx,
+        &dimensions,
+        viewport.zoom_level,
+        viewport.pan_offset_x,
+    );
+    station_labels::draw_station_labels(
+        &ctx,
+        &dimensions,
+        &unique_stations,
+        viewport.zoom_level,
+        viewport.pan_offset_y,
+    );
+    station_labels::draw_segment_toggles(
+        &ctx,
+        &dimensions,
+        &unique_stations,
+        segment_state,
+        viewport.zoom_level,
+        viewport.pan_offset_y,
+    );
+
+    // Draw time scrubber on top (adjusted for zoom/pan)
+    time_scrubber::draw_time_scrubber(
+        &ctx,
+        &dimensions,
+        current_time,
+        viewport.zoom_level,
+        viewport.pan_offset_x,
+        time_to_fraction,
+    );
+}
+
+fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
+    ctx.clear_rect(0.0, 0.0, width, height);
+}
+
+fn get_visible_stations(stations: &[Station], max_count: usize) -> Vec<String> {
+    stations
+        .iter()
+        .map(|s| s.name.clone())
+        .take(max_count)
+        .collect()
+}
 
