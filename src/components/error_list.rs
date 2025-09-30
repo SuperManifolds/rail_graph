@@ -16,15 +16,22 @@ pub fn ErrorList(
 
     view! {
         <div class="error-list-container">
-            <button
-                class="error-list-button"
-                class=("has-errors", has_errors)
-                on:click=toggle_popover
-            >
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span class="error-count">{conflict_count}</span>
-                <span class="error-label">" Conflicts"</span>
-            </button>
+            {move || {
+                if has_errors() {
+                    view! {
+                        <button
+                            class="error-list-button has-errors"
+                            on:click=toggle_popover
+                        >
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <span class="error-count">{conflict_count()}</span>
+                            <span class="error-label">" Conflicts"</span>
+                        </button>
+                    }.into_view()
+                } else {
+                    view! {}.into_view()
+                }
+            }}
 
             {move || {
                 if is_open.get() {
