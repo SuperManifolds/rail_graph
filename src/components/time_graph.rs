@@ -1,12 +1,15 @@
-use leptos::*;
+use crate::components::{graph_canvas::GraphCanvas, line_controls::LineControls};
+use crate::models::{SegmentState, Station, TrainJourney};
+use crate::storage::{
+    load_lines_from_storage, load_segment_state_from_storage, save_lines_to_storage,
+    save_segment_state_to_storage,
+};
+use crate::utils::{generate_train_journeys, parse_csv_data};
 use chrono::{NaiveDate, NaiveDateTime};
-use web_sys::CanvasRenderingContext2d;
-use wasm_bindgen::JsCast;
-use crate::models::{Station, TrainJourney, SegmentState};
-use crate::utils::{parse_csv_data, generate_train_journeys};
-use crate::components::{line_controls::LineControls, graph_canvas::GraphCanvas};
-use crate::storage::{save_lines_to_storage, load_lines_from_storage, save_segment_state_to_storage, load_segment_state_from_storage};
+use leptos::*;
 use std::collections::HashSet;
+use wasm_bindgen::JsCast;
+use web_sys::CanvasRenderingContext2d;
 
 #[derive(Clone)]
 struct GraphDimensions {
@@ -67,7 +70,8 @@ pub fn TimeGraph() -> impl IntoView {
         }
     });
 
-    let (visualization_time, set_visualization_time) = create_signal(chrono::Local::now().naive_local());
+    let (visualization_time, set_visualization_time) =
+        create_signal(chrono::Local::now().naive_local());
     let (train_journeys, set_train_journeys) = create_signal(Vec::<TrainJourney>::new());
 
     // Segment state for double tracking
@@ -106,14 +110,9 @@ pub fn TimeGraph() -> impl IntoView {
         let stations_for_journeys = stations_clone.clone();
 
         // Generate journeys for the full day starting from midnight
-        let new_journeys = generate_train_journeys(
-            &current_lines,
-            &stations_for_journeys,
-        );
+        let new_journeys = generate_train_journeys(&current_lines, &stations_for_journeys);
         set_train_journeys.set(new_journeys);
     });
-
-
 
     view! {
         <div class="time-graph-container">
@@ -171,7 +170,12 @@ pub fn render_graph(
 
     // Clip to graph area only
     ctx.begin_path();
-    ctx.rect(dimensions.left_margin, dimensions.top_margin, dimensions.graph_width, dimensions.graph_height);
+    ctx.rect(
+        dimensions.left_margin,
+        dimensions.top_margin,
+        dimensions.graph_width,
+        dimensions.graph_height,
+    );
     ctx.clip();
 
     // Apply transformation within the clipped area - use canvas scaling but compensate visual elements
@@ -189,18 +193,50 @@ pub fn render_graph(
     let unique_stations = get_visible_stations(stations, stations.len());
     draw_station_grid(&ctx, &zoomed_dimensions, &unique_stations);
     draw_double_track_indicators(&ctx, &zoomed_dimensions, &unique_stations, segment_state);
-    draw_train_journeys(&ctx, &zoomed_dimensions, &unique_stations, train_journeys, current_time, viewport.zoom_level, conflicts);
+    draw_train_journeys(
+        &ctx,
+        &zoomed_dimensions,
+        &unique_stations,
+        train_journeys,
+        current_time,
+        viewport.zoom_level,
+        conflicts,
+    );
 
     // Restore canvas context
     ctx.restore();
 
     // Draw labels at normal size but with adjusted positions for zoom/pan
-    draw_hour_labels(&ctx, &dimensions, viewport.zoom_level, viewport.pan_offset_x);
-    draw_station_labels(&ctx, &dimensions, &unique_stations, viewport.zoom_level, viewport.pan_offset_y);
-    draw_segment_toggles(&ctx, &dimensions, &unique_stations, segment_state, viewport.zoom_level, viewport.pan_offset_y);
+    draw_hour_labels(
+        &ctx,
+        &dimensions,
+        viewport.zoom_level,
+        viewport.pan_offset_x,
+    );
+    draw_station_labels(
+        &ctx,
+        &dimensions,
+        &unique_stations,
+        viewport.zoom_level,
+        viewport.pan_offset_y,
+    );
+    draw_segment_toggles(
+        &ctx,
+        &dimensions,
+        &unique_stations,
+        segment_state,
+        viewport.zoom_level,
+        viewport.pan_offset_y,
+    );
 
     // Draw time indicator on top (adjusted for zoom/pan)
-    draw_time_indicator(&ctx, &dimensions, current_time, viewport.zoom_level, viewport.pan_offset_x);
+    draw_time_indicator(
+        &ctx,
+        &dimensions,
+        current_time,
+        viewport.zoom_level,
+        viewport.pan_offset_x,
+    );
 }
 
 fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
@@ -208,13 +244,12 @@ fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
 }
 
 fn draw_background(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
-    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#0a0a0a"));
+    ctx.set_fill_style_str("#0a0a0a");
     ctx.fill_rect(0.0, 0.0, width, height);
 }
 
-
 fn draw_hour_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, zoom_level: f64) {
-    ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("#2a2a2a"));
+    ctx.set_stroke_style_str("#2a2a2a");
     ctx.set_line_width(1.0 / zoom_level);
 
     // Calculate visible time range based on current view
@@ -237,8 +272,14 @@ fn draw_vertical_line(ctx: &CanvasRenderingContext2d, x: f64, top: f64, height: 
     ctx.stroke();
 }
 
-fn draw_hour_label_with_day(ctx: &CanvasRenderingContext2d, hour: usize, day: i32, x: f64, top: f64) {
-    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#888"));
+fn draw_hour_label_with_day(
+    ctx: &CanvasRenderingContext2d,
+    hour: usize,
+    day: i32,
+    x: f64,
+    top: f64,
+) {
+    ctx.set_fill_style_str("#888");
     ctx.set_font("12px monospace");
 
     if day == 0 {
@@ -248,31 +289,45 @@ fn draw_hour_label_with_day(ctx: &CanvasRenderingContext2d, hour: usize, day: i3
         // Past midnight, show day indicator
         let _ = ctx.fill_text(&format!("{:02}:00", hour), x - 15.0, top - 10.0);
         ctx.set_font("10px monospace");
-        ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#666"));
+        ctx.set_fill_style_str("#666");
         let _ = ctx.fill_text(&format!("+{}", day), x - 10.0, top + 5.0);
     }
 }
 
-fn draw_hour_labels(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, zoom_level: f64, pan_offset_x: f64) {
+fn draw_hour_labels(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    zoom_level: f64,
+    pan_offset_x: f64,
+) {
     // Calculate which hours are potentially visible
     let start_hour = ((-pan_offset_x) / (dims.hour_width * zoom_level)).floor() as i32 - 1;
-    let end_hour = ((-pan_offset_x + dims.graph_width) / (dims.hour_width * zoom_level)).ceil() as i32 + 1;
+    let end_hour =
+        ((-pan_offset_x + dims.graph_width) / (dims.hour_width * zoom_level)).ceil() as i32 + 1;
 
     for i in start_hour..=end_hour {
         let base_x = i as f64 * dims.hour_width;
         let adjusted_x = dims.left_margin + (base_x * zoom_level) + pan_offset_x;
 
         // Only draw label if it's within the visible graph area
-        if adjusted_x >= dims.left_margin && adjusted_x <= dims.left_margin + dims.graph_width
-            && i >= 0 {
-                let day = i / 24;
-                let hour_in_day = i % 24;
-                draw_hour_label_with_day(ctx, hour_in_day as usize, day, adjusted_x, dims.top_margin);
-            }
+        if adjusted_x >= dims.left_margin
+            && adjusted_x <= dims.left_margin + dims.graph_width
+            && i >= 0
+        {
+            let day = i / 24;
+            let hour_in_day = i % 24;
+            draw_hour_label_with_day(ctx, hour_in_day as usize, day, adjusted_x, dims.top_margin);
+        }
     }
 }
 
-fn draw_station_labels(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[String], zoom_level: f64, pan_offset_y: f64) {
+fn draw_station_labels(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    stations: &[String],
+    zoom_level: f64,
+    pan_offset_y: f64,
+) {
     let station_height = dims.graph_height / stations.len() as f64;
 
     for (i, station) in stations.iter().enumerate() {
@@ -294,12 +349,7 @@ fn get_visible_stations(stations: &[Station], max_count: usize) -> Vec<String> {
         .collect()
 }
 
-
-fn draw_station_grid(
-    ctx: &CanvasRenderingContext2d,
-    dims: &GraphDimensions,
-    stations: &[String],
-) {
+fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[String]) {
     let station_height = dims.graph_height / stations.len() as f64;
 
     for (i, _station) in stations.iter().enumerate() {
@@ -313,7 +363,7 @@ fn calculate_station_y(dims: &GraphDimensions, index: usize, station_height: f64
 }
 
 fn draw_station_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
-    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#aaa"));
+    ctx.set_fill_style_str("#aaa");
     ctx.set_font("11px monospace");
     let _ = ctx.fill_text(station, 5.0, y + 3.0);
 }
@@ -330,7 +380,9 @@ fn draw_segment_toggles(
 
     for i in 1..stations.len() {
         let segment_index = i;
-        let is_double_tracked = segment_state.double_tracked_segments.contains(&segment_index);
+        let is_double_tracked = segment_state
+            .double_tracked_segments
+            .contains(&segment_index);
 
         // Calculate position between the two stations
         let base_y1 = ((i - 1) as f64 * station_height) + (station_height / 2.0);
@@ -345,16 +397,16 @@ fn draw_segment_toggles(
 
             // Draw button background
             let bg_color = if is_double_tracked { "#4a90e2" } else { "#333" };
-            ctx.set_fill_style(&wasm_bindgen::JsValue::from_str(bg_color));
-            ctx.fill_rect(x - size/2.0, adjusted_y - size/2.0, size, size);
+            ctx.set_fill_style_str(bg_color);
+            ctx.fill_rect(x - size / 2.0, adjusted_y - size / 2.0, size, size);
 
             // Draw button border
-            ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("#666"));
+            ctx.set_stroke_style_str("#666");
             ctx.set_line_width(1.0);
-            ctx.stroke_rect(x - size/2.0, adjusted_y - size/2.0, size, size);
+            ctx.stroke_rect(x - size / 2.0, adjusted_y - size / 2.0, size, size);
 
             // Draw icon
-            ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#fff"));
+            ctx.set_fill_style_str("#fff");
             ctx.set_font("10px monospace");
             let icon = if is_double_tracked { "≡" } else { "─" };
             let _ = ctx.fill_text(icon, x - 4.0, adjusted_y + 3.0);
@@ -363,7 +415,7 @@ fn draw_segment_toggles(
 }
 
 fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, y: f64) {
-    ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("#1a1a1a"));
+    ctx.set_stroke_style_str("#1a1a1a");
     ctx.begin_path();
 
     // Calculate the same extended range as the hour grid
@@ -408,7 +460,7 @@ fn draw_double_track_indicators(
             let width = (end_hour - start_hour) as f64 * dims.hour_width;
 
             // Draw lighter background rectangle
-            ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(255, 255, 255, 0.03)")); // Very subtle lighter background
+            ctx.set_fill_style_str("rgba(255, 255, 255, 0.03)"); // Very subtle lighter background
             ctx.fill_rect(start_x, top_y, width, height);
         }
     }
@@ -426,7 +478,7 @@ fn draw_train_journeys(
     let station_height = dims.graph_height / stations.len() as f64;
 
     for journey in train_journeys {
-        ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str(&journey.color));
+        ctx.set_stroke_style_str(&journey.color);
         ctx.set_line_width(2.0 / zoom_level);
         ctx.begin_path();
 
@@ -443,7 +495,9 @@ fn draw_train_journeys(
                 if !first_point && x < prev_x - dims.graph_width * 0.5 {
                     x += dims.graph_width;
                 }
-                let y = dims.top_margin + (station_idx as f64 * station_height) + (station_height / 2.0);
+                let y = dims.top_margin
+                    + (station_idx as f64 * station_height)
+                    + (station_height / 2.0);
 
                 if first_point {
                     ctx.move_to(x, y);
@@ -470,9 +524,11 @@ fn draw_train_journeys(
                     x += dims.graph_width;
                 }
 
-                let y = dims.top_margin + (station_idx as f64 * station_height) + (station_height / 2.0);
+                let y = dims.top_margin
+                    + (station_idx as f64 * station_height)
+                    + (station_height / 2.0);
 
-                ctx.set_fill_style(&wasm_bindgen::JsValue::from_str(&journey.color));
+                ctx.set_fill_style_str(&journey.color);
                 ctx.begin_path();
                 let _ = ctx.arc(x, y, 3.0 / zoom_level, 0.0, std::f64::consts::PI * 2.0);
                 ctx.fill();
@@ -486,7 +542,15 @@ fn draw_train_journeys(
     draw_conflict_highlights(ctx, dims, conflicts, station_height, zoom_level);
 
     // Draw current train positions
-    draw_current_train_positions(ctx, dims, stations, train_journeys, station_height, current_time, zoom_level);
+    draw_current_train_positions(
+        ctx,
+        dims,
+        stations,
+        train_journeys,
+        station_height,
+        current_time,
+        zoom_level,
+    );
 }
 
 fn draw_current_train_positions(
@@ -498,7 +562,6 @@ fn draw_current_train_positions(
     visualization_time: NaiveDateTime,
     zoom_level: f64,
 ) {
-
     for journey in train_journeys {
         // Find which segment the train is currently on
         let mut prev_station: Option<(&String, NaiveDateTime, usize)> = None;
@@ -516,33 +579,49 @@ fn draw_current_train_positions(
         }
 
         // If train is between two stations, interpolate its position
-        if let (Some((_, prev_time, prev_idx)), Some((_, next_time, next_idx))) = (prev_station, next_station) {
+        if let (Some((_, prev_time, prev_idx)), Some((_, next_time, next_idx))) =
+            (prev_station, next_station)
+        {
             let segment_duration = next_time.signed_duration_since(prev_time).num_seconds() as f64;
-            let elapsed = visualization_time.signed_duration_since(prev_time).num_seconds() as f64;
+            let elapsed = visualization_time
+                .signed_duration_since(prev_time)
+                .num_seconds() as f64;
             let progress = (elapsed / segment_duration).clamp(0.0, 1.0);
 
             let prev_x = dims.left_margin + (time_to_fraction(prev_time) * dims.hour_width);
-            let prev_y = dims.top_margin + (prev_idx as f64 * station_height) + (station_height / 2.0);
+            let prev_y =
+                dims.top_margin + (prev_idx as f64 * station_height) + (station_height / 2.0);
 
             let next_x = dims.left_margin + (time_to_fraction(next_time) * dims.hour_width);
-            let next_y = dims.top_margin + (next_idx as f64 * station_height) + (station_height / 2.0);
+            let next_y =
+                dims.top_margin + (next_idx as f64 * station_height) + (station_height / 2.0);
 
             let current_x = prev_x + (next_x - prev_x) * progress;
             let current_y = prev_y + (next_y - prev_y) * progress;
 
             // Draw train as a larger dot with an outline
-            ctx.set_fill_style(&wasm_bindgen::JsValue::from_str(&journey.color));
-            ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("#fff"));
+            ctx.set_fill_style_str(&journey.color);
+            ctx.set_stroke_style_str("#fff");
             ctx.set_line_width(2.0 / zoom_level);
             ctx.begin_path();
-            let _ = ctx.arc(current_x, current_y, 6.0 / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+            let _ = ctx.arc(
+                current_x,
+                current_y,
+                6.0 / zoom_level,
+                0.0,
+                std::f64::consts::PI * 2.0,
+            );
             ctx.fill();
             ctx.stroke();
 
             // Draw train ID label with zoom-compensated font size
-            ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#fff"));
+            ctx.set_fill_style_str("#fff");
             ctx.set_font(&format!("bold {}px monospace", 10.0 / zoom_level));
-            let _ = ctx.fill_text(&journey.line_id, current_x - 12.0 / zoom_level, current_y - 10.0 / zoom_level);
+            let _ = ctx.fill_text(
+                &journey.line_id,
+                current_x - 12.0 / zoom_level,
+                current_y - 10.0 / zoom_level,
+            );
         }
     }
 }
@@ -596,7 +675,6 @@ pub fn detect_line_conflicts(
                 let station2_idx = stations.iter().position(|s| s == station2_name);
 
                 if let (Some(s1_idx), Some(s2_idx)) = (station1_idx, station2_idx) {
-
                     for window2 in journey2.station_times.windows(2) {
                         let (station3_name, time2_start) = &window2[0];
                         let (station4_name, time2_end) = &window2[1];
@@ -610,7 +688,9 @@ pub fn detect_line_conflicts(
                             let segment1_idx = s1_idx.max(s2_idx);
                             let segment2_idx = s3_idx.max(s4_idx);
                             let is_same_segment = segment1_idx == segment2_idx;
-                            let segment1_is_double_tracked = segment_state.double_tracked_segments.contains(&segment1_idx);
+                            let segment1_is_double_tracked = segment_state
+                                .double_tracked_segments
+                                .contains(&segment1_idx);
                             // Handle different conflict scenarios
                             let lines_cross;
                             if is_same_segment && segment1_is_double_tracked {
@@ -624,11 +704,14 @@ pub fn detect_line_conflicts(
                                 }
 
                                 // For same direction on same segment, check if the time windows overlap
-                                let time1_range = (*time1_start.min(time1_end), *time1_start.max(time1_end));
-                                let time2_range = (*time2_start.min(time2_end), *time2_start.max(time2_end));
+                                let time1_range =
+                                    (*time1_start.min(time1_end), *time1_start.max(time1_end));
+                                let time2_range =
+                                    (*time2_start.min(time2_end), *time2_start.max(time2_end));
 
                                 // Check if time ranges overlap
-                                lines_cross = time1_range.0 < time2_range.1 && time2_range.0 < time1_range.1;
+                                lines_cross =
+                                    time1_range.0 < time2_range.1 && time2_range.0 < time1_range.1;
                             } else {
                                 // Regular conflict detection for all other cases
                                 // First check if the segments actually intersect or overlap
@@ -657,8 +740,14 @@ pub fn detect_line_conflicts(
                                 // Calculate intersection point
                                 // Calculate intersection point using regular geometric calculation
                                 let intersection = calculate_intersection(
-                                    *time1_start, *time1_end, s1_idx, s2_idx,
-                                    *time2_start, *time2_end, s3_idx, s4_idx
+                                    *time1_start,
+                                    *time1_end,
+                                    s1_idx,
+                                    s2_idx,
+                                    *time2_start,
+                                    *time2_end,
+                                    s3_idx,
+                                    s4_idx,
                                 );
 
                                 if let Some(intersection) = intersection {
@@ -666,11 +755,17 @@ pub fn detect_line_conflicts(
                                     let mut is_near_station = false;
 
                                     // Check proximity to all stations
-                                    for (station_name, station_time) in journey1.station_times.iter()
+                                    for (station_name, station_time) in journey1
+                                        .station_times
+                                        .iter()
                                         .chain(journey2.station_times.iter())
                                     {
                                         if stations.contains(station_name) {
-                                            let time_diff = intersection.time.signed_duration_since(*station_time).num_seconds().abs();
+                                            let time_diff = intersection
+                                                .time
+                                                .signed_duration_since(*station_time)
+                                                .num_seconds()
+                                                .abs();
                                             if time_diff <= station_margin.num_seconds() {
                                                 is_near_station = true;
                                                 break;
@@ -716,8 +811,14 @@ struct Intersection {
 
 #[allow(clippy::too_many_arguments)]
 fn calculate_intersection(
-    t1_start: NaiveDateTime, t1_end: NaiveDateTime, s1_start: usize, s1_end: usize,
-    t2_start: NaiveDateTime, t2_end: NaiveDateTime, s2_start: usize, s2_end: usize,
+    t1_start: NaiveDateTime,
+    t1_end: NaiveDateTime,
+    s1_start: usize,
+    s1_end: usize,
+    t2_start: NaiveDateTime,
+    t2_end: NaiveDateTime,
+    s2_start: usize,
+    s2_end: usize,
 ) -> Option<Intersection> {
     // Convert times to fractions
     let x1_start = time_to_fraction(t1_start);
@@ -731,14 +832,19 @@ fn calculate_intersection(
     let y2_end = s2_end as f64;
 
     // Calculate line intersection using parametric equations
-    let denom = (x1_start - x1_end) * (y2_start - y2_end) - (y1_start - y1_end) * (x2_start - x2_end);
+    let denom =
+        (x1_start - x1_end) * (y2_start - y2_end) - (y1_start - y1_end) * (x2_start - x2_end);
 
     if denom.abs() < 0.0001 {
         return None; // Lines are parallel
     }
 
-    let t = ((x1_start - x2_start) * (y2_start - y2_end) - (y1_start - y2_start) * (x2_start - x2_end)) / denom;
-    let u = -((x1_start - x1_end) * (y1_start - y2_start) - (y1_start - y1_end) * (x1_start - x2_start)) / denom;
+    let t = ((x1_start - x2_start) * (y2_start - y2_end)
+        - (y1_start - y2_start) * (x2_start - x2_end))
+        / denom;
+    let u = -((x1_start - x1_end) * (y1_start - y2_start)
+        - (y1_start - y1_end) * (x1_start - x2_start))
+        / denom;
 
     // Check if intersection is within both segments
     if (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u) {
@@ -748,7 +854,8 @@ fn calculate_intersection(
         // Convert back to time
         let base_date = NaiveDate::from_ymd_opt(2024, 1, 1).expect("Valid date");
         let base_datetime = base_date.and_hms_opt(0, 0, 0).expect("Valid datetime");
-        let intersection_time = base_datetime + chrono::Duration::seconds((x_intersect * 3600.0) as i64);
+        let intersection_time =
+            base_datetime + chrono::Duration::seconds((x_intersect * 3600.0) as i64);
 
         // Calculate position between stations
         let position = (y_intersect - y_intersect.floor()) % 1.0;
@@ -776,10 +883,12 @@ fn draw_conflict_highlights(
         let x = dims.left_margin + (time_fraction * dims.hour_width);
 
         // Calculate y position based on the conflict position between stations
-        let y = dims.top_margin +
-            (conflict.station1_idx as f64 * station_height) +
-            (station_height / 2.0) +
-            (conflict.position * station_height * (conflict.station2_idx - conflict.station1_idx) as f64);
+        let y = dims.top_margin
+            + (conflict.station1_idx as f64 * station_height)
+            + (station_height / 2.0)
+            + (conflict.position
+                * station_height
+                * (conflict.station2_idx - conflict.station1_idx) as f64);
 
         // Draw a warning triangle at the conflict point
         let size = 15.0 / zoom_level;
@@ -787,26 +896,26 @@ fn draw_conflict_highlights(
 
         // Draw filled triangle
         ctx.begin_path();
-        ctx.move_to(x, y - size);  // Top point
-        ctx.line_to(x - size * 0.866, y + size * 0.5);  // Bottom left
-        ctx.line_to(x + size * 0.866, y + size * 0.5);  // Bottom right
+        ctx.move_to(x, y - size); // Top point
+        ctx.line_to(x - size * 0.866, y + size * 0.5); // Bottom left
+        ctx.line_to(x + size * 0.866, y + size * 0.5); // Bottom right
         ctx.close_path();
 
         // Fill with warning color
-        ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(255, 200, 0, 0.9)"));
+        ctx.set_fill_style_str("rgba(255, 200, 0, 0.9)");
         ctx.fill();
 
         // Stroke with thick black border
-        ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("rgba(0, 0, 0, 0.8)"));
+        ctx.set_stroke_style_str("rgba(0, 0, 0, 0.8)");
         ctx.stroke();
 
         // Draw exclamation mark inside triangle
-        ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#000"));
+        ctx.set_fill_style_str("#000");
         ctx.set_font(&format!("bold {}px sans-serif", 12.0 / zoom_level));
         let _ = ctx.fill_text("!", x - 2.0 / zoom_level, y + 4.0 / zoom_level);
 
         // Draw conflict details (simplified - just show line IDs)
-        ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(255, 255, 255, 0.9)"));
+        ctx.set_fill_style_str("rgba(255, 255, 255, 0.9)");
         ctx.set_font(&format!("{}px monospace", 9.0 / zoom_level));
         let label = format!("{} × {}", conflict.journey1_id, conflict.journey2_id);
         let _ = ctx.fill_text(&label, x + size + 5.0 / zoom_level, y);
@@ -814,9 +923,12 @@ fn draw_conflict_highlights(
 
     // If there are more conflicts than displayed, show a count
     if conflicts.len() > max_conflicts {
-        ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("rgba(255, 0, 0, 0.8)"));
+        ctx.set_fill_style_str("rgba(255, 0, 0, 0.8)");
         ctx.set_font(&format!("bold {}px monospace", 14.0 / zoom_level));
-        let warning_text = format!("⚠ {} more conflicts not shown", conflicts.len() - max_conflicts);
+        let warning_text = format!(
+            "⚠ {} more conflicts not shown",
+            conflicts.len() - max_conflicts
+        );
         let _ = ctx.fill_text(&warning_text, 10.0, dims.top_margin - 10.0);
     }
 }
@@ -838,7 +950,7 @@ fn draw_time_indicator(
     }
 
     // Draw semi-transparent background for the line
-    ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("rgba(255, 51, 51, 0.3)"));
+    ctx.set_stroke_style_str("rgba(255, 51, 51, 0.3)");
     ctx.set_line_width(8.0);
     ctx.begin_path();
     ctx.move_to(x, dims.top_margin);
@@ -846,7 +958,7 @@ fn draw_time_indicator(
     ctx.stroke();
 
     // Draw main line
-    ctx.set_stroke_style(&wasm_bindgen::JsValue::from_str("#FF3333"));
+    ctx.set_stroke_style_str("#FF3333");
     ctx.set_line_width(2.0);
     ctx.begin_path();
     ctx.move_to(x, dims.top_margin);
@@ -854,7 +966,7 @@ fn draw_time_indicator(
     ctx.stroke();
 
     // Draw draggable handle at top
-    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#FF3333"));
+    ctx.set_fill_style_str("#FF3333");
     ctx.begin_path();
     ctx.move_to(x - 8.0, dims.top_margin - 15.0);
     ctx.line_to(x + 8.0, dims.top_margin - 15.0);
@@ -863,13 +975,11 @@ fn draw_time_indicator(
     ctx.fill();
 
     // Draw time label
-    ctx.set_fill_style(&wasm_bindgen::JsValue::from_str("#FF3333"));
+    ctx.set_fill_style_str("#FF3333");
     ctx.set_font("bold 12px monospace");
     let _ = ctx.fill_text(
         &time.format("%H:%M").to_string(),
         x - 20.0,
-        dims.top_margin - 20.0
+        dims.top_margin - 20.0,
     );
 }
-
-
