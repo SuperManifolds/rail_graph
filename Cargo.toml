@@ -26,3 +26,10 @@ panic = "abort"
 inherits = "release"
 opt-level = "z"
 lto = true
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "conflict_detection"
+harness = false
