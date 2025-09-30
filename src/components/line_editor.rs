@@ -93,6 +93,25 @@ pub fn LineEditor(
 
                     <div class="line-editor-content">
                         <div class="form-group">
+                            <label>"Name"</label>
+                            <input
+                                type="text"
+                                value=move || edited_line.get().map(|l| l.id.clone()).unwrap_or_default()
+                                on:change={
+                                    let on_save = on_save.clone();
+                                    move |ev| {
+                                        let name = event_target_value(&ev);
+                                        if let Some(mut updated_line) = edited_line.get_untracked() {
+                                            updated_line.id = name;
+                                            set_edited_line.set(Some(updated_line.clone()));
+                                            on_save(updated_line);
+                                        }
+                                    }
+                                }
+                            />
+                        </div>
+
+                        <div class="form-group">
                             <label>"Color"</label>
                             <input
                                 type="color"
