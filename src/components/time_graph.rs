@@ -1,4 +1,5 @@
 use crate::components::{
+    error_list::ErrorList,
     graph_canvas::GraphCanvas,
     legend::Legend,
     line_controls::LineControls
@@ -90,6 +91,16 @@ pub fn TimeGraph() -> impl IntoView {
         set_train_journeys.set(new_journeys);
     });
 
+    // Compute conflicts and station crossings
+    let station_names: Vec<String> = stations.iter().map(|s| s.name.clone()).collect();
+    let conflicts_and_crossings = create_memo(move |_| {
+        let journeys = train_journeys.get();
+        let seg_state = segment_state.get();
+        crate::models::detect_line_conflicts(&journeys, &station_names, &seg_state)
+    });
+
+    let conflicts_only = Signal::derive(move || conflicts_and_crossings.get().0);
+
     view! {
         <div class="time-graph-container">
             <div class="main-content">
@@ -102,11 +113,13 @@ pub fn TimeGraph() -> impl IntoView {
                     set_segment_state=set_segment_state
                     show_station_crossings=show_station_crossings
                     show_conflicts=show_conflicts
+                    conflicts_and_crossings=conflicts_and_crossings
                 />
             </div>
             <div class="sidebar">
                 <div class="sidebar-header">
                     <h2>"Railway Time Graph"</h2>
+                    <ErrorList conflicts=conflicts_only />
                     <Legend
                         show_station_crossings=show_station_crossings
                         set_show_station_crossings=set_show_station_crossings

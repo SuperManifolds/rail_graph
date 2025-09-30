@@ -25,6 +25,7 @@ pub fn GraphCanvas(
     set_segment_state: WriteSignal<SegmentState>,
     show_station_crossings: ReadSignal<bool>,
     show_conflicts: ReadSignal<bool>,
+    conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
@@ -37,14 +38,6 @@ pub fn GraphCanvas(
 
     // Clone stations for use in render closure
     let stations_for_render = stations.clone();
-
-    // Compute conflicts and station crossings only when train journeys change, not on every render
-    let station_names: Vec<String> = stations.iter().map(|s| s.name.clone()).collect();
-    let conflicts_and_crossings = create_memo(move |_| {
-        let journeys = train_journeys.get();
-        let seg_state = segment_state.get();
-        crate::models::detect_line_conflicts(&journeys, &station_names, &seg_state)
-    });
 
     // Render the graph whenever train journeys change
     create_effect(move |_| {
