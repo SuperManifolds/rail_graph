@@ -1,0 +1,138 @@
+.line-editor-dialog {
+    position: fixed;
+    background-color: #1a1a1a;
+    border: 1px solid #444;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    z-index: 2000;
+
+    .line-editor-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.5rem;
+        border-bottom: 1px solid #333;
+        cursor: move;
+        user-select: none;
+
+        h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #fff;
+            margin: 0;
+        }
+
+        .close-button {
+            background: none;
+            border: none;
+            color: #999;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            &:hover {
+                color: #fff;
+            }
+        }
+    }
+
+    .line-editor-content {
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+
+            > label {
+                font-size: 0.9rem;
+                color: #ccc;
+                font-weight: 500;
+            }
+
+            input[type="color"],
+            input[type="text"],
+            input[type="time"] {
+                background-color: #222;
+                border: 1px solid #444;
+                border-radius: 4px;
+                padding: 0.5rem;
+                color: #fff;
+                font-size: 0.85rem;
+
+                &:focus {
+                    outline: none;
+                    border-color: #555;
+                    background-color: #2a2a2a;
+                }
+            }
+
+            input[type="color"] {
+                width: 80px;
+                height: 32px;
+                padding: 2px;
+            }
+
+            input[type="text"] {
+                width: 120px;
+                font-family: monospace;
+            }
+
+            input[type="time"] {
+                width: 120px;
+            }
+        }
+    }
+
+    .line-editor-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        padding: 1.5rem;
+        border-top: 1px solid #333;
+
+        button {
+            padding: 0.5rem 1.5rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            border: 1px solid #444;
+
+            &.cancel-button {
+                background-color: #2a2a2a;
+                color: #fff;
+
+                &:hover {
+                    background-color: #333;
+                }
+            }
+
+            &.save-button {
+                background-color: #4a9eff;
+                color: #fff;
+                border-color: #4a9eff;
+
+                &:hover {
+                    background-color: #3a8eef;
+                }
+            }
+
+            &:focus {
+                outline: none;
+                border-color: #555;
+            }
+        }
+    }
+}

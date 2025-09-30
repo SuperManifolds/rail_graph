@@ -11,7 +11,6 @@
         border: 1px solid #2a2a2a;
 
         .line-header {
-            margin-bottom: 0.5rem;
             font-size: 0.9rem;
             color: #fff;
             font-weight: 500;
@@ -24,7 +23,8 @@
                 align-items: center;
                 gap: 0.5rem;
 
-                .visibility-toggle {
+                .visibility-toggle,
+                .edit-button {
                     background: none;
                     border: none;
                     color: #999;
@@ -46,62 +46,6 @@
 
                     i {
                         pointer-events: none;
-                    }
-                }
-
-                .color-picker {
-                    width: 32px;
-                    height: 32px;
-                    border: 1px solid #333;
-                    border-radius: 4px;
-                    cursor: pointer;
-                    background: transparent;
-                    padding: 2px;
-
-                    &:hover {
-                        border-color: #555;
-                    }
-
-                    &:focus {
-                        outline: none;
-                        border-color: #666;
-                    }
-                }
-            }
-        }
-
-        .control-row {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-
-            label {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                font-size: 0.8rem;
-                color: #999;
-
-                input {
-                    background-color: #222;
-                    border: 1px solid #444;
-                    border-radius: 4px;
-                    padding: 0.5rem;
-                    color: #fff;
-                    font-size: 0.85rem;
-
-                    &:focus {
-                        outline: none;
-                        border-color: #555;
-                        background-color: #2a2a2a;
-                    }
-
-                    &[type="number"] {
-                        width: 80px;
-                    }
-
-                    &[type="time"] {
-                        width: 120px;
                     }
                 }
             }

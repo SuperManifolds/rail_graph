@@ -16,5 +16,37 @@ body {
     min-height: 100vh;
 }
 
+// Shared input styles
+label {
+    input[type="time"],
+    input[type="number"],
+    input[type="text"] {
+        background-color: #222;
+        border: 1px solid #444;
+        border-radius: 4px;
+        padding: 0.5rem;
+        color: #fff;
+        font-size: 0.85rem;
+
+        &:focus {
+            outline: none;
+            border-color: #555;
+            background-color: #2a2a2a;
+        }
+
+        &[type="number"] {
+            width: 80px;
+        }
+
+        &[type="time"] {
+            width: 120px;
+        }
+
+        &[type="text"] {
+            width: 120px;
+        }
+    }
+}
+
 // Import all component styles
 @import '../src/components/components';

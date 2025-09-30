@@ -6,6 +6,7 @@ pub mod graph_canvas;
 pub mod importer;
 pub mod legend;
 pub mod line_controls;
+pub mod line_editor;
 pub mod time_graph;
 pub mod time_input;
 
