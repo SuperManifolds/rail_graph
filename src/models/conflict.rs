@@ -2,6 +2,7 @@ use chrono::NaiveDateTime;
 use super::{SegmentState, TrainJourney};
 use crate::time::time_to_fraction;
 use crate::constants::BASE_DATE;
+use std::collections::HashMap;
 
 // Conflict detection constants
 const STATION_MARGIN_MINUTES: i64 = 1;
@@ -26,7 +27,7 @@ struct JourneySegment {
 }
 
 struct ConflictContext<'a> {
-    stations: &'a [String],
+    station_indices: HashMap<&'a str, usize>,
     segment_state: &'a SegmentState,
     station_margin: chrono::Duration,
 }
@@ -37,8 +38,16 @@ pub fn detect_line_conflicts(
     segment_state: &SegmentState,
 ) -> Vec<Conflict> {
     let mut conflicts = Vec::new();
+
+    // Pre-compute station name to index mapping for O(1) lookups
+    let station_indices: HashMap<&str, usize> = stations
+        .iter()
+        .enumerate()
+        .map(|(idx, name)| (name.as_str(), idx))
+        .collect();
+
     let ctx = ConflictContext {
-        stations,
+        station_indices,
         segment_state,
         station_margin: chrono::Duration::minutes(STATION_MARGIN_MINUTES),
     };
@@ -65,14 +74,14 @@ fn check_journey_pair(
     ctx: &ConflictContext,
     conflicts: &mut Vec<Conflict>,
 ) {
-    let mut prev1: Option<(&String, NaiveDateTime, usize)> = None;
+    let mut prev1: Option<(NaiveDateTime, usize)> = None;
 
     for (station1, time1) in &journey1.station_times {
-        let Some(station1_idx) = ctx.stations.iter().position(|s| s == station1) else {
+        let Some(&station1_idx) = ctx.station_indices.get(station1.as_str()) else {
             continue;
         };
 
-        if let Some((_prev_station1, prev_time1, prev_idx1)) = prev1 {
+        if let Some((prev_time1, prev_idx1)) = prev1 {
             let segment1 = JourneySegment {
                 time_start: prev_time1,
                 time_end: *time1,
@@ -81,7 +90,7 @@ fn check_journey_pair(
             };
             check_segment_against_journey(&segment1, journey1, journey2, ctx, conflicts);
         }
-        prev1 = Some((station1, *time1, station1_idx));
+        prev1 = Some((*time1, station1_idx));
     }
 }
 
@@ -101,14 +110,14 @@ fn check_segment_against_journey(
     let seg1_min = segment1.idx_start.min(segment1.idx_end);
     let seg1_max = segment1.idx_start.max(segment1.idx_end);
 
-    let mut prev2: Option<(&String, NaiveDateTime, usize)> = None;
+    let mut prev2: Option<(NaiveDateTime, usize)> = None;
 
     for (station2, time2) in &journey2.station_times {
-        let Some(station2_idx) = ctx.stations.iter().position(|s| s == station2) else {
+        let Some(&station2_idx) = ctx.station_indices.get(station2.as_str()) else {
             continue;
         };
 
-        if let Some((_prev_station2, prev_time2, prev_idx2)) = prev2 {
+        if let Some((prev_time2, prev_idx2)) = prev2 {
             let segment2 = JourneySegment {
                 time_start: prev_time2,
                 time_end: *time2,
@@ -131,7 +140,7 @@ fn check_segment_against_journey(
                 }
             }
         }
-        prev2 = Some((station2, *time2, station2_idx));
+        prev2 = Some((*time2, station2_idx));
     }
 }
 
@@ -165,7 +174,7 @@ fn check_segment_pair(
     )?;
 
     // Don't count conflicts that happen very close to stations
-    if is_near_station(&intersection, journey1, journey2, ctx.station_margin) {
+    if is_near_station(&intersection, segment1, segment2, ctx.station_margin) {
         return None;
     }
 
@@ -186,13 +195,19 @@ fn check_segment_pair(
 
 fn is_near_station(
     intersection: &Intersection,
-    journey1: &TrainJourney,
-    journey2: &TrainJourney,
+    segment1: &JourneySegment,
+    segment2: &JourneySegment,
     station_margin: chrono::Duration,
 ) -> bool {
-    journey1.station_times.iter().any(|(_, t)| {
-        (*t - intersection.time).abs() < station_margin
-    }) || journey2.station_times.iter().any(|(_, t)| {
+    // Only check the 4 relevant station times instead of all station times
+    let times = [
+        segment1.time_start,
+        segment1.time_end,
+        segment2.time_start,
+        segment2.time_end,
+    ];
+
+    times.iter().any(|t| {
         (*t - intersection.time).abs() < station_margin
     })
 }
