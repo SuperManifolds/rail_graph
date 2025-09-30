@@ -3,8 +3,7 @@ use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::JsCast;
 use crate::models::{Conflict, Station, TrainJourney, SegmentState};
-use crate::components::conflict_tooltip::{ConflictTooltip, check_conflict_hover};
-use crate::components::doubletrack_toggle::check_toggle_click;
+use crate::components::conflict_tooltip::ConflictTooltip;
 use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
 use super::{station_labels, time_labels, conflict_indicators, train_positions, train_journeys, time_scrubber, graph_content};
@@ -97,7 +96,7 @@ pub fn GraphCanvas(
                 let canvas_width = canvas.width() as f64;
                 let canvas_height = canvas.height() as f64;
 
-                if let Some(clicked_segment) = check_toggle_click(
+                if let Some(clicked_segment) = station_labels::check_toggle_click(
                     x, y, canvas_height, &stations_for_mouse_down,
                     zoom_level.get(), pan_offset_y.get()
                 ) {
@@ -150,7 +149,7 @@ pub fn GraphCanvas(
             } else {
                 // Check for conflict hover
                 let current_conflicts = conflicts.get();
-                let hovered = check_conflict_hover(
+                let hovered = conflict_indicators::check_conflict_hover(
                     x, y, &current_conflicts, &stations_for_mouse_move,
                     canvas.width() as f64, canvas.height() as f64,
                     zoom_level.get(), pan_offset_x.get(), pan_offset_y.get()
