@@ -234,7 +234,7 @@ pub fn GraphCanvas(
                 let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
 
                 let old_zoom = zoom_level.get();
-                let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 10.0);
+                let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 25.0);
 
                 // Calculate zoom point relative to graph area
                 let graph_mouse_x = mouse_x - LEFT_MARGIN;
