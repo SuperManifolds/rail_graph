@@ -26,6 +26,7 @@ pub fn GraphCanvas(
     show_station_crossings: ReadSignal<bool>,
     show_conflicts: ReadSignal<bool>,
     conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
+    #[prop(optional)] pan_to_conflict_signal: Option<ReadSignal<Option<(f64, f64)>>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
@@ -35,6 +36,32 @@ pub fn GraphCanvas(
     let (is_panning, set_is_panning) = create_signal(false);
     let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
     let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(crate::models::Conflict, f64, f64)>);
+
+    // Handle pan to conflict requests
+    if let Some(pan_signal) = pan_to_conflict_signal {
+        create_effect(move |_| {
+            if let Some((time_fraction, station_pos)) = pan_signal.get() {
+                if let Some(canvas_elem) = canvas_ref.get() {
+                    let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
+                    let canvas_width = canvas.width() as f64;
+                    let canvas_height = canvas.height() as f64;
+
+                    let dims = GraphDimensions::new(canvas_width, canvas_height);
+
+                    // Set a comfortable zoom level for viewing conflicts
+                    let target_zoom = 4.0;
+                    set_zoom_level.set(target_zoom);
+
+                    // Center the conflict in the viewport with zoom applied
+                    let target_x = (time_fraction * dims.hour_width * target_zoom) - (canvas_width / 2.0);
+                    let target_y = (station_pos * (dims.graph_height / (stations.get().len() as f64).max(1.0)) * target_zoom) - (canvas_height / 2.0);
+
+                    set_pan_offset_x.set(-target_x);
+                    set_pan_offset_y.set(-target_y);
+                }
+            }
+        });
+    }
 
     // Render the graph whenever train journeys or stations change
     create_effect(move |_| {

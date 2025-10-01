@@ -1,18 +1,14 @@
 use leptos::*;
 use crate::models::Conflict;
+use crate::time::time_to_fraction;
 
 #[component]
 fn ErrorListPopover(
     conflicts: Signal<Vec<Conflict>>,
-    on_close: impl Fn() + 'static,
+    on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
 ) -> impl IntoView {
     view! {
         <div class="error-list-popover">
-            <div class="error-list-header">
-                <h3>"Conflicts"</h3>
-                <button class="close-button" on:click=move |_| on_close()>"×"</button>
-            </div>
-
             <div class="error-list-content">
                 {move || {
                     let current_conflicts = conflicts.get();
@@ -30,24 +26,26 @@ fn ErrorListPopover(
                                         "Crossing"
                                     };
 
+                                    let time_fraction = time_to_fraction(conflict.time);
+                                    let station_position = conflict.station1_idx as f64 + conflict.position;
+
                                     view! {
-                                        <div class="error-item">
+                                        <div
+                                            class="error-item clickable"
+                                            on:click=move |_| {
+                                                on_conflict_click(time_fraction, station_position);
+                                            }
+                                        >
                                             <div class="error-item-header">
                                                 <i class="fa-solid fa-triangle-exclamation"></i>
                                                 <span class="error-type">{conflict_type}</span>
                                             </div>
                                             <div class="error-item-details">
                                                 <div class="error-detail">
-                                                    <span class="label">"Lines: "</span>
                                                     <span class="value">{format!("{} × {}", conflict.journey1_id, conflict.journey2_id)}</span>
                                                 </div>
                                                 <div class="error-detail">
-                                                    <span class="label">"Time: "</span>
                                                     <span class="value">{conflict.time.format("%H:%M:%S").to_string()}</span>
-                                                </div>
-                                                <div class="error-detail">
-                                                    <span class="label">"Segment: "</span>
-                                                    <span class="value">{format!("{} → {}", conflict.station1_idx, conflict.station2_idx)}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -65,6 +63,7 @@ fn ErrorListPopover(
 #[component]
 pub fn ErrorList(
     conflicts: Signal<Vec<Conflict>>,
+    on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
 
@@ -99,7 +98,7 @@ pub fn ErrorList(
                     view! {
                         <ErrorListPopover
                             conflicts=conflicts
-                            on_close=move || set_is_open.set(false)
+                            on_conflict_click=on_conflict_click
                         />
                     }.into_view()
                 } else {

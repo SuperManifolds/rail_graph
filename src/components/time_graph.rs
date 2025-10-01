@@ -95,6 +95,9 @@ pub fn TimeGraph() -> impl IntoView {
 
     let conflicts_only = Signal::derive(move || conflicts_and_crossings.get().0);
 
+    // Signal for panning to conflicts
+    let (pan_to_conflict, set_pan_to_conflict) = create_signal(None::<(f64, f64)>);
+
     view! {
         <div class="time-graph-container">
             <div class="main-content">
@@ -108,12 +111,18 @@ pub fn TimeGraph() -> impl IntoView {
                     show_station_crossings=show_station_crossings
                     show_conflicts=show_conflicts
                     conflicts_and_crossings=conflicts_and_crossings
+                    pan_to_conflict_signal=pan_to_conflict
                 />
             </div>
             <div class="sidebar">
                 <div class="sidebar-header">
                     <h2>"Railway Time Graph"</h2>
-                    <ErrorList conflicts=conflicts_only />
+                    <ErrorList
+                        conflicts=conflicts_only
+                        on_conflict_click=move |time_fraction, station_pos| {
+                            set_pan_to_conflict.set(Some((time_fraction, station_pos)));
+                        }
+                    />
                 </div>
                 <LineControls lines=lines set_lines=set_lines stations=stations set_stations=set_stations />
                 <div class="sidebar-footer">

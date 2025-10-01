@@ -48,57 +48,23 @@
     }
 
     .error-list-popover {
-        position: absolute;
-        top: calc(100% + 0.5rem);
-        left: 0;
-        right: 0;
+        position: fixed;
+        top: 4rem;
+        right: 1rem;
+        width: 350px;
         background-color: #1a1a1a;
         border: 1px solid #444;
         border-radius: 6px;
         padding: 1rem;
-        z-index: 1000;
+        z-index: 3000;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-        max-height: 400px;
+        max-height: calc(100vh - 5rem);
         display: flex;
         flex-direction: column;
 
-        .error-list-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-            padding-bottom: 0.75rem;
-            border-bottom: 1px solid #333;
-
-            h3 {
-                font-size: 1rem;
-                font-weight: 600;
-                color: #fff;
-                margin: 0;
-            }
-
-            .close-button {
-                background: none;
-                border: none;
-                color: #999;
-                font-size: 1.5rem;
-                cursor: pointer;
-                padding: 0;
-                line-height: 1;
-                width: 24px;
-                height: 24px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-
-                &:hover {
-                    color: #fff;
-                }
-            }
-        }
-
         .error-list-content {
             overflow-y: auto;
+            overflow-x: hidden;
             flex: 1;
 
             .no-errors {
@@ -118,6 +84,17 @@
                     border: 1px solid rgba(255, 200, 0, 0.2);
                     border-radius: 4px;
                     padding: 0.75rem;
+                    transition: all 0.2s;
+
+                    &.clickable {
+                        cursor: pointer;
+
+                        &:hover {
+                            background-color: rgba(255, 200, 0, 0.1);
+                            border-color: rgba(255, 200, 0, 0.3);
+                            transform: translateX(2px);
+                        }
+                    }
 
                     .error-item-header {
                         display: flex;
@@ -135,19 +112,11 @@
 
                     .error-item-details {
                         display: flex;
-                        flex-direction: column;
-                        gap: 0.25rem;
-                        font-size: 0.8rem;
+                        flex-direction: row;
+                        gap: 1rem;
+                        font-size: 0.85rem;
 
                         .error-detail {
-                            display: flex;
-                            gap: 0.5rem;
-
-                            .label {
-                                color: #999;
-                                min-width: 60px;
-                            }
-
                             .value {
                                 color: #fff;
                                 font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
