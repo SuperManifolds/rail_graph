@@ -12,6 +12,49 @@ pub fn LineControls(
 ) -> impl IntoView {
     let (open_editors, set_open_editors) = create_signal(HashSet::<String>::new());
 
+    let editors_view = move || {
+        open_editors.get().into_iter().map(|line_id| {
+            let current_line = Signal::derive({
+                let line_id = line_id.clone();
+                move || {
+                    lines.get().into_iter().find(|l| l.id == line_id)
+                }
+            });
+
+            let is_open = Signal::derive({
+                let line_id = line_id.clone();
+                move || open_editors.get().contains(&line_id)
+            });
+
+            view! {
+                <LineEditor
+                    initial_line=current_line
+                    is_open=is_open
+                    set_is_open={
+                        let line_id = line_id.clone();
+                        move |open: bool| {
+                            if !open {
+                                set_open_editors.update(|editors| {
+                                    editors.remove(&line_id);
+                                });
+                            }
+                        }
+                    }
+                    stations=stations
+                    on_save={
+                        move |edited_line: Line| {
+                            set_lines.update(|lines_vec| {
+                                if let Some(line) = lines_vec.iter_mut().find(|l| l.id == edited_line.id) {
+                                    *line = edited_line;
+                                }
+                            });
+                        }
+                    }
+                />
+            }
+        }).collect_view()
+    };
+
     view! {
         <div class="controls">
             <h3>"Line Configuration:"</h3>
@@ -36,49 +79,7 @@ pub fn LineControls(
             </div>
         </div>
 
-        {move || {
-            open_editors.get().iter().map(|line_id| {
-                let line_id = line_id.clone();
-                let current_line = Signal::derive({
-                    let line_id = line_id.clone();
-                    move || {
-                        lines.get().into_iter().find(|l| l.id == line_id)
-                    }
-                });
-
-                let is_open = Signal::derive({
-                    let line_id = line_id.clone();
-                    move || open_editors.get().contains(&line_id)
-                });
-
-                view! {
-                    <LineEditor
-                        initial_line=current_line
-                        is_open=is_open
-                        set_is_open={
-                            let line_id = line_id.clone();
-                            move |open: bool| {
-                                if !open {
-                                    set_open_editors.update(|editors| {
-                                        editors.remove(&line_id);
-                                    });
-                                }
-                            }
-                        }
-                        stations=stations
-                        on_save={
-                            move |edited_line: Line| {
-                                set_lines.update(|lines_vec| {
-                                    if let Some(line) = lines_vec.iter_mut().find(|l| l.id == edited_line.id) {
-                                        *line = edited_line;
-                                    }
-                                });
-                            }
-                        }
-                    />
-                }
-            }).collect::<Vec<_>>()
-        }}
+        {editors_view}
     }
 }
 
