@@ -1,6 +1,7 @@
 use leptos::*;
 use crate::models::{Line, Station};
 use crate::components::line_editor::LineEditor;
+use std::collections::HashSet;
 
 
 #[component]
@@ -9,14 +10,7 @@ pub fn LineControls(
     set_lines: WriteSignal<Vec<Line>>,
     stations: ReadSignal<Vec<Station>>,
 ) -> impl IntoView {
-    let (is_editor_open, set_is_editor_open) = create_signal(false);
-    let (editing_line_id, set_editing_line_id) = create_signal(None::<String>);
-
-    let current_editing_line = Signal::derive(move || {
-        editing_line_id.get().and_then(|id| {
-            lines.get().into_iter().find(|l| l.id == id)
-        })
-    });
+    let (open_editors, set_open_editors) = create_signal(HashSet::<String>::new());
 
     view! {
         <div class="controls">
@@ -31,8 +25,9 @@ pub fn LineControls(
                                 lines=lines
                                 set_lines=set_lines
                                 on_edit=move |id: String| {
-                                    set_editing_line_id.set(Some(id));
-                                    set_is_editor_open.set(true);
+                                    set_open_editors.update(|editors| {
+                                        editors.insert(id);
+                                    });
                                 }
                             />
                         }
@@ -41,21 +36,49 @@ pub fn LineControls(
             </div>
         </div>
 
-        <LineEditor
-            initial_line=current_editing_line
-            is_open=is_editor_open
-            set_is_open=set_is_editor_open
-            stations=stations
-            on_save={
-                move |edited_line: Line| {
-                    set_lines.update(|lines_vec| {
-                        if let Some(line) = lines_vec.iter_mut().find(|l| l.id == edited_line.id) {
-                            *line = edited_line;
+        {move || {
+            open_editors.get().iter().map(|line_id| {
+                let line_id = line_id.clone();
+                let current_line = Signal::derive({
+                    let line_id = line_id.clone();
+                    move || {
+                        lines.get().into_iter().find(|l| l.id == line_id)
+                    }
+                });
+
+                let is_open = Signal::derive({
+                    let line_id = line_id.clone();
+                    move || open_editors.get().contains(&line_id)
+                });
+
+                view! {
+                    <LineEditor
+                        initial_line=current_line
+                        is_open=is_open
+                        set_is_open={
+                            let line_id = line_id.clone();
+                            move |open: bool| {
+                                if !open {
+                                    set_open_editors.update(|editors| {
+                                        editors.remove(&line_id);
+                                    });
+                                }
+                            }
                         }
-                    });
+                        stations=stations
+                        on_save={
+                            move |edited_line: Line| {
+                                set_lines.update(|lines_vec| {
+                                    if let Some(line) = lines_vec.iter_mut().find(|l| l.id == edited_line.id) {
+                                        *line = edited_line;
+                                    }
+                                });
+                            }
+                        }
+                    />
                 }
-            }
-        />
+            }).collect::<Vec<_>>()
+        }}
     }
 }
 

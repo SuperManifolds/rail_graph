@@ -12,8 +12,8 @@ use std::rc::Rc;
 #[component]
 pub fn LineEditor(
     #[prop(into)] initial_line: MaybeSignal<Option<Line>>,
-    is_open: ReadSignal<bool>,
-    set_is_open: WriteSignal<bool>,
+    is_open: Signal<bool>,
+    set_is_open: impl Fn(bool) + 'static,
     stations: ReadSignal<Vec<Station>>,
     on_save: impl Fn(Line) + 'static,
 ) -> impl IntoView {
@@ -31,9 +31,10 @@ pub fn LineEditor(
     });
 
     let on_save = Rc::new(on_save);
+    let set_is_open = store_value(set_is_open);
 
     let close_dialog = move || {
-        set_is_open.set(false);
+        set_is_open.with_value(|f| f(false));
     };
 
     let window_title = Signal::derive(move || {
