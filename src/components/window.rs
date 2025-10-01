@@ -26,6 +26,15 @@ pub fn Window(
         set_z_index.set(NEXT_Z_INDEX.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
     };
 
+    // Bring window to front when it opens
+    create_effect(move |prev_open| {
+        let currently_open = is_open.get();
+        if currently_open && prev_open != Some(true) {
+            bring_to_front();
+        }
+        currently_open
+    });
+
     let handle_mouse_down = move |ev: web_sys::MouseEvent| {
         bring_to_front();
         set_is_dragging.set(true);
