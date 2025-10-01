@@ -17,15 +17,18 @@ const DAY_INDICATOR_FONT: &str = "10px monospace";
 const DAY_INDICATOR_X_OFFSET: f64 = -10.0;
 const DAY_INDICATOR_Y_OFFSET: f64 = 5.0;
 
-pub fn draw_hour_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, zoom_level: f64) {
+pub fn draw_hour_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, zoom_level: f64, pan_offset_x: f64) {
     ctx.set_stroke_style_str(HOUR_GRID_COLOR);
     ctx.set_line_width(1.0 / zoom_level);
 
-    // Calculate visible time range based on current view
-    let hours_visible = (dims.graph_width / dims.hour_width).ceil() as i32;
-    // Add padding to ensure we draw beyond visible area for smooth panning
-    let start_hour = -HOUR_GRID_PADDING;
-    let end_hour = hours_visible + HOUR_GRID_PADDING;
+    // Calculate visible range in the transformed coordinate system
+    // After transforms, visible x range is: [-pan_offset_x/zoom_level, (graph_width - pan_offset_x)/zoom_level]
+    let x_min = -pan_offset_x / zoom_level;
+    let x_max = (dims.graph_width - pan_offset_x) / zoom_level;
+
+    // Calculate which hour lines are visible
+    let start_hour = (x_min / dims.hour_width).floor() as i32 - HOUR_GRID_PADDING;
+    let end_hour = (x_max / dims.hour_width).ceil() as i32 + HOUR_GRID_PADDING;
 
     for i in start_hour..=end_hour {
         let x = dims.left_margin + (i as f64 * dims.hour_width);
@@ -44,16 +47,19 @@ pub fn draw_hour_labels(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     zoom_level: f64,
+    zoom_level_x: f64,
     pan_offset_x: f64,
 ) {
+    // Account for both uniform zoom and horizontal zoom
+    let effective_hour_width = dims.hour_width * zoom_level * zoom_level_x;
+
     // Calculate which hours are potentially visible
-    let start_hour = ((-pan_offset_x) / (dims.hour_width * zoom_level)).floor() as i32 - 1;
-    let end_hour =
-        ((-pan_offset_x + dims.graph_width) / (dims.hour_width * zoom_level)).ceil() as i32 + 1;
+    let start_hour = ((-pan_offset_x) / effective_hour_width).floor() as i32 - 1;
+    let end_hour = ((-pan_offset_x + dims.graph_width) / effective_hour_width).ceil() as i32 + 1;
 
     for i in start_hour..=end_hour {
         let base_x = i as f64 * dims.hour_width;
-        let adjusted_x = dims.left_margin + (base_x * zoom_level) + pan_offset_x;
+        let adjusted_x = dims.left_margin + (base_x * zoom_level * zoom_level_x) + pan_offset_x;
 
         // Only draw label if it's within the visible graph area
         if adjusted_x >= dims.left_margin

@@ -28,6 +28,7 @@ impl GraphDimensions {
 #[derive(Clone)]
 pub struct ViewportState {
     pub zoom_level: f64,
+    pub zoom_level_x: f64,
     pub pan_offset_x: f64,
     pub pan_offset_y: f64,
 }

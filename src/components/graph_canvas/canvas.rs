@@ -30,6 +30,7 @@ pub fn GraphCanvas(
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (zoom_level, set_zoom_level) = create_signal(1.0);
+    let (zoom_level_x, set_zoom_level_x) = create_signal(1.0); // Horizontal (time) zoom
     let (pan_offset_x, set_pan_offset_x) = create_signal(0.0);
     let (pan_offset_y, set_pan_offset_y) = create_signal(0.0);
     let (is_panning, set_is_panning) = create_signal(false);
@@ -75,6 +76,7 @@ pub fn GraphCanvas(
         let _ = visualization_time.get();
         let _ = graph.get();
         let _ = zoom_level.get();
+        let _ = zoom_level_x.get();
         let _ = pan_offset_x.get();
         let _ = pan_offset_y.get();
         let _ = conflicts_and_crossings.get();
@@ -97,6 +99,7 @@ pub fn GraphCanvas(
 
                 if let Some(canvas) = canvas_ref.get_untracked() {
                     let zoom = zoom_level.get_untracked();
+                    let zoom_x = zoom_level_x.get_untracked();
                     let pan_x = pan_offset_x.get_untracked();
                     let pan_y = pan_offset_y.get_untracked();
 
@@ -112,6 +115,7 @@ pub fn GraphCanvas(
 
                     let viewport = ViewportState {
                         zoom_level: zoom,
+                        zoom_level_x: zoom_x,
                         pan_offset_x: pan_x,
                         pan_offset_y: pan_y,
                     };
@@ -152,7 +156,7 @@ pub fn GraphCanvas(
                 ) {
                     toggle_segment_double_track(clicked_segment, &current_stations, set_graph);
                 } else {
-                    handle_time_scrubbing(x, canvas_width, zoom_level.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
+                    handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
                 }
             }
         }
@@ -184,7 +188,7 @@ pub fn GraphCanvas(
                 let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
 
                 if x >= LEFT_MARGIN && x <= LEFT_MARGIN + graph_width {
-                    update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level.get(), pan_offset_x.get(), set_visualization_time);
+                    update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_visualization_time);
                 }
             } else {
                 // Check for conflict hover
@@ -232,27 +236,39 @@ pub fn GraphCanvas(
 
                 let delta = ev.delta_y();
                 let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
-
-                let old_zoom = zoom_level.get();
-                let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 25.0);
+                let shift_pressed = ev.shift_key();
 
                 // Calculate zoom point relative to graph area
                 let graph_mouse_x = mouse_x - LEFT_MARGIN;
                 let graph_mouse_y = mouse_y - TOP_MARGIN;
 
-                // Zoom towards mouse position within graph
                 let pan_x = pan_offset_x.get();
                 let pan_y = pan_offset_y.get();
 
-                let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom / old_zoom);
-                let new_pan_y = graph_mouse_y - (graph_mouse_y - pan_y) * (new_zoom / old_zoom);
+                if shift_pressed {
+                    // Horizontal (time) zoom only
+                    let old_zoom_x = zoom_level_x.get();
+                    let new_zoom_x = (old_zoom_x * zoom_factor).clamp(0.1, 25.0);
+                    let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom_x / old_zoom_x);
 
-                // Batch all zoom/pan updates to trigger only one re-render
-                batch(move || {
-                    set_zoom_level.set(new_zoom);
-                    set_pan_offset_x.set(new_pan_x);
-                    set_pan_offset_y.set(new_pan_y);
-                });
+                    batch(move || {
+                        set_zoom_level_x.set(new_zoom_x);
+                        set_pan_offset_x.set(new_pan_x);
+                    });
+                } else {
+                    // Normal zoom (both dimensions)
+                    let old_zoom = zoom_level.get();
+                    let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 25.0);
+
+                    let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom / old_zoom);
+                    let new_pan_y = graph_mouse_y - (graph_mouse_y - pan_y) * (new_zoom / old_zoom);
+
+                    batch(move || {
+                        set_zoom_level.set(new_zoom);
+                        set_pan_offset_x.set(new_pan_x);
+                        set_pan_offset_y.set(new_pan_y);
+                    });
+                }
             }
         }
     };
@@ -275,19 +291,21 @@ pub fn GraphCanvas(
     }
 }
 
-fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f64, pan_offset_x: f64, set_time: WriteSignal<NaiveDateTime>) {
+fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f64, zoom_level_x: f64, pan_offset_x: f64, set_time: WriteSignal<NaiveDateTime>) {
     // Transform mouse coordinates to account for zoom and pan
     // Reverse the transformations applied in render_graph:
     // 1. Remove left margin offset to get graph-relative position
     let graph_x = x - left_margin;
     // 2. Account for pan offset (subtract because pan moves the content)
     let panned_x = graph_x - pan_offset_x;
-    // 3. Account for zoom (divide because zoom scales the content up)
-    let zoomed_x = panned_x / zoom_level;
+    // 3. Account for uniform zoom (divide because zoom scales the content up)
+    let uniformly_unzoomed_x = panned_x / zoom_level;
+    // 4. Account for horizontal zoom (divide because it stretches time axis)
+    let time_unzoomed_x = uniformly_unzoomed_x / zoom_level_x;
 
     // Now calculate fraction based on the base (unzoomed) graph width
     let base_graph_width = graph_width;
-    let fraction = zoomed_x / base_graph_width;
+    let fraction = time_unzoomed_x / base_graph_width;
 
     let total_hours = fraction * 48.0; // 48 hours to support past-midnight
     let total_minutes = (total_hours * 60.0) as u32;
@@ -360,9 +378,11 @@ fn render_graph(
     let mut zoomed_dimensions = dimensions.clone();
     zoomed_dimensions.left_margin = 0.0; // We've already translated to the graph origin
     zoomed_dimensions.top_margin = 0.0;
+    // Apply horizontal zoom to time axis by scaling hour_width
+    zoomed_dimensions.hour_width *= viewport.zoom_level_x;
 
     // Draw grid and content in zoomed coordinate system
-    time_labels::draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level);
+    time_labels::draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level, viewport.pan_offset_x);
     graph_content::draw_station_grid(&ctx, &zoomed_dimensions, stations);
     graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, graph);
 
@@ -421,6 +441,7 @@ fn render_graph(
         &ctx,
         &dimensions,
         viewport.zoom_level,
+        viewport.zoom_level_x,
         viewport.pan_offset_x,
     );
     station_labels::draw_station_labels(
@@ -494,6 +515,7 @@ fn handle_time_scrubbing(
     x: f64,
     canvas_width: f64,
     zoom_level: f64,
+    zoom_level_x: f64,
     pan_offset_x: f64,
     set_is_dragging: WriteSignal<bool>,
     set_visualization_time: WriteSignal<NaiveDateTime>,
@@ -502,6 +524,6 @@ fn handle_time_scrubbing(
 
     if x >= LEFT_MARGIN && x <= LEFT_MARGIN + graph_width {
         set_is_dragging.set(true);
-        update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level, pan_offset_x, set_visualization_time);
+        update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level, zoom_level_x, pan_offset_x, set_visualization_time);
     }
 }

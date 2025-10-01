@@ -3,8 +3,6 @@ use crate::models::{TrainJourney, StationNode};
 use super::types::GraphDimensions;
 
 // Train journey constants
-const TRAIN_LINE_WIDTH: f64 = 2.0;
-const STATION_DOT_RADIUS: f64 = 3.0;
 const MIDNIGHT_WRAP_THRESHOLD: f64 = 0.5;
 
 pub fn draw_train_journeys(
