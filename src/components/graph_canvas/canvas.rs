@@ -198,7 +198,7 @@ pub fn GraphCanvas(
                 let hovered = conflict_indicators::check_conflict_hover(
                     x, y, &current_conflicts, &current_stations,
                     canvas.width() as f64, canvas.height() as f64,
-                    zoom_level.get(), pan_offset_x.get(), pan_offset_y.get()
+                    zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), pan_offset_y.get()
                 );
                 set_hovered_conflict.set(hovered);
             }
@@ -466,6 +466,7 @@ fn render_graph(
         &dimensions,
         current_time,
         viewport.zoom_level,
+        viewport.zoom_level_x,
         viewport.pan_offset_x,
         time_to_fraction,
     );

@@ -102,6 +102,7 @@ pub fn check_conflict_hover(
     canvas_width: f64,
     canvas_height: f64,
     zoom_level: f64,
+    zoom_level_x: f64,
     pan_offset_x: f64,
     pan_offset_y: f64,
 ) -> Option<(Conflict, f64, f64)> {
@@ -138,7 +139,7 @@ pub fn check_conflict_hover(
                 * (conflict.station2_idx - conflict.station1_idx) as f64);
 
         // Transform to screen coordinates
-        let screen_x = LEFT_MARGIN + (x_in_zoomed * zoom_level) + pan_offset_x;
+        let screen_x = LEFT_MARGIN + (x_in_zoomed * zoom_level * zoom_level_x) + pan_offset_x;
         let screen_y = TOP_MARGIN + (y_in_zoomed * zoom_level) + pan_offset_y;
 
         // Check if mouse is within conflict marker bounds

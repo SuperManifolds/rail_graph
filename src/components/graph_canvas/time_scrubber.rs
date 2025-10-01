@@ -15,12 +15,13 @@ pub fn draw_time_scrubber(
     dims: &GraphDimensions,
     time: NaiveDateTime,
     zoom_level: f64,
+    zoom_level_x: f64,
     pan_offset_x: f64,
     time_to_fraction: fn(NaiveDateTime) -> f64,
 ) {
     let time_fraction = time_to_fraction(time);
     let base_x = time_fraction * dims.hour_width;
-    let x = dims.left_margin + (base_x * zoom_level) + pan_offset_x;
+    let x = dims.left_margin + (base_x * zoom_level * zoom_level_x) + pan_offset_x;
 
     // Only draw if the time scrubber is within the visible graph area
     if x < dims.left_margin || x > dims.left_margin + dims.graph_width {
