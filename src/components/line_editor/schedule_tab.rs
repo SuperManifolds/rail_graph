@@ -4,7 +4,7 @@ use crate::components::{
     tab_view::TabPanel,
     time_input::TimeInput,
 };
-use crate::models::{Line, ScheduleMode, Station};
+use crate::models::{Line, ScheduleMode, RailwayGraph};
 use leptos::*;
 use std::rc::Rc;
 
@@ -12,7 +12,7 @@ use std::rc::Rc;
 pub fn ScheduleTab(
     edited_line: ReadSignal<Option<Line>>,
     set_edited_line: WriteSignal<Option<Line>>,
-    stations: ReadSignal<Vec<Station>>,
+    graph: ReadSignal<RailwayGraph>,
     on_save: Rc<dyn Fn(Line)>,
     active_tab: RwSignal<String>,
 ) -> impl IntoView {
@@ -110,7 +110,7 @@ pub fn ScheduleTab(
                     <ManualDeparturesList
                         edited_line=edited_line
                         set_edited_line=set_edited_line
-                        stations=stations
+                        graph=graph
                         on_save=on_save.get_value()
                     />
                 </Show>

@@ -1,5 +1,5 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::SegmentState;
+use crate::models::{SegmentState, StationNode};
 use super::types::GraphDimensions;
 
 // Background constants
@@ -17,7 +17,7 @@ pub fn draw_background(ctx: &CanvasRenderingContext2d, width: f64, height: f64) 
     ctx.fill_rect(0.0, 0.0, width, height);
 }
 
-pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[String]) {
+pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[StationNode]) {
     let station_height = dims.graph_height / stations.len() as f64;
 
     for (i, _station) in stations.iter().enumerate() {
@@ -50,7 +50,7 @@ fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, 
 pub fn draw_double_track_indicators(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[String],
+    stations: &[StationNode],
     segment_state: &SegmentState,
 ) {
     let station_height = dims.graph_height / stations.len() as f64;

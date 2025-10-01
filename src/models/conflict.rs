@@ -1,5 +1,5 @@
 use chrono::NaiveDateTime;
-use super::{SegmentState, TrainJourney};
+use super::{SegmentState, TrainJourney, RailwayGraph};
 use crate::time::time_to_fraction;
 use crate::constants::BASE_DATE;
 use std::collections::HashMap;
@@ -42,17 +42,20 @@ struct ConflictContext<'a> {
 
 pub fn detect_line_conflicts(
     train_journeys: &[TrainJourney],
-    stations: &[String],
+    graph: &RailwayGraph,
     segment_state: &SegmentState,
 ) -> (Vec<Conflict>, Vec<StationCrossing>) {
     let mut conflicts = Vec::new();
     let mut station_crossings = Vec::new();
 
+    // Get ordered list of stations from the graph
+    let stations = graph.get_all_stations_ordered();
+
     // Pre-compute station name to index mapping for O(1) lookups
     let station_indices: HashMap<&str, usize> = stations
         .iter()
         .enumerate()
-        .map(|(idx, name)| (name.as_str(), idx))
+        .map(|(idx, station)| (station.name.as_str(), idx))
         .collect();
 
     let ctx = ConflictContext {

@@ -2,7 +2,7 @@ use leptos::*;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::JsCast;
-use crate::models::{Conflict, StationCrossing, Station, TrainJourney, SegmentState};
+use crate::models::{Conflict, StationCrossing, RailwayGraph, TrainJourney, SegmentState};
 use crate::components::conflict_tooltip::ConflictTooltip;
 use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
@@ -17,7 +17,7 @@ pub const BOTTOM_PADDING: f64 = 20.0;
 
 #[component]
 pub fn GraphCanvas(
-    stations: ReadSignal<Vec<Station>>,
+    graph: ReadSignal<RailwayGraph>,
     train_journeys: ReadSignal<Vec<TrainJourney>>,
     visualization_time: ReadSignal<NaiveDateTime>,
     set_visualization_time: WriteSignal<NaiveDateTime>,
@@ -48,13 +48,16 @@ pub fn GraphCanvas(
 
                     let dims = GraphDimensions::new(canvas_width, canvas_height);
 
+                    let current_graph = graph.get();
+                    let station_count = current_graph.get_all_stations_ordered().len() as f64;
+
                     // Set a comfortable zoom level for viewing conflicts
                     let target_zoom = 4.0;
                     set_zoom_level.set(target_zoom);
 
                     // Center the conflict in the viewport with zoom applied
                     let target_x = (time_fraction * dims.hour_width * target_zoom) - (canvas_width / 2.0);
-                    let target_y = (station_pos * (dims.graph_height / (stations.get().len() as f64).max(1.0)) * target_zoom) - (canvas_height / 2.0);
+                    let target_y = (station_pos * (dims.graph_height / station_count.max(1.0)) * target_zoom) - (canvas_height / 2.0);
 
                     set_pan_offset_x.set(-target_x);
                     set_pan_offset_y.set(-target_y);
@@ -63,11 +66,12 @@ pub fn GraphCanvas(
         });
     }
 
-    // Render the graph whenever train journeys or stations change
+    // Render the graph whenever train journeys or graph change
     create_effect(move |_| {
         let journeys = train_journeys.get();
         let current = visualization_time.get();
-        let stations_for_render = stations.get();
+        let current_graph = graph.get();
+        let stations_for_render = current_graph.get_all_stations_ordered();
 
         if let Some(canvas) = canvas_ref.get() {
             let zoom = zoom_level.get();
@@ -113,7 +117,8 @@ pub fn GraphCanvas(
                 // Check for toggle button clicks first
                 let canvas_width = canvas.width() as f64;
                 let canvas_height = canvas.height() as f64;
-                let current_stations = stations.get();
+                let current_graph = graph.get();
+                let current_stations = current_graph.get_all_stations_ordered();
 
                 if let Some(clicked_segment) = station_labels::check_toggle_click(
                     x, y, canvas_height, &current_stations,
@@ -155,7 +160,8 @@ pub fn GraphCanvas(
             } else {
                 // Check for conflict hover
                 let (current_conflicts, _) = conflicts_and_crossings.get();
-                let current_stations = stations.get();
+                let current_graph = graph.get();
+                let current_stations = current_graph.get_all_stations_ordered();
                 let hovered = conflict_indicators::check_conflict_hover(
                     x, y, &current_conflicts, &current_stations,
                     canvas.width() as f64, canvas.height() as f64,
@@ -270,7 +276,7 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
 
 fn render_graph(
     canvas: leptos::HtmlElement<leptos::html::Canvas>,
-    stations: &[Station],
+    stations: &[crate::models::StationNode],
     train_journeys: &[TrainJourney],
     current_time: chrono::NaiveDateTime,
     viewport: ViewportState,
@@ -325,16 +331,15 @@ fn render_graph(
 
     // Draw grid and content in zoomed coordinate system
     time_labels::draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level);
-    let unique_stations = get_visible_stations(stations, stations.len());
-    graph_content::draw_station_grid(&ctx, &zoomed_dimensions, &unique_stations);
-    graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, &unique_stations, segment_state);
+    graph_content::draw_station_grid(&ctx, &zoomed_dimensions, stations);
+    graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, segment_state);
 
     // Draw train journeys
-    let station_height = zoomed_dimensions.graph_height / unique_stations.len() as f64;
+    let station_height = zoomed_dimensions.graph_height / stations.len() as f64;
     train_journeys::draw_train_journeys(
         &ctx,
         &zoomed_dimensions,
-        &unique_stations,
+        stations,
         train_journeys,
         viewport.zoom_level,
         time_to_fraction,
@@ -368,7 +373,7 @@ fn render_graph(
     train_positions::draw_current_train_positions(
         &ctx,
         &zoomed_dimensions,
-        &unique_stations,
+        stations,
         train_journeys,
         station_height,
         current_time,
@@ -389,14 +394,14 @@ fn render_graph(
     station_labels::draw_station_labels(
         &ctx,
         &dimensions,
-        &unique_stations,
+        stations,
         viewport.zoom_level,
         viewport.pan_offset_y,
     );
     station_labels::draw_segment_toggles(
         &ctx,
         &dimensions,
-        &unique_stations,
+        stations,
         segment_state,
         viewport.zoom_level,
         viewport.pan_offset_y,
@@ -415,14 +420,6 @@ fn render_graph(
 
 fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
     ctx.clear_rect(0.0, 0.0, width, height);
-}
-
-fn get_visible_stations(stations: &[Station], max_count: usize) -> Vec<String> {
-    stations
-        .iter()
-        .map(|s| s.name.clone())
-        .take(max_count)
-        .collect()
 }
 
 fn toggle_segment_state(clicked_segment: usize, set_segment_state: WriteSignal<SegmentState>) {

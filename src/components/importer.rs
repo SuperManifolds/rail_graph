@@ -1,5 +1,5 @@
 use crate::data::parse_csv_string;
-use crate::models::{Line, Station};
+use crate::models::{Line, RailwayGraph};
 use leptos::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -7,7 +7,7 @@ use wasm_bindgen::JsCast;
 #[component]
 pub fn Importer(
     set_lines: WriteSignal<Vec<Line>>,
-    set_stations: WriteSignal<Vec<Station>>,
+    set_graph: WriteSignal<RailwayGraph>,
 ) -> impl IntoView {
     let file_input_ref = create_node_ref::<leptos::html::Input>();
 
@@ -24,9 +24,9 @@ pub fn Importer(
             let onload = Closure::wrap(Box::new(move |_: web_sys::Event| {
                 if let Ok(result) = reader_clone.result() {
                     if let Some(text) = result.as_string() {
-                        let (new_lines, new_stations) = parse_csv_string(&text);
+                        let (new_lines, new_graph) = parse_csv_string(&text);
                         set_lines.set(new_lines);
-                        set_stations.set(new_stations);
+                        set_graph.set(new_graph);
                     }
                 }
             }) as Box<dyn FnMut(_)>);

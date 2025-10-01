@@ -1,13 +1,11 @@
-use crate::components::{tab_view::TabPanel, time_input::TimeInput};
-use crate::constants::BASE_DATE;
-use crate::models::{Line, Station};
+use crate::components::tab_view::TabPanel;
+use crate::models::{Line, RailwayGraph};
 use leptos::*;
 
 #[component]
 pub fn StopsTab(
     edited_line: ReadSignal<Option<Line>>,
-    stations: ReadSignal<Vec<Station>>,
-    set_stations: WriteSignal<Vec<Station>>,
+    graph: ReadSignal<RailwayGraph>,
     active_tab: RwSignal<String>,
 ) -> impl IntoView {
     view! {
@@ -17,52 +15,39 @@ pub fn StopsTab(
                     {move || {
                         edited_line.get().map(|line| {
                             let line_id = line.id.clone();
+                            let current_graph = graph.get();
 
-                            // Get all stations that have a time for this line
-                            let line_stations: Vec<_> = stations.get()
-                                .into_iter()
-                                .filter(|s| s.times.contains_key(&line_id))
-                                .collect();
+                            // Get the stations on this line's path
+                            let line_stations = current_graph.get_line_stations(&line_id);
 
-                            view! {
-                                <div class="stops-header">
-                                    <span>"Station"</span>
-                                    <span>"Travel Time from Start"</span>
-                                </div>
-                                {line_stations.into_iter().map(|station| {
-                                    let station_name = station.name.clone();
-                                    let station_name_for_display = station_name.clone();
-                                    let station_name_for_value = station_name.clone();
-                                    let station_name_for_change = station_name.clone();
-                                    let line_id_for_value = line_id.clone();
-                                    let line_id_for_change = line_id.clone();
+                            if line_stations.is_empty() {
+                                view! {
+                                    <p class="no-stops">"No stops defined for this line yet. Import a CSV to set up the route."</p>
+                                }.into_view()
+                            } else {
+                                view! {
+                                    <div class="stops-header">
+                                        <span>"Station"</span>
+                                        <span>"Travel Time to Next"</span>
+                                    </div>
+                                    {line_stations.into_iter().enumerate().map(|(i, (_idx, name))| {
+                                        let line_path = current_graph.get_line_path(&line_id);
+                                        let travel_time_str = if i < line_path.len() {
+                                            let travel_time = line_path[i].2;
+                                            let minutes = travel_time.num_minutes();
+                                            format!("{} min", minutes)
+                                        } else {
+                                            "-".to_string()
+                                        };
 
-                                    view! {
-                                        <div class="stop-row">
-                                            <span class="station-name">{station_name_for_display}</span>
-                                            <TimeInput
-                                                label=""
-                                                value=Signal::derive(move || {
-                                                    stations.get()
-                                                        .iter()
-                                                        .find(|s| s.name == station_name_for_value)
-                                                        .and_then(|s| s.get_time(&line_id_for_value))
-                                                        .unwrap_or_else(|| BASE_DATE.and_hms_opt(0, 0, 0).unwrap())
-                                                })
-                                                default_time="00:00"
-                                                on_change={
-                                                    Box::new(move |time| {
-                                                        set_stations.update(|stations| {
-                                                            if let Some(station) = stations.iter_mut().find(|s| s.name == station_name_for_change) {
-                                                                station.times.insert(line_id_for_change.clone(), Some(time));
-                                                            }
-                                                        });
-                                                    })
-                                                }
-                                            />
-                                        </div>
-                                    }
-                                }).collect::<Vec<_>>()}
+                                        view! {
+                                            <div class="stop-row">
+                                                <span class="station-name">{name}</span>
+                                                <span class="travel-time">{travel_time_str}</span>
+                                            </div>
+                                        }
+                                    }).collect::<Vec<_>>()}
+                                }.into_view()
                             }
                         })
                     }}

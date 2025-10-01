@@ -1,4 +1,4 @@
-use crate::models::{Line, Station, ScheduleMode};
+use crate::models::{Line, RailwayGraph, ScheduleMode};
 use crate::constants::{BASE_DATE, GENERATION_END_HOUR};
 use chrono::{Duration, NaiveDateTime, Timelike};
 
@@ -14,7 +14,7 @@ pub struct TrainJourney {
 
 impl TrainJourney {
     /// Generate train journeys for all lines throughout the day
-    pub fn generate_journeys(lines: &[Line], stations: &[Station]) -> Vec<TrainJourney> {
+    pub fn generate_journeys(lines: &[Line], graph: &RailwayGraph) -> Vec<TrainJourney> {
         let Some(day_end) = BASE_DATE.and_hms_opt(23, 59, 59) else {
             return Vec::new();
         };
@@ -22,33 +22,24 @@ impl TrainJourney {
         let mut journeys = Vec::new();
 
         for line in lines {
-            // Get all stations that this line serves, in order
-            let line_stations: Vec<(String, NaiveDateTime)> = stations
-                .iter()
-                .filter_map(|station| {
-                    station
-                        .times
-                        .get(&line.id)
-                        .and_then(|&time_opt| time_opt)
-                        .map(|time| (station.name.clone(), time))
-                })
-                .collect();
+            // Get the path for this line from the graph
+            let line_path = graph.get_line_path(&line.id);
 
-            if line_stations.is_empty() {
+            if line_path.is_empty() {
                 continue;
             }
 
             match line.schedule_mode {
                 ScheduleMode::Auto => {
                     // Generate forward journeys
-                    Self::generate_forward_journeys(&mut journeys, line, &line_stations, day_end);
+                    Self::generate_forward_journeys(&mut journeys, line, &line_path, graph, day_end);
 
                     // Generate return journeys
-                    Self::generate_return_journeys(&mut journeys, line, &line_stations, day_end);
+                    Self::generate_return_journeys(&mut journeys, line, &line_path, graph, day_end);
                 }
                 ScheduleMode::Manual => {
                     // Generate journeys from manual departures
-                    Self::generate_manual_journeys(&mut journeys, line, &line_stations, stations);
+                    Self::generate_manual_journeys(&mut journeys, line, graph);
                 }
             }
         }
@@ -59,7 +50,8 @@ impl TrainJourney {
     fn generate_forward_journeys(
         journeys: &mut Vec<TrainJourney>,
         line: &Line,
-        line_stations: &[(String, NaiveDateTime)],
+        line_path: &[(petgraph::graph::NodeIndex, petgraph::graph::NodeIndex, Duration)],
+        graph: &RailwayGraph,
         day_end: NaiveDateTime,
     ) {
         let mut departure_time = line.first_departure;
@@ -67,14 +59,23 @@ impl TrainJourney {
 
         while departure_time <= day_end && journey_count < MAX_JOURNEYS_PER_LINE {
             let mut station_times = Vec::new();
+            let mut cumulative_time = Duration::zero();
 
-            for (station_name, offset_time) in line_stations {
-                let offset_duration = Duration::hours(offset_time.hour() as i64)
-                    + Duration::minutes(offset_time.minute() as i64)
-                    + Duration::seconds(offset_time.second() as i64);
+            // Add first station (source of first edge)
+            if let Some((first_from, _, _)) = line_path.first() {
+                if let Some(name) = graph.get_station_name(*first_from) {
+                    station_times.push((name.to_string(), departure_time));
+                }
+            }
 
-                let arrival_time = departure_time + offset_duration;
-                station_times.push((station_name.clone(), arrival_time));
+            // Walk the path, accumulating travel times
+            for (_from, to, travel_time) in line_path {
+                cumulative_time = cumulative_time + *travel_time;
+                let arrival_time = departure_time + cumulative_time;
+
+                if let Some(name) = graph.get_station_name(*to) {
+                    station_times.push((name.to_string(), arrival_time));
+                }
             }
 
             if station_times.len() >= 2 {
@@ -98,51 +99,64 @@ impl TrainJourney {
     fn generate_manual_journeys(
         journeys: &mut Vec<TrainJourney>,
         line: &Line,
-        line_stations: &[(String, NaiveDateTime)],
-        stations: &[Station],
+        graph: &RailwayGraph,
     ) {
         for manual_dep in &line.manual_departures {
-            // Find the indices of from and to stations in line_stations
-            let from_idx = line_stations.iter().position(|(name, _)| name == &manual_dep.from_station);
-            let to_idx = line_stations.iter().position(|(name, _)| name == &manual_dep.to_station);
-
-            let (Some(from_idx), Some(to_idx)) = (from_idx, to_idx) else {
+            // Get NodeIndex for from and to stations
+            let Some(from_idx) = graph.get_station_index(&manual_dep.from_station) else {
+                continue;
+            };
+            let Some(to_idx) = graph.get_station_index(&manual_dep.to_station) else {
                 continue;
             };
 
-            // Determine direction and get the subset of stations for this journey
-            let (start_idx, end_idx, is_forward) = if from_idx < to_idx {
-                (from_idx, to_idx, true)
-            } else {
-                (to_idx, from_idx, false)
+            // Get the full line path
+            let line_path = graph.get_line_path(&line.id);
+            if line_path.is_empty() {
+                continue;
+            }
+
+            // Find positions of from and to stations in the path
+            let from_pos = line_path.iter().position(|(src, _, _)| *src == from_idx)
+                .or_else(|| line_path.iter().position(|(_, tgt, _)| *tgt == from_idx));
+            let to_pos = line_path.iter().position(|(_, tgt, _)| *tgt == to_idx)
+                .or_else(|| line_path.iter().position(|(src, _, _)| *src == to_idx));
+
+            let (Some(from_pos), Some(to_pos)) = (from_pos, to_pos) else {
+                continue;
             };
 
+            // Determine direction and extract journey segment
+            let is_forward = from_pos < to_pos;
+            let (start_pos, end_pos) = if is_forward {
+                (from_pos, to_pos)
+            } else {
+                (to_pos, from_pos)
+            };
+
+            // Build station times for this journey segment
             let mut station_times = Vec::new();
             let departure_time = manual_dep.time;
+            let mut cumulative_time = Duration::zero();
 
-            // Get the offset time for the from_station
-            let from_station = stations.iter().find(|s| s.name == manual_dep.from_station);
-            let Some(from_offset) = from_station.and_then(|s| s.get_time(&line.id)) else {
-                continue;
+            // Add starting station
+            let start_node = if is_forward {
+                line_path[start_pos].0
+            } else {
+                line_path[end_pos].1
             };
+            if let Some(name) = graph.get_station_name(start_node) {
+                station_times.push((name.to_string(), departure_time));
+            }
 
-            let from_offset_duration = Duration::hours(from_offset.hour() as i64)
-                + Duration::minutes(from_offset.minute() as i64)
-                + Duration::seconds(from_offset.second() as i64);
+            // Walk the path segment
+            for i in start_pos..=end_pos {
+                cumulative_time = cumulative_time + line_path[i].2;
+                let arrival_time = departure_time + cumulative_time;
 
-            // Generate station times for all stations between from and to
-            for i in start_idx..=end_idx {
-                let (station_name, offset_time) = &line_stations[i];
-
-                let offset_duration = Duration::hours(offset_time.hour() as i64)
-                    + Duration::minutes(offset_time.minute() as i64)
-                    + Duration::seconds(offset_time.second() as i64);
-
-                // Calculate arrival time relative to the from_station departure
-                let time_diff = offset_duration - from_offset_duration;
-                let arrival_time = departure_time + time_diff;
-
-                station_times.push((station_name.clone(), arrival_time));
+                if let Some(name) = graph.get_station_name(line_path[i].1) {
+                    station_times.push((name.to_string(), arrival_time));
+                }
             }
 
             // If going backwards, reverse the station times
@@ -164,62 +178,59 @@ impl TrainJourney {
     fn generate_return_journeys(
         journeys: &mut Vec<TrainJourney>,
         line: &Line,
-        line_stations: &[(String, NaiveDateTime)],
+        line_path: &[(petgraph::graph::NodeIndex, petgraph::graph::NodeIndex, Duration)],
+        graph: &RailwayGraph,
         day_end: NaiveDateTime,
     ) {
-        let mut return_stations = line_stations.to_vec();
-        return_stations.reverse();
+        // Build reverse path
+        let return_path: Vec<_> = line_path.iter()
+            .rev()
+            .map(|(from, to, travel_time)| (*to, *from, *travel_time))
+            .collect();
 
-        if let Some((_, last_time)) = line_stations.last() {
-            let mut return_departure_time = line.return_first_departure;
-            let mut return_journey_count = 0;
+        if return_path.is_empty() {
+            return;
+        }
 
-            while return_departure_time <= day_end && return_journey_count < MAX_JOURNEYS_PER_LINE {
-                let mut station_times = Vec::new();
+        let mut return_departure_time = line.return_first_departure;
+        let mut return_journey_count = 0;
 
-                for (i, (station_name, _)) in return_stations.iter().enumerate() {
-                    let return_offset = calculate_return_offset(
-                        last_time,
-                        line_stations,
-                        &return_stations,
-                        i,
-                    );
+        while return_departure_time <= day_end && return_journey_count < MAX_JOURNEYS_PER_LINE {
+            let mut station_times = Vec::new();
+            let mut cumulative_time = Duration::zero();
 
-                    let arrival_time = return_departure_time + return_offset;
-                    station_times.push((station_name.clone(), arrival_time));
+            // Add first station (source of first edge in return path)
+            if let Some((first_from, _, _)) = return_path.first() {
+                if let Some(name) = graph.get_station_name(*first_from) {
+                    station_times.push((name.to_string(), return_departure_time));
                 }
+            }
 
-                if station_times.len() >= 2 {
-                    journeys.push(TrainJourney {
-                        line_id: line.id.clone(),
-                        departure_time: return_departure_time,
-                        station_times,
-                        color: line.color.clone(),
-                    });
-                    return_journey_count += 1;
+            // Walk the return path
+            for (_from, to, travel_time) in &return_path {
+                cumulative_time = cumulative_time + *travel_time;
+                let arrival_time = return_departure_time + cumulative_time;
+
+                if let Some(name) = graph.get_station_name(*to) {
+                    station_times.push((name.to_string(), arrival_time));
                 }
+            }
 
-                return_departure_time += line.frequency;
+            if station_times.len() >= 2 {
+                journeys.push(TrainJourney {
+                    line_id: line.id.clone(),
+                    departure_time: return_departure_time,
+                    station_times,
+                    color: line.color.clone(),
+                });
+                return_journey_count += 1;
+            }
 
-                if return_departure_time.hour() > GENERATION_END_HOUR {
-                    break;
-                }
+            return_departure_time += line.frequency;
+
+            if return_departure_time.hour() > GENERATION_END_HOUR {
+                break;
             }
         }
     }
-}
-
-fn calculate_return_offset(
-    last_time: &chrono::NaiveDateTime,
-    line_stations: &[(String, chrono::NaiveDateTime)],
-    return_stations: &[(String, chrono::NaiveDateTime)],
-    index: usize,
-) -> Duration {
-    let Some((_, original_time)) = line_stations.get(return_stations.len() - 1 - index) else {
-        return Duration::zero();
-    };
-
-    Duration::hours(last_time.hour() as i64 - original_time.hour() as i64)
-        + Duration::minutes(last_time.minute() as i64 - original_time.minute() as i64)
-        + Duration::seconds(last_time.second() as i64 - original_time.second() as i64)
 }

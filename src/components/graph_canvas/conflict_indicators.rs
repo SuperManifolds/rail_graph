@@ -1,5 +1,5 @@
 use super::types::GraphDimensions;
-use crate::models::{Conflict, Station, StationCrossing};
+use crate::models::{Conflict, StationNode, StationCrossing};
 use web_sys::CanvasRenderingContext2d;
 
 // Conflict highlight constants
@@ -98,7 +98,7 @@ pub fn check_conflict_hover(
     mouse_x: f64,
     mouse_y: f64,
     conflicts: &[Conflict],
-    stations: &[Station],
+    stations: &[StationNode],
     canvas_width: f64,
     canvas_height: f64,
     zoom_level: f64,

@@ -1,6 +1,6 @@
 use super::ManualDepartureEditor;
 use crate::constants::BASE_DATE;
-use crate::models::{Line, ManualDeparture, Station};
+use crate::models::{Line, ManualDeparture, RailwayGraph};
 use leptos::*;
 use std::rc::Rc;
 
@@ -8,7 +8,7 @@ use std::rc::Rc;
 pub fn ManualDeparturesList(
     edited_line: ReadSignal<Option<Line>>,
     set_edited_line: WriteSignal<Option<Line>>,
-    stations: ReadSignal<Vec<Station>>,
+    graph: ReadSignal<RailwayGraph>,
     on_save: Rc<dyn Fn(Line)>,
 ) -> impl IntoView {
     view! {
@@ -20,10 +20,10 @@ pub fn ManualDeparturesList(
                     move || {
                         edited_line.get().map(|line| {
                             let line_id = line.id.clone();
-                            let station_names: Vec<String> = stations.get()
-                                .iter()
-                                .filter(|s| s.get_time(&line_id).is_some())
-                                .map(|s| s.name.clone())
+                            let current_graph = graph.get();
+                            let station_names: Vec<String> = current_graph.get_line_stations(&line_id)
+                                .into_iter()
+                                .map(|(_, name)| name)
                                 .collect();
                             line.manual_departures.iter().enumerate().map(|(idx, dep)| {
                                 let on_save = on_save.clone();
@@ -68,10 +68,10 @@ pub fn ManualDeparturesList(
                     move |_| {
                         if let Some(mut updated_line) = edited_line.get_untracked() {
                             let line_id = updated_line.id.clone();
-                            let station_names: Vec<String> = stations.get()
-                                .iter()
-                                .filter(|s| s.get_time(&line_id).is_some())
-                                .map(|s| s.name.clone())
+                            let current_graph = graph.get();
+                            let station_names: Vec<String> = current_graph.get_line_stations(&line_id)
+                                .into_iter()
+                                .map(|(_, name)| name)
                                 .collect();
 
                             let from_station = station_names.first().cloned().unwrap_or_else(|| "Station A".to_string());

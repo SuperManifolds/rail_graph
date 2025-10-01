@@ -1,5 +1,5 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{SegmentState, Station};
+use crate::models::{SegmentState, StationNode};
 use super::types::GraphDimensions;
 
 // Station label constants
@@ -25,7 +25,7 @@ const TOGGLE_SINGLE_TRACK_ICON: &str = "─";
 pub fn draw_station_labels(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[String],
+    stations: &[StationNode],
     zoom_level: f64,
     pan_offset_y: f64,
 ) {
@@ -37,7 +37,7 @@ pub fn draw_station_labels(
 
         // Only draw label if it's within the visible graph area
         if adjusted_y >= dims.top_margin && adjusted_y <= dims.top_margin + dims.graph_height {
-            draw_station_label(ctx, station, adjusted_y);
+            draw_station_label(ctx, &station.name, adjusted_y);
         }
     }
 }
@@ -51,7 +51,7 @@ fn draw_station_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
 pub fn draw_segment_toggles(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[String],
+    stations: &[StationNode],
     segment_state: &SegmentState,
     zoom_level: f64,
     pan_offset_y: f64,
@@ -118,7 +118,7 @@ pub fn check_toggle_click(
     mouse_x: f64,
     mouse_y: f64,
     canvas_height: f64,
-    stations: &[Station],
+    stations: &[StationNode],
     zoom_level: f64,
     pan_offset_y: f64,
 ) -> Option<usize> {

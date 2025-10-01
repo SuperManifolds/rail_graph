@@ -11,7 +11,7 @@ pub use manual_departure_editor::ManualDepartureEditor;
 pub use manual_departures_list::ManualDeparturesList;
 
 use crate::components::{tab_view::{Tab, TabView}, window::Window};
-use crate::models::{Line, Station};
+use crate::models::{Line, RailwayGraph};
 use leptos::*;
 use std::rc::Rc;
 
@@ -20,8 +20,7 @@ pub fn LineEditor(
     #[prop(into)] initial_line: MaybeSignal<Option<Line>>,
     is_open: Signal<bool>,
     set_is_open: impl Fn(bool) + 'static,
-    stations: ReadSignal<Vec<Station>>,
-    set_stations: WriteSignal<Vec<Station>>,
+    graph: ReadSignal<RailwayGraph>,
     on_save: impl Fn(Line) + 'static,
 ) -> impl IntoView {
     let (edited_line, set_edited_line) = create_signal(None::<Line>);
@@ -79,14 +78,13 @@ pub fn LineEditor(
                                 />
                                 <StopsTab
                                     edited_line=edited_line
-                                    stations=stations
-                                    set_stations=set_stations
+                                    graph=graph
                                     active_tab=active_tab
                                 />
                                 <ScheduleTab
                                     edited_line=edited_line
                                     set_edited_line=set_edited_line
-                                    stations=stations
+                                    graph=graph
                                     on_save=on_save_stored.get_value()
                                     active_tab=active_tab
                                 />

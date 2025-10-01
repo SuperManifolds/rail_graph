@@ -1,5 +1,5 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::TrainJourney;
+use crate::models::{TrainJourney, StationNode};
 use super::types::GraphDimensions;
 
 // Train journey constants
@@ -10,7 +10,7 @@ const MIDNIGHT_WRAP_THRESHOLD: f64 = 0.5;
 pub fn draw_train_journeys(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[String],
+    stations: &[StationNode],
     train_journeys: &[TrainJourney],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
@@ -26,7 +26,7 @@ pub fn draw_train_journeys(
         let mut prev_x = 0.0;
 
         for (station_name, arrival_time) in &journey.station_times {
-            if let Some(station_idx) = stations.iter().position(|s| s == station_name) {
+            if let Some(station_idx) = stations.iter().position(|s| s.name == *station_name) {
                 let time_fraction = time_to_fraction(*arrival_time);
                 let mut x = dims.left_margin + (time_fraction * dims.hour_width);
 
@@ -55,7 +55,7 @@ pub fn draw_train_journeys(
         // Draw small dots at each station stop
         let mut prev_x = 0.0;
         for (station_name, arrival_time) in &journey.station_times {
-            if let Some(station_idx) = stations.iter().position(|s| s == station_name) {
+            if let Some(station_idx) = stations.iter().position(|s| s.name == *station_name) {
                 let time_fraction = time_to_fraction(*arrival_time);
                 let mut x = dims.left_margin + (time_fraction * dims.hour_width);
 

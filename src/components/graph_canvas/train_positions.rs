@@ -1,6 +1,6 @@
 use web_sys::CanvasRenderingContext2d;
 use chrono::NaiveDateTime;
-use crate::models::TrainJourney;
+use crate::models::{TrainJourney, StationNode};
 use super::types::GraphDimensions;
 
 // Current train position constants
@@ -14,7 +14,7 @@ const CURRENT_TRAIN_LABEL_FONT_SIZE: f64 = 10.0;
 pub fn draw_current_train_positions(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[String],
+    stations: &[StationNode],
     train_journeys: &[TrainJourney],
     station_height: f64,
     visualization_time: NaiveDateTime,
@@ -27,7 +27,7 @@ pub fn draw_current_train_positions(
         let mut next_station: Option<(&String, NaiveDateTime, usize)> = None;
 
         for (station_name, arrival_time) in &journey.station_times {
-            if let Some(station_idx) = stations.iter().position(|s| s == station_name) {
+            if let Some(station_idx) = stations.iter().position(|s| s.name == *station_name) {
                 if *arrival_time <= visualization_time {
                     prev_station = Some((station_name, *arrival_time, station_idx));
                 } else if next_station.is_none() {
