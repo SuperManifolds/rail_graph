@@ -12,7 +12,15 @@ pub fn Window(
     children: Children,
     #[prop(default = (600.0, 500.0))] initial_size: (f64, f64),
 ) -> impl IntoView {
-    let (position, set_position) = create_signal((100.0, 100.0));
+    // Random offset so windows don't stack exactly on top of each other
+    // Use store_value to ensure this is only calculated once
+    let initial_position = store_value({
+        let offset_x = js_sys::Math::random() * 200.0;
+        let offset_y = js_sys::Math::random() * 150.0;
+        (100.0 + offset_x, 100.0 + offset_y)
+    });
+
+    let (position, set_position) = create_signal(initial_position.get_value());
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (drag_offset, set_drag_offset) = create_signal((0.0, 0.0));
     let (size, set_size) = create_signal(initial_size);
