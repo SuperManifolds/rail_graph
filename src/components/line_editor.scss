@@ -164,4 +164,37 @@
             background-color: #333;
         }
     }
+
+    .stops-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+
+        .stops-header {
+            display: grid;
+            grid-template-columns: 1fr 200px;
+            gap: 1rem;
+            padding: 0.5rem;
+            font-weight: 600;
+            color: #aaa;
+            font-size: 0.85rem;
+            border-bottom: 1px solid #333;
+        }
+
+        .stop-row {
+            display: grid;
+            grid-template-columns: 1fr 200px;
+            gap: 1rem;
+            align-items: center;
+            padding: 0.5rem;
+            background-color: #222;
+            border: 1px solid #444;
+            border-radius: 4px;
+
+            .station-name {
+                color: #fff;
+                font-size: 0.9rem;
+            }
+        }
+    }
 }

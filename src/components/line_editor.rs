@@ -6,6 +6,7 @@ use crate::components::{
     window::Window,
 };
 use crate::models::{Line, ScheduleMode, Station};
+use crate::constants::BASE_DATE;
 use leptos::*;
 use std::rc::Rc;
 
@@ -174,11 +175,81 @@ fn ScheduleTab(
 }
 
 #[component]
+fn StopsTab(
+    edited_line: ReadSignal<Option<Line>>,
+    stations: ReadSignal<Vec<Station>>,
+    set_stations: WriteSignal<Vec<Station>>,
+    active_tab: RwSignal<String>,
+) -> impl IntoView {
+    view! {
+        <TabPanel when=Signal::derive(move || active_tab.get() == "stops")>
+            <div class="line-editor-content">
+                <div class="stops-list">
+                    {move || {
+                        edited_line.get().map(|line| {
+                            let line_id = line.id.clone();
+
+                            // Get all stations that have a time for this line
+                            let line_stations: Vec<_> = stations.get()
+                                .into_iter()
+                                .filter(|s| s.times.contains_key(&line_id))
+                                .collect();
+
+                            view! {
+                                <div class="stops-header">
+                                    <span>"Station"</span>
+                                    <span>"Travel Time from Start"</span>
+                                </div>
+                                {line_stations.into_iter().map(|station| {
+                                    let station_name = station.name.clone();
+                                    let station_name_for_display = station_name.clone();
+                                    let station_name_for_value = station_name.clone();
+                                    let station_name_for_change = station_name.clone();
+                                    let line_id_for_value = line_id.clone();
+                                    let line_id_for_change = line_id.clone();
+
+                                    view! {
+                                        <div class="stop-row">
+                                            <span class="station-name">{station_name_for_display}</span>
+                                            <TimeInput
+                                                label=""
+                                                value=Signal::derive(move || {
+                                                    stations.get()
+                                                        .iter()
+                                                        .find(|s| s.name == station_name_for_value)
+                                                        .and_then(|s| s.get_time(&line_id_for_value))
+                                                        .unwrap_or_else(|| BASE_DATE.and_hms_opt(0, 0, 0).unwrap())
+                                                })
+                                                default_time="00:00"
+                                                on_change={
+                                                    Box::new(move |time| {
+                                                        set_stations.update(|stations| {
+                                                            if let Some(station) = stations.iter_mut().find(|s| s.name == station_name_for_change) {
+                                                                station.times.insert(line_id_for_change.clone(), Some(time));
+                                                            }
+                                                        });
+                                                    })
+                                                }
+                                            />
+                                        </div>
+                                    }
+                                }).collect::<Vec<_>>()}
+                            }
+                        })
+                    }}
+                </div>
+            </div>
+        </TabPanel>
+    }
+}
+
+#[component]
 pub fn LineEditor(
     #[prop(into)] initial_line: MaybeSignal<Option<Line>>,
     is_open: Signal<bool>,
     set_is_open: impl Fn(bool) + 'static,
     stations: ReadSignal<Vec<Station>>,
+    set_stations: WriteSignal<Vec<Station>>,
     on_save: impl Fn(Line) + 'static,
 ) -> impl IntoView {
     let (edited_line, set_edited_line) = create_signal(None::<Line>);
@@ -223,6 +294,7 @@ pub fn LineEditor(
                     edited_line.get().map(|_line| {
                         let tabs = vec![
                             Tab { id: "general".to_string(), label: "General".to_string() },
+                            Tab { id: "stops".to_string(), label: "Stops".to_string() },
                             Tab { id: "schedule".to_string(), label: "Schedule".to_string() },
                         ];
                         view! {
@@ -231,6 +303,12 @@ pub fn LineEditor(
                                     edited_line=edited_line
                                     set_edited_line=set_edited_line
                                     on_save=on_save_stored.get_value()
+                                    active_tab=active_tab
+                                />
+                                <StopsTab
+                                    edited_line=edited_line
+                                    stations=stations
+                                    set_stations=set_stations
                                     active_tab=active_tab
                                 />
                                 <ScheduleTab

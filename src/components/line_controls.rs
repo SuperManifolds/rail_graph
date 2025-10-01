@@ -9,6 +9,7 @@ pub fn LineControls(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
     stations: ReadSignal<Vec<Station>>,
+    set_stations: WriteSignal<Vec<Station>>,
 ) -> impl IntoView {
     let (open_editors, set_open_editors) = create_signal(HashSet::<String>::new());
 
@@ -71,6 +72,7 @@ pub fn LineControls(
                             }
                         }
                         stations=stations
+                        set_stations=set_stations
                         on_save={
                             move |edited_line: Line| {
                                 set_lines.update(|lines_vec| {

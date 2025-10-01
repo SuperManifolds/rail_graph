@@ -115,7 +115,7 @@ pub fn TimeGraph() -> impl IntoView {
                     <h2>"Railway Time Graph"</h2>
                     <ErrorList conflicts=conflicts_only />
                 </div>
-                <LineControls lines=lines set_lines=set_lines stations=stations />
+                <LineControls lines=lines set_lines=set_lines stations=stations set_stations=set_stations />
                 <div class="sidebar-footer">
                     <Importer set_lines=set_lines set_stations=set_stations />
                     <Legend
