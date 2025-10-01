@@ -8,6 +8,7 @@ pub mod legend;
 pub mod line_controls;
 pub mod line_editor;
 pub mod manual_departure_editor;
+pub mod manual_departures_list;
 pub mod time_graph;
 pub mod time_input;
 pub mod window;
