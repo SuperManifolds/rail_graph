@@ -10,6 +10,7 @@ pub struct TrainJourney {
     pub departure_time: NaiveDateTime,
     pub station_times: Vec<(String, NaiveDateTime)>, // (station_name, arrival_time)
     pub color: String,
+    pub thickness: f64,
 }
 
 impl TrainJourney {
@@ -86,6 +87,7 @@ impl TrainJourney {
                     departure_time,
                     station_times,
                     color: line.color.clone(),
+                    thickness: line.thickness,
                 });
                 journey_count += 1;
             }
@@ -184,6 +186,7 @@ impl TrainJourney {
                     departure_time,
                     station_times,
                     color: line.color.clone(),
+                    thickness: line.thickness,
                 });
             }
         }
@@ -235,6 +238,7 @@ impl TrainJourney {
                     departure_time: return_departure_time,
                     station_times,
                     color: line.color.clone(),
+                    thickness: line.thickness,
                 });
                 return_journey_count += 1;
             }

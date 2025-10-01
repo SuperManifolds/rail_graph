@@ -51,6 +51,38 @@ pub fn GeneralTab(
                         }
                     />
                 </div>
+
+                <div class="form-group">
+                    <label>"Line Thickness"</label>
+                    <div class="thickness-control">
+                        {move || {
+                            let current_thickness = edited_line.get().map(|l| l.thickness).unwrap_or(2.0);
+                            view! {
+                                <input
+                                    type="range"
+                                    min="0.5"
+                                    max="8.0"
+                                    step="0.1"
+                                    value=current_thickness
+                                    on:change={
+                                        let on_save = on_save.get_value();
+                                        move |ev| {
+                                            let thickness = event_target_value(&ev).parse::<f64>().unwrap_or(2.0);
+                                            if let Some(mut updated_line) = edited_line.get_untracked() {
+                                                updated_line.thickness = thickness;
+                                                set_edited_line.set(Some(updated_line.clone()));
+                                                on_save(updated_line);
+                                            }
+                                        }
+                                    }
+                                />
+                                <span class="thickness-value">
+                                    {format!("{:.1}", current_thickness)}
+                                </span>
+                            }
+                        }}
+                    </div>
+                </div>
             </div>
         </TabPanel>
     }

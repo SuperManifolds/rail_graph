@@ -45,6 +45,24 @@
         input[type="time"] {
             width: 120px;
         }
+
+        .thickness-control {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+
+            input[type="range"] {
+                flex: 1;
+                max-width: 200px;
+            }
+
+            .thickness-value {
+                font-size: 0.9rem;
+                color: #ccc;
+                min-width: 30px;
+                text-align: right;
+            }
+        }
     }
 
     .line-editor-footer {

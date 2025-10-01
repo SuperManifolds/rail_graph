@@ -19,7 +19,7 @@ pub fn draw_train_journeys(
 
     for journey in train_journeys {
         ctx.set_stroke_style_str(&journey.color);
-        ctx.set_line_width(TRAIN_LINE_WIDTH / zoom_level);
+        ctx.set_line_width(journey.thickness / zoom_level);
         ctx.begin_path();
 
         let mut first_point = true;
@@ -52,7 +52,8 @@ pub fn draw_train_journeys(
 
         ctx.stroke();
 
-        // Draw small dots at each station stop
+        // Draw small dots at each station stop (scale with line thickness)
+        let dot_radius = (journey.thickness * 1.5).max(2.0); // Scale dots with thickness, minimum 2.0
         let mut prev_x = 0.0;
         for (station_name, arrival_time) in &journey.station_times {
             if let Some(station_idx) = stations.iter().position(|s| s.name == *station_name) {
@@ -70,7 +71,7 @@ pub fn draw_train_journeys(
 
                 ctx.set_fill_style_str(&journey.color);
                 ctx.begin_path();
-                let _ = ctx.arc(x, y, STATION_DOT_RADIUS / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+                let _ = ctx.arc(x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
                 ctx.fill();
 
                 prev_x = x;

@@ -39,6 +39,8 @@ pub struct Line {
     #[serde(with = "duration_serde")]
     pub frequency: Duration,
     pub color: String,
+    #[serde(default = "default_thickness")]
+    pub thickness: f64,
     #[serde(with = "naive_datetime_serde")]
     pub first_departure: NaiveDateTime,
     #[serde(with = "naive_datetime_serde")]
@@ -57,6 +59,10 @@ fn default_visible() -> bool {
     true
 }
 
+fn default_thickness() -> f64 {
+    2.0
+}
+
 impl Line {
     /// Create lines from IDs with default settings
     pub fn create_from_ids(line_ids: &[String]) -> Vec<Line> {
@@ -67,6 +73,7 @@ impl Line {
                 id: id.clone(),
                 frequency: Duration::hours(1), // Default, configurable by user
                 color: LINE_COLORS[i % LINE_COLORS.len()].to_string(),
+                thickness: 2.0,
                 first_departure: BASE_DATE.and_hms_opt(5, i as u32 * 15, 0)
                     .unwrap_or_else(|| BASE_DATE.and_hms_opt(5, 0, 0).expect("Valid time")),
                 return_first_departure: BASE_DATE.and_hms_opt(6, i as u32 * 15, 0)
