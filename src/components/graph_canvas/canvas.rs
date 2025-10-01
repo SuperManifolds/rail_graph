@@ -382,7 +382,7 @@ fn render_graph(
     zoomed_dimensions.hour_width *= viewport.zoom_level_x;
 
     // Draw grid and content in zoomed coordinate system
-    time_labels::draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level, viewport.pan_offset_x);
+    time_labels::draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level, viewport.zoom_level_x, viewport.pan_offset_x);
     graph_content::draw_station_grid(&ctx, &zoomed_dimensions, stations, viewport.zoom_level, viewport.pan_offset_x);
     graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, graph, viewport.zoom_level, viewport.pan_offset_x);
 
