@@ -10,11 +10,12 @@ pub fn Window(
     title: Signal<String>,
     on_close: impl Fn() + 'static,
     children: Children,
+    #[prop(default = (600.0, 500.0))] initial_size: (f64, f64),
 ) -> impl IntoView {
     let (position, set_position) = create_signal((100.0, 100.0));
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (drag_offset, set_drag_offset) = create_signal((0.0, 0.0));
-    let (size, set_size) = create_signal((500.0, 400.0));
+    let (size, set_size) = create_signal(initial_size);
     let (is_resizing, set_is_resizing) = create_signal(false);
     let (resize_start, set_resize_start) = create_signal((0.0, 0.0));
     let (z_index, set_z_index) = create_signal(NEXT_Z_INDEX.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
