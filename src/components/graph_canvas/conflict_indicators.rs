@@ -172,10 +172,9 @@ pub fn draw_station_crossings(
             + (station_height / 2.0);
 
         // Draw a translucent green circle at the crossing point
-        // Radius represents the 1-minute margin used in conflict detection
-        // Scale based on hour_width to represent time on the graph
+        // Radius represents 1.5 minutes of travel time
         let one_minute_width = dims.hour_width / 60.0;
-        let radius = one_minute_width * 5.0;  // Make visible at typical zoom levels
+        let radius = one_minute_width * 1.5;
 
         ctx.begin_path();
         let _ = ctx.arc(x, y, radius, 0.0, 2.0 * std::f64::consts::PI);
