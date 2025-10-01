@@ -1,99 +1,49 @@
-.line-editor-dialog {
-    position: fixed;
-    background-color: #1a1a1a;
-    border: 1px solid #444;
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-    z-index: 2000;
+.line-editor-content {
     display: flex;
     flex-direction: column;
+    gap: 1.25rem;
 
-    .line-editor-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1.5rem;
-        border-bottom: 1px solid #333;
-        cursor: move;
-        user-select: none;
-
-        h3 {
-            font-size: 1.2rem;
-            font-weight: 600;
-            color: #fff;
-            margin: 0;
-        }
-
-        .close-button {
-            background: none;
-            border: none;
-            color: #999;
-            font-size: 1.5rem;
-            cursor: pointer;
-            padding: 0;
-            line-height: 1;
-            width: 24px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-
-            &:hover {
-                color: #fff;
-            }
-        }
-    }
-
-    .line-editor-content {
-        padding: 1.5rem;
+    .form-group {
         display: flex;
         flex-direction: column;
-        gap: 1.25rem;
-        flex: 1;
-        overflow-y: auto;
+        gap: 0.5rem;
 
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
+        > label {
+            font-size: 0.9rem;
+            color: #ccc;
+            font-weight: 500;
+        }
 
-            > label {
-                font-size: 0.9rem;
-                color: #ccc;
-                font-weight: 500;
+        input[type="color"],
+        input[type="text"],
+        input[type="time"] {
+            background-color: #222;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 0.5rem;
+            color: #fff;
+            font-size: 0.85rem;
+
+            &:focus {
+                outline: none;
+                border-color: #555;
+                background-color: #2a2a2a;
             }
+        }
 
-            input[type="color"],
-            input[type="text"],
-            input[type="time"] {
-                background-color: #222;
-                border: 1px solid #444;
-                border-radius: 4px;
-                padding: 0.5rem;
-                color: #fff;
-                font-size: 0.85rem;
+        input[type="color"] {
+            width: 80px;
+            height: 32px;
+            padding: 2px;
+        }
 
-                &:focus {
-                    outline: none;
-                    border-color: #555;
-                    background-color: #2a2a2a;
-                }
-            }
+        input[type="text"] {
+            width: 120px;
+            font-family: monospace;
+        }
 
-            input[type="color"] {
-                width: 80px;
-                height: 32px;
-                padding: 2px;
-            }
-
-            input[type="text"] {
-                width: 120px;
-                font-family: monospace;
-            }
-
-            input[type="time"] {
-                width: 120px;
-            }
+        input[type="time"] {
+            width: 120px;
         }
     }
 
@@ -135,27 +85,6 @@
                 outline: none;
                 border-color: #555;
             }
-        }
-    }
-
-    .resize-handle {
-        position: absolute;
-        bottom: 0;
-        right: 0;
-        width: 16px;
-        height: 16px;
-        cursor: nwse-resize;
-
-        &::after {
-            content: '';
-            position: absolute;
-            bottom: 2px;
-            right: 2px;
-            width: 0;
-            height: 0;
-            border-style: solid;
-            border-width: 0 0 12px 12px;
-            border-color: transparent transparent #666 transparent;
         }
     }
 
