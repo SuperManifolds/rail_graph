@@ -80,6 +80,7 @@ pub fn LineEditor(
                                     edited_line=edited_line
                                     graph=graph
                                     active_tab=active_tab
+                                    on_save=on_save_stored.get_value()
                                 />
                                 <ScheduleTab
                                     edited_line=edited_line

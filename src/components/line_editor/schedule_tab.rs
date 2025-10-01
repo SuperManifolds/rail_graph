@@ -1,6 +1,6 @@
 use super::ManualDeparturesList;
 use crate::components::{
-    frequency_input::FrequencyInput,
+    duration_input::DurationInput,
     tab_view::TabPanel,
     time_input::TimeInput,
 };
@@ -49,8 +49,8 @@ pub fn ScheduleTab(
                             view! {
                                 <div class="form-group">
                                     <label>"Frequency"</label>
-                                    <FrequencyInput
-                                        frequency=Signal::derive(move || edited_line.get().map(|l| l.frequency).unwrap_or_default())
+                                    <DurationInput
+                                        duration=Signal::derive(move || edited_line.get().map(|l| l.frequency).unwrap_or_default())
                                         on_change={
                                             let on_save = on_save.clone();
                                             move |freq| {

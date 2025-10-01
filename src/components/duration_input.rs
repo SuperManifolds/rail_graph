@@ -27,22 +27,22 @@ fn parse_hhmmss(input: &str) -> Option<Duration> {
 }
 
 #[component]
-pub fn FrequencyInput(
-    frequency: Signal<Duration>,
+pub fn DurationInput(
+    duration: Signal<Duration>,
     on_change: impl Fn(Duration) + 'static,
 ) -> impl IntoView {
     view! {
         <input
             type="text"
+            class="duration-input"
             placeholder="00:30:00"
-            value={duration_to_hhmmss(frequency.get_untracked())}
+            prop:value=move || duration_to_hhmmss(duration.get())
             on:change=move |ev| {
                 let input_str = event_target_value(&ev);
-                if let Some(new_frequency) = parse_hhmmss(&input_str) {
-                    on_change(new_frequency);
+                if let Some(new_duration) = parse_hhmmss(&input_str) {
+                    on_change(new_duration);
                 }
             }
-            style="font-family: monospace; width: 100px;"
         />
     }
 }

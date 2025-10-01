@@ -14,6 +14,7 @@ pub fn TimeInput(
             {label}
             <input
                 type="time"
+                class="time-input"
                 step="1"
                 prop:value=move || value.get().format("%H:%M:%S").to_string()
                 placeholder=default_time

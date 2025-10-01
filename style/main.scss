@@ -48,5 +48,31 @@ label {
     }
 }
 
+// Reusable input components
+.duration-input,
+.time-input {
+    background-color: #222;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 0.5rem;
+    color: #fff;
+    font-size: 0.85rem;
+
+    &:focus {
+        outline: none;
+        border-color: #555;
+        background-color: #2a2a2a;
+    }
+}
+
+.duration-input {
+    font-family: monospace;
+    width: 100px;
+}
+
+.time-input {
+    width: 140px;
+}
+
 // Import all component styles
 @import '../src/components/components';
