@@ -1,6 +1,9 @@
 use leptos::*;
 use wasm_bindgen::{prelude::*, JsCast};
 
+// Global window z-index counter
+static NEXT_Z_INDEX: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(2000);
+
 #[component]
 pub fn Window(
     #[prop(into)] is_open: MaybeSignal<bool>,
@@ -14,11 +17,17 @@ pub fn Window(
     let (size, set_size) = create_signal((500.0, 400.0));
     let (is_resizing, set_is_resizing) = create_signal(false);
     let (resize_start, set_resize_start) = create_signal((0.0, 0.0));
+    let (z_index, set_z_index) = create_signal(NEXT_Z_INDEX.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
 
     let on_close = store_value(on_close);
     let children = store_value(children());
 
+    let bring_to_front = move || {
+        set_z_index.set(NEXT_Z_INDEX.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+    };
+
     let handle_mouse_down = move |ev: web_sys::MouseEvent| {
+        bring_to_front();
         set_is_dragging.set(true);
         let (pos_x, pos_y) = position.get_untracked();
         set_drag_offset.set((ev.client_x() as f64 - pos_x, ev.client_y() as f64 - pos_y));
@@ -39,6 +48,7 @@ pub fn Window(
 
     let handle_resize_down = move |ev: web_sys::MouseEvent| {
         ev.stop_propagation();
+        bring_to_front();
         let _ = set_is_resizing.try_set(true);
         if let Some((width, height)) = size.try_get_untracked() {
             let _ = set_resize_start.try_set((ev.client_x() as f64 - width, ev.client_y() as f64 - height));
@@ -84,8 +94,10 @@ pub fn Window(
                 style=move || {
                     let (x, y) = position.get();
                     let (width, height) = size.get();
-                    format!("left: {}px; top: {}px; width: {}px; height: {}px;", x, y, width, height)
+                    let z = z_index.get();
+                    format!("left: {}px; top: {}px; width: {}px; height: {}px; z-index: {};", x, y, width, height, z)
                 }
+                on:mousedown=move |_| bring_to_front()
             >
                 <div class="window-header" on:mousedown=handle_mouse_down>
                     <h3>{move || title.get()}</h3>
