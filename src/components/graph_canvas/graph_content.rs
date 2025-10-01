@@ -1,6 +1,7 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{SegmentState, StationNode};
+use crate::models::{StationNode, RailwayGraph};
 use super::types::GraphDimensions;
+use petgraph::visit::EdgeRef;
 
 // Background constants
 const BACKGROUND_COLOR: &str = "#0a0a0a";
@@ -51,13 +52,31 @@ pub fn draw_double_track_indicators(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     stations: &[StationNode],
-    segment_state: &SegmentState,
+    graph: &RailwayGraph,
 ) {
     let station_height = dims.graph_height / stations.len() as f64;
 
     // Draw lighter background for double-tracked segments
-    for &segment_idx in &segment_state.double_tracked_segments {
-        if segment_idx > 0 && segment_idx < stations.len() {
+    // Check each consecutive pair of stations
+    for segment_idx in 1..stations.len() {
+        let station1 = &stations[segment_idx - 1];
+        let station2 = &stations[segment_idx];
+
+        // Check if there's a double-tracked edge between these stations
+        let is_double_tracked = if let (Some(node1), Some(node2)) =
+            (graph.get_station_index(&station1.name), graph.get_station_index(&station2.name)) {
+
+            // Check both directions for an edge
+            graph.graph.edges(node1).any(|e| {
+                e.target() == node2 && e.weight().double_tracked
+            }) || graph.graph.edges(node2).any(|e| {
+                e.target() == node1 && e.weight().double_tracked
+            })
+        } else {
+            false
+        };
+
+        if is_double_tracked {
             // Calculate the Y positions for the two stations
             let station1_y = calculate_station_y(dims, segment_idx - 1, station_height);
             let station2_y = calculate_station_y(dims, segment_idx, station_height);

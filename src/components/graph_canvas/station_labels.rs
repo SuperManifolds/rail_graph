@@ -1,5 +1,5 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{SegmentState, StationNode};
+use crate::models::{RailwayGraph, StationNode};
 use super::types::GraphDimensions;
 
 // Station label constants
@@ -52,17 +52,31 @@ pub fn draw_segment_toggles(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     stations: &[StationNode],
-    segment_state: &SegmentState,
+    graph: &RailwayGraph,
     zoom_level: f64,
     pan_offset_y: f64,
 ) {
+    use petgraph::visit::EdgeRef;
+
     let station_height = dims.graph_height / stations.len() as f64;
 
     for i in 1..stations.len() {
-        let segment_index = i;
-        let is_double_tracked = segment_state
-            .double_tracked_segments
-            .contains(&segment_index);
+        let station1 = &stations[i - 1];
+        let station2 = &stations[i];
+
+        // Check if there's a double-tracked edge between these stations
+        let is_double_tracked = if let (Some(node1), Some(node2)) =
+            (graph.get_station_index(&station1.name), graph.get_station_index(&station2.name)) {
+
+            // Check both directions for an edge
+            graph.graph.edges(node1).any(|e| {
+                e.target() == node2 && e.weight().double_tracked
+            }) || graph.graph.edges(node2).any(|e| {
+                e.target() == node1 && e.weight().double_tracked
+            })
+        } else {
+            false
+        };
 
         // Calculate position between the two stations
         let base_y1 = ((i - 1) as f64 * station_height) + (station_height / 2.0);

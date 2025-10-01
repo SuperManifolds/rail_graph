@@ -1,4 +1,3 @@
-use chrono::Duration;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
@@ -10,16 +9,14 @@ pub struct StationNode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LineSegment {
-    pub line_id: String,
-    #[serde(with = "duration_serde")]
-    pub travel_time: Duration,
+pub struct TrackSegment {
+    pub double_tracked: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RailwayGraph {
     #[serde(with = "graph_serde")]
-    pub graph: DiGraph<StationNode, LineSegment>,
+    pub graph: DiGraph<StationNode, TrackSegment>,
     pub station_name_to_index: HashMap<String, NodeIndex>,
 }
 
@@ -42,9 +39,19 @@ impl RailwayGraph {
         }
     }
 
-    /// Add an edge representing a line segment between two stations
-    pub fn add_segment(&mut self, from: NodeIndex, to: NodeIndex, line_id: String, travel_time: Duration) {
-        self.graph.add_edge(from, to, LineSegment { line_id, travel_time });
+    /// Add a track segment between two stations, returns the EdgeIndex
+    pub fn add_track(&mut self, from: NodeIndex, to: NodeIndex, double_tracked: bool) -> petgraph::graph::EdgeIndex {
+        self.graph.add_edge(from, to, TrackSegment { double_tracked })
+    }
+
+    /// Get track segment by edge index
+    pub fn get_track(&self, edge_idx: petgraph::graph::EdgeIndex) -> Option<&TrackSegment> {
+        self.graph.edge_weight(edge_idx)
+    }
+
+    /// Get endpoints of a track segment
+    pub fn get_track_endpoints(&self, edge_idx: petgraph::graph::EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
+        self.graph.edge_endpoints(edge_idx)
     }
 
     /// Get station name by NodeIndex
@@ -57,128 +64,48 @@ impl RailwayGraph {
         self.station_name_to_index.get(name).copied()
     }
 
-    /// Get all edges for a specific line, in order
-    pub fn get_line_path(&self, line_id: &str) -> Vec<(NodeIndex, NodeIndex, Duration)> {
-        let mut edges: Vec<_> = self.graph
-            .edge_references()
-            .filter(|e| e.weight().line_id == line_id)
-            .map(|e| (e.source(), e.target(), e.weight().travel_time))
-            .collect();
-
-        // Sort edges to form a connected path
-        // Start with an edge and build the path
-        if edges.is_empty() {
-            return Vec::new();
-        }
-
-        let mut path = vec![edges.remove(0)];
-
-        // Keep adding edges that connect to the end of the current path
-        while !edges.is_empty() {
-            let last_target = path.last().unwrap().1;
-
-            if let Some(pos) = edges.iter().position(|(src, _, _)| *src == last_target) {
-                path.push(edges.remove(pos));
-            } else {
-                // No more connected edges, path is complete
-                break;
-            }
-        }
-
-        path
-    }
-
-    /// Get ordered list of stations for a line
-    pub fn get_line_stations(&self, line_id: &str) -> Vec<(NodeIndex, String)> {
-        let path = self.get_line_path(line_id);
-        if path.is_empty() {
-            return Vec::new();
-        }
-
-        let mut stations = Vec::new();
-
-        // Add first station
-        if let Some(name) = self.get_station_name(path[0].0) {
-            stations.push((path[0].0, name.to_string()));
-        }
-
-        // Add all subsequent stations
-        for (_, to, _) in &path {
-            if let Some(name) = self.get_station_name(*to) {
-                stations.push((*to, name.to_string()));
-            }
-        }
-
-        stations
-    }
-
-    /// Get all unique line IDs in the graph (in order they appear in edges)
-    pub fn get_line_ids(&self) -> Vec<String> {
-        let mut line_ids = Vec::new();
-        let mut seen = std::collections::HashSet::new();
-
-        for edge in self.graph.edge_references() {
-            let line_id = edge.weight().line_id.clone();
-            if seen.insert(line_id.clone()) {
-                line_ids.push(line_id);
-            }
-        }
-
-        line_ids
-    }
-
     /// Get all stations in order by traversing the graph
+    /// Performs a breadth-first traversal starting from the first station
     pub fn get_all_stations_ordered(&self) -> Vec<StationNode> {
+        if self.graph.node_count() == 0 {
+            return Vec::new();
+        }
+
         let mut ordered = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
-        // Start with the first line and follow its path
-        if let Some(first_line) = self.get_line_ids().first() {
-            let line_stations = self.get_line_stations(first_line);
+        // Start from the first node in the graph
+        let start_node = self.graph.node_indices().next().unwrap();
 
-            for (idx, _name) in &line_stations {
-                if seen.insert(*idx) {
-                    if let Some(node) = self.graph.node_weight(*idx) {
-                        ordered.push(node.clone());
-                    }
-                }
+        // BFS traversal
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(start_node);
+        seen.insert(start_node);
+
+        while let Some(node_idx) = queue.pop_front() {
+            if let Some(node) = self.graph.node_weight(node_idx) {
+                ordered.push(node.clone());
             }
 
-            // For remaining unseen stations, try to place them by finding where they connect
-            // to already-ordered stations
-            let mut added_new = true;
-            while added_new {
-                added_new = false;
-
-                // Check all edges to find stations that connect to what we've already ordered
-                for edge in self.graph.edge_references() {
-                    let src = edge.source();
-                    let tgt = edge.target();
-
-                    // If source is in ordered but target isn't, add target after source
-                    if seen.contains(&src) && !seen.contains(&tgt) {
-                        if let Some(src_pos) = ordered.iter().position(|n| {
-                            self.station_name_to_index.get(&n.name) == Some(&src)
-                        }) {
-                            seen.insert(tgt);
-                            if let Some(node) = self.graph.node_weight(tgt) {
-                                // Insert after the source station
-                                ordered.insert(src_pos + 1, node.clone());
-                                added_new = true;
-                            }
-                        }
-                    }
+            // Add neighbors
+            for edge in self.graph.edges(node_idx) {
+                let target = edge.target();
+                if seen.insert(target) {
+                    queue.push_back(target);
                 }
             }
-
-            return ordered;
         }
 
-        // Fallback: return all stations in arbitrary order
-        self.station_name_to_index
-            .values()
-            .filter_map(|&idx| self.graph.node_weight(idx).cloned())
-            .collect()
+        // Add any remaining disconnected nodes
+        for node_idx in self.graph.node_indices() {
+            if seen.insert(node_idx) {
+                if let Some(node) = self.graph.node_weight(node_idx) {
+                    ordered.push(node.clone());
+                }
+            }
+        }
+
+        ordered
     }
 }
 
@@ -189,40 +116,20 @@ impl Default for RailwayGraph {
 }
 
 // Serialization helpers
-mod duration_serde {
-    use chrono::Duration;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_i64(duration.num_seconds())
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let seconds = i64::deserialize(deserializer)?;
-        Ok(Duration::seconds(seconds))
-    }
-}
-
 mod graph_serde {
-    use super::{LineSegment, StationNode};
+    use super::{TrackSegment, StationNode};
     use petgraph::graph::DiGraph;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S>(graph: &DiGraph<StationNode, LineSegment>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(graph: &DiGraph<StationNode, TrackSegment>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        // Pet graph's built-in serialization
+        // Petgraph's built-in serialization
         graph.serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<DiGraph<StationNode, LineSegment>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<DiGraph<StationNode, TrackSegment>, D::Error>
     where
         D: Deserializer<'de>,
     {

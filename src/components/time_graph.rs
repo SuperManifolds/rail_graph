@@ -5,21 +5,17 @@ use crate::components::{
     legend::Legend,
     line_controls::LineControls
 };
-use crate::models::{Project, SegmentState, TrainJourney, RailwayGraph};
+use crate::models::{Project, TrainJourney, RailwayGraph};
 use crate::storage::{
     load_project_from_storage, save_project_to_storage,
 };
 use leptos::*;
-use std::collections::HashSet;
 
 #[component]
 pub fn TimeGraph() -> impl IntoView {
-    // Create reactive signals for lines, graph, and segment state, starting with empty project
+    // Create reactive signals for lines and graph, starting with empty project
     let (lines, set_lines) = create_signal(Vec::new());
     let (graph, set_graph) = create_signal(RailwayGraph::new());
-    let (segment_state, set_segment_state) = create_signal(SegmentState {
-        double_tracked_segments: HashSet::new(),
-    });
 
     // Auto-load saved project on component mount
     create_effect(move |_| {
@@ -28,29 +24,24 @@ pub fn TimeGraph() -> impl IntoView {
                 Ok(project) => {
                     set_lines.set(project.lines);
                     set_graph.set(project.graph);
-                    set_segment_state.set(project.segment_state);
                 }
                 Err(_) => {
                     // No saved project, start with empty project
                     set_lines.set(Vec::new());
                     set_graph.set(RailwayGraph::new());
-                    set_segment_state.set(SegmentState {
-                        double_tracked_segments: HashSet::new(),
-                    });
                 }
             }
         });
     });
 
-    // Auto-save project whenever lines, graph, or segment state change
+    // Auto-save project whenever lines or graph change
     create_effect(move |_| {
         let current_lines = lines.get();
         let current_graph = graph.get();
-        let current_segment_state = segment_state.get();
 
         // Only save if we have data (skip initial empty state)
-        if !current_lines.is_empty() || !current_graph.graph.node_count() > 0 {
-            let project = Project::new(current_lines, current_graph, current_segment_state);
+        if !current_lines.is_empty() || current_graph.graph.node_count() > 0 {
+            let project = Project::new(current_lines, current_graph);
             spawn_local(async move {
                 if let Err(e) = save_project_to_storage(&project).await {
                     web_sys::console::error_1(&format!("Auto-save failed: {}", e).into());
@@ -85,9 +76,8 @@ pub fn TimeGraph() -> impl IntoView {
     // Compute conflicts and station crossings
     let conflicts_and_crossings = create_memo(move |_| {
         let journeys = train_journeys.get();
-        let seg_state = segment_state.get();
         let current_graph = graph.get();
-        crate::models::detect_line_conflicts(&journeys, &current_graph, &seg_state)
+        crate::models::detect_line_conflicts(&journeys, &current_graph)
     });
 
     let conflicts_only = Signal::derive(move || conflicts_and_crossings.get().0);
@@ -100,11 +90,10 @@ pub fn TimeGraph() -> impl IntoView {
             <div class="main-content">
                 <GraphCanvas
                     graph=graph
+                    set_graph=set_graph
                     train_journeys=train_journeys
                     visualization_time=visualization_time
                     set_visualization_time=set_visualization_time
-                    segment_state=segment_state
-                    set_segment_state=set_segment_state
                     show_station_crossings=show_station_crossings
                     show_conflicts=show_conflicts
                     conflicts_and_crossings=conflicts_and_crossings

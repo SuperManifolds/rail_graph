@@ -22,20 +22,17 @@ impl TrainJourney {
         let mut journeys = Vec::new();
 
         for line in lines {
-            // Get the path for this line from the graph
-            let line_path = graph.get_line_path(&line.id);
-
-            if line_path.is_empty() {
+            if line.route.is_empty() {
                 continue;
             }
 
             match line.schedule_mode {
                 ScheduleMode::Auto => {
                     // Generate forward journeys
-                    Self::generate_forward_journeys(&mut journeys, line, &line_path, graph, day_end);
+                    Self::generate_forward_journeys(&mut journeys, line, graph, day_end);
 
                     // Generate return journeys
-                    Self::generate_return_journeys(&mut journeys, line, &line_path, graph, day_end);
+                    Self::generate_return_journeys(&mut journeys, line, graph, day_end);
                 }
                 ScheduleMode::Manual => {
                     // Generate journeys from manual departures
@@ -50,7 +47,6 @@ impl TrainJourney {
     fn generate_forward_journeys(
         journeys: &mut Vec<TrainJourney>,
         line: &Line,
-        line_path: &[(petgraph::graph::NodeIndex, petgraph::graph::NodeIndex, Duration)],
         graph: &RailwayGraph,
         day_end: NaiveDateTime,
     ) {
@@ -62,19 +58,25 @@ impl TrainJourney {
             let mut cumulative_time = Duration::zero();
 
             // Add first station (source of first edge)
-            if let Some((first_from, _, _)) = line_path.first() {
-                if let Some(name) = graph.get_station_name(*first_from) {
-                    station_times.push((name.to_string(), departure_time));
+            if let Some(segment) = line.route.first() {
+                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                if let Some((from, _)) = graph.get_track_endpoints(edge_idx) {
+                    if let Some(name) = graph.get_station_name(from) {
+                        station_times.push((name.to_string(), departure_time));
+                    }
                 }
             }
 
-            // Walk the path, accumulating travel times
-            for (_from, to, travel_time) in line_path {
-                cumulative_time = cumulative_time + *travel_time;
+            // Walk the route, accumulating travel times
+            for segment in &line.route {
+                cumulative_time = cumulative_time + segment.duration;
                 let arrival_time = departure_time + cumulative_time;
 
-                if let Some(name) = graph.get_station_name(*to) {
-                    station_times.push((name.to_string(), arrival_time));
+                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                if let Some((_, to)) = graph.get_track_endpoints(edge_idx) {
+                    if let Some(name) = graph.get_station_name(to) {
+                        station_times.push((name.to_string(), arrival_time));
+                    }
                 }
             }
 
@@ -110,23 +112,34 @@ impl TrainJourney {
                 continue;
             };
 
-            // Get the full line path
-            let line_path = graph.get_line_path(&line.id);
-            if line_path.is_empty() {
-                continue;
+            // Build list of stations along the route to find positions
+            let mut route_stations = Vec::new();
+
+            // Add first station
+            if let Some(segment) = line.route.first() {
+                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                if let Some((from, _)) = graph.get_track_endpoints(edge_idx) {
+                    route_stations.push(from);
+                }
             }
 
-            // Find positions of from and to stations in the path
-            let from_pos = line_path.iter().position(|(src, _, _)| *src == from_idx)
-                .or_else(|| line_path.iter().position(|(_, tgt, _)| *tgt == from_idx));
-            let to_pos = line_path.iter().position(|(_, tgt, _)| *tgt == to_idx)
-                .or_else(|| line_path.iter().position(|(src, _, _)| *src == to_idx));
+            // Add all target stations from route segments
+            for segment in &line.route {
+                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                if let Some((_, to)) = graph.get_track_endpoints(edge_idx) {
+                    route_stations.push(to);
+                }
+            }
+
+            // Find positions of from and to stations
+            let from_pos = route_stations.iter().position(|&idx| idx == from_idx);
+            let to_pos = route_stations.iter().position(|&idx| idx == to_idx);
 
             let (Some(from_pos), Some(to_pos)) = (from_pos, to_pos) else {
                 continue;
             };
 
-            // Determine direction and extract journey segment
+            // Determine direction
             let is_forward = from_pos < to_pos;
             let (start_pos, end_pos) = if is_forward {
                 (from_pos, to_pos)
@@ -139,29 +152,30 @@ impl TrainJourney {
             let departure_time = manual_dep.time;
             let mut cumulative_time = Duration::zero();
 
-            // Add starting station
-            let start_node = if is_forward {
-                line_path[start_pos].0
-            } else {
-                line_path[end_pos].1
-            };
-            if let Some(name) = graph.get_station_name(start_node) {
-                station_times.push((name.to_string(), departure_time));
-            }
+            if is_forward {
+                // Forward journey
+                station_times.push((manual_dep.from_station.clone(), departure_time));
 
-            // Walk the path segment
-            for i in start_pos..=end_pos {
-                cumulative_time = cumulative_time + line_path[i].2;
-                let arrival_time = departure_time + cumulative_time;
+                for i in start_pos..end_pos {
+                    cumulative_time = cumulative_time + line.route[i].duration;
+                    let arrival_time = departure_time + cumulative_time;
 
-                if let Some(name) = graph.get_station_name(line_path[i].1) {
-                    station_times.push((name.to_string(), arrival_time));
+                    if let Some(name) = graph.get_station_name(route_stations[i + 1]) {
+                        station_times.push((name.to_string(), arrival_time));
+                    }
                 }
-            }
+            } else {
+                // Backward journey
+                station_times.push((manual_dep.from_station.clone(), departure_time));
 
-            // If going backwards, reverse the station times
-            if !is_forward {
-                station_times.reverse();
+                for i in (start_pos..end_pos).rev() {
+                    cumulative_time = cumulative_time + line.route[i].duration;
+                    let arrival_time = departure_time + cumulative_time;
+
+                    if let Some(name) = graph.get_station_name(route_stations[i]) {
+                        station_times.push((name.to_string(), arrival_time));
+                    }
+                }
             }
 
             if station_times.len() >= 2 {
@@ -178,17 +192,10 @@ impl TrainJourney {
     fn generate_return_journeys(
         journeys: &mut Vec<TrainJourney>,
         line: &Line,
-        line_path: &[(petgraph::graph::NodeIndex, petgraph::graph::NodeIndex, Duration)],
         graph: &RailwayGraph,
         day_end: NaiveDateTime,
     ) {
-        // Build reverse path
-        let return_path: Vec<_> = line_path.iter()
-            .rev()
-            .map(|(from, to, travel_time)| (*to, *from, *travel_time))
-            .collect();
-
-        if return_path.is_empty() {
+        if line.route.is_empty() {
             return;
         }
 
@@ -199,20 +206,26 @@ impl TrainJourney {
             let mut station_times = Vec::new();
             let mut cumulative_time = Duration::zero();
 
-            // Add first station (source of first edge in return path)
-            if let Some((first_from, _, _)) = return_path.first() {
-                if let Some(name) = graph.get_station_name(*first_from) {
-                    station_times.push((name.to_string(), return_departure_time));
+            // Add first station (target of last edge in forward route)
+            if let Some(segment) = line.route.last() {
+                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                if let Some((_, to)) = graph.get_track_endpoints(edge_idx) {
+                    if let Some(name) = graph.get_station_name(to) {
+                        station_times.push((name.to_string(), return_departure_time));
+                    }
                 }
             }
 
-            // Walk the return path
-            for (_from, to, travel_time) in &return_path {
-                cumulative_time = cumulative_time + *travel_time;
+            // Walk the route in reverse
+            for segment in line.route.iter().rev() {
+                cumulative_time = cumulative_time + segment.duration;
                 let arrival_time = return_departure_time + cumulative_time;
 
-                if let Some(name) = graph.get_station_name(*to) {
-                    station_times.push((name.to_string(), arrival_time));
+                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                if let Some((from, _)) = graph.get_track_endpoints(edge_idx) {
+                    if let Some(name) = graph.get_station_name(from) {
+                        station_times.push((name.to_string(), arrival_time));
+                    }
                 }
             }
 

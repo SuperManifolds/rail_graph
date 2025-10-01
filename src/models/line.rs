@@ -7,6 +7,13 @@ const LINE_COLORS: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RouteSegment {
+    pub edge_index: usize,
+    #[serde(with = "duration_serde")]
+    pub duration: Duration,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ScheduleMode {
     Auto,
     Manual,
@@ -42,6 +49,8 @@ pub struct Line {
     pub schedule_mode: ScheduleMode,
     #[serde(default)]
     pub manual_departures: Vec<ManualDeparture>,
+    #[serde(default)]
+    pub route: Vec<RouteSegment>,
 }
 
 fn default_visible() -> bool {
@@ -65,6 +74,7 @@ impl Line {
                 visible: true,
                 schedule_mode: ScheduleMode::Auto,
                 manual_departures: Vec::new(),
+                route: Vec::new(),
             })
             .collect()
     }

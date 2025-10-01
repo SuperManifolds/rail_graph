@@ -14,27 +14,44 @@ pub fn StopsTab(
                 <div class="stops-list">
                     {move || {
                         edited_line.get().map(|line| {
-                            let line_id = line.id.clone();
                             let current_graph = graph.get();
 
-                            // Get the stations on this line's path
-                            let line_stations = current_graph.get_line_stations(&line_id);
-
-                            if line_stations.is_empty() {
+                            if line.route.is_empty() {
                                 view! {
                                     <p class="no-stops">"No stops defined for this line yet. Import a CSV to set up the route."</p>
                                 }.into_view()
                             } else {
+                                // Build list of stations from route
+                                let mut stations = Vec::new();
+
+                                // Add first station
+                                if let Some(segment) = line.route.first() {
+                                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                                    if let Some((from, _)) = current_graph.get_track_endpoints(edge_idx) {
+                                        if let Some(name) = current_graph.get_station_name(from) {
+                                            stations.push(name.to_string());
+                                        }
+                                    }
+                                }
+
+                                // Add stations from each segment
+                                for segment in &line.route {
+                                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                                    if let Some((_, to)) = current_graph.get_track_endpoints(edge_idx) {
+                                        if let Some(name) = current_graph.get_station_name(to) {
+                                            stations.push(name.to_string());
+                                        }
+                                    }
+                                }
+
                                 view! {
                                     <div class="stops-header">
                                         <span>"Station"</span>
                                         <span>"Travel Time to Next"</span>
                                     </div>
-                                    {line_stations.into_iter().enumerate().map(|(i, (_idx, name))| {
-                                        let line_path = current_graph.get_line_path(&line_id);
-                                        let travel_time_str = if i < line_path.len() {
-                                            let travel_time = line_path[i].2;
-                                            let minutes = travel_time.num_minutes();
+                                    {stations.into_iter().enumerate().map(|(i, name)| {
+                                        let travel_time_str = if i < line.route.len() {
+                                            let minutes = line.route[i].duration.num_minutes();
                                             format!("{} min", minutes)
                                         } else {
                                             "-".to_string()

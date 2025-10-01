@@ -1,4 +1,4 @@
-use crate::models::{Line, Project, SegmentState};
+use crate::models::{Line, Project};
 use leptos::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -6,7 +6,6 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{IdbDatabase, IdbRequest, IdbTransactionMode};
 
 const LINES_STORAGE_KEY: &str = "nimby_graph_lines";
-const SEGMENT_STATE_STORAGE_KEY: &str = "nimby_graph_segment_state";
 const DB_NAME: &str = "nimby_graph_db";
 const DB_VERSION: u32 = 1;
 const PROJECT_STORE: &str = "projects";
@@ -48,32 +47,6 @@ pub fn load_lines_from_storage() -> Result<Vec<Line>, String> {
 
 pub fn clear_lines_storage() {
     removeItem(LINES_STORAGE_KEY);
-}
-
-pub fn save_segment_state_to_storage(segment_state: &SegmentState) -> Result<(), String> {
-    match serde_json::to_string(segment_state) {
-        Ok(json) => {
-            setItem(SEGMENT_STATE_STORAGE_KEY, &json);
-            Ok(())
-        }
-        Err(e) => Err(format!("Failed to serialize segment state: {}", e))
-    }
-}
-
-pub fn load_segment_state_from_storage() -> Result<SegmentState, String> {
-    match getItem(SEGMENT_STATE_STORAGE_KEY) {
-        Some(json) => {
-            match serde_json::from_str(&json) {
-                Ok(segment_state) => Ok(segment_state),
-                Err(e) => Err(format!("Failed to parse stored segment state: {}", e))
-            }
-        }
-        None => Ok(SegmentState { double_tracked_segments: std::collections::HashSet::new() })
-    }
-}
-
-pub fn clear_segment_state_storage() {
-    removeItem(SEGMENT_STATE_STORAGE_KEY);
 }
 
 // IndexedDB helper functions

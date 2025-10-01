@@ -19,12 +19,29 @@ pub fn ManualDeparturesList(
                     let on_save = on_save.clone();
                     move || {
                         edited_line.get().map(|line| {
-                            let line_id = line.id.clone();
                             let current_graph = graph.get();
-                            let station_names: Vec<String> = current_graph.get_line_stations(&line_id)
-                                .into_iter()
-                                .map(|(_, name)| name)
-                                .collect();
+
+                            // Build list of station names from route
+                            let mut station_names = Vec::new();
+
+                            if let Some(segment) = line.route.first() {
+                                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                                if let Some((from, _)) = current_graph.get_track_endpoints(edge_idx) {
+                                    if let Some(name) = current_graph.get_station_name(from) {
+                                        station_names.push(name.to_string());
+                                    }
+                                }
+                            }
+
+                            for segment in &line.route {
+                                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                                if let Some((_, to)) = current_graph.get_track_endpoints(edge_idx) {
+                                    if let Some(name) = current_graph.get_station_name(to) {
+                                        station_names.push(name.to_string());
+                                    }
+                                }
+                            }
+
                             line.manual_departures.iter().enumerate().map(|(idx, dep)| {
                                 let on_save = on_save.clone();
                                 let station_names = station_names.clone();
@@ -67,12 +84,28 @@ pub fn ManualDeparturesList(
                     let on_save = on_save.clone();
                     move |_| {
                         if let Some(mut updated_line) = edited_line.get_untracked() {
-                            let line_id = updated_line.id.clone();
                             let current_graph = graph.get();
-                            let station_names: Vec<String> = current_graph.get_line_stations(&line_id)
-                                .into_iter()
-                                .map(|(_, name)| name)
-                                .collect();
+
+                            // Build list of station names from route
+                            let mut station_names = Vec::new();
+
+                            if let Some(segment) = updated_line.route.first() {
+                                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                                if let Some((from, _)) = current_graph.get_track_endpoints(edge_idx) {
+                                    if let Some(name) = current_graph.get_station_name(from) {
+                                        station_names.push(name.to_string());
+                                    }
+                                }
+                            }
+
+                            for segment in &updated_line.route {
+                                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                                if let Some((_, to)) = current_graph.get_track_endpoints(edge_idx) {
+                                    if let Some(name) = current_graph.get_station_name(to) {
+                                        station_names.push(name.to_string());
+                                    }
+                                }
+                            }
 
                             let from_station = station_names.first().cloned().unwrap_or_else(|| "Station A".to_string());
                             let to_station = station_names.last().cloned().unwrap_or_else(|| "Station B".to_string());

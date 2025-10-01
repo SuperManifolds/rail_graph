@@ -1,7 +1,8 @@
 use chrono::NaiveDateTime;
-use super::{SegmentState, TrainJourney, RailwayGraph};
+use super::{TrainJourney, RailwayGraph, StationNode};
 use crate::time::time_to_fraction;
 use crate::constants::BASE_DATE;
+use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
 
 // Conflict detection constants
@@ -36,14 +37,14 @@ struct JourneySegment {
 
 struct ConflictContext<'a> {
     station_indices: HashMap<&'a str, usize>,
-    segment_state: &'a SegmentState,
+    stations: &'a [StationNode],
+    graph: &'a RailwayGraph,
     station_margin: chrono::Duration,
 }
 
 pub fn detect_line_conflicts(
     train_journeys: &[TrainJourney],
     graph: &RailwayGraph,
-    segment_state: &SegmentState,
 ) -> (Vec<Conflict>, Vec<StationCrossing>) {
     let mut conflicts = Vec::new();
     let mut station_crossings = Vec::new();
@@ -60,7 +61,8 @@ pub fn detect_line_conflicts(
 
     let ctx = ConflictContext {
         station_indices,
-        segment_state,
+        stations: &stations,
+        graph,
         station_margin: chrono::Duration::minutes(STATION_MARGIN_MINUTES),
     };
 
@@ -204,8 +206,7 @@ fn check_segment_pair(
 
     // Double-tracked segments only prevent crossing conflicts, not overtaking
     if !is_overtaking {
-        let segment_idx = seg1_max;
-        if ctx.segment_state.double_tracked_segments.contains(&segment_idx) {
+        if is_segment_double_tracked(ctx, seg1_min, seg1_max) {
             return;
         }
     }
@@ -219,6 +220,36 @@ fn check_segment_pair(
         journey2_id: journey2.line_id.clone(),
         is_overtaking,
     });
+}
+
+/// Check if a segment between two station indices is double-tracked
+fn is_segment_double_tracked(ctx: &ConflictContext, idx1: usize, idx2: usize) -> bool {
+    // Get station names from indices
+    let station1 = &ctx.stations[idx1];
+    let station2 = &ctx.stations[idx2];
+
+    // Get NodeIndex for both stations
+    let Some(node1) = ctx.graph.get_station_index(&station1.name) else {
+        return false;
+    };
+    let Some(node2) = ctx.graph.get_station_index(&station2.name) else {
+        return false;
+    };
+
+    // Check both directions for an edge
+    for edge in ctx.graph.graph.edges(node1) {
+        if edge.target() == node2 {
+            return edge.weight().double_tracked;
+        }
+    }
+
+    for edge in ctx.graph.graph.edges(node2) {
+        if edge.target() == node1 {
+            return edge.weight().double_tracked;
+        }
+    }
+
+    false
 }
 
 fn is_near_station(

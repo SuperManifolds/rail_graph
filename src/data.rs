@@ -1,5 +1,7 @@
-use crate::models::{Line, RailwayGraph};
+use crate::models::{Line, RailwayGraph, RouteSegment};
 use chrono::{Duration, Timelike};
+use petgraph::graph::{EdgeIndex, NodeIndex};
+use std::collections::HashMap;
 
 /// Parse CSV data into lines and railway graph
 pub fn parse_csv_data() -> (Vec<Line>, RailwayGraph) {
@@ -20,8 +22,7 @@ pub fn parse_csv_string(csv_content: &str) -> (Vec<Line>, RailwayGraph) {
     };
 
     let line_ids = extract_line_ids(&header);
-    let lines = Line::create_from_ids(&line_ids);
-    let graph = build_graph_from_csv(records, &line_ids);
+    let (lines, graph) = build_graph_and_routes_from_csv(records, &line_ids);
 
     (lines, graph)
 }
@@ -34,11 +35,12 @@ fn extract_line_ids(header: &csv::StringRecord) -> Vec<String> {
         .collect()
 }
 
-fn build_graph_from_csv(
+fn build_graph_and_routes_from_csv(
     records: csv::StringRecordsIter<&[u8]>,
     line_ids: &[String],
-) -> RailwayGraph {
+) -> (Vec<Line>, RailwayGraph) {
     let mut graph = RailwayGraph::new();
+    let mut lines = Line::create_from_ids(line_ids);
 
     // First pass: collect all station data
     let mut station_data: Vec<(String, Vec<Option<Duration>>)> = Vec::new();
@@ -72,26 +74,44 @@ fn build_graph_from_csv(
         station_data.push((station_name.to_string(), times));
     }
 
-    // Second pass: create nodes and edges
-    // For each line, build edges between consecutive stations
-    for (line_idx, line_id) in line_ids.iter().enumerate() {
-        let mut prev_station: Option<(petgraph::graph::NodeIndex, Duration)> = None;
+    // Track edges by (from_node, to_node) to avoid duplicates
+    let mut edge_map: HashMap<(NodeIndex, NodeIndex), EdgeIndex> = HashMap::new();
+
+    // Second pass: build shared infrastructure and line routes
+    for (line_idx, _line_id) in line_ids.iter().enumerate() {
+        let mut route = Vec::new();
+        let mut prev_station: Option<(NodeIndex, Duration)> = None;
 
         for (station_name, times) in &station_data {
             if let Some(cumulative_time) = times[line_idx] {
                 // Get or create station node
                 let station_idx = graph.add_or_get_station(station_name.clone());
 
-                // If there was a previous station, create an edge
+                // If there was a previous station, create or reuse edge
                 if let Some((prev_idx, prev_time)) = prev_station {
                     let travel_time = cumulative_time - prev_time;
-                    graph.add_segment(prev_idx, station_idx, line_id.clone(), travel_time);
+
+                    // Check if edge already exists
+                    let edge_idx = *edge_map.entry((prev_idx, station_idx))
+                        .or_insert_with(|| {
+                            // Create new track segment (initially single-tracked)
+                            graph.add_track(prev_idx, station_idx, false)
+                        });
+
+                    // Add to this line's route
+                    route.push(RouteSegment {
+                        edge_index: edge_idx.index(),
+                        duration: travel_time,
+                    });
                 }
 
                 prev_station = Some((station_idx, cumulative_time));
             }
         }
+
+        // Assign route to line
+        lines[line_idx].route = route;
     }
 
-    graph
+    (lines, graph)
 }

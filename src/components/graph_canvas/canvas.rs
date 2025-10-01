@@ -2,7 +2,7 @@ use leptos::*;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::JsCast;
-use crate::models::{Conflict, StationCrossing, RailwayGraph, TrainJourney, SegmentState};
+use crate::models::{Conflict, StationCrossing, RailwayGraph, TrainJourney};
 use crate::components::conflict_tooltip::ConflictTooltip;
 use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
@@ -18,11 +18,10 @@ pub const BOTTOM_PADDING: f64 = 20.0;
 #[component]
 pub fn GraphCanvas(
     graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
     train_journeys: ReadSignal<Vec<TrainJourney>>,
     visualization_time: ReadSignal<NaiveDateTime>,
     set_visualization_time: WriteSignal<NaiveDateTime>,
-    segment_state: ReadSignal<SegmentState>,
-    set_segment_state: WriteSignal<SegmentState>,
     show_station_crossings: ReadSignal<bool>,
     show_conflicts: ReadSignal<bool>,
     conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
@@ -94,10 +93,9 @@ pub fn GraphCanvas(
                 pan_offset_y: pan_y,
             };
             let (current_conflicts, current_station_crossings) = conflicts_and_crossings.get();
-            let current_segment_state = segment_state.get();
             let show_crossings = show_station_crossings.get();
             let show_conf = show_conflicts.get();
-            render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_station_crossings, &current_segment_state, show_crossings, show_conf);
+            render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_station_crossings, &current_graph, show_crossings, show_conf);
         }
     });
 
@@ -124,7 +122,7 @@ pub fn GraphCanvas(
                     x, y, canvas_height, &current_stations,
                     zoom_level.get(), pan_offset_y.get()
                 ) {
-                    toggle_segment_state(clicked_segment, set_segment_state);
+                    toggle_segment_double_track(clicked_segment, &current_stations, set_graph);
                 } else {
                     handle_time_scrubbing(x, canvas_width, zoom_level.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
                 }
@@ -282,7 +280,7 @@ fn render_graph(
     viewport: ViewportState,
     conflicts: &[Conflict],
     station_crossings: &[StationCrossing],
-    segment_state: &SegmentState,
+    graph: &RailwayGraph,
     show_station_crossings: bool,
     show_conflicts: bool,
 ) {
@@ -332,7 +330,7 @@ fn render_graph(
     // Draw grid and content in zoomed coordinate system
     time_labels::draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level);
     graph_content::draw_station_grid(&ctx, &zoomed_dimensions, stations);
-    graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, segment_state);
+    graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, graph);
 
     // Draw train journeys
     let station_height = zoomed_dimensions.graph_height / stations.len() as f64;
@@ -402,7 +400,7 @@ fn render_graph(
         &ctx,
         &dimensions,
         stations,
-        segment_state,
+        graph,
         viewport.zoom_level,
         viewport.pan_offset_y,
     );
@@ -422,12 +420,38 @@ fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
     ctx.clear_rect(0.0, 0.0, width, height);
 }
 
-fn toggle_segment_state(clicked_segment: usize, set_segment_state: WriteSignal<SegmentState>) {
-    set_segment_state.update(move |state| {
-        if state.double_tracked_segments.contains(&clicked_segment) {
-            state.double_tracked_segments.remove(&clicked_segment);
-        } else {
-            state.double_tracked_segments.insert(clicked_segment);
+fn toggle_segment_double_track(
+    clicked_segment: usize,
+    stations: &[crate::models::StationNode],
+    set_graph: WriteSignal<RailwayGraph>,
+) {
+    // segment index i represents the segment between stations[i-1] and stations[i]
+    if clicked_segment == 0 || clicked_segment >= stations.len() {
+        return;
+    }
+
+    let station1 = &stations[clicked_segment - 1];
+    let station2 = &stations[clicked_segment];
+
+    set_graph.update(move |graph| {
+        // Get node indices for both stations
+        let Some(node1) = graph.get_station_index(&station1.name) else {
+            return;
+        };
+        let Some(node2) = graph.get_station_index(&station2.name) else {
+            return;
+        };
+
+        // Find and toggle edges in both directions
+        // Check node1 -> node2
+        for edge in graph.graph.edge_indices() {
+            if let Some((from, to)) = graph.graph.edge_endpoints(edge) {
+                if (from == node1 && to == node2) || (from == node2 && to == node1) {
+                    if let Some(weight) = graph.graph.edge_weight_mut(edge) {
+                        weight.double_tracked = !weight.double_tracked;
+                    }
+                }
+            }
         }
     });
 }
