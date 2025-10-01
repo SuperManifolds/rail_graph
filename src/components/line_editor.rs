@@ -2,7 +2,8 @@ use crate::components::{
     frequency_input::FrequencyInput,
     time_input::TimeInput,
     manual_departures_list::ManualDeparturesList,
-    window::Window
+    window::Window,
+    tab_view::{TabView, TabPanel, Tab}
 };
 use crate::models::{Line, ScheduleMode, Station};
 use leptos::*;
@@ -17,6 +18,7 @@ pub fn LineEditor(
     on_save: impl Fn(Line) + 'static,
 ) -> impl IntoView {
     let (edited_line, set_edited_line) = create_signal(None::<Line>);
+    let active_tab = create_rw_signal("general".to_string());
 
     // Reset edited_line when dialog opens (not when initial_line changes)
     create_effect(move |prev_open| {
@@ -51,18 +53,23 @@ pub fn LineEditor(
             on_close=close_dialog
         >
             {
-                let on_save = on_save.clone();
+                let on_save_stored = store_value(on_save.clone());
                 move || {
                     edited_line.get().map(|_line| {
+                        let tabs = vec![
+                            Tab { id: "general".to_string(), label: "General".to_string() },
+                        ];
                         view! {
-                    <div class="line-editor-content">
+                    <TabView tabs=tabs active_tab=active_tab>
                         {
-                            let on_save_name = on_save.clone();
-                            let on_save_color = on_save.clone();
-                            let on_save_mode = on_save.clone();
-                            let on_save_auto = on_save.clone();
-                            let on_save_manual = on_save.clone();
+                            let on_save_name = on_save_stored.get_value();
+                            let on_save_color = on_save_stored.get_value();
+                            let on_save_mode = on_save_stored.get_value();
+                            let on_save_auto = on_save_stored.get_value();
+                            let on_save_manual = on_save_stored.get_value();
                             view! {
+                                <TabPanel when=Signal::derive(move || active_tab.get() == "general")>
+                                <div class="line-editor-content">
                                 <div class="form-group">
                                     <label>"Name"</label>
                                     <input
@@ -195,9 +202,11 @@ pub fn LineEditor(
                                 on_save=on_save_manual.clone()
                             />
                         </Show>
+                    </div>
+                                </TabPanel>
                             }
                         }
-                    </div>
+                    </TabView>
                         }
                     })
                 }
