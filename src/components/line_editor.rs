@@ -58,6 +58,7 @@ pub fn LineEditor(
                     edited_line.get().map(|_line| {
                         let tabs = vec![
                             Tab { id: "general".to_string(), label: "General".to_string() },
+                            Tab { id: "schedule".to_string(), label: "Schedule".to_string() },
                         ];
                         view! {
                     <TabView tabs=tabs active_tab=active_tab>
@@ -107,7 +108,11 @@ pub fn LineEditor(
                                 }
                             />
                         </div>
+                    </div>
+                                </TabPanel>
 
+                                <TabPanel when=Signal::derive(move || active_tab.get() == "schedule")>
+                                <div class="line-editor-content">
                         <div class="form-group">
                             <label>
                                 <input
