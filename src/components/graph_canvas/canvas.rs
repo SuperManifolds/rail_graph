@@ -1,7 +1,7 @@
 use leptos::*;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
-use wasm_bindgen::JsCast;
+use wasm_bindgen::{JsCast, closure::Closure};
 use crate::models::{Conflict, StationCrossing, RailwayGraph, TrainJourney};
 use crate::components::conflict_tooltip::ConflictTooltip;
 use crate::constants::BASE_DATE;
@@ -66,36 +66,64 @@ pub fn GraphCanvas(
     }
 
     // Render the graph whenever train journeys or graph change
+    // Use requestAnimationFrame to throttle renders to 60fps max
+    let (render_requested, set_render_requested) = create_signal(false);
+
     create_effect(move |_| {
-        let journeys = train_journeys.get();
-        let current = visualization_time.get();
-        let current_graph = graph.get();
-        let stations_for_render = current_graph.get_all_stations_ordered();
+        // Track all dependencies
+        let _ = train_journeys.get();
+        let _ = visualization_time.get();
+        let _ = graph.get();
+        let _ = zoom_level.get();
+        let _ = pan_offset_x.get();
+        let _ = pan_offset_y.get();
+        let _ = conflicts_and_crossings.get();
+        let _ = show_station_crossings.get();
+        let _ = show_conflicts.get();
 
-        if let Some(canvas) = canvas_ref.get() {
-            let zoom = zoom_level.get();
-            let pan_x = pan_offset_x.get();
-            let pan_y = pan_offset_y.get();
+        // Only request render if one isn't already pending
+        if !render_requested.get_untracked() {
+            set_render_requested.set(true);
 
-            // Update canvas size to match container
-            let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
-            let container_width = canvas_elem.client_width() as u32;
-            let container_height = canvas_elem.client_height() as u32;
+            let window = web_sys::window().expect("window");
+            let callback = Closure::once(move || {
+                set_render_requested.set(false);
 
-            if container_width > 0 && container_height > 0 {
-                canvas_elem.set_width(container_width);
-                canvas_elem.set_height(container_height);
-            }
+                // Perform actual render
+                let journeys = train_journeys.get_untracked();
+                let current = visualization_time.get_untracked();
+                let current_graph = graph.get_untracked();
+                let stations_for_render = current_graph.get_all_stations_ordered();
 
-            let viewport = ViewportState {
-                zoom_level: zoom,
-                pan_offset_x: pan_x,
-                pan_offset_y: pan_y,
-            };
-            let (current_conflicts, current_station_crossings) = conflicts_and_crossings.get();
-            let show_crossings = show_station_crossings.get();
-            let show_conf = show_conflicts.get();
-            render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_station_crossings, &current_graph, show_crossings, show_conf);
+                if let Some(canvas) = canvas_ref.get_untracked() {
+                    let zoom = zoom_level.get_untracked();
+                    let pan_x = pan_offset_x.get_untracked();
+                    let pan_y = pan_offset_y.get_untracked();
+
+                    // Update canvas size to match container
+                    let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+                    let container_width = canvas_elem.client_width() as u32;
+                    let container_height = canvas_elem.client_height() as u32;
+
+                    if container_width > 0 && container_height > 0 {
+                        canvas_elem.set_width(container_width);
+                        canvas_elem.set_height(container_height);
+                    }
+
+                    let viewport = ViewportState {
+                        zoom_level: zoom,
+                        pan_offset_x: pan_x,
+                        pan_offset_y: pan_y,
+                    };
+                    let (current_conflicts, current_station_crossings) = conflicts_and_crossings.get_untracked();
+                    let show_crossings = show_station_crossings.get_untracked();
+                    let show_conf = show_conflicts.get_untracked();
+                    render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_station_crossings, &current_graph, show_crossings, show_conf);
+                }
+            });
+
+            let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
+            callback.forget();
         }
     });
 
@@ -145,9 +173,12 @@ pub fn GraphCanvas(
                 let current_pan_x = pan_offset_x.get();
                 let current_pan_y = pan_offset_y.get();
 
-                set_pan_offset_x.set(current_pan_x + dx);
-                set_pan_offset_y.set(current_pan_y + dy);
-                set_last_mouse_pos.set((x, y));
+                // Batch pan updates to trigger only one re-render
+                batch(move || {
+                    set_pan_offset_x.set(current_pan_x + dx);
+                    set_pan_offset_y.set(current_pan_y + dy);
+                    set_last_mouse_pos.set((x, y));
+                });
             } else if is_dragging.get() {
                 let canvas_width = canvas.width() as f64;
                 let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
@@ -216,9 +247,12 @@ pub fn GraphCanvas(
                 let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom / old_zoom);
                 let new_pan_y = graph_mouse_y - (graph_mouse_y - pan_y) * (new_zoom / old_zoom);
 
-                set_zoom_level.set(new_zoom);
-                set_pan_offset_x.set(new_pan_x);
-                set_pan_offset_y.set(new_pan_y);
+                // Batch all zoom/pan updates to trigger only one re-render
+                batch(move || {
+                    set_zoom_level.set(new_zoom);
+                    set_pan_offset_x.set(new_pan_x);
+                    set_pan_offset_y.set(new_pan_y);
+                });
             }
         }
     };
