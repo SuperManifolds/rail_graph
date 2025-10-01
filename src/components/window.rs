@@ -25,30 +25,33 @@ pub fn Window(
     };
 
     let handle_mouse_move = move |ev: web_sys::MouseEvent| {
-        if is_dragging.get_untracked() {
-            let (offset_x, offset_y) = drag_offset.get_untracked();
-            set_position.set((ev.client_x() as f64 - offset_x, ev.client_y() as f64 - offset_y));
+        if is_dragging.try_get_untracked().unwrap_or(false) {
+            if let Some((offset_x, offset_y)) = drag_offset.try_get_untracked() {
+                let _ = set_position.try_set((ev.client_x() as f64 - offset_x, ev.client_y() as f64 - offset_y));
+            }
         }
     };
 
     let handle_mouse_up = move |_: web_sys::MouseEvent| {
-        set_is_dragging.set(false);
-        set_is_resizing.set(false);
+        let _ = set_is_dragging.try_set(false);
+        let _ = set_is_resizing.try_set(false);
     };
 
     let handle_resize_down = move |ev: web_sys::MouseEvent| {
         ev.stop_propagation();
-        set_is_resizing.set(true);
-        let (width, height) = size.get_untracked();
-        set_resize_start.set((ev.client_x() as f64 - width, ev.client_y() as f64 - height));
+        let _ = set_is_resizing.try_set(true);
+        if let Some((width, height)) = size.try_get_untracked() {
+            let _ = set_resize_start.try_set((ev.client_x() as f64 - width, ev.client_y() as f64 - height));
+        }
     };
 
     let handle_resize_move = move |ev: web_sys::MouseEvent| {
-        if is_resizing.get_untracked() {
-            let (start_x, start_y) = resize_start.get_untracked();
-            let new_width = (ev.client_x() as f64 - start_x).max(250.0);
-            let new_height = (ev.client_y() as f64 - start_y).max(200.0);
-            set_size.set((new_width, new_height));
+        if is_resizing.try_get_untracked().unwrap_or(false) {
+            if let Some((start_x, start_y)) = resize_start.try_get_untracked() {
+                let new_width = (ev.client_x() as f64 - start_x).max(250.0);
+                let new_height = (ev.client_y() as f64 - start_y).max(200.0);
+                let _ = set_size.try_set((new_width, new_height));
+            }
         }
     };
 
