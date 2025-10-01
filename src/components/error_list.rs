@@ -1,4 +1,6 @@
 use leptos::*;
+use leptos::leptos_dom::helpers::window_event_listener;
+use wasm_bindgen::JsCast;
 use crate::models::Conflict;
 use crate::time::time_to_fraction;
 
@@ -74,8 +76,24 @@ pub fn ErrorList(
     let conflict_count = move || conflicts.get().len();
     let has_errors = move || conflict_count() > 0;
 
+    // Close when clicking outside
+    let container_ref = create_node_ref::<leptos::html::Div>();
+
+    window_event_listener(leptos::ev::click, move |ev| {
+        if is_open.get() {
+            if let Some(container) = container_ref.get() {
+                let target = ev.target();
+                if let Some(target_element) = target.and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
+                    if !container.contains(Some(&target_element)) {
+                        set_is_open.set(false);
+                    }
+                }
+            }
+        }
+    });
+
     view! {
-        <div class="error-list-container">
+        <div class="error-list-container" node_ref=container_ref>
             {move || {
                 if has_errors() {
                     view! {
