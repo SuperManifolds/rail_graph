@@ -18,12 +18,12 @@ pub fn draw_background(ctx: &CanvasRenderingContext2d, width: f64, height: f64) 
     ctx.fill_rect(0.0, 0.0, width, height);
 }
 
-pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[StationNode]) {
+pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[StationNode], zoom_level: f64, pan_offset_x: f64) {
     let station_height = dims.graph_height / stations.len() as f64;
 
     for (i, _station) in stations.iter().enumerate() {
         let y = calculate_station_y(dims, i, station_height);
-        draw_horizontal_line(ctx, dims, y);
+        draw_horizontal_line(ctx, dims, y, zoom_level, pan_offset_x);
     }
 }
 
@@ -31,14 +31,18 @@ fn calculate_station_y(dims: &GraphDimensions, index: usize, station_height: f64
     dims.top_margin + (index as f64 * station_height) + (station_height / 2.0)
 }
 
-fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, y: f64) {
+fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, y: f64, zoom_level: f64, pan_offset_x: f64) {
     ctx.set_stroke_style_str(STATION_GRID_COLOR);
+    ctx.set_line_width(1.0 / zoom_level);
     ctx.begin_path();
 
-    // Calculate the same extended range as the hour grid
-    let hours_visible = (dims.graph_width / dims.hour_width).ceil() as i32;
-    let start_hour = -GRID_PADDING_HOURS;
-    let end_hour = hours_visible + GRID_PADDING_HOURS;
+    // Calculate visible range in the transformed coordinate system
+    let x_min = -pan_offset_x / zoom_level;
+    let x_max = (dims.graph_width - pan_offset_x) / zoom_level;
+
+    // Calculate which hour lines are visible
+    let start_hour = (x_min / dims.hour_width).floor() as i32 - GRID_PADDING_HOURS;
+    let end_hour = (x_max / dims.hour_width).ceil() as i32 + GRID_PADDING_HOURS;
 
     let start_x = dims.left_margin + (start_hour as f64 * dims.hour_width);
     let end_x = dims.left_margin + (end_hour as f64 * dims.hour_width);
@@ -53,8 +57,19 @@ pub fn draw_double_track_indicators(
     dims: &GraphDimensions,
     stations: &[StationNode],
     graph: &RailwayGraph,
+    zoom_level: f64,
+    pan_offset_x: f64,
 ) {
     let station_height = dims.graph_height / stations.len() as f64;
+
+    // Calculate visible range in the transformed coordinate system
+    let x_min = -pan_offset_x / zoom_level;
+    let x_max = (dims.graph_width - pan_offset_x) / zoom_level;
+
+    let start_hour = (x_min / dims.hour_width).floor() as i32 - GRID_PADDING_HOURS;
+    let end_hour = (x_max / dims.hour_width).ceil() as i32 + GRID_PADDING_HOURS;
+    let start_x = dims.left_margin + (start_hour as f64 * dims.hour_width);
+    let width = (end_hour - start_hour) as f64 * dims.hour_width;
 
     // Draw lighter background for double-tracked segments
     // Check each consecutive pair of stations
@@ -84,13 +99,6 @@ pub fn draw_double_track_indicators(
             // Cover the entire area between the two stations
             let top_y = station1_y.min(station2_y);
             let height = (station2_y - station1_y).abs();
-
-            // Calculate the same extended range as other grid elements
-            let hours_visible = (dims.graph_width / dims.hour_width).ceil() as i32;
-            let start_hour = -GRID_PADDING_HOURS;
-            let end_hour = hours_visible + GRID_PADDING_HOURS;
-            let start_x = dims.left_margin + (start_hour as f64 * dims.hour_width);
-            let width = (end_hour - start_hour) as f64 * dims.hour_width;
 
             // Draw lighter background rectangle
             ctx.set_fill_style_str(DOUBLE_TRACK_BG_COLOR);

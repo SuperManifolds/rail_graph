@@ -383,8 +383,8 @@ fn render_graph(
 
     // Draw grid and content in zoomed coordinate system
     time_labels::draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level, viewport.pan_offset_x);
-    graph_content::draw_station_grid(&ctx, &zoomed_dimensions, stations);
-    graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, graph);
+    graph_content::draw_station_grid(&ctx, &zoomed_dimensions, stations, viewport.zoom_level, viewport.pan_offset_x);
+    graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, graph, viewport.zoom_level, viewport.pan_offset_x);
 
     // Draw train journeys
     let station_height = zoomed_dimensions.graph_height / stations.len() as f64;
