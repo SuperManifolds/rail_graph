@@ -1,13 +1,177 @@
 use crate::components::{
     frequency_input::FrequencyInput,
-    time_input::TimeInput,
     manual_departures_list::ManualDeparturesList,
+    tab_view::{Tab, TabPanel, TabView},
+    time_input::TimeInput,
     window::Window,
-    tab_view::{TabView, TabPanel, Tab}
 };
 use crate::models::{Line, ScheduleMode, Station};
 use leptos::*;
 use std::rc::Rc;
+
+#[component]
+fn GeneralTab(
+    edited_line: ReadSignal<Option<Line>>,
+    set_edited_line: WriteSignal<Option<Line>>,
+    on_save: Rc<dyn Fn(Line)>,
+    active_tab: RwSignal<String>,
+) -> impl IntoView {
+    let on_save = store_value(on_save);
+    view! {
+        <TabPanel when=Signal::derive(move || active_tab.get() == "general")>
+            <div class="line-editor-content">
+                <div class="form-group">
+                    <label>"Name"</label>
+                    <input
+                        type="text"
+                        value=move || edited_line.get().map(|l| l.id.clone()).unwrap_or_default()
+                        on:change={
+                            let on_save = on_save.get_value();
+                            move |ev| {
+                                let name = event_target_value(&ev);
+                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                    updated_line.id = name;
+                                    set_edited_line.set(Some(updated_line.clone()));
+                                    on_save(updated_line);
+                                }
+                            }
+                        }
+                    />
+                </div>
+
+                <div class="form-group">
+                    <label>"Color"</label>
+                    <input
+                        type="color"
+                        value=move || edited_line.get().map(|l| l.color).unwrap_or_default()
+                        on:change={
+                            let on_save = on_save.get_value();
+                            move |ev| {
+                                let color = event_target_value(&ev);
+                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                    updated_line.color = color;
+                                    set_edited_line.set(Some(updated_line.clone()));
+                                    on_save(updated_line);
+                                }
+                            }
+                        }
+                    />
+                </div>
+            </div>
+        </TabPanel>
+    }
+}
+
+#[component]
+fn ScheduleTab(
+    edited_line: ReadSignal<Option<Line>>,
+    set_edited_line: WriteSignal<Option<Line>>,
+    stations: ReadSignal<Vec<Station>>,
+    on_save: Rc<dyn Fn(Line)>,
+    active_tab: RwSignal<String>,
+) -> impl IntoView {
+    let on_save = store_value(on_save);
+    view! {
+        <TabPanel when=Signal::derive(move || active_tab.get() == "schedule")>
+            <div class="line-editor-content">
+                <div class="form-group">
+                    <label>
+                        <input
+                            type="checkbox"
+                            checked=move || matches!(edited_line.get().map(|l| l.schedule_mode).unwrap_or_default(), ScheduleMode::Auto)
+                            on:change={
+                                let on_save = on_save.get_value();
+                                move |ev| {
+                                    let is_auto = event_target_checked(&ev);
+                                    let mode = if is_auto { ScheduleMode::Auto } else { ScheduleMode::Manual };
+                                    if let Some(mut updated_line) = edited_line.get_untracked() {
+                                        updated_line.schedule_mode = mode;
+                                        set_edited_line.set(Some(updated_line.clone()));
+                                        on_save(updated_line);
+                                    }
+                                }
+                            }
+                        />
+                        " Auto Schedule"
+                    </label>
+                </div>
+
+                <Show when=move || matches!(edited_line.get().map(|l| l.schedule_mode).unwrap_or_default(), ScheduleMode::Auto)>
+                    {
+                        let on_save = on_save.get_value();
+                        move || {
+                            view! {
+                                <div class="form-group">
+                                    <label>"Frequency"</label>
+                                    <FrequencyInput
+                                        frequency=Signal::derive(move || edited_line.get().map(|l| l.frequency).unwrap_or_default())
+                                        on_change={
+                                            let on_save = on_save.clone();
+                                            move |freq| {
+                                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                                    updated_line.frequency = freq;
+                                                    set_edited_line.set(Some(updated_line.clone()));
+                                                    on_save(updated_line);
+                                                }
+                                            }
+                                        }
+                                    />
+                                </div>
+
+                                <div class="form-group">
+                                    <label>"First Departure"</label>
+                                    <TimeInput
+                                        label=""
+                                        value=Signal::derive(move || edited_line.get().map(|l| l.first_departure).unwrap_or_default())
+                                        default_time="05:00"
+                                        on_change={
+                                            let on_save = on_save.clone();
+                                            Box::new(move |time| {
+                                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                                    updated_line.first_departure = time;
+                                                    set_edited_line.set(Some(updated_line.clone()));
+                                                    on_save(updated_line);
+                                                }
+                                            })
+                                        }
+                                    />
+                                </div>
+
+                                <div class="form-group">
+                                    <label>"Return First Departure"</label>
+                                    <TimeInput
+                                        label=""
+                                        value=Signal::derive(move || edited_line.get().map(|l| l.return_first_departure).unwrap_or_default())
+                                        default_time="06:00"
+                                        on_change={
+                                            let on_save = on_save.clone();
+                                            Box::new(move |time| {
+                                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                                    updated_line.return_first_departure = time;
+                                                    set_edited_line.set(Some(updated_line.clone()));
+                                                    on_save(updated_line);
+                                                }
+                                            })
+                                        }
+                                    />
+                                </div>
+                            }
+                        }
+                    }
+                </Show>
+
+                <Show when=move || matches!(edited_line.get().map(|l| l.schedule_mode).unwrap_or_default(), ScheduleMode::Manual)>
+                    <ManualDeparturesList
+                        edited_line=edited_line
+                        set_edited_line=set_edited_line
+                        stations=stations
+                        on_save=on_save.get_value()
+                    />
+                </Show>
+            </div>
+        </TabPanel>
+    }
+}
 
 #[component]
 pub fn LineEditor(
@@ -39,7 +203,8 @@ pub fn LineEditor(
     };
 
     let window_title = Signal::derive(move || {
-        edited_line.get()
+        edited_line
+            .get()
             .map(|line| format!("Edit Line: {}", line.id))
             .unwrap_or_else(|| "Edit Line".to_string())
     });
@@ -53,7 +218,7 @@ pub fn LineEditor(
             on_close=close_dialog
         >
             {
-                let on_save_stored = store_value(on_save.clone());
+                let on_save_stored = store_value(on_save);
                 move || {
                     edited_line.get().map(|_line| {
                         let tabs = vec![
@@ -61,157 +226,21 @@ pub fn LineEditor(
                             Tab { id: "schedule".to_string(), label: "Schedule".to_string() },
                         ];
                         view! {
-                    <TabView tabs=tabs active_tab=active_tab>
-                        {
-                            let on_save_name = on_save_stored.get_value();
-                            let on_save_color = on_save_stored.get_value();
-                            let on_save_mode = on_save_stored.get_value();
-                            let on_save_auto = on_save_stored.get_value();
-                            let on_save_manual = on_save_stored.get_value();
-                            view! {
-                                <TabPanel when=Signal::derive(move || active_tab.get() == "general")>
-                                <div class="line-editor-content">
-                                <div class="form-group">
-                                    <label>"Name"</label>
-                                    <input
-                                        type="text"
-                                        value=move || edited_line.get().map(|l| l.id.clone()).unwrap_or_default()
-                                        on:change={
-                                            let on_save = on_save_name.clone();
-                                            move |ev| {
-                                        let name = event_target_value(&ev);
-                                        if let Some(mut updated_line) = edited_line.get_untracked() {
-                                            updated_line.id = name;
-                                            set_edited_line.set(Some(updated_line.clone()));
-                                            on_save(updated_line);
-                                        }
-                                    }
-                                }
-                            />
-                        </div>
-
-                        <div class="form-group">
-                            <label>"Color"</label>
-                            <input
-                                type="color"
-                                value=move || edited_line.get().map(|l| l.color).unwrap_or_default()
-                                on:change={
-                                    let on_save = on_save_color.clone();
-                                    move |ev| {
-                                        let color = event_target_value(&ev);
-                                        if let Some(mut updated_line) = edited_line.get_untracked() {
-                                            updated_line.color = color;
-                                            set_edited_line.set(Some(updated_line.clone()));
-                                            on_save(updated_line);
-                                        }
-                                    }
-                                }
-                            />
-                        </div>
-                    </div>
-                                </TabPanel>
-
-                                <TabPanel when=Signal::derive(move || active_tab.get() == "schedule")>
-                                <div class="line-editor-content">
-                        <div class="form-group">
-                            <label>
-                                <input
-                                    type="checkbox"
-                                    checked=move || matches!(edited_line.get().map(|l| l.schedule_mode).unwrap_or_default(), ScheduleMode::Auto)
-                                    on:change={
-                                        let on_save = on_save_mode.clone();
-                                        move |ev| {
-                                            let is_auto = event_target_checked(&ev);
-                                            let mode = if is_auto { ScheduleMode::Auto } else { ScheduleMode::Manual };
-                                            if let Some(mut updated_line) = edited_line.get_untracked() {
-                                                updated_line.schedule_mode = mode;
-                                                set_edited_line.set(Some(updated_line.clone()));
-                                                on_save(updated_line);
-                                            }
-                                        }
-                                    }
+                            <TabView tabs=tabs active_tab=active_tab>
+                                <GeneralTab
+                                    edited_line=edited_line
+                                    set_edited_line=set_edited_line
+                                    on_save=on_save_stored.get_value()
+                                    active_tab=active_tab
                                 />
-                                " Auto Schedule"
-                            </label>
-                        </div>
-
-                        <Show when=move || matches!(edited_line.get().map(|l| l.schedule_mode).unwrap_or_default(), ScheduleMode::Auto)>
-                            {
-                                let on_save = on_save_auto.clone();
-                                move || {
-                                    view! {
-                                        <div class="form-group">
-                                            <label>"Frequency"</label>
-                                            <FrequencyInput
-                                                frequency=Signal::derive(move || edited_line.get().map(|l| l.frequency).unwrap_or_default())
-                                                on_change={
-                                                    let on_save = on_save.clone();
-                                                    move |freq| {
-                                            if let Some(mut updated_line) = edited_line.get_untracked() {
-                                                updated_line.frequency = freq;
-                                                set_edited_line.set(Some(updated_line.clone()));
-                                                on_save(updated_line);
-                                            }
-                                        }
-                                    }
+                                <ScheduleTab
+                                    edited_line=edited_line
+                                    set_edited_line=set_edited_line
+                                    stations=stations
+                                    on_save=on_save_stored.get_value()
+                                    active_tab=active_tab
                                 />
-                            </div>
-
-                            <div class="form-group">
-                                <label>"First Departure"</label>
-                                <TimeInput
-                                    label=""
-                                    value=Signal::derive(move || edited_line.get().map(|l| l.first_departure).unwrap_or_default())
-                                    default_time="05:00"
-                                    on_change={
-                                        let on_save = on_save.clone();
-                                        Box::new(move |time| {
-                                            if let Some(mut updated_line) = edited_line.get_untracked() {
-                                                updated_line.first_departure = time;
-                                                set_edited_line.set(Some(updated_line.clone()));
-                                                on_save(updated_line);
-                                            }
-                                        })
-                                    }
-                                />
-                            </div>
-
-                            <div class="form-group">
-                                <label>"Return First Departure"</label>
-                                <TimeInput
-                                    label=""
-                                    value=Signal::derive(move || edited_line.get().map(|l| l.return_first_departure).unwrap_or_default())
-                                    default_time="06:00"
-                                    on_change={
-                                        let on_save = on_save.clone();
-                                        Box::new(move |time| {
-                                            if let Some(mut updated_line) = edited_line.get_untracked() {
-                                                updated_line.return_first_departure = time;
-                                                set_edited_line.set(Some(updated_line.clone()));
-                                                on_save(updated_line);
-                                            }
-                                        })
-                                    }
-                                />
-                            </div>
-                                    }
-                                }
-                            }
-                        </Show>
-
-                        <Show when=move || matches!(edited_line.get().map(|l| l.schedule_mode).unwrap_or_default(), ScheduleMode::Manual)>
-                            <ManualDeparturesList
-                                edited_line=edited_line
-                                set_edited_line=set_edited_line
-                                stations=stations
-                                on_save=on_save_manual.clone()
-                            />
-                        </Show>
-                    </div>
-                                </TabPanel>
-                            }
-                        }
-                    </TabView>
+                            </TabView>
                         }
                     })
                 }
