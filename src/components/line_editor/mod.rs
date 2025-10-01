@@ -1,0 +1,100 @@
+mod general_tab;
+mod stops_tab;
+mod schedule_tab;
+mod manual_departure_editor;
+mod manual_departures_list;
+
+pub use general_tab::GeneralTab;
+pub use stops_tab::StopsTab;
+pub use schedule_tab::ScheduleTab;
+pub use manual_departure_editor::ManualDepartureEditor;
+pub use manual_departures_list::ManualDeparturesList;
+
+use crate::components::{tab_view::{Tab, TabView}, window::Window};
+use crate::models::{Line, Station};
+use leptos::*;
+use std::rc::Rc;
+
+#[component]
+pub fn LineEditor(
+    #[prop(into)] initial_line: MaybeSignal<Option<Line>>,
+    is_open: Signal<bool>,
+    set_is_open: impl Fn(bool) + 'static,
+    stations: ReadSignal<Vec<Station>>,
+    set_stations: WriteSignal<Vec<Station>>,
+    on_save: impl Fn(Line) + 'static,
+) -> impl IntoView {
+    let (edited_line, set_edited_line) = create_signal(None::<Line>);
+    let active_tab = create_rw_signal("general".to_string());
+
+    // Reset edited_line when dialog opens (not when initial_line changes)
+    create_effect(move |prev_open| {
+        let currently_open = is_open.get();
+        if currently_open && prev_open != Some(true) {
+            if let Some(line) = initial_line.get_untracked() {
+                set_edited_line.set(Some(line));
+            }
+        }
+        currently_open
+    });
+
+    let on_save = Rc::new(on_save);
+    let set_is_open = store_value(set_is_open);
+
+    let close_dialog = move || {
+        set_is_open.with_value(|f| f(false));
+    };
+
+    let window_title = Signal::derive(move || {
+        edited_line
+            .get()
+            .map(|line| format!("Edit Line: {}", line.id))
+            .unwrap_or_else(|| "Edit Line".to_string())
+    });
+
+    let is_window_open = Signal::derive(move || is_open.get() && edited_line.get().is_some());
+
+    view! {
+        <Window
+            is_open=is_window_open
+            title=window_title
+            on_close=close_dialog
+        >
+            {
+                let on_save_stored = store_value(on_save);
+                move || {
+                    edited_line.get().map(|_line| {
+                        let tabs = vec![
+                            Tab { id: "general".to_string(), label: "General".to_string() },
+                            Tab { id: "stops".to_string(), label: "Stops".to_string() },
+                            Tab { id: "schedule".to_string(), label: "Schedule".to_string() },
+                        ];
+                        view! {
+                            <TabView tabs=tabs active_tab=active_tab>
+                                <GeneralTab
+                                    edited_line=edited_line
+                                    set_edited_line=set_edited_line
+                                    on_save=on_save_stored.get_value()
+                                    active_tab=active_tab
+                                />
+                                <StopsTab
+                                    edited_line=edited_line
+                                    stations=stations
+                                    set_stations=set_stations
+                                    active_tab=active_tab
+                                />
+                                <ScheduleTab
+                                    edited_line=edited_line
+                                    set_edited_line=set_edited_line
+                                    stations=stations
+                                    on_save=on_save_stored.get_value()
+                                    active_tab=active_tab
+                                />
+                            </TabView>
+                        }
+                    })
+                }
+            }
+        </Window>
+    }
+}

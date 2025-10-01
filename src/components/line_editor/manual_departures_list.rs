@@ -1,6 +1,6 @@
-use crate::components::manual_departure_editor::ManualDepartureEditor;
-use crate::models::{Line, ManualDeparture, Station};
+use super::ManualDepartureEditor;
 use crate::constants::BASE_DATE;
+use crate::models::{Line, ManualDeparture, Station};
 use leptos::*;
 use std::rc::Rc;
 
