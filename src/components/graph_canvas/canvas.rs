@@ -54,9 +54,10 @@ pub fn GraphCanvas(
                     // Set a comfortable zoom level for viewing conflicts
                     let target_zoom = 4.0;
                     set_zoom_level.set(target_zoom);
+                    set_zoom_level_x.set(target_zoom);
 
                     // Center the conflict in the viewport with zoom applied
-                    let target_x = (time_fraction * dims.hour_width * target_zoom) - (canvas_width / 2.0);
+                    let target_x = (time_fraction * dims.hour_width * target_zoom * target_zoom) - (canvas_width / 2.0);
                     let target_y = (station_pos * (dims.graph_height / station_count.max(1.0)) * target_zoom) - (canvas_height / 2.0);
 
                     set_pan_offset_x.set(-target_x);

@@ -17,18 +17,15 @@ pub fn TabView(
             <div class="tab-header">
                 {tabs.into_iter().map(|tab| {
                     let tab_id = tab.id.clone();
-                    let tab_id_for_click = tab.id.clone();
+                    let tab_class = move || {
+                        if active_tab.get() == tab_id {
+                            "tab-button active"
+                        } else {
+                            "tab-button"
+                        }
+                    };
                     view! {
-                        <button
-                            class=move || {
-                                if active_tab.get() == tab_id {
-                                    "tab-button active"
-                                } else {
-                                    "tab-button"
-                                }
-                            }
-                            on:click=move |_| active_tab.set(tab_id_for_click.clone())
-                        >
+                        <button class=tab_class on:click=move |_| active_tab.set(tab.id.clone())>
                             {tab.label}
                         </button>
                     }
@@ -42,10 +39,7 @@ pub fn TabView(
 }
 
 #[component]
-pub fn TabPanel(
-    when: Signal<bool>,
-    children: Children,
-) -> impl IntoView {
+pub fn TabPanel(when: Signal<bool>, children: Children) -> impl IntoView {
     let children = store_value(children());
     view! {
         <Show when=move || when.get()>
