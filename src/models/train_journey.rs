@@ -70,7 +70,7 @@ impl TrainJourney {
 
             // Walk the route, accumulating travel times
             for segment in &line.route {
-                cumulative_time = cumulative_time + segment.duration;
+                cumulative_time += segment.duration;
                 let arrival_time = departure_time + cumulative_time;
 
                 let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
@@ -159,7 +159,7 @@ impl TrainJourney {
                 station_times.push((manual_dep.from_station.clone(), departure_time));
 
                 for i in start_pos..end_pos {
-                    cumulative_time = cumulative_time + line.route[i].duration;
+                    cumulative_time += line.route[i].duration;
                     let arrival_time = departure_time + cumulative_time;
 
                     if let Some(name) = graph.get_station_name(route_stations[i + 1]) {
@@ -171,7 +171,7 @@ impl TrainJourney {
                 station_times.push((manual_dep.from_station.clone(), departure_time));
 
                 for i in (start_pos..end_pos).rev() {
-                    cumulative_time = cumulative_time + line.route[i].duration;
+                    cumulative_time += line.route[i].duration;
                     let arrival_time = departure_time + cumulative_time;
 
                     if let Some(name) = graph.get_station_name(route_stations[i]) {
@@ -221,7 +221,7 @@ impl TrainJourney {
 
             // Walk the route in reverse
             for segment in line.route.iter().rev() {
-                cumulative_time = cumulative_time + segment.duration;
+                cumulative_time += segment.duration;
                 let arrival_time = return_departure_time + cumulative_time;
 
                 let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);

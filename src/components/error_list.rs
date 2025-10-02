@@ -80,15 +80,18 @@ pub fn ErrorList(
     let container_ref = create_node_ref::<leptos::html::Div>();
 
     window_event_listener(leptos::ev::click, move |ev| {
-        if is_open.get() {
-            if let Some(container) = container_ref.get() {
-                let target = ev.target();
-                if let Some(target_element) = target.and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
-                    if !container.contains(Some(&target_element)) {
-                        set_is_open.set(false);
-                    }
-                }
-            }
+        if !is_open.get() {
+            return;
+        }
+        let Some(container) = container_ref.get() else {
+            return;
+        };
+        let target = ev.target();
+        let Some(target_element) = target.and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else {
+            return;
+        };
+        if !container.contains(Some(&target_element)) {
+            set_is_open.set(false);
         }
     });
 

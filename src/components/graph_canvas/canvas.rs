@@ -7,7 +7,7 @@ use crate::components::conflict_tooltip::ConflictTooltip;
 use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
 use super::{station_labels, time_labels, conflict_indicators, train_positions, train_journeys, time_scrubber, graph_content};
-use super::types::{GraphDimensions, ViewportState};
+use super::types::{GraphDimensions, ViewportState, ConflictDisplayState};
 
 // Layout constants for the graph canvas
 pub const LEFT_MARGIN: f64 = 120.0;
@@ -98,33 +98,41 @@ pub fn GraphCanvas(
                 let current_graph = graph.get_untracked();
                 let stations_for_render = current_graph.get_all_stations_ordered();
 
-                if let Some(canvas) = canvas_ref.get_untracked() {
-                    let zoom = zoom_level.get_untracked();
-                    let zoom_x = zoom_level_x.get_untracked();
-                    let pan_x = pan_offset_x.get_untracked();
-                    let pan_y = pan_offset_y.get_untracked();
+                let Some(canvas) = canvas_ref.get_untracked() else {
+                    return;
+                };
 
-                    // Update canvas size to match container
-                    let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
-                    let container_width = canvas_elem.client_width() as u32;
-                    let container_height = canvas_elem.client_height() as u32;
+                let zoom = zoom_level.get_untracked();
+                let zoom_x = zoom_level_x.get_untracked();
+                let pan_x = pan_offset_x.get_untracked();
+                let pan_y = pan_offset_y.get_untracked();
 
-                    if container_width > 0 && container_height > 0 {
-                        canvas_elem.set_width(container_width);
-                        canvas_elem.set_height(container_height);
-                    }
+                // Update canvas size to match container
+                let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+                let container_width = canvas_elem.client_width() as u32;
+                let container_height = canvas_elem.client_height() as u32;
 
-                    let viewport = ViewportState {
-                        zoom_level: zoom,
-                        zoom_level_x: zoom_x,
-                        pan_offset_x: pan_x,
-                        pan_offset_y: pan_y,
-                    };
-                    let (current_conflicts, current_station_crossings) = conflicts_and_crossings.get_untracked();
-                    let show_crossings = show_station_crossings.get_untracked();
-                    let show_conf = show_conflicts.get_untracked();
-                    render_graph(canvas, &stations_for_render, &journeys, current, viewport, &current_conflicts, &current_station_crossings, &current_graph, show_crossings, show_conf);
+                if container_width > 0 && container_height > 0 {
+                    canvas_elem.set_width(container_width);
+                    canvas_elem.set_height(container_height);
                 }
+
+                let viewport = ViewportState {
+                    zoom_level: zoom,
+                    zoom_level_x: zoom_x,
+                    pan_offset_x: pan_x,
+                    pan_offset_y: pan_y,
+                };
+                let (current_conflicts, current_station_crossings) = conflicts_and_crossings.get_untracked();
+                let show_crossings = show_station_crossings.get_untracked();
+                let show_conf = show_conflicts.get_untracked();
+                let conflict_display = ConflictDisplayState {
+                    conflicts: &current_conflicts,
+                    station_crossings: &current_station_crossings,
+                    show_conflicts: show_conf,
+                    show_station_crossings: show_crossings,
+                };
+                render_graph(canvas, &stations_for_render, &journeys, current, viewport, conflict_display, &current_graph);
             });
 
             let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
@@ -331,11 +339,8 @@ fn render_graph(
     train_journeys: &[TrainJourney],
     current_time: chrono::NaiveDateTime,
     viewport: ViewportState,
-    conflicts: &[Conflict],
-    station_crossings: &[StationCrossing],
+    conflict_display: ConflictDisplayState,
     graph: &RailwayGraph,
-    show_station_crossings: bool,
-    show_conflicts: bool,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
     let canvas_width = canvas_element.width() as f64;
@@ -399,11 +404,11 @@ fn render_graph(
     );
 
     // Draw conflicts if enabled
-    if show_conflicts {
+    if conflict_display.show_conflicts {
         conflict_indicators::draw_conflict_highlights(
             &ctx,
             &zoomed_dimensions,
-            conflicts,
+            conflict_display.conflicts,
             station_height,
             viewport.zoom_level,
             time_to_fraction,
@@ -411,11 +416,11 @@ fn render_graph(
     }
 
     // Draw station crossings if enabled
-    if show_station_crossings {
+    if conflict_display.show_station_crossings {
         conflict_indicators::draw_station_crossings(
             &ctx,
             &zoomed_dimensions,
-            station_crossings,
+            conflict_display.station_crossings,
             station_height,
             viewport.zoom_level,
             time_to_fraction,
@@ -500,15 +505,17 @@ fn toggle_segment_double_track(
         };
 
         // Find and toggle edges in both directions
-        // Check node1 -> node2
         for edge in graph.graph.edge_indices() {
-            if let Some((from, to)) = graph.graph.edge_endpoints(edge) {
-                if (from == node1 && to == node2) || (from == node2 && to == node1) {
-                    if let Some(weight) = graph.graph.edge_weight_mut(edge) {
-                        weight.double_tracked = !weight.double_tracked;
-                    }
-                }
+            let Some((from, to)) = graph.graph.edge_endpoints(edge) else {
+                continue;
+            };
+            if (from != node1 || to != node2) && (from != node2 || to != node1) {
+                continue;
             }
+            let Some(weight) = graph.graph.edge_weight_mut(edge) else {
+                continue;
+            };
+            weight.double_tracked = !weight.double_tracked;
         }
     });
 }

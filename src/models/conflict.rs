@@ -28,6 +28,11 @@ pub struct StationCrossing {
     pub journey2_id: String,
 }
 
+struct ConflictResults {
+    conflicts: Vec<Conflict>,
+    station_crossings: Vec<StationCrossing>,
+}
+
 struct JourneySegment {
     time_start: NaiveDateTime,
     time_end: NaiveDateTime,
@@ -46,8 +51,10 @@ pub fn detect_line_conflicts(
     train_journeys: &[TrainJourney],
     graph: &RailwayGraph,
 ) -> (Vec<Conflict>, Vec<StationCrossing>) {
-    let mut conflicts = Vec::new();
-    let mut station_crossings = Vec::new();
+    let mut results = ConflictResults {
+        conflicts: Vec::new(),
+        station_crossings: Vec::new(),
+    };
 
     // Get ordered list of stations from the graph
     let stations = graph.get_all_stations_ordered();
@@ -68,26 +75,25 @@ pub fn detect_line_conflicts(
 
     // Compare each pair of journeys
     for (i, journey1) in train_journeys.iter().enumerate() {
-        if conflicts.len() >= MAX_CONFLICTS {
+        if results.conflicts.len() >= MAX_CONFLICTS {
             break;
         }
         for journey2 in train_journeys.iter().skip(i + 1) {
-            check_journey_pair(journey1, journey2, &ctx, &mut conflicts, &mut station_crossings);
-            if conflicts.len() >= MAX_CONFLICTS {
+            check_journey_pair(journey1, journey2, &ctx, &mut results);
+            if results.conflicts.len() >= MAX_CONFLICTS {
                 break;
             }
         }
     }
 
-    (conflicts, station_crossings)
+    (results.conflicts, results.station_crossings)
 }
 
 fn check_journey_pair(
     journey1: &TrainJourney,
     journey2: &TrainJourney,
     ctx: &ConflictContext,
-    conflicts: &mut Vec<Conflict>,
-    station_crossings: &mut Vec<StationCrossing>,
+    results: &mut ConflictResults,
 ) {
     let mut prev1: Option<(NaiveDateTime, usize)> = None;
 
@@ -103,7 +109,7 @@ fn check_journey_pair(
                 idx_start: prev_idx1,
                 idx_end: station1_idx,
             };
-            check_segment_against_journey(&segment1, journey1, journey2, ctx, conflicts, station_crossings);
+            check_segment_against_journey(&segment1, journey1, journey2, ctx, results);
         }
         prev1 = Some((*time1, station1_idx));
     }
@@ -114,8 +120,7 @@ fn check_segment_against_journey(
     journey1: &TrainJourney,
     journey2: &TrainJourney,
     ctx: &ConflictContext,
-    conflicts: &mut Vec<Conflict>,
-    station_crossings: &mut Vec<StationCrossing>,
+    results: &mut ConflictResults,
 ) {
     let seg1_min = segment1.idx_start.min(segment1.idx_end);
     let seg1_max = segment1.idx_start.max(segment1.idx_end);
@@ -143,10 +148,9 @@ fn check_segment_against_journey(
                 journey1,
                 journey2,
                 ctx,
-                conflicts,
-                station_crossings,
+                results,
             );
-            if conflicts.len() >= MAX_CONFLICTS {
+            if results.conflicts.len() >= MAX_CONFLICTS {
                 return;
             }
         }
@@ -162,8 +166,7 @@ fn check_segment_pair(
     journey1: &TrainJourney,
     journey2: &TrainJourney,
     ctx: &ConflictContext,
-    conflicts: &mut Vec<Conflict>,
-    station_crossings: &mut Vec<StationCrossing>,
+    results: &mut ConflictResults,
 ) {
     // Check if the segments overlap in space
     let seg2_min = segment2.idx_start.min(segment2.idx_end);
@@ -191,7 +194,7 @@ fn check_segment_pair(
     if is_near_station(&intersection, segment1, segment2, ctx.station_margin) {
         // This is a successful station crossing - add it to the list
         let station_idx = find_nearest_station(&intersection, segment1, segment2);
-        station_crossings.push(StationCrossing {
+        results.station_crossings.push(StationCrossing {
             time: intersection.time,
             station_idx,
             journey1_id: journey1.line_id.clone(),
@@ -205,13 +208,12 @@ fn check_segment_pair(
         || (segment1.idx_start > segment1.idx_end && segment2.idx_start > segment2.idx_end);
 
     // Double-tracked segments only prevent crossing conflicts, not overtaking
-    if !is_overtaking {
-        if is_segment_double_tracked(ctx, seg1_min, seg1_max) {
+    if !is_overtaking
+        && is_segment_double_tracked(ctx, seg1_min, seg1_max) {
             return;
         }
-    }
 
-    conflicts.push(Conflict {
+    results.conflicts.push(Conflict {
         time: intersection.time,
         position: intersection.position,
         station1_idx: seg1_min,

@@ -22,13 +22,15 @@ pub fn Importer(
             let reader_clone = reader.clone();
 
             let onload = Closure::wrap(Box::new(move |_: web_sys::Event| {
-                if let Ok(result) = reader_clone.result() {
-                    if let Some(text) = result.as_string() {
-                        let (new_lines, new_graph) = parse_csv_string(&text);
-                        set_lines.set(new_lines);
-                        set_graph.set(new_graph);
-                    }
-                }
+                let Ok(result) = reader_clone.result() else {
+                    return;
+                };
+                let Some(text) = result.as_string() else {
+                    return;
+                };
+                let (new_lines, new_graph) = parse_csv_string(&text);
+                set_lines.set(new_lines);
+                set_graph.set(new_graph);
             }) as Box<dyn FnMut(_)>);
 
             reader.set_onload(Some(onload.as_ref().unchecked_ref()));

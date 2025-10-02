@@ -32,3 +32,10 @@ pub struct ViewportState {
     pub pan_offset_x: f64,
     pub pan_offset_y: f64,
 }
+
+pub struct ConflictDisplayState<'a> {
+    pub conflicts: &'a [crate::models::Conflict],
+    pub station_crossings: &'a [crate::models::StationCrossing],
+    pub show_conflicts: bool,
+    pub show_station_crossings: bool,
+}

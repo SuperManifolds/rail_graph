@@ -14,16 +14,13 @@ pub struct RouteSegment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Default)]
 pub enum ScheduleMode {
+    #[default]
     Auto,
     Manual,
 }
 
-impl Default for ScheduleMode {
-    fn default() -> Self {
-        ScheduleMode::Auto
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ManualDeparture {
