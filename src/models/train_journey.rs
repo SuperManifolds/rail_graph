@@ -155,41 +155,30 @@ impl TrainJourney {
 
             // Build station times for this journey segment
             let mut station_times = Vec::new();
-            let departure_time = manual_dep.time;
-            let mut cumulative_time = Duration::zero();
+            station_times.push((manual_dep.from_station.clone(), manual_dep.time));
 
-            if is_forward {
-                // Forward journey
-                station_times.push((manual_dep.from_station.clone(), departure_time));
-
-                for i in start_pos..end_pos {
-                    cumulative_time += line.route[i].duration;
-                    let arrival_time = departure_time + cumulative_time;
-
-                    let Some(name) = graph.get_station_name(route_stations[i + 1]) else {
-                        continue;
-                    };
-                    station_times.push((name.to_string(), arrival_time));
-                }
+            let indices: Vec<usize> = if is_forward {
+                (start_pos..end_pos).collect()
             } else {
-                // Backward journey
-                station_times.push((manual_dep.from_station.clone(), departure_time));
+                (start_pos..end_pos).rev().collect()
+            };
 
-                for i in (start_pos..end_pos).rev() {
-                    cumulative_time += line.route[i].duration;
-                    let arrival_time = departure_time + cumulative_time;
+            let mut cumulative_time = Duration::zero();
+            for i in indices {
+                cumulative_time += line.route[i].duration;
+                let arrival_time = manual_dep.time + cumulative_time;
 
-                    let Some(name) = graph.get_station_name(route_stations[i]) else {
-                        continue;
-                    };
-                    station_times.push((name.to_string(), arrival_time));
-                }
+                let station_idx = if is_forward { i + 1 } else { i };
+                let Some(name) = graph.get_station_name(route_stations[station_idx]) else {
+                    continue;
+                };
+                station_times.push((name.to_string(), arrival_time));
             }
 
             if station_times.len() >= 2 {
                 journeys.push(TrainJourney {
                     line_id: line.id.clone(),
-                    departure_time,
+                    departure_time: manual_dep.time,
                     station_times,
                     color: line.color.clone(),
                     thickness: line.thickness,

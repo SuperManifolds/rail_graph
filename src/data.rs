@@ -83,30 +83,32 @@ fn build_graph_and_routes_from_csv(
         let mut prev_station: Option<(NodeIndex, Duration)> = None;
 
         for (station_name, times) in &station_data {
-            if let Some(cumulative_time) = times[line_idx] {
-                // Get or create station node
-                let station_idx = graph.add_or_get_station(station_name.clone());
+            let Some(cumulative_time) = times[line_idx] else {
+                continue;
+            };
 
-                // If there was a previous station, create or reuse edge
-                if let Some((prev_idx, prev_time)) = prev_station {
-                    let travel_time = cumulative_time - prev_time;
+            // Get or create station node
+            let station_idx = graph.add_or_get_station(station_name.clone());
 
-                    // Check if edge already exists
-                    let edge_idx = *edge_map.entry((prev_idx, station_idx))
-                        .or_insert_with(|| {
-                            // Create new track segment (initially single-tracked)
-                            graph.add_track(prev_idx, station_idx, false)
-                        });
-
-                    // Add to this line's route
-                    route.push(RouteSegment {
-                        edge_index: edge_idx.index(),
-                        duration: travel_time,
-                    });
-                }
-
+            // If there was a previous station, create or reuse edge
+            let Some((prev_idx, prev_time)) = prev_station else {
                 prev_station = Some((station_idx, cumulative_time));
-            }
+                continue;
+            };
+
+            let travel_time = cumulative_time - prev_time;
+
+            // Check if edge already exists, or create new track segment (initially single-tracked)
+            let edge_idx = *edge_map.entry((prev_idx, station_idx))
+                .or_insert_with(|| graph.add_track(prev_idx, station_idx, false));
+
+            // Add to this line's route
+            route.push(RouteSegment {
+                edge_index: edge_idx.index(),
+                duration: travel_time,
+            });
+
+            prev_station = Some((station_idx, cumulative_time));
         }
 
         // Assign route to line

@@ -225,6 +225,31 @@ pub fn GraphCanvas(
         set_hovered_conflict.set(None);
     };
 
+    let apply_horizontal_zoom = move |zoom_factor: f64, graph_mouse_x: f64, pan_x: f64| {
+        let old_zoom_x = zoom_level_x.get();
+        let new_zoom_x = (old_zoom_x * zoom_factor).clamp(0.1, 25.0);
+        let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom_x / old_zoom_x);
+
+        batch(move || {
+            set_zoom_level_x.set(new_zoom_x);
+            set_pan_offset_x.set(new_pan_x);
+        });
+    };
+
+    let apply_normal_zoom = move |zoom_factor: f64, graph_mouse_x: f64, graph_mouse_y: f64, pan_x: f64, pan_y: f64| {
+        let old_zoom = zoom_level.get();
+        let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 25.0);
+
+        let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom / old_zoom);
+        let new_pan_y = graph_mouse_y - (graph_mouse_y - pan_y) * (new_zoom / old_zoom);
+
+        batch(move || {
+            set_zoom_level.set(new_zoom);
+            set_pan_offset_x.set(new_pan_x);
+            set_pan_offset_y.set(new_pan_y);
+        });
+    };
+
     let handle_wheel = move |ev: WheelEvent| {
         ev.prevent_default();
 
@@ -255,28 +280,9 @@ pub fn GraphCanvas(
                 let pan_y = pan_offset_y.get();
 
                 if shift_pressed {
-                    // Horizontal (time) zoom only
-                    let old_zoom_x = zoom_level_x.get();
-                    let new_zoom_x = (old_zoom_x * zoom_factor).clamp(0.1, 25.0);
-                    let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom_x / old_zoom_x);
-
-                    batch(move || {
-                        set_zoom_level_x.set(new_zoom_x);
-                        set_pan_offset_x.set(new_pan_x);
-                    });
+                    apply_horizontal_zoom(zoom_factor, graph_mouse_x, pan_x);
                 } else {
-                    // Normal zoom (both dimensions)
-                    let old_zoom = zoom_level.get();
-                    let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 25.0);
-
-                    let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom / old_zoom);
-                    let new_pan_y = graph_mouse_y - (graph_mouse_y - pan_y) * (new_zoom / old_zoom);
-
-                    batch(move || {
-                        set_zoom_level.set(new_zoom);
-                        set_pan_offset_x.set(new_pan_x);
-                        set_pan_offset_y.set(new_pan_y);
-                    });
+                    apply_normal_zoom(zoom_factor, graph_mouse_x, graph_mouse_y, pan_x, pan_y);
                 }
             }
         }
