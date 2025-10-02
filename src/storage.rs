@@ -53,10 +53,20 @@ pub fn clear_lines_storage() {
 fn request_to_promise(request: &IdbRequest) -> js_sys::Promise {
     let request = request.clone();
     js_sys::Promise::new(&mut |resolve, reject| {
+        let reject_clone = reject.clone();
         let onsuccess = Closure::wrap(Box::new(move |event: web_sys::Event| {
-            let target = event.target().unwrap();
-            let request: IdbRequest = target.dyn_into().unwrap();
-            let result = request.result().unwrap();
+            let Some(target) = event.target() else {
+                let _ = reject_clone.call1(&JsValue::NULL, &JsValue::from_str("No event target"));
+                return;
+            };
+            let Ok(request) = target.dyn_into::<IdbRequest>() else {
+                let _ = reject_clone.call1(&JsValue::NULL, &JsValue::from_str("Invalid request type"));
+                return;
+            };
+            let Ok(result) = request.result() else {
+                let _ = reject_clone.call1(&JsValue::NULL, &JsValue::from_str("Failed to get result"));
+                return;
+            };
             let _ = resolve.call1(&JsValue::NULL, &result);
         }) as Box<dyn FnMut(_)>);
 
@@ -85,9 +95,22 @@ async fn open_db() -> Result<IdbDatabase, String> {
 
     // Setup onupgradeneeded to create object store
     let onupgradeneeded = Closure::wrap(Box::new(move |event: web_sys::IdbVersionChangeEvent| {
-        let target = event.target().unwrap();
-        let request: IdbRequest = target.dyn_into().unwrap();
-        let db: IdbDatabase = request.result().unwrap().dyn_into().unwrap();
+        let Some(target) = event.target() else {
+            leptos::logging::error!("No event target in onupgradeneeded");
+            return;
+        };
+        let Ok(request) = target.dyn_into::<IdbRequest>() else {
+            leptos::logging::error!("Invalid request type in onupgradeneeded");
+            return;
+        };
+        let Ok(result) = request.result() else {
+            leptos::logging::error!("Failed to get result in onupgradeneeded");
+            return;
+        };
+        let Ok(db) = result.dyn_into::<IdbDatabase>() else {
+            leptos::logging::error!("Failed to cast to IdbDatabase");
+            return;
+        };
 
         let store_names = db.object_store_names();
         let mut found = false;

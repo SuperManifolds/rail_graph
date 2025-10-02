@@ -85,8 +85,18 @@ pub fn Window(
 
     create_effect(move |_| {
         if is_open.get() {
-            let document = web_sys::window().unwrap().document().unwrap();
-            let body = document.body().unwrap();
+            let Some(window) = web_sys::window() else {
+                leptos::logging::error!("Failed to get window");
+                return;
+            };
+            let Some(document) = window.document() else {
+                leptos::logging::error!("Failed to get document");
+                return;
+            };
+            let Some(body) = document.body() else {
+                leptos::logging::error!("Failed to get body");
+                return;
+            };
 
             let move_handler = Closure::wrap(Box::new(move |ev: web_sys::MouseEvent| {
                 handle_mouse_move(ev.clone());

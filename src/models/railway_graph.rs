@@ -74,8 +74,9 @@ impl RailwayGraph {
         let mut ordered = Vec::new();
         let mut seen = std::collections::HashSet::new();
 
-        // Start from the first node in the graph
-        let start_node = self.graph.node_indices().next().unwrap();
+        let Some(start_node) = self.graph.node_indices().next() else {
+            return Vec::new();
+        };
 
         // BFS traversal
         let mut queue = std::collections::VecDeque::new();

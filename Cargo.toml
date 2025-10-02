@@ -3,6 +3,13 @@ name = "nimby_graph"
 version = "0.1.0"
 edition = "2021"
 
+[lints.clippy]
+complexity = "warn"
+perf = "warn"
+style = "warn"
+suspicious = "warn"
+unwrap_used = "warn"
+
 [dependencies]
 leptos = { version = "0.6", features = ["csr"] }
 leptos_meta = { version = "0.6", features = ["csr"] }

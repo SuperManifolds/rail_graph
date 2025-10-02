@@ -1,5 +1,5 @@
 use super::ManualDepartureEditor;
-use crate::constants::BASE_DATE;
+use crate::constants::DEFAULT_DEPARTURE_TIME;
 use crate::models::{Line, ManualDeparture, RailwayGraph};
 use leptos::*;
 use std::rc::Rc;
@@ -111,7 +111,7 @@ pub fn ManualDeparturesList(
                             let to_station = station_names.last().cloned().unwrap_or_else(|| "Station B".to_string());
 
                             let new_departure = ManualDeparture {
-                                time: BASE_DATE.and_hms_opt(8, 0, 0).unwrap(),
+                                time: DEFAULT_DEPARTURE_TIME,
                                 from_station,
                                 to_station,
                             };

@@ -1,7 +1,3 @@
-#![warn(clippy::complexity)]
-#![warn(clippy::perf)]
-#![warn(clippy::style)]
-#![warn(clippy::suspicious)]
 use nimby_graph::App;
 
 fn main() {

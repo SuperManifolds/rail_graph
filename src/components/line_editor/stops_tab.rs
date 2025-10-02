@@ -1,6 +1,6 @@
 use crate::components::{duration_input::DurationInput, tab_view::TabPanel, time_input::TimeInput};
 use crate::models::{Line, RailwayGraph};
-use crate::constants::BASE_DATE;
+use crate::constants::BASE_MIDNIGHT;
 use leptos::*;
 use chrono::Duration;
 
@@ -145,7 +145,7 @@ pub fn StopsTab(
                                                         }
                                                         TimeDisplayMode::Absolute => {
                                                             if i > 0 {
-                                                                let cumulative_time = BASE_DATE.and_hms_opt(0, 0, 0).unwrap() + Duration::minutes(cumulative);
+                                                                let cumulative_time = BASE_MIDNIGHT + Duration::minutes(cumulative);
                                                                 view! {
                                                                     <TimeInput
                                                                         label=""
@@ -156,8 +156,7 @@ pub fn StopsTab(
                                                                             Box::new(move |new_time| {
                                                                                 if let Some(mut updated_line) = edited_line.get_untracked() {
                                                                                     // Calculate minutes from midnight
-                                                                                    let base_midnight = BASE_DATE.and_hms_opt(0, 0, 0).unwrap();
-                                                                                    let new_cumulative = (new_time - base_midnight).num_minutes();
+                                                                                    let new_cumulative = (new_time - BASE_MIDNIGHT).num_minutes();
 
                                                                                     // Calculate segment duration
                                                                                     let prev_cumulative: i64 = updated_line.route.iter()

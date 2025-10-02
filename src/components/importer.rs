@@ -18,7 +18,10 @@ pub fn Importer(
         let Some(file) = files.get(0) else { return };
 
         spawn_local(async move {
-            let reader = web_sys::FileReader::new().unwrap();
+            let Ok(reader) = web_sys::FileReader::new() else {
+                leptos::logging::error!("Failed to create FileReader");
+                return;
+            };
             let reader_clone = reader.clone();
 
             let onload = Closure::wrap(Box::new(move |_: web_sys::Event| {
