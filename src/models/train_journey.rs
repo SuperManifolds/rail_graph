@@ -61,13 +61,9 @@ impl TrainJourney {
             // Add first station (source of first edge)
             if let Some(segment) = line.route.first() {
                 let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                let Some((from, _)) = graph.get_track_endpoints(edge_idx) else {
-                    continue;
-                };
-                let Some(name) = graph.get_station_name(from) else {
-                    continue;
-                };
-                station_times.push((name.to_string(), departure_time));
+                let _ = graph.get_track_endpoints(edge_idx)
+                    .and_then(|(from, _)| graph.get_station_name(from))
+                    .map(|name| station_times.push((name.to_string(), departure_time)));
             }
 
             // Walk the route, accumulating travel times
@@ -207,13 +203,9 @@ impl TrainJourney {
             // Add first station (target of last edge in forward route)
             if let Some(segment) = line.route.last() {
                 let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                let Some((_, to)) = graph.get_track_endpoints(edge_idx) else {
-                    continue;
-                };
-                let Some(name) = graph.get_station_name(to) else {
-                    continue;
-                };
-                station_times.push((name.to_string(), return_departure_time));
+                let _ = graph.get_track_endpoints(edge_idx)
+                    .and_then(|(_, to)| graph.get_station_name(to))
+                    .map(|name| station_times.push((name.to_string(), return_departure_time)));
             }
 
             // Walk the route in reverse
