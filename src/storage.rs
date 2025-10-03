@@ -10,6 +10,9 @@ const DB_VERSION: u32 = 1;
 const PROJECT_STORE: &str = "projects";
 const PROJECT_KEY: &str = "current_project";
 
+// Current project data format version
+const CURRENT_PROJECT_VERSION: f32 = 1.0;
+
 // IndexedDB helper functions
 fn request_to_promise(request: &IdbRequest) -> js_sys::Promise {
     let request = request.clone();
@@ -110,8 +113,13 @@ pub async fn save_project_to_storage(project: &Project) -> Result<(), String> {
         .map_err(|_| "Failed to get object store")?;
 
     // Serialize to MessagePack binary format
-    let bytes = rmp_serde::to_vec(project)
+    let project_bytes = rmp_serde::to_vec(project)
         .map_err(|e| format!("Failed to serialize project: {}", e))?;
+
+    // Create versioned format: [4 bytes f32 version][MessagePack data]
+    let mut bytes = Vec::with_capacity(4 + project_bytes.len());
+    bytes.extend_from_slice(&CURRENT_PROJECT_VERSION.to_le_bytes());
+    bytes.extend_from_slice(&project_bytes);
 
     // Convert to Uint8Array for IndexedDB
     let uint8_array = js_sys::Uint8Array::from(&bytes[..]);
@@ -153,11 +161,29 @@ pub async fn load_project_from_storage() -> Result<Project, String> {
     let uint8_array: js_sys::Uint8Array = result.dyn_into().map_err(|_| "Invalid project data")?;
     let bytes = uint8_array.to_vec();
 
-    // Deserialize from MessagePack
-    let project: Project = rmp_serde::from_slice(&bytes)
-        .map_err(|e| format!("Failed to parse project: {}", e))?;
+    // Check if this is versioned data (has at least 4 bytes for version)
+    if bytes.len() >= 4 {
+        // Read version from first 4 bytes
+        let version_bytes: [u8; 4] = bytes[0..4].try_into().map_err(|_| "Invalid version bytes")?;
+        let version = f32::from_le_bytes(version_bytes);
 
-    Ok(project)
+        // Extract project data (skip first 4 bytes)
+        let project_bytes = &bytes[4..];
+
+        // Handle different versions
+        match version {
+            v if (v - 1.0).abs() < f32::EPSILON => {
+                // Version 1.0 - current format
+                let project: Project = rmp_serde::from_slice(project_bytes)
+                    .map_err(|e| format!("Failed to parse project: {}", e))?;
+                Ok(project)
+            }
+            _ => Err(format!("Unsupported project version: {}", version))
+        }
+    } else {
+        // Legacy format without version header - treat as error
+        Err("Legacy project format not supported. Please re-import your data.".to_string())
+    }
 }
 
 pub async fn clear_project_storage() -> Result<(), String> {

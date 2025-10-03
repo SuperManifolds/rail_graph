@@ -5,7 +5,6 @@ use super::{Line, RailwayGraph};
 pub struct Project {
     pub lines: Vec<Line>,
     pub graph: RailwayGraph,
-    pub version: u32,
 }
 
 impl Project {
@@ -13,7 +12,6 @@ impl Project {
         Self {
             lines: Vec::new(),
             graph: RailwayGraph::new(),
-            version: 1,
         }
     }
 
@@ -21,7 +19,6 @@ impl Project {
         Self {
             lines,
             graph,
-            version: 1,
         }
     }
 }
