@@ -23,24 +23,46 @@ pub fn draw_current_train_positions(
     time_to_fraction: fn(NaiveDateTime) -> f64,
 ) {
     for journey in train_journeys {
-        // Find which segment the train is currently on
-        let mut prev_station: Option<(&String, NaiveDateTime, usize)> = None;
-        let mut next_station: Option<(&String, NaiveDateTime, usize)> = None;
+        // Find which segment the train is currently on (or if it's waiting at a station)
+        let mut prev_departure: Option<(&String, NaiveDateTime, usize)> = None;
+        let mut next_arrival: Option<(&String, NaiveDateTime, usize)> = None;
 
-        for (station_name, arrival_time) in &journey.station_times {
+        for (station_name, arrival_time, departure_time) in &journey.station_times {
             if let Some(station_idx) = stations.iter().position(|s| s.name == *station_name) {
-                if *arrival_time <= visualization_time {
-                    prev_station = Some((station_name, *arrival_time, station_idx));
-                } else if next_station.is_none() {
-                    next_station = Some((station_name, *arrival_time, station_idx));
+                // Check if train is currently waiting at this station
+                if *arrival_time <= visualization_time && visualization_time <= *departure_time {
+                    // Train is waiting at this station
+                    let x = dims.left_margin + (time_to_fraction(visualization_time) * dims.hour_width);
+                    let y = dims.top_margin + (station_idx as f64 * station_height) + (station_height / 2.0);
+
+                    // Draw train as a larger dot with an outline
+                    ctx.set_fill_style_str(&journey.color);
+                    ctx.set_stroke_style_str(CURRENT_TRAIN_OUTLINE_COLOR);
+                    ctx.set_line_width(CURRENT_TRAIN_OUTLINE_WIDTH / zoom_level);
+                    ctx.begin_path();
+                    let _ = ctx.arc(x, y, CURRENT_TRAIN_RADIUS / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Draw train ID label
+                    ctx.set_fill_style_str(CURRENT_TRAIN_LABEL_COLOR);
+                    ctx.set_font(&format!("bold {}px monospace", CURRENT_TRAIN_LABEL_FONT_SIZE / zoom_level));
+                    let _ = ctx.fill_text(&journey.line_id, x - 12.0 / zoom_level, y - 10.0 / zoom_level);
+                    break;
+                }
+
+                if *departure_time <= visualization_time {
+                    prev_departure = Some((station_name, *departure_time, station_idx));
+                } else if next_arrival.is_none() {
+                    next_arrival = Some((station_name, *arrival_time, station_idx));
                     break;
                 }
             }
         }
 
-        // If train is between two stations, interpolate its position
+        // If train is traveling between two stations, interpolate its position
         if let (Some((_, prev_time, prev_idx)), Some((_, next_time, next_idx))) =
-            (prev_station, next_station)
+            (prev_departure, next_arrival)
         {
             let segment_duration = next_time.signed_duration_since(prev_time).num_seconds() as f64;
             let elapsed = visualization_time

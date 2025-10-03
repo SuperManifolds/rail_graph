@@ -1,5 +1,5 @@
 use crate::components::time_input::TimeInput;
-use crate::models::ManualDeparture;
+use crate::models::{ManualDeparture, RailwayGraph};
 use leptos::*;
 
 #[component]
@@ -7,6 +7,7 @@ pub fn ManualDepartureEditor(
     index: usize,
     departure: ManualDeparture,
     station_names: Vec<String>,
+    graph: RailwayGraph,
     on_update: impl Fn(usize, ManualDeparture) + 'static,
     on_remove: impl Fn(usize) + 'static,
 ) -> impl IntoView {
@@ -31,18 +32,30 @@ pub fn ManualDepartureEditor(
             <select
                 class="station-input"
                 on:change={
+                    let graph = graph.clone();
                     move |ev| {
-                        let station = event_target_value(&ev);
-                        set_local_departure.update(|dep| dep.from_station = station);
-                        on_update.with_value(|f| f(index, local_departure.get_untracked()));
+                        let station_name = event_target_value(&ev);
+                        if let Some(node_idx) = graph.get_station_index(&station_name) {
+                            set_local_departure.update(|dep| dep.from_station = node_idx);
+                            on_update.with_value(|f| f(index, local_departure.get_untracked()));
+                        }
                     }
                 }
             >
                 {
+                    let graph = graph.clone();
                     station_names.iter().map(|name| {
                         let name_clone = name.clone();
+                        let graph_clone = graph.clone();
                         view! {
-                            <option value=name.clone() selected=move || local_departure.get().from_station == name_clone>
+                            <option
+                                value=name.clone()
+                                selected=move || {
+                                    graph_clone.get_station_name(local_departure.get().from_station)
+                                        .map(|n| n == name_clone.as_str())
+                                        .unwrap_or(false)
+                                }
+                            >
                                 {name.clone()}
                             </option>
                         }
@@ -53,18 +66,29 @@ pub fn ManualDepartureEditor(
             <select
                 class="station-input"
                 on:change={
+                    let graph = graph.clone();
                     move |ev| {
-                        let station = event_target_value(&ev);
-                        set_local_departure.update(|dep| dep.to_station = station);
-                        on_update.with_value(|f| f(index, local_departure.get_untracked()));
+                        let station_name = event_target_value(&ev);
+                        if let Some(node_idx) = graph.get_station_index(&station_name) {
+                            set_local_departure.update(|dep| dep.to_station = node_idx);
+                            on_update.with_value(|f| f(index, local_departure.get_untracked()));
+                        }
                     }
                 }
             >
                 {
                     station_names.iter().map(|name| {
                         let name_clone = name.clone();
+                        let graph_clone = graph.clone();
                         view! {
-                            <option value=name.clone() selected=move || local_departure.get().to_station == name_clone>
+                            <option
+                                value=name.clone()
+                                selected=move || {
+                                    graph_clone.get_station_name(local_departure.get().to_station)
+                                        .map(|n| n == name_clone.as_str())
+                                        .unwrap_or(false)
+                                }
+                            >
                                 {name.clone()}
                             </option>
                         }

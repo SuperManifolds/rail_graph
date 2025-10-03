@@ -98,21 +98,21 @@ fn check_journey_pair(
 ) {
     let mut prev1: Option<(NaiveDateTime, usize)> = None;
 
-    for (station1, time1) in &journey1.station_times {
+    for (station1, arrival_time1, departure_time1) in &journey1.station_times {
         let Some(&station1_idx) = ctx.station_indices.get(station1.as_str()) else {
             continue;
         };
 
-        if let Some((prev_time1, prev_idx1)) = prev1 {
+        if let Some((prev_departure_time1, prev_idx1)) = prev1 {
             let segment1 = JourneySegment {
-                time_start: prev_time1,
-                time_end: *time1,
+                time_start: prev_departure_time1,
+                time_end: *arrival_time1,
                 idx_start: prev_idx1,
                 idx_end: station1_idx,
             };
             check_segment_against_journey(&segment1, journey1, journey2, ctx, results);
         }
-        prev1 = Some((*time1, station1_idx));
+        prev1 = Some((*departure_time1, station1_idx));
     }
 }
 
@@ -128,15 +128,15 @@ fn check_segment_against_journey(
 
     let mut prev2: Option<(NaiveDateTime, usize)> = None;
 
-    for (station2, time2) in &journey2.station_times {
+    for (station2, arrival_time2, departure_time2) in &journey2.station_times {
         let Some(&station2_idx) = ctx.station_indices.get(station2.as_str()) else {
             continue;
         };
 
-        if let Some((prev_time2, prev_idx2)) = prev2 {
+        if let Some((prev_departure_time2, prev_idx2)) = prev2 {
             let segment2 = JourneySegment {
-                time_start: prev_time2,
-                time_end: *time2,
+                time_start: prev_departure_time2,
+                time_end: *arrival_time2,
                 idx_start: prev_idx2,
                 idx_end: station2_idx,
             };
@@ -155,7 +155,7 @@ fn check_segment_against_journey(
                 return;
             }
         }
-        prev2 = Some((*time2, station2_idx));
+        prev2 = Some((*departure_time2, station2_idx));
     }
 }
 

@@ -92,10 +92,13 @@ pub fn StopsTab(
                                     <div class="stops-header">
                                         <span>"Station"</span>
                                         <span>{column_header}</span>
+                                        <span>"Wait Time"</span>
                                     </div>
                                     {stations.into_iter().enumerate().map(|(i, name)| {
                                         let on_save_clone = on_save.clone();
+                                        let on_save_wait = on_save.clone();
                                         let line_for_calc = line.clone();
+                                        let line_for_wait = line.clone();
 
                                         view! {
                                             <div class="stop-row">
@@ -180,6 +183,30 @@ pub fn StopsTab(
                                                         }
                                                     }
                                                 }}
+                                                {
+                                                    // Wait time: shown for all stations that are destinations (i > 0)
+                                                    if i > 0 && i - 1 < line_for_wait.route.len() {
+                                                        let wait_duration = line_for_wait.route[i - 1].wait_time;
+                                                        view! {
+                                                            <DurationInput
+                                                                duration=Signal::derive(move || wait_duration)
+                                                                on_change={
+                                                                    let on_save = on_save_wait.clone();
+                                                                    move |new_wait_time| {
+                                                                        if let Some(mut updated_line) = edited_line.get_untracked() {
+                                                                            if i > 0 && i - 1 < updated_line.route.len() {
+                                                                                updated_line.route[i - 1].wait_time = new_wait_time;
+                                                                                on_save(updated_line);
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            />
+                                                        }.into_view()
+                                                    } else {
+                                                        view! { <span class="travel-time">"-"</span> }.into_view()
+                                                    }
+                                                }
                                             </div>
                                         }
                                     }).collect::<Vec<_>>()}

@@ -45,11 +45,13 @@ pub fn ManualDeparturesList(
                             line.manual_departures.iter().enumerate().map(|(idx, dep)| {
                                 let on_save = on_save.clone();
                                 let station_names = station_names.clone();
+                                let current_graph = current_graph.clone();
                                 view! {
                                     <ManualDepartureEditor
                                         index=idx
                                         departure=dep.clone()
                                         station_names=station_names
+                                        graph=current_graph
                                         on_update={
                                             let on_save = on_save.clone();
                                             move |idx, updated_dep| {
@@ -86,29 +88,20 @@ pub fn ManualDeparturesList(
                         if let Some(mut updated_line) = edited_line.get_untracked() {
                             let current_graph = graph.get();
 
-                            // Build list of station names from route
-                            let mut station_names = Vec::new();
+                            // Get first and last station NodeIndex from route
+                            let from_station = updated_line.route.first()
+                                .and_then(|segment| {
+                                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                                    current_graph.get_track_endpoints(edge_idx).map(|(from, _)| from)
+                                })
+                                .unwrap_or_else(|| petgraph::graph::NodeIndex::new(0));
 
-                            if let Some(segment) = updated_line.route.first() {
-                                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                                if let Some((from, _)) = current_graph.get_track_endpoints(edge_idx) {
-                                    if let Some(name) = current_graph.get_station_name(from) {
-                                        station_names.push(name.to_string());
-                                    }
-                                }
-                            }
-
-                            for segment in &updated_line.route {
-                                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                                if let Some((_, to)) = current_graph.get_track_endpoints(edge_idx) {
-                                    if let Some(name) = current_graph.get_station_name(to) {
-                                        station_names.push(name.to_string());
-                                    }
-                                }
-                            }
-
-                            let from_station = station_names.first().cloned().unwrap_or_else(|| "Station A".to_string());
-                            let to_station = station_names.last().cloned().unwrap_or_else(|| "Station B".to_string());
+                            let to_station = updated_line.route.last()
+                                .and_then(|segment| {
+                                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                                    current_graph.get_track_endpoints(edge_idx).map(|(_, to)| to)
+                                })
+                                .unwrap_or_else(|| petgraph::graph::NodeIndex::new(1));
 
                             let new_departure = ManualDeparture {
                                 time: DEFAULT_DEPARTURE_TIME,

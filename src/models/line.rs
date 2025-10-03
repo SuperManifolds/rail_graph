@@ -1,6 +1,7 @@
 use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use crate::constants::BASE_DATE;
+use petgraph::graph::NodeIndex;
 
 fn generate_random_color(seed: usize) -> String {
     // Use a simple hash-based color generator for deterministic but varied colors
@@ -34,6 +35,12 @@ pub struct RouteSegment {
     pub edge_index: usize,
     #[serde(with = "duration_serde")]
     pub duration: Duration,
+    #[serde(with = "duration_serde", default = "default_wait_time")]
+    pub wait_time: Duration,
+}
+
+fn default_wait_time() -> Duration {
+    Duration::seconds(30)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -49,8 +56,10 @@ pub enum ScheduleMode {
 pub struct ManualDeparture {
     #[serde(with = "naive_datetime_serde")]
     pub time: NaiveDateTime,
-    pub from_station: String,
-    pub to_station: String,
+    #[serde(with = "node_index_serde")]
+    pub from_station: NodeIndex,
+    #[serde(with = "node_index_serde")]
+    pub to_station: NodeIndex,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -145,5 +154,25 @@ mod naive_datetime_serde {
         let s = String::deserialize(deserializer)?;
         NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
             .map_err(serde::de::Error::custom)
+    }
+}
+
+mod node_index_serde {
+    use petgraph::graph::NodeIndex;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(node: &NodeIndex, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u32(node.index() as u32)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<NodeIndex, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let index = u32::deserialize(deserializer)?;
+        Ok(NodeIndex::new(index as usize))
     }
 }

@@ -6,11 +6,11 @@ use std::collections::HashMap;
 /// Parse CSV data into lines and railway graph
 pub fn parse_csv_data() -> (Vec<Line>, RailwayGraph) {
     let csv_content = include_str!("../lines.csv");
-    parse_csv_string(csv_content)
+    parse_csv_string(csv_content, HashMap::new())
 }
 
 /// Parse CSV string into lines and railway graph
-pub fn parse_csv_string(csv_content: &str) -> (Vec<Line>, RailwayGraph) {
+pub fn parse_csv_string(csv_content: &str, wait_times: HashMap<String, Duration>) -> (Vec<Line>, RailwayGraph) {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(csv_content.as_bytes());
@@ -22,7 +22,7 @@ pub fn parse_csv_string(csv_content: &str) -> (Vec<Line>, RailwayGraph) {
     };
 
     let line_ids = extract_line_ids(&header);
-    let (lines, graph) = build_graph_and_routes_from_csv(records, &line_ids);
+    let (lines, graph) = build_graph_and_routes_from_csv(records, &line_ids, &wait_times);
 
     (lines, graph)
 }
@@ -38,6 +38,7 @@ fn extract_line_ids(header: &csv::StringRecord) -> Vec<String> {
 fn build_graph_and_routes_from_csv(
     records: csv::StringRecordsIter<&[u8]>,
     line_ids: &[String],
+    wait_times: &HashMap<String, Duration>,
 ) -> (Vec<Line>, RailwayGraph) {
     let mut graph = RailwayGraph::new();
     let mut lines = Line::create_from_ids(line_ids);
@@ -78,9 +79,14 @@ fn build_graph_and_routes_from_csv(
     let mut edge_map: HashMap<(NodeIndex, NodeIndex), EdgeIndex> = HashMap::new();
 
     // Second pass: build shared infrastructure and line routes
-    for (line_idx, _line_id) in line_ids.iter().enumerate() {
+    for (line_idx, line_id) in line_ids.iter().enumerate() {
         let mut route = Vec::new();
         let mut prev_station: Option<(NodeIndex, Duration)> = None;
+
+        // Get wait time for this line (default to 30 seconds if not found)
+        let line_wait_time = wait_times.get(line_id)
+            .copied()
+            .unwrap_or_else(|| Duration::seconds(30));
 
         for (station_name, times) in &station_data {
             let Some(cumulative_time) = times[line_idx] else {
@@ -102,10 +108,18 @@ fn build_graph_and_routes_from_csv(
             let edge_idx = *edge_map.entry((prev_idx, station_idx))
                 .or_insert_with(|| graph.add_track(prev_idx, station_idx, false));
 
+            // Passing stations (indicated by "(P)" in name) have 0 wait time
+            let station_wait_time = if station_name.contains("(P)") {
+                Duration::seconds(0)
+            } else {
+                line_wait_time
+            };
+
             // Add to this line's route
             route.push(RouteSegment {
                 edge_index: edge_idx.index(),
                 duration: travel_time,
+                wait_time: station_wait_time,
             });
 
             prev_station = Some((station_idx, cumulative_time));

@@ -225,7 +225,7 @@
 
         .stops-header {
             display: grid;
-            grid-template-columns: 1fr 200px;
+            grid-template-columns: 1fr 200px 120px;
             gap: 1rem;
             padding: 0.25rem 0.5rem;
             font-weight: 600;
@@ -236,7 +236,7 @@
 
         .stop-row {
             display: grid;
-            grid-template-columns: 1fr 200px;
+            grid-template-columns: 1fr 200px 120px;
             gap: 1rem;
             align-items: center;
             padding: 0.35rem 0.5rem;
