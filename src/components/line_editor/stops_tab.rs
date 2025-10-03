@@ -105,21 +105,17 @@ pub fn StopsTab(
                                                 <span class="station-name">{name}</span>
                                                 {move || {
                                                     let mode = time_mode.get();
-                                                    let cumulative: i64 = if i == 0 {
+                                                    let cumulative_seconds: i64 = if i == 0 {
                                                         0
                                                     } else {
-                                                        line_for_calc.route.iter().take(i).map(|seg| seg.duration.num_minutes()).sum()
+                                                        line_for_calc.route.iter().take(i).map(|seg| (seg.duration + seg.wait_time).num_seconds()).sum()
                                                     };
 
                                                     match mode {
                                                         TimeDisplayMode::Difference => {
                                                             if i < line_for_calc.route.len() {
                                                                 let segment_duration = line_for_calc.route[i].duration;
-                                                                // Show cumulative time at current stop (not including segment to next)
-                                                                let cumulative_seconds: i64 = line_for_calc.route.iter()
-                                                                    .take(i)
-                                                                    .map(|seg| seg.duration.num_seconds())
-                                                                    .sum();
+                                                                // Show cumulative time at current stop including wait times (not including segment to next)
                                                                 let hours = cumulative_seconds / 3600;
                                                                 let minutes = (cumulative_seconds % 3600) / 60;
                                                                 let seconds = cumulative_seconds % 60;
@@ -148,7 +144,7 @@ pub fn StopsTab(
                                                         }
                                                         TimeDisplayMode::Absolute => {
                                                             if i > 0 {
-                                                                let cumulative_time = BASE_MIDNIGHT + Duration::minutes(cumulative);
+                                                                let cumulative_time = BASE_MIDNIGHT + Duration::seconds(cumulative_seconds);
                                                                 view! {
                                                                     <TimeInput
                                                                         label=""
@@ -158,18 +154,23 @@ pub fn StopsTab(
                                                                             let on_save = on_save_clone.clone();
                                                                             Box::new(move |new_time| {
                                                                                 if let Some(mut updated_line) = edited_line.get_untracked() {
-                                                                                    // Calculate minutes from midnight
-                                                                                    let new_cumulative = (new_time - BASE_MIDNIGHT).num_minutes();
+                                                                                    // Calculate seconds from midnight
+                                                                                    let new_cumulative_seconds = (new_time - BASE_MIDNIGHT).num_seconds();
 
-                                                                                    // Calculate segment duration
-                                                                                    let prev_cumulative: i64 = updated_line.route.iter()
+                                                                                    // Calculate previous cumulative (duration + wait_time)
+                                                                                    let prev_cumulative_seconds: i64 = updated_line.route.iter()
                                                                                         .take(i - 1)
-                                                                                        .map(|seg| seg.duration.num_minutes())
+                                                                                        .map(|seg| (seg.duration + seg.wait_time).num_seconds())
                                                                                         .sum();
-                                                                                    let segment_duration = new_cumulative - prev_cumulative;
 
-                                                                                    if segment_duration >= 0 {
-                                                                                        updated_line.route[i - 1].duration = Duration::minutes(segment_duration);
+                                                                                    // Get the wait time for the previous segment (the one we're editing)
+                                                                                    let prev_wait_seconds = updated_line.route[i - 1].wait_time.num_seconds();
+
+                                                                                    // New duration = (new cumulative - prev cumulative) - wait_time
+                                                                                    let segment_duration_seconds = new_cumulative_seconds - prev_cumulative_seconds - prev_wait_seconds;
+
+                                                                                    if segment_duration_seconds >= 0 {
+                                                                                        updated_line.route[i - 1].duration = Duration::seconds(segment_duration_seconds);
                                                                                         on_save(updated_line);
                                                                                     }
                                                                                 }
