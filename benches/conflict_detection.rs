@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use nimby_graph::models::{TrainJourney, detect_line_conflicts};
+use nimby_graph::train_journey::TrainJourney;
+use nimby_graph::conflict::detect_line_conflicts;
 use nimby_graph::data::parse_csv_data;
 
 fn benchmark_conflict_detection(c: &mut Criterion) {

@@ -1,5 +1,5 @@
 use leptos::*;
-use crate::models::Conflict;
+use crate::conflict::Conflict;
 
 #[component]
 pub fn ConflictTooltip(

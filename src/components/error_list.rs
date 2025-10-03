@@ -1,7 +1,7 @@
 use leptos::*;
 use leptos::leptos_dom::helpers::window_event_listener;
 use wasm_bindgen::JsCast;
-use crate::models::Conflict;
+use crate::conflict::Conflict;
 use crate::time::time_to_fraction;
 
 #[component]

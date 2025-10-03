@@ -1,5 +1,6 @@
 use super::types::GraphDimensions;
-use crate::models::{Conflict, StationNode, StationCrossing};
+use crate::models::StationNode;
+use crate::conflict::{Conflict, StationCrossing};
 use web_sys::CanvasRenderingContext2d;
 
 // Conflict highlight constants
@@ -23,7 +24,7 @@ const CROSSING_LINE_WIDTH: f64 = 2.0;
 pub fn draw_conflict_highlights(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    conflicts: &[crate::models::Conflict],
+    conflicts: &[Conflict],
     station_height: f64,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,

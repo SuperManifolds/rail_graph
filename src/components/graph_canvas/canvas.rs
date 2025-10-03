@@ -2,7 +2,9 @@ use leptos::*;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
-use crate::models::{Conflict, StationCrossing, RailwayGraph, TrainJourney};
+use crate::models::RailwayGraph;
+use crate::conflict::{Conflict, StationCrossing};
+use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
 use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
@@ -35,7 +37,7 @@ pub fn GraphCanvas(
     let (pan_offset_y, set_pan_offset_y) = create_signal(0.0);
     let (is_panning, set_is_panning) = create_signal(false);
     let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
-    let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(crate::models::Conflict, f64, f64)>);
+    let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
 
     // Handle pan to conflict requests
     if let Some(pan_signal) = pan_to_conflict_signal {

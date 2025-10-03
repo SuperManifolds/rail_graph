@@ -1,5 +1,6 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{TrainJourney, StationNode};
+use crate::models::StationNode;
+use crate::train_journey::TrainJourney;
 use super::types::GraphDimensions;
 
 // Train journey constants

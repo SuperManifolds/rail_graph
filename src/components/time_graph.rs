@@ -5,7 +5,8 @@ use crate::components::{
     legend::Legend,
     line_controls::LineControls
 };
-use crate::models::{Project, TrainJourney, RailwayGraph};
+use crate::models::{Project, RailwayGraph};
+use crate::train_journey::TrainJourney;
 use crate::storage::{
     load_project_from_storage, save_project_to_storage,
 };
@@ -77,7 +78,7 @@ pub fn TimeGraph() -> impl IntoView {
     let conflicts_and_crossings = create_memo(move |_| {
         let journeys = train_journeys.get();
         let current_graph = graph.get();
-        crate::models::detect_line_conflicts(&journeys, &current_graph)
+        crate::conflict::detect_line_conflicts(&journeys, &current_graph)
     });
 
     let conflicts_only = Signal::derive(move || conflicts_and_crossings.get().0);

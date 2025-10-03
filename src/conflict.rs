@@ -1,5 +1,6 @@
 use chrono::NaiveDateTime;
-use super::{TrainJourney, RailwayGraph, StationNode};
+use crate::train_journey::TrainJourney;
+use crate::models::{RailwayGraph, StationNode};
 use crate::time::time_to_fraction;
 use crate::constants::BASE_DATE;
 use petgraph::visit::EdgeRef;

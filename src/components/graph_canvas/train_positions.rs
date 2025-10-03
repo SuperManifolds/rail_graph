@@ -1,6 +1,7 @@
 use web_sys::CanvasRenderingContext2d;
 use chrono::NaiveDateTime;
-use crate::models::{TrainJourney, StationNode};
+use crate::models::StationNode;
+use crate::train_journey::TrainJourney;
 use super::types::GraphDimensions;
 
 // Current train position constants
