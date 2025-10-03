@@ -60,7 +60,7 @@ fn build_graph_and_routes_from_csv(
                 .filter(|s| !s.is_empty())
                 .and_then(|s| {
                     // Parse as time offset (H:MM:SS)
-                    chrono::NaiveTime::parse_from_str(s, "%H:%M:%S")
+                    crate::time::parse_time_hms(s)
                         .ok()
                         .map(|t| {
                             Duration::hours(t.hour() as i64) +

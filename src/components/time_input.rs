@@ -20,7 +20,7 @@ pub fn TimeInput(
                 placeholder=default_time
                 on:input=move |ev| {
                     let time_str = event_target_value(&ev);
-                    if let Ok(naive_time) = chrono::NaiveTime::parse_from_str(&time_str, "%H:%M:%S") {
+                    if let Ok(naive_time) = crate::time::parse_time_hms(&time_str) {
                         let new_datetime = BASE_DATE.and_time(naive_time);
                         on_change(new_datetime);
                     }
