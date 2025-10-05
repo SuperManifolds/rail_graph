@@ -15,7 +15,6 @@ pub fn InfrastructureView(
     set_graph: WriteSignal<RailwayGraph>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
-    let (canvas_size, _set_canvas_size) = create_signal((1200.0, 800.0));
     let (trigger_layout, set_trigger_layout) = create_signal(0);
 
     // Zoom and pan state
@@ -35,7 +34,10 @@ pub fn InfrastructureView(
             .any(|idx| current_graph.get_station_position(idx).is_none());
 
         if needs_layout && current_graph.graph.node_count() > 0 {
-            apply_force_layout(&mut current_graph, canvas_size.get().1);
+            let Some(canvas) = canvas_ref.get() else { return };
+            let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+            let height = canvas_elem.client_height() as f64;
+            apply_force_layout(&mut current_graph, height);
             set_graph.set(current_graph);
         }
     });
@@ -47,7 +49,10 @@ pub fn InfrastructureView(
             for idx in current_graph.graph.node_indices() {
                 current_graph.set_station_position(idx, (0.0, 0.0));
             }
-            apply_force_layout(&mut current_graph, canvas_size.get().1);
+            let Some(canvas) = canvas_ref.get() else { return };
+            let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+            let height = canvas_elem.client_height() as f64;
+            apply_force_layout(&mut current_graph, height);
             set_graph.set(current_graph);
             set_trigger_layout.update(|n| *n += 1);
         }
@@ -61,6 +66,17 @@ pub fn InfrastructureView(
         let _ = pan_offset_y.get();
 
         let Some(canvas) = canvas_ref.get() else { return };
+
+        // Update canvas size to match container
+        let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+        let container_width = canvas_elem.client_width() as u32;
+        let container_height = canvas_elem.client_height() as u32;
+
+        if container_width > 0 && container_height > 0 {
+            canvas_elem.set_width(container_width);
+            canvas_elem.set_height(container_height);
+        }
+
         let Some(ctx) = canvas
             .get_context("2d")
             .ok()
@@ -74,7 +90,7 @@ pub fn InfrastructureView(
         let pan_x = pan_offset_x.get_untracked();
         let pan_y = pan_offset_y.get_untracked();
 
-        draw_infrastructure(&ctx, &current_graph, canvas_size.get(), zoom, pan_x, pan_y);
+        draw_infrastructure(&ctx, &current_graph, (container_width as f64, container_height as f64), zoom, pan_x, pan_y);
     });
 
     // Mouse event handlers
@@ -165,8 +181,6 @@ pub fn InfrastructureView(
             <div class="infrastructure-canvas-container">
                 <canvas
                     node_ref=canvas_ref
-                    width=move || canvas_size.get().0
-                    height=move || canvas_size.get().1
                     class="infrastructure-canvas"
                     on:mousedown=handle_mouse_down
                     on:mousemove=handle_mouse_move

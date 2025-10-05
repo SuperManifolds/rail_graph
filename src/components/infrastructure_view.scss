@@ -39,12 +39,12 @@
 .infrastructure-canvas-container {
     flex: 1;
     display: flex;
-    justify-content: center;
-    align-items: center;
     overflow: hidden;
 }
 
 .infrastructure-canvas {
     display: block;
     background-color: #0a0a0a;
+    width: 100%;
+    height: 100%;
 }
