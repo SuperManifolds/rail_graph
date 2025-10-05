@@ -31,6 +31,12 @@
         border-color: #555;
     }
 
+    &.active {
+        background-color: #1a3a5a;
+        border-color: #4a9eff;
+        color: #4a9eff;
+    }
+
     i {
         font-size: 0.9rem;
     }

@@ -1,13 +1,8 @@
 use crate::models::RailwayGraph;
+use crate::components::infrastructure_canvas::{auto_layout, station_renderer, track_renderer};
 use leptos::*;
-use petgraph::graph::NodeIndex;
-use petgraph::visit::EdgeRef;
-use petgraph::Direction;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, MouseEvent, WheelEvent};
-
-const NODE_RADIUS: f64 = 8.0;
-const TRACK_OFFSET: f64 = 3.0; // Offset for double track lines
 
 #[component]
 pub fn InfrastructureView(
@@ -15,7 +10,7 @@ pub fn InfrastructureView(
     set_graph: WriteSignal<RailwayGraph>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
-    let (trigger_layout, set_trigger_layout) = create_signal(0);
+    let (auto_layout_enabled, set_auto_layout_enabled) = create_signal(true);
 
     // Zoom and pan state
     let (zoom_level, set_zoom_level) = create_signal(1.0);
@@ -24,38 +19,24 @@ pub fn InfrastructureView(
     let (is_panning, set_is_panning) = create_signal(false);
     let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
 
-    // Initialize layout when graph changes (if stations don't have positions) or when triggered
+    // Apply auto layout when enabled and graph changes
     create_effect(move |_| {
-        let _ = trigger_layout.get();
-        let mut current_graph = graph.get();
-        let needs_layout = current_graph
-            .graph
-            .node_indices()
-            .any(|idx| current_graph.get_station_position(idx).is_none());
+        if !auto_layout_enabled.get() {
+            return;
+        }
 
-        if needs_layout && current_graph.graph.node_count() > 0 {
+        let mut current_graph = graph.get();
+        if current_graph.graph.node_count() > 0 {
             let Some(canvas) = canvas_ref.get() else { return };
             let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
             let height = canvas_elem.client_height() as f64;
-            apply_force_layout(&mut current_graph, height);
+            auto_layout::apply_layout(&mut current_graph, height);
             set_graph.set(current_graph);
         }
     });
 
-    let on_auto_layout = move |_| {
-        let mut current_graph = graph.get();
-        if current_graph.graph.node_count() > 0 {
-            // Clear all positions to force relayout
-            for idx in current_graph.graph.node_indices() {
-                current_graph.set_station_position(idx, (0.0, 0.0));
-            }
-            let Some(canvas) = canvas_ref.get() else { return };
-            let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
-            let height = canvas_elem.client_height() as f64;
-            apply_force_layout(&mut current_graph, height);
-            set_graph.set(current_graph);
-            set_trigger_layout.update(|n| *n += 1);
-        }
+    let toggle_auto_layout = move |_| {
+        set_auto_layout_enabled.update(|enabled| *enabled = !*enabled);
     };
 
     // Re-render when graph or viewport changes
@@ -173,9 +154,12 @@ pub fn InfrastructureView(
     view! {
         <div class="infrastructure-view">
             <div class="infrastructure-toolbar">
-                <button class="toolbar-button" on:click=on_auto_layout>
+                <button
+                    class=move || if auto_layout_enabled.get() { "toolbar-button active" } else { "toolbar-button" }
+                    on:click=toggle_auto_layout
+                >
                     <i class="fa-solid fa-diagram-project"></i>
-                    " Auto Layout"
+                    {move || if auto_layout_enabled.get() { " Auto Layout: On" } else { " Auto Layout: Off" }}
                 </button>
             </div>
             <div class="infrastructure-canvas-container">
@@ -192,126 +176,6 @@ pub fn InfrastructureView(
                 />
             </div>
         </div>
-    }
-}
-
-fn apply_force_layout(graph: &mut RailwayGraph, height: f64) {
-    let node_count = graph.graph.node_count();
-    if node_count == 0 {
-        return;
-    }
-
-    let station_spacing = 60.0;
-    let start_x = 150.0;
-    let start_y = height / 2.0;
-
-    // Find a starting node (node with fewest connections)
-    let start_node = graph
-        .graph
-        .node_indices()
-        .min_by_key(|&idx| {
-            let outgoing = graph.graph.edges(idx).count();
-            let incoming = graph.graph.edges_directed(idx, Direction::Incoming).count();
-            outgoing + incoming
-        })
-        .unwrap();
-
-    let mut visited = std::collections::HashSet::new();
-    let mut available_directions = vec![
-        0.0,                                    // Right
-        std::f64::consts::PI / 4.0,            // Down-right
-        -std::f64::consts::PI / 4.0,           // Up-right
-        std::f64::consts::PI / 2.0,            // Down
-        3.0 * std::f64::consts::PI / 4.0,      // Down-left
-        -3.0 * std::f64::consts::PI / 4.0,     // Up-left
-    ];
-
-    // Layout the main line and branches
-    layout_line(
-        graph,
-        start_node,
-        (start_x, start_y),
-        -std::f64::consts::PI / 2.0, // Start going up/north
-        station_spacing,
-        &mut visited,
-        &mut available_directions,
-    );
-}
-
-fn layout_line(
-    graph: &mut RailwayGraph,
-    current_node: NodeIndex,
-    position: (f64, f64),
-    direction: f64,
-    spacing: f64,
-    visited: &mut std::collections::HashSet<NodeIndex>,
-    available_directions: &mut Vec<f64>,
-) {
-    if visited.contains(&current_node) {
-        return;
-    }
-
-    // Set position for current node
-    graph.set_station_position(current_node, position);
-    visited.insert(current_node);
-
-    // Get all unvisited neighbors (both incoming and outgoing edges)
-    let mut neighbors = Vec::new();
-
-    // Outgoing edges
-    for edge in graph.graph.edges(current_node) {
-        let target = edge.target();
-        if !visited.contains(&target) {
-            neighbors.push(target);
-        }
-    }
-
-    // Incoming edges (treat graph as undirected for layout purposes)
-    for edge in graph.graph.edges_directed(current_node, Direction::Incoming) {
-        let source = edge.source();
-        if !visited.contains(&source) {
-            neighbors.push(source);
-        }
-    }
-
-    if neighbors.is_empty() {
-        return;
-    }
-
-    // First neighbor continues in the same direction (main line)
-    let main_neighbor = neighbors[0];
-    let next_pos = (
-        position.0 + direction.cos() * spacing,
-        position.1 + direction.sin() * spacing,
-    );
-    layout_line(
-        graph,
-        main_neighbor,
-        next_pos,
-        direction,
-        spacing,
-        visited,
-        available_directions,
-    );
-
-    // Additional neighbors are branches - pick from available directions
-    for &branch_neighbor in neighbors.iter().skip(1) {
-        if let Some(branch_dir) = available_directions.pop() {
-            let branch_pos = (
-                position.0 + branch_dir.cos() * spacing,
-                position.1 + branch_dir.sin() * spacing,
-            );
-
-            layout_line(
-                graph,
-                branch_neighbor,
-                branch_pos,
-                branch_dir,
-                spacing,
-                visited,
-                available_directions,
-            );
-        }
     }
 }
 
@@ -340,73 +204,11 @@ fn draw_infrastructure(
     let _ = ctx.translate(pan_x, pan_y);
     let _ = ctx.scale(zoom, zoom);
 
-    // Draw tracks (edges) first so they're behind nodes
-    for edge in graph.graph.edge_references() {
-        let source = edge.source();
-        let target = edge.target();
-        let Some(pos1) = graph.get_station_position(source) else { continue };
-        let Some(pos2) = graph.get_station_position(target) else { continue };
+    // Draw tracks first so they're behind nodes
+    track_renderer::draw_tracks(ctx, graph, zoom);
 
-        let is_double = edge.weight().double_tracked;
-
-        if is_double {
-            // Draw two parallel lines for double track
-            let dx = pos2.0 - pos1.0;
-            let dy = pos2.1 - pos1.1;
-            let len = (dx * dx + dy * dy).sqrt();
-            let nx = -dy / len * TRACK_OFFSET;
-            let ny = dx / len * TRACK_OFFSET;
-
-            ctx.set_stroke_style_str("#555");
-            ctx.set_line_width(2.0 / zoom);
-
-            // First track
-            ctx.begin_path();
-            ctx.move_to(pos1.0 + nx, pos1.1 + ny);
-            ctx.line_to(pos2.0 + nx, pos2.1 + ny);
-            ctx.stroke();
-
-            // Second track
-            ctx.begin_path();
-            ctx.move_to(pos1.0 - nx, pos1.1 - ny);
-            ctx.line_to(pos2.0 - nx, pos2.1 - ny);
-            ctx.stroke();
-        } else {
-            // Single track
-            ctx.set_stroke_style_str("#444");
-            ctx.set_line_width(2.0 / zoom);
-            ctx.begin_path();
-            ctx.move_to(pos1.0, pos1.1);
-            ctx.line_to(pos2.0, pos2.1);
-            ctx.stroke();
-        }
-    }
-
-    // Draw stations as nodes
-    for idx in graph.graph.node_indices() {
-        let Some(pos) = graph.get_station_position(idx) else { continue };
-        let Some(station) = graph.graph.node_weight(idx) else { continue };
-
-        // Draw node circle with size and color based on passing loop status
-        ctx.set_fill_style_str("#2a2a2a");
-        let (border_color, radius) = if station.passing_loop {
-            ("#888", NODE_RADIUS * 0.6)
-        } else {
-            ("#4a9eff", NODE_RADIUS)
-        };
-        ctx.set_stroke_style_str(border_color);
-        ctx.set_line_width(2.0 / zoom);
-        ctx.begin_path();
-        let _ = ctx.arc(pos.0, pos.1, radius, 0.0, std::f64::consts::PI * 2.0);
-        ctx.fill();
-        ctx.stroke();
-
-        // Draw station name (scale font size inversely with zoom)
-        ctx.set_fill_style_str("#fff");
-        let font_size = 14.0 / zoom;
-        ctx.set_font(&format!("{}px sans-serif", font_size));
-        let _ = ctx.fill_text(&station.name, pos.0 + NODE_RADIUS + 5.0, pos.1 + 5.0);
-    }
+    // Draw stations on top
+    station_renderer::draw_stations(ctx, graph, zoom);
 
     // Restore context
     ctx.restore();
