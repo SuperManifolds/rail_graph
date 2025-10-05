@@ -225,7 +225,7 @@
 
         .stops-header {
             display: grid;
-            grid-template-columns: 1fr 200px 120px;
+            grid-template-columns: 1fr 200px 120px 40px;
             gap: 1rem;
             padding: 0.25rem 0.5rem;
             font-weight: 600;
@@ -236,7 +236,7 @@
 
         .stop-row {
             display: grid;
-            grid-template-columns: 1fr 200px 120px;
+            grid-template-columns: 1fr 200px 120px 40px;
             gap: 1rem;
             align-items: center;
             padding: 0.35rem 0.5rem;
@@ -259,6 +259,31 @@
                     font-size: 0.75rem;
                     font-family: monospace;
                     white-space: nowrap;
+                }
+            }
+
+            .delete-stop-button {
+                background: none;
+                border: none;
+                color: #999;
+                cursor: pointer;
+                padding: 0.25rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.85rem;
+                transition: color 0.2s;
+
+                &:hover {
+                    color: #d32f2f;
+                }
+
+                &:focus {
+                    outline: none;
+                }
+
+                i {
+                    pointer-events: none;
                 }
             }
         }

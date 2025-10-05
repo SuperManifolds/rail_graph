@@ -37,7 +37,11 @@ pub fn LineEditor(
         currently_open
     });
 
-    let on_save = Rc::new(on_save);
+    // Wrap on_save to also update local edited_line state
+    let on_save_wrapped = Rc::new(move |line: Line| {
+        set_edited_line.set(Some(line.clone()));
+        on_save(line);
+    });
     let set_is_open = store_value(set_is_open);
 
     let close_dialog = move || {
@@ -60,7 +64,7 @@ pub fn LineEditor(
             on_close=close_dialog
         >
             {
-                let on_save_stored = store_value(on_save);
+                let on_save_stored = store_value(on_save_wrapped);
                 move || {
                     edited_line.get().map(|_line| {
                         let tabs = vec![

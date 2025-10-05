@@ -19,6 +19,8 @@ fn StopRow(
     time_mode: TimeDisplayMode,
     edited_line: ReadSignal<Option<Line>>,
     on_save: Rc<dyn Fn(Line)>,
+    is_first: bool,
+    is_last: bool,
 ) -> impl IntoView {
     let cumulative_seconds: i64 = if index == 0 {
         0
@@ -113,11 +115,39 @@ fn StopRow(
         view! { <span class="travel-time">"-"</span> }.into_view()
     };
 
+    let can_delete = (is_first || is_last) && line.route.len() > 1;
+
     view! {
         <div class="stop-row">
             <span class="station-name">{name}</span>
             {column_content}
             {wait_time_content}
+            {if can_delete {
+                view! {
+                    <button
+                        class="delete-stop-button"
+                        on:click={
+                            let on_save = on_save.clone();
+                            move |_| {
+                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                    if is_first && !updated_line.route.is_empty() {
+                                        updated_line.route.remove(0);
+                                        on_save(updated_line);
+                                    } else if is_last && !updated_line.route.is_empty() {
+                                        updated_line.route.pop();
+                                        on_save(updated_line);
+                                    }
+                                }
+                            }
+                        }
+                        title=if is_first { "Remove first stop" } else { "Remove last stop" }
+                    >
+                        <i class="fa-solid fa-circle-minus"></i>
+                    </button>
+                }.into_view()
+            } else {
+                view! { <span></span> }.into_view()
+            }}
         </div>
     }
 }
@@ -253,6 +283,7 @@ pub fn StopsTab(
                                         <span>"Station"</span>
                                         <span>{column_header}</span>
                                         <span>"Wait Time"</span>
+                                        <span></span>
                                     </div>
 
                                     {if !available_start.is_empty() {
@@ -298,18 +329,23 @@ pub fn StopsTab(
                                         view! {}.into_view()
                                     }}
 
-                                    {stations.into_iter().enumerate().map(|(i, name)| {
-                                        view! {
-                                            <StopRow
-                                                index=i
-                                                name=name
-                                                line=line.clone()
-                                                time_mode=mode
-                                                edited_line=edited_line
-                                                on_save=on_save.clone()
-                                            />
-                                        }
-                                    }).collect::<Vec<_>>()}
+                                    {
+                                        let num_stations = stations.len();
+                                        stations.into_iter().enumerate().map(|(i, name)| {
+                                            view! {
+                                                <StopRow
+                                                    index=i
+                                                    name=name
+                                                    line=line.clone()
+                                                    time_mode=mode
+                                                    edited_line=edited_line
+                                                    on_save=on_save.clone()
+                                                    is_first={i == 0}
+                                                    is_last={i == num_stations - 1}
+                                                />
+                                            }
+                                        }).collect::<Vec<_>>()
+                                    }
 
                                     {if !available_end.is_empty() {
                                         let avail = available_end.clone();
