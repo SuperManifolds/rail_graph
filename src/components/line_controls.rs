@@ -1,6 +1,7 @@
 use leptos::*;
 use crate::models::{Line, RailwayGraph};
 use crate::components::line_editor::LineEditor;
+use crate::components::window::Window;
 use std::collections::HashSet;
 
 
@@ -11,6 +12,7 @@ pub fn LineControls(
     graph: ReadSignal<RailwayGraph>,
 ) -> impl IntoView {
     let (open_editors, set_open_editors) = create_signal(HashSet::<String>::new());
+    let (delete_pending, set_delete_pending) = create_signal(None::<String>);
 
     let editors_list = move || {
         open_editors.get().into_iter().collect::<Vec<_>>()
@@ -32,6 +34,9 @@ pub fn LineControls(
                                     set_open_editors.update(|editors| {
                                         editors.insert(id);
                                     });
+                                }
+                                on_delete=move |id: String| {
+                                    set_delete_pending.set(Some(id));
                                 }
                             />
                         }
@@ -84,6 +89,43 @@ pub fn LineControls(
                 }
             }
         />
+
+        <Window
+            is_open=Signal::derive(move || delete_pending.get().is_some())
+            title=Signal::derive(|| "Delete Line".to_string())
+            on_close=move || set_delete_pending.set(None)
+            initial_size=(400.0, 200.0)
+        >
+            <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1.5rem;">
+                <p style="color: #ccc; margin: 0;">
+                    {move || delete_pending.get().map(|id| format!("Are you sure you want to delete line \"{}\"? This action cannot be undone.", id))}
+                </p>
+                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+                    <button
+                        on:click=move |_| set_delete_pending.set(None)
+                        style="padding: 0.5rem 1.5rem; border-radius: 4px; border: 1px solid #444; background-color: #2a2a2a; color: #fff; cursor: pointer;"
+                    >
+                        "Cancel"
+                    </button>
+                    <button
+                        on:click=move |_| {
+                            if let Some(id) = delete_pending.get() {
+                                set_lines.update(|lines_vec| {
+                                    lines_vec.retain(|l| l.id != id);
+                                });
+                                set_open_editors.update(|editors| {
+                                    editors.remove(&id);
+                                });
+                                set_delete_pending.set(None);
+                            }
+                        }
+                        style="padding: 0.5rem 1.5rem; border-radius: 4px; border: 1px solid #d32f2f; background-color: #d32f2f; color: #fff; cursor: pointer;"
+                    >
+                        "Delete"
+                    </button>
+                </div>
+            </div>
+        </Window>
     }
 }
 
@@ -93,6 +135,7 @@ pub fn LineControl(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
     on_edit: impl Fn(String) + 'static,
+    on_delete: impl Fn(String) + 'static,
 ) -> impl IntoView {
     let id_for_derive = line_id.clone();
     let current_line = Signal::derive(move || {
@@ -101,6 +144,7 @@ pub fn LineControl(
 
     let id_for_edit = line_id.clone();
     let on_edit = store_value(on_edit);
+    let on_delete = store_value(on_delete);
 
     view! {
         {move || {
@@ -136,6 +180,16 @@ pub fn LineControl(
                                     title="Edit line"
                                 >
                                     <i class="fa-solid fa-pen"></i>
+                                </button>
+                                <button
+                                    class="delete-button"
+                                    on:click={
+                                        let id = line_id.clone();
+                                        move |_| on_delete.with_value(|f| f(id.clone()))
+                                    }
+                                    title="Delete line"
+                                >
+                                    <i class="fa-solid fa-trash"></i>
                                 </button>
                             </div>
                         </div>

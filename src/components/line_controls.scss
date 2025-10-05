@@ -24,7 +24,8 @@
                 gap: 0.5rem;
 
                 .visibility-toggle,
-                .edit-button {
+                .edit-button,
+                .delete-button {
                     background: none;
                     border: none;
                     color: #999;
@@ -46,6 +47,12 @@
 
                     i {
                         pointer-events: none;
+                    }
+                }
+
+                .delete-button {
+                    &:hover {
+                        color: #d32f2f;
                     }
                 }
             }
