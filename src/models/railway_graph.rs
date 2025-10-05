@@ -6,6 +6,8 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StationNode {
     pub name: String,
+    #[serde(default)]
+    pub position: Option<(f64, f64)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,10 +35,25 @@ impl RailwayGraph {
         if let Some(&index) = self.station_name_to_index.get(&name) {
             index
         } else {
-            let index = self.graph.add_node(StationNode { name: name.clone() });
+            let index = self.graph.add_node(StationNode {
+                name: name.clone(),
+                position: None,
+            });
             self.station_name_to_index.insert(name, index);
             index
         }
+    }
+
+    /// Update station position
+    pub fn set_station_position(&mut self, index: NodeIndex, position: (f64, f64)) {
+        if let Some(node) = self.graph.node_weight_mut(index) {
+            node.position = Some(position);
+        }
+    }
+
+    /// Get station position
+    pub fn get_station_position(&self, index: NodeIndex) -> Option<(f64, f64)> {
+        self.graph.node_weight(index).and_then(|node| node.position)
     }
 
     /// Add a track segment between two stations, returns the EdgeIndex
