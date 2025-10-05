@@ -8,6 +8,8 @@ pub struct StationNode {
     pub name: String,
     #[serde(default)]
     pub position: Option<(f64, f64)>,
+    #[serde(default)]
+    pub passing_loop: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,6 +40,7 @@ impl RailwayGraph {
             let index = self.graph.add_node(StationNode {
                 name: name.clone(),
                 position: None,
+                passing_loop: false,
             });
             self.station_name_to_index.insert(name, index);
             index

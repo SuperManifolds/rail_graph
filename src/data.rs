@@ -93,8 +93,23 @@ fn build_graph_and_routes_from_csv(
                 continue;
             };
 
+            // Check if station is a passing loop (indicated by "(P)" in name)
+            let is_passing_loop = station_name.ends_with("(P)");
+            let clean_name = if is_passing_loop {
+                station_name.trim_end_matches("(P)").trim().to_string()
+            } else {
+                station_name.clone()
+            };
+
             // Get or create station node
-            let station_idx = graph.add_or_get_station(station_name.clone());
+            let station_idx = graph.add_or_get_station(clean_name);
+
+            // Mark as passing loop if needed
+            if is_passing_loop {
+                if let Some(node) = graph.graph.node_weight_mut(station_idx) {
+                    node.passing_loop = true;
+                }
+            }
 
             // If there was a previous station, create or reuse edge
             let Some((prev_idx, prev_time)) = prev_station else {
@@ -108,8 +123,8 @@ fn build_graph_and_routes_from_csv(
             let edge_idx = *edge_map.entry((prev_idx, station_idx))
                 .or_insert_with(|| graph.add_track(prev_idx, station_idx, false));
 
-            // Passing stations (indicated by "(P)" in name) have 0 wait time
-            let station_wait_time = if station_name.contains("(P)") {
+            // Passing loops have 0 wait time
+            let station_wait_time = if is_passing_loop {
                 Duration::seconds(0)
             } else {
                 line_wait_time

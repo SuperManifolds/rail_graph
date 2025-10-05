@@ -303,10 +303,20 @@ pub fn StopsTab(
                                                                         first_station_idx
                                                                     ) {
                                                                         if let Some(edge) = graph.graph.find_edge(station_idx, first_idx) {
+                                                                            // Check if station is a passing loop
+                                                                            let is_passing_loop = graph.graph.node_weight(station_idx)
+                                                                                .map(|node| node.passing_loop)
+                                                                                .unwrap_or(false);
+                                                                            let default_wait = if is_passing_loop {
+                                                                                Duration::seconds(0)
+                                                                            } else {
+                                                                                Duration::seconds(30)
+                                                                            };
+
                                                                             updated_line.route.insert(0, crate::models::RouteSegment {
                                                                                 edge_index: edge.index(),
                                                                                 duration: Duration::minutes(5),
-                                                                                wait_time: Duration::seconds(30),
+                                                                                wait_time: default_wait,
                                                                             });
                                                                             on_save_add.with_value(|f| f(updated_line));
                                                                         }
@@ -364,10 +374,20 @@ pub fn StopsTab(
                                                                         last_station_idx
                                                                     ) {
                                                                         if let Some(edge) = graph.graph.find_edge(last_idx, station_idx) {
+                                                                            // Check if station is a passing loop
+                                                                            let is_passing_loop = graph.graph.node_weight(station_idx)
+                                                                                .map(|node| node.passing_loop)
+                                                                                .unwrap_or(false);
+                                                                            let default_wait = if is_passing_loop {
+                                                                                Duration::seconds(0)
+                                                                            } else {
+                                                                                Duration::seconds(30)
+                                                                            };
+
                                                                             updated_line.route.push(crate::models::RouteSegment {
                                                                                 edge_index: edge.index(),
                                                                                 duration: Duration::minutes(5),
-                                                                                wait_time: Duration::seconds(30),
+                                                                                wait_time: default_wait,
                                                                             });
                                                                             on_save_add.with_value(|f| f(updated_line));
                                                                         }

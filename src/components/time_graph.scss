@@ -1,7 +1,7 @@
 // TimeGraph component styles
 .time-graph-container {
     display: flex;
-    height: 100vh;
+    height: calc(100vh - 57px); // Subtract app header height
     overflow: hidden;
 
     .loading-overlay {
