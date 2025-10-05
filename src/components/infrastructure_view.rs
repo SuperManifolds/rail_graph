@@ -4,7 +4,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use wasm_bindgen::JsCast;
-use web_sys::CanvasRenderingContext2d;
+use web_sys::{CanvasRenderingContext2d, MouseEvent, WheelEvent};
 
 const NODE_RADIUS: f64 = 8.0;
 const TRACK_OFFSET: f64 = 3.0; // Offset for double track lines
@@ -17,6 +17,13 @@ pub fn InfrastructureView(
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (canvas_size, _set_canvas_size) = create_signal((1200.0, 800.0));
     let (trigger_layout, set_trigger_layout) = create_signal(0);
+
+    // Zoom and pan state
+    let (zoom_level, set_zoom_level) = create_signal(1.0);
+    let (pan_offset_x, set_pan_offset_x) = create_signal(0.0);
+    let (pan_offset_y, set_pan_offset_y) = create_signal(0.0);
+    let (is_panning, set_is_panning) = create_signal(false);
+    let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
 
     // Initialize layout when graph changes (if stations don't have positions) or when triggered
     create_effect(move |_| {
@@ -46,9 +53,13 @@ pub fn InfrastructureView(
         }
     };
 
-    // Re-render when graph changes
+    // Re-render when graph or viewport changes
     create_effect(move |_| {
         let current_graph = graph.get();
+        let _ = zoom_level.get();
+        let _ = pan_offset_x.get();
+        let _ = pan_offset_y.get();
+
         let Some(canvas) = canvas_ref.get() else { return };
         let Some(ctx) = canvas
             .get_context("2d")
@@ -59,8 +70,89 @@ pub fn InfrastructureView(
             return;
         };
 
-        draw_infrastructure(&ctx, &current_graph, canvas_size.get());
+        let zoom = zoom_level.get_untracked();
+        let pan_x = pan_offset_x.get_untracked();
+        let pan_y = pan_offset_y.get_untracked();
+
+        draw_infrastructure(&ctx, &current_graph, canvas_size.get(), zoom, pan_x, pan_y);
     });
+
+    // Mouse event handlers
+    let handle_mouse_down = move |ev: MouseEvent| {
+        if let Some(canvas_elem) = canvas_ref.get() {
+            let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
+            let rect = canvas.get_bounding_client_rect();
+            let x = ev.client_x() as f64 - rect.left();
+            let y = ev.client_y() as f64 - rect.top();
+
+            // Right click or ctrl+click to pan
+            if ev.button() == 2 || ev.ctrl_key() || ev.button() == 0 {
+                set_is_panning.set(true);
+                set_last_mouse_pos.set((x, y));
+            }
+        }
+    };
+
+    let handle_mouse_move = move |ev: MouseEvent| {
+        if let Some(canvas_elem) = canvas_ref.get() {
+            let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
+            let rect = canvas.get_bounding_client_rect();
+            let x = ev.client_x() as f64 - rect.left();
+            let y = ev.client_y() as f64 - rect.top();
+
+            if is_panning.get() {
+                let (last_x, last_y) = last_mouse_pos.get();
+                let dx = x - last_x;
+                let dy = y - last_y;
+
+                let current_pan_x = pan_offset_x.get();
+                let current_pan_y = pan_offset_y.get();
+
+                batch(move || {
+                    set_pan_offset_x.set(current_pan_x + dx);
+                    set_pan_offset_y.set(current_pan_y + dy);
+                    set_last_mouse_pos.set((x, y));
+                });
+            }
+        }
+    };
+
+    let handle_mouse_up = move |_ev: MouseEvent| {
+        set_is_panning.set(false);
+    };
+
+    let handle_mouse_leave = move |_ev: MouseEvent| {
+        set_is_panning.set(false);
+    };
+
+    let handle_wheel = move |ev: WheelEvent| {
+        ev.prevent_default();
+
+        if let Some(canvas_elem) = canvas_ref.get() {
+            let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
+            let rect = canvas.get_bounding_client_rect();
+            let mouse_x = ev.client_x() as f64 - rect.left();
+            let mouse_y = ev.client_y() as f64 - rect.top();
+
+            let delta = ev.delta_y();
+            let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
+
+            let old_zoom = zoom_level.get();
+            let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 25.0);
+
+            let pan_x = pan_offset_x.get();
+            let pan_y = pan_offset_y.get();
+
+            let new_pan_x = mouse_x - (mouse_x - pan_x) * (new_zoom / old_zoom);
+            let new_pan_y = mouse_y - (mouse_y - pan_y) * (new_zoom / old_zoom);
+
+            batch(move || {
+                set_zoom_level.set(new_zoom);
+                set_pan_offset_x.set(new_pan_x);
+                set_pan_offset_y.set(new_pan_y);
+            });
+        }
+    };
 
     view! {
         <div class="infrastructure-view">
@@ -76,6 +168,13 @@ pub fn InfrastructureView(
                     width=move || canvas_size.get().0
                     height=move || canvas_size.get().1
                     class="infrastructure-canvas"
+                    on:mousedown=handle_mouse_down
+                    on:mousemove=handle_mouse_move
+                    on:mouseup=handle_mouse_up
+                    on:mouseleave=handle_mouse_leave
+                    on:wheel=handle_wheel
+                    on:contextmenu=|ev| ev.prevent_default()
+                    style="cursor: grab;"
                 />
             </div>
         </div>
@@ -203,7 +302,14 @@ fn layout_line(
     }
 }
 
-fn draw_infrastructure(ctx: &CanvasRenderingContext2d, graph: &RailwayGraph, (width, height): (f64, f64)) {
+fn draw_infrastructure(
+    ctx: &CanvasRenderingContext2d,
+    graph: &RailwayGraph,
+    (width, height): (f64, f64),
+    zoom: f64,
+    pan_x: f64,
+    pan_y: f64,
+) {
     // Clear canvas
     ctx.set_fill_style_str("#0a0a0a");
     ctx.fill_rect(0.0, 0.0, width, height);
@@ -215,6 +321,11 @@ fn draw_infrastructure(ctx: &CanvasRenderingContext2d, graph: &RailwayGraph, (wi
         let _ = ctx.fill_text("No stations in network", width / 2.0 - 80.0, height / 2.0);
         return;
     }
+
+    // Save context and apply transformations
+    ctx.save();
+    let _ = ctx.translate(pan_x, pan_y);
+    let _ = ctx.scale(zoom, zoom);
 
     // Draw tracks (edges) first so they're behind nodes
     for edge in graph.graph.edge_references() {
@@ -234,7 +345,7 @@ fn draw_infrastructure(ctx: &CanvasRenderingContext2d, graph: &RailwayGraph, (wi
             let ny = dx / len * TRACK_OFFSET;
 
             ctx.set_stroke_style_str("#555");
-            ctx.set_line_width(2.0);
+            ctx.set_line_width(2.0 / zoom);
 
             // First track
             ctx.begin_path();
@@ -250,7 +361,7 @@ fn draw_infrastructure(ctx: &CanvasRenderingContext2d, graph: &RailwayGraph, (wi
         } else {
             // Single track
             ctx.set_stroke_style_str("#444");
-            ctx.set_line_width(2.0);
+            ctx.set_line_width(2.0 / zoom);
             ctx.begin_path();
             ctx.move_to(pos1.0, pos1.1);
             ctx.line_to(pos2.0, pos2.1);
@@ -266,15 +377,19 @@ fn draw_infrastructure(ctx: &CanvasRenderingContext2d, graph: &RailwayGraph, (wi
         // Draw node circle
         ctx.set_fill_style_str("#2a2a2a");
         ctx.set_stroke_style_str("#4a9eff");
-        ctx.set_line_width(2.0);
+        ctx.set_line_width(2.0 / zoom);
         ctx.begin_path();
         let _ = ctx.arc(pos.0, pos.1, NODE_RADIUS, 0.0, std::f64::consts::PI * 2.0);
         ctx.fill();
         ctx.stroke();
 
-        // Draw station name
+        // Draw station name (scale font size inversely with zoom)
         ctx.set_fill_style_str("#fff");
-        ctx.set_font("14px sans-serif");
+        let font_size = 14.0 / zoom;
+        ctx.set_font(&format!("{}px sans-serif", font_size));
         let _ = ctx.fill_text(name, pos.0 + NODE_RADIUS + 5.0, pos.1 + 5.0);
     }
+
+    // Restore context
+    ctx.restore();
 }
