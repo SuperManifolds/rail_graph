@@ -130,8 +130,6 @@ pub fn StopsTab(
     on_save: std::rc::Rc<dyn Fn(Line)>,
 ) -> impl IntoView {
     let (time_mode, set_time_mode) = create_signal(TimeDisplayMode::Difference);
-    let (show_add_start, set_show_add_start) = create_signal(false);
-    let (show_add_end, set_show_add_end) = create_signal(false);
     let on_save_add = store_value(on_save.clone());
     view! {
         <TabPanel when=Signal::derive(move || active_tab.get() == "stops")>
@@ -203,12 +201,103 @@ pub fn StopsTab(
                                     TimeDisplayMode::Absolute => "Time from Start",
                                 };
 
+                                // Get first and last stations for add stop functionality
+                                let first_station_idx = line.route.first()
+                                    .and_then(|seg| {
+                                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                                        current_graph.get_track_endpoints(edge).map(|(from, _)| from)
+                                    });
+
+                                let last_station_idx = line.route.last()
+                                    .and_then(|seg| {
+                                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                                        current_graph.get_track_endpoints(edge).map(|(_, to)| to)
+                                    });
+
+                                // Get available stations for start (stations that connect TO first station)
+                                let available_start: Vec<String> = first_station_idx
+                                    .map(|first_idx| {
+                                        current_graph.get_all_stations_ordered()
+                                            .iter()
+                                            .filter_map(|station| {
+                                                let station_idx = current_graph.get_station_index(&station.name)?;
+                                                if current_graph.graph.find_edge(station_idx, first_idx).is_some() {
+                                                    Some(station.name.clone())
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+
+                                // Get available stations for end (stations that connect FROM last station)
+                                let available_end: Vec<String> = last_station_idx
+                                    .map(|last_idx| {
+                                        current_graph.get_all_stations_ordered()
+                                            .iter()
+                                            .filter_map(|station| {
+                                                let station_idx = current_graph.get_station_index(&station.name)?;
+                                                if current_graph.graph.find_edge(last_idx, station_idx).is_some() {
+                                                    Some(station.name.clone())
+                                                } else {
+                                                    None
+                                                }
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+
                                 view! {
                                     <div class="stops-header">
                                         <span>"Station"</span>
                                         <span>{column_header}</span>
                                         <span>"Wait Time"</span>
                                     </div>
+
+                                    {if !available_start.is_empty() {
+                                        let avail = available_start.clone();
+                                        view! {
+                                            <div class="add-stop-row">
+                                                <select
+                                                    class="station-select"
+                                                    on:change={
+                                                        move |ev| {
+                                                            let station_name = event_target_value(&ev);
+                                                            if !station_name.is_empty() {
+                                                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                                                    let graph = graph.get();
+                                                                    if let (Some(station_idx), Some(first_idx)) = (
+                                                                        graph.get_station_index(&station_name),
+                                                                        first_station_idx
+                                                                    ) {
+                                                                        if let Some(edge) = graph.graph.find_edge(station_idx, first_idx) {
+                                                                            updated_line.route.insert(0, crate::models::RouteSegment {
+                                                                                edge_index: edge.index(),
+                                                                                duration: Duration::minutes(5),
+                                                                                wait_time: Duration::seconds(30),
+                                                                            });
+                                                                            on_save_add.with_value(|f| f(updated_line));
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                >
+                                                    <option value="">"+ Add stop at start..."</option>
+                                                    {avail.iter().map(|name| {
+                                                        view! {
+                                                            <option value=name.clone()>{name.clone()}</option>
+                                                        }
+                                                    }).collect::<Vec<_>>()}
+                                                </select>
+                                            </div>
+                                        }.into_view()
+                                    } else {
+                                        view! {}.into_view()
+                                    }}
+
                                     {stations.into_iter().enumerate().map(|(i, name)| {
                                         view! {
                                             <StopRow
@@ -221,184 +310,54 @@ pub fn StopsTab(
                                             />
                                         }
                                     }).collect::<Vec<_>>()}
+
+                                    {if !available_end.is_empty() {
+                                        let avail = available_end.clone();
+                                        view! {
+                                            <div class="add-stop-row">
+                                                <select
+                                                    class="station-select"
+                                                    on:change={
+                                                        move |ev| {
+                                                            let station_name = event_target_value(&ev);
+                                                            if !station_name.is_empty() {
+                                                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                                                    let graph = graph.get();
+                                                                    if let (Some(station_idx), Some(last_idx)) = (
+                                                                        graph.get_station_index(&station_name),
+                                                                        last_station_idx
+                                                                    ) {
+                                                                        if let Some(edge) = graph.graph.find_edge(last_idx, station_idx) {
+                                                                            updated_line.route.push(crate::models::RouteSegment {
+                                                                                edge_index: edge.index(),
+                                                                                duration: Duration::minutes(5),
+                                                                                wait_time: Duration::seconds(30),
+                                                                            });
+                                                                            on_save_add.with_value(|f| f(updated_line));
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                >
+                                                    <option value="">"+ Add stop at end..."</option>
+                                                    {avail.iter().map(|name| {
+                                                        view! {
+                                                            <option value=name.clone()>{name.clone()}</option>
+                                                        }
+                                                    }).collect::<Vec<_>>()}
+                                                </select>
+                                            </div>
+                                        }.into_view()
+                                    } else {
+                                        view! {}.into_view()
+                                    }}
                                 }.into_view()
                             }
                         })
                     }}
                 </div>
-
-                {move || {
-                        edited_line.get().and_then(|line| {
-                            if line.route.is_empty() {
-                                return None;
-                            }
-
-                            let current_graph = graph.get();
-
-                        // Get first and last stations
-                        let first_station_idx = line.route.first()
-                            .and_then(|seg| {
-                                let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
-                                current_graph.get_track_endpoints(edge).map(|(from, _)| from)
-                            });
-
-                        let last_station_idx = line.route.last()
-                            .and_then(|seg| {
-                                let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
-                                current_graph.get_track_endpoints(edge).map(|(_, to)| to)
-                            });
-
-                        // Get available stations for start (stations that connect TO first station)
-                        let available_start: Vec<String> = first_station_idx
-                            .map(|first_idx| {
-                                current_graph.get_all_stations_ordered()
-                                    .iter()
-                                    .filter_map(|station| {
-                                        let station_idx = current_graph.get_station_index(&station.name)?;
-                                        if current_graph.graph.find_edge(station_idx, first_idx).is_some() {
-                                            Some(station.name.clone())
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-
-                        // Get available stations for end (stations that connect FROM last station)
-                        let available_end: Vec<String> = last_station_idx
-                            .map(|last_idx| {
-                                current_graph.get_all_stations_ordered()
-                                    .iter()
-                                    .filter_map(|station| {
-                                        let station_idx = current_graph.get_station_index(&station.name)?;
-                                        if current_graph.graph.find_edge(last_idx, station_idx).is_some() {
-                                            Some(station.name.clone())
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-
-                        Some(view! {
-                            <div class="add-stops-section">
-                                {if !available_start.is_empty() {
-                                    view! {
-                                        <div class="add-stop-control">
-                                            <button
-                                                class="add-stop-button"
-                                                on:click=move |_| set_show_add_start.update(|v| *v = !*v)
-                                            >
-                                                "+ Add stop at start"
-                                            </button>
-                                            {move || {
-                                                if show_add_start.get() {
-                                                    let avail = available_start.clone();
-                                                    Some(view! {
-                                                        <select
-                                                            class="station-select"
-                                                            on:change={
-                                                                move |ev| {
-                                                                    let station_name = event_target_value(&ev);
-                                                                    if let Some(mut updated_line) = edited_line.get_untracked() {
-                                                                        let graph = graph.get();
-                                                                        if let (Some(station_idx), Some(first_idx)) = (
-                                                                            graph.get_station_index(&station_name),
-                                                                            first_station_idx
-                                                                        ) {
-                                                                            if let Some(edge) = graph.graph.find_edge(station_idx, first_idx) {
-                                                                                updated_line.route.insert(0, crate::models::RouteSegment {
-                                                                                    edge_index: edge.index(),
-                                                                                    duration: Duration::minutes(5),
-                                                                                    wait_time: Duration::seconds(30),
-                                                                                });
-                                                                                on_save_add.with_value(|f| f(updated_line));
-                                                                                set_show_add_start.set(false);
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        >
-                                                            <option value="">"Select station..."</option>
-                                                            {avail.iter().map(|name| {
-                                                                view! {
-                                                                    <option value=name.clone()>{name.clone()}</option>
-                                                                }
-                                                            }).collect::<Vec<_>>()}
-                                                        </select>
-                                                    })
-                                                } else {
-                                                    None
-                                                }
-                                            }}
-                                        </div>
-                                    }.into_view()
-                                } else {
-                                    view! {}.into_view()
-                                }}
-
-                                {if !available_end.is_empty() {
-                                    view! {
-                                        <div class="add-stop-control">
-                                            <button
-                                                class="add-stop-button"
-                                                on:click=move |_| set_show_add_end.update(|v| *v = !*v)
-                                            >
-                                                "+ Add stop at end"
-                                            </button>
-                                            {move || {
-                                                if show_add_end.get() {
-                                                    let avail = available_end.clone();
-                                                    Some(view! {
-                                                        <select
-                                                            class="station-select"
-                                                            on:change={
-                                                                move |ev| {
-                                                                    let station_name = event_target_value(&ev);
-                                                                    if let Some(mut updated_line) = edited_line.get_untracked() {
-                                                                        let graph = graph.get();
-                                                                        if let (Some(station_idx), Some(last_idx)) = (
-                                                                            graph.get_station_index(&station_name),
-                                                                            last_station_idx
-                                                                        ) {
-                                                                            if let Some(edge) = graph.graph.find_edge(last_idx, station_idx) {
-                                                                                updated_line.route.push(crate::models::RouteSegment {
-                                                                                    edge_index: edge.index(),
-                                                                                    duration: Duration::minutes(5),
-                                                                                    wait_time: Duration::seconds(30),
-                                                                                });
-                                                                                on_save_add.with_value(|f| f(updated_line));
-                                                                                set_show_add_end.set(false);
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        >
-                                                            <option value="">"Select station..."</option>
-                                                            {avail.iter().map(|name| {
-                                                                view! {
-                                                                    <option value=name.clone()>{name.clone()}</option>
-                                                                }
-                                                            }).collect::<Vec<_>>()}
-                                                        </select>
-                                                    })
-                                                } else {
-                                                    None
-                                                }
-                                            }}
-                                        </div>
-                                    }.into_view()
-                                } else {
-                                    view! {}.into_view()
-                                }}
-                            </div>
-                        })
-                    })
-                }}
             </div>
         </TabPanel>
     }
