@@ -4,37 +4,6 @@
     height: calc(100vh - 57px); // Subtract app header height
     overflow: hidden;
 
-    .loading-overlay {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-        height: 100%;
-        background-color: #0a0a0a;
-        gap: 1.5rem;
-
-        p {
-            color: #ccc;
-            font-size: 1rem;
-        }
-
-        .loading-spinner {
-            width: 48px;
-            height: 48px;
-            border: 4px solid #333;
-            border-top-color: #4a9eff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-    }
-
     .main-content {
         flex: 1;
         overflow: auto;

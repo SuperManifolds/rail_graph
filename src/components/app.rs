@@ -84,7 +84,15 @@ pub fn App() -> impl IntoView {
                 </div>
             </div>
 
-            <Show when=move || !is_loading.get()>
+            <Show
+                when=move || !is_loading.get()
+                fallback=|| view! {
+                    <div class="loading-overlay">
+                        <div class="loading-spinner"></div>
+                        <p>"Loading project..."</p>
+                    </div>
+                }
+            >
                 {move || match active_view.get() {
                     AppView::TimeGraph => view! {
                         <TimeGraph lines=lines set_lines=set_lines graph=graph set_graph=set_graph />
