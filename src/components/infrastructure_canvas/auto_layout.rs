@@ -14,14 +14,16 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
     let start_x = 150.0;
     let start_y = height / 2.0;
 
-    // Find a starting node (node with fewest connections)
+    // Find a starting node - prefer endpoints (nodes with only 1 connection)
     let start_node = graph
         .graph
         .node_indices()
         .min_by_key(|&idx| {
             let outgoing = graph.graph.edges(idx).count();
             let incoming = graph.graph.edges_directed(idx, Direction::Incoming).count();
-            outgoing + incoming
+            let total = outgoing + incoming;
+            // Prefer endpoints (1 connection), then nodes with fewer connections
+            if total == 1 { 0 } else { total }
         })
         .unwrap();
 
@@ -45,6 +47,15 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
         &mut visited,
         &mut available_directions,
     );
+
+    // Handle any disconnected nodes
+    let mut offset_y = start_y + 100.0;
+    for idx in graph.graph.node_indices() {
+        if !visited.contains(&idx) {
+            graph.set_station_position(idx, (start_x + 200.0, offset_y));
+            offset_y += station_spacing;
+        }
+    }
 }
 
 fn layout_line(

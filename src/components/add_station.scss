@@ -1,0 +1,83 @@
+.add-station-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+
+    .form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+
+        label {
+            font-size: 0.9rem;
+            color: #ccc;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        input[type="text"] {
+            padding: 0.5rem;
+            background-color: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 0.9rem;
+
+            &:focus {
+                outline: none;
+                border-color: #4a9eff;
+            }
+        }
+
+        input[type="checkbox"] {
+            width: auto;
+        }
+
+        select {
+            padding: 0.5rem;
+            background-color: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 0.9rem;
+
+            &:focus {
+                outline: none;
+                border-color: #4a9eff;
+            }
+        }
+    }
+
+    .form-buttons {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: flex-end;
+        margin-top: 1rem;
+
+        button {
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background-color: #2a2a2a;
+            color: #e0e0e0;
+            cursor: pointer;
+            font-size: 0.9rem;
+
+            &:hover {
+                background-color: #333;
+            }
+
+            &.primary {
+                background-color: #4a9eff;
+                border-color: #4a9eff;
+                color: #fff;
+
+                &:hover {
+                    background-color: #3a8eef;
+                }
+            }
+        }
+    }
+}

@@ -1,8 +1,17 @@
 use crate::models::RailwayGraph;
 use crate::components::infrastructure_canvas::{auto_layout, station_renderer, track_renderer};
+use crate::components::add_station::AddStation;
 use leptos::*;
+use petgraph::graph::NodeIndex;
+use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, MouseEvent, WheelEvent};
+
+#[derive(Clone, Copy, PartialEq)]
+enum EditMode {
+    None,
+    AddingTrack,
+}
 
 #[component]
 pub fn InfrastructureView(
@@ -11,6 +20,9 @@ pub fn InfrastructureView(
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (auto_layout_enabled, set_auto_layout_enabled) = create_signal(true);
+    let (edit_mode, set_edit_mode) = create_signal(EditMode::None);
+    let (selected_station, set_selected_station) = create_signal(None::<NodeIndex>);
+    let (show_add_station, set_show_add_station) = create_signal(false);
 
     // Zoom and pan state
     let (zoom_level, set_zoom_level) = create_signal(1.0);
@@ -19,25 +31,72 @@ pub fn InfrastructureView(
     let (is_panning, set_is_panning) = create_signal(false);
     let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
 
-    // Apply auto layout when enabled and graph changes
+    // Apply auto layout when enabled and there are unpositioned stations
     create_effect(move |_| {
         if !auto_layout_enabled.get() {
             return;
         }
 
         let mut current_graph = graph.get();
-        if current_graph.graph.node_count() > 0 {
-            let Some(canvas) = canvas_ref.get() else { return };
-            let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
-            let height = canvas_elem.client_height() as f64;
-            auto_layout::apply_layout(&mut current_graph, height);
-            set_graph.set(current_graph);
+
+        // Check if there are any stations without positions
+        let has_unpositioned = current_graph
+            .graph
+            .node_indices()
+            .any(|idx| current_graph.get_station_position(idx).is_none());
+
+        if has_unpositioned {
+            if current_graph.graph.node_count() > 0 {
+                let Some(canvas) = canvas_ref.get() else { return };
+                let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+                let height = canvas_elem.client_height() as f64;
+                auto_layout::apply_layout(&mut current_graph, height);
+                set_graph.set(current_graph);
+            }
         }
     });
 
     let toggle_auto_layout = move |_| {
-        set_auto_layout_enabled.update(|enabled| *enabled = !*enabled);
+        let new_state = !auto_layout_enabled.get();
+        set_auto_layout_enabled.set(new_state);
+
+        // If enabling, clear all positions to force full re-layout
+        if new_state {
+            let mut current_graph = graph.get();
+            for idx in current_graph.graph.node_indices() {
+                current_graph.set_station_position(idx, (0.0, 0.0));
+            }
+
+            if let Some(canvas) = canvas_ref.get() {
+                let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+                let height = canvas_elem.client_height() as f64;
+                auto_layout::apply_layout(&mut current_graph, height);
+                set_graph.set(current_graph);
+            }
+        }
     };
+
+    let handle_add_station = Rc::new(move |name: String, passing_loop: bool, connect_to: Option<NodeIndex>| {
+        let mut current_graph = graph.get();
+        let node_idx = current_graph.add_or_get_station(name.clone());
+
+        // Set passing loop status
+        if let Some(node) = current_graph.graph.node_weight_mut(node_idx) {
+            node.passing_loop = passing_loop;
+        }
+
+        // If connecting to another station, position the new station near it
+        // This prevents auto layout from treating it as disconnected
+        if let Some(connect_idx) = connect_to {
+            if let Some(connect_pos) = current_graph.get_station_position(connect_idx) {
+                current_graph.set_station_position(node_idx, (connect_pos.0 + 80.0, connect_pos.1 + 40.0));
+            }
+            current_graph.add_track(connect_idx, node_idx, false);
+        }
+
+        set_graph.set(current_graph);
+        set_show_add_station.set(false);
+    });
 
     // Re-render when graph or viewport changes
     create_effect(move |_| {
@@ -79,13 +138,44 @@ pub fn InfrastructureView(
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
-            let x = ev.client_x() as f64 - rect.left();
-            let y = ev.client_y() as f64 - rect.top();
+            let screen_x = ev.client_x() as f64 - rect.left();
+            let screen_y = ev.client_y() as f64 - rect.top();
 
-            // Right click or ctrl+click to pan
-            if ev.button() == 2 || ev.ctrl_key() || ev.button() == 0 {
-                set_is_panning.set(true);
-                set_last_mouse_pos.set((x, y));
+            let current_mode = edit_mode.get();
+
+            // Convert screen coordinates to world coordinates
+            let zoom = zoom_level.get();
+            let pan_x = pan_offset_x.get();
+            let pan_y = pan_offset_y.get();
+            let world_x = (screen_x - pan_x) / zoom;
+            let world_y = (screen_y - pan_y) / zoom;
+
+            match current_mode {
+                EditMode::AddingTrack => {
+                    // Find if we clicked on a station
+                    let current_graph = graph.get();
+                    if let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) {
+                        if let Some(first_station) = selected_station.get() {
+                            // Create track between first_station and clicked_station
+                            if first_station != clicked_station {
+                                let mut updated_graph = current_graph;
+                                updated_graph.add_track(first_station, clicked_station, false);
+                                set_graph.set(updated_graph);
+                            }
+                            set_selected_station.set(None);
+                        } else {
+                            // Select first station
+                            set_selected_station.set(Some(clicked_station));
+                        }
+                    }
+                }
+                EditMode::None => {
+                    // Pan mode
+                    if ev.button() == 2 || ev.ctrl_key() || ev.button() == 0 {
+                        set_is_panning.set(true);
+                        set_last_mouse_pos.set((screen_x, screen_y));
+                    }
+                }
             }
         }
     };
@@ -161,6 +251,28 @@ pub fn InfrastructureView(
                     <i class="fa-solid fa-diagram-project"></i>
                     {move || if auto_layout_enabled.get() { " Auto Layout: On" } else { " Auto Layout: Off" }}
                 </button>
+                <button
+                    class="toolbar-button"
+                    on:click=move |_| set_show_add_station.set(true)
+                >
+                    <i class="fa-solid fa-circle-plus"></i>
+                    " Add Station"
+                </button>
+                <button
+                    class=move || if edit_mode.get() == EditMode::AddingTrack { "toolbar-button active" } else { "toolbar-button" }
+                    on:click=move |_| {
+                        if edit_mode.get() == EditMode::AddingTrack {
+                            set_edit_mode.set(EditMode::None);
+                            set_selected_station.set(None);
+                        } else {
+                            set_edit_mode.set(EditMode::AddingTrack);
+                            set_selected_station.set(None);
+                        }
+                    }
+                >
+                    <i class="fa-solid fa-link"></i>
+                    " Add Track"
+                </button>
             </div>
             <div class="infrastructure-canvas-container">
                 <canvas
@@ -172,9 +284,21 @@ pub fn InfrastructureView(
                     on:mouseleave=handle_mouse_leave
                     on:wheel=handle_wheel
                     on:contextmenu=|ev| ev.prevent_default()
-                    style="cursor: grab;"
+                    style=move || {
+                        match edit_mode.get() {
+                            EditMode::AddingTrack => "cursor: pointer;",
+                            EditMode::None => "cursor: grab;",
+                        }
+                    }
                 />
             </div>
+
+            <AddStation
+                is_open=show_add_station
+                on_close=Rc::new(move || set_show_add_station.set(false))
+                on_add=handle_add_station
+                graph=graph
+            />
         </div>
     }
 }
@@ -212,4 +336,22 @@ fn draw_infrastructure(
 
     // Restore context
     ctx.restore();
+}
+
+fn find_station_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<NodeIndex> {
+    const CLICK_THRESHOLD: f64 = 15.0;
+
+    for idx in graph.graph.node_indices() {
+        if let Some(pos) = graph.get_station_position(idx) {
+            let dx = pos.0 - x;
+            let dy = pos.1 - y;
+            let dist = (dx * dx + dy * dy).sqrt();
+
+            if dist <= CLICK_THRESHOLD {
+                return Some(idx);
+            }
+        }
+    }
+
+    None
 }
