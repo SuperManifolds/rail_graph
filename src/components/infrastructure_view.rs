@@ -201,7 +201,7 @@ fn apply_force_layout(graph: &mut RailwayGraph, height: f64) {
         return;
     }
 
-    let station_spacing = 120.0;
+    let station_spacing = 60.0;
     let start_x = 150.0;
     let start_y = height / 2.0;
 
@@ -222,7 +222,6 @@ fn apply_force_layout(graph: &mut RailwayGraph, height: f64) {
         std::f64::consts::PI / 4.0,            // Down-right
         -std::f64::consts::PI / 4.0,           // Up-right
         std::f64::consts::PI / 2.0,            // Down
-        -std::f64::consts::PI / 2.0,           // Up
         3.0 * std::f64::consts::PI / 4.0,      // Down-left
         -3.0 * std::f64::consts::PI / 4.0,     // Up-left
     ];
@@ -232,7 +231,7 @@ fn apply_force_layout(graph: &mut RailwayGraph, height: f64) {
         graph,
         start_node,
         (start_x, start_y),
-        0.0, // Start with horizontal direction (0 radians)
+        -std::f64::consts::PI / 2.0, // Start going up/north
         station_spacing,
         &mut visited,
         &mut available_directions,
