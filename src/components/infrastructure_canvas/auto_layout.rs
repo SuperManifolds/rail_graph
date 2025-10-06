@@ -56,6 +56,9 @@ pub fn snap_to_angle(graph: &mut RailwayGraph, station_idx: NodeIndex, target_x:
     let new_x = junction_pos.0 + snapped_angle.cos() * STATION_SPACING;
     let new_y = junction_pos.1 + snapped_angle.sin() * STATION_SPACING;
 
+    // Save the branch angle for future auto layout runs
+    graph.branch_angles.insert((junction_idx.index(), branch_to_move.index()), snapped_angle);
+
     // Realign the entire branch
     let mut visited = HashSet::new();
     visited.insert(junction_idx);
@@ -287,39 +290,70 @@ fn layout_line(
         return;
     }
 
-    // First neighbor continues in the same direction (main line)
-    let main_neighbor = neighbors[0];
-    let next_pos = (
-        position.0 + direction.cos() * spacing,
-        position.1 + direction.sin() * spacing,
-    );
-    layout_line(
-        graph,
-        main_neighbor,
-        next_pos,
-        direction,
-        spacing,
-        visited,
-        available_directions,
-    );
+    // Separate neighbors into those with saved angles and those without
+    let mut neighbors_with_angles: Vec<(NodeIndex, f64)> = Vec::new();
+    let mut neighbors_without_angles: Vec<NodeIndex> = Vec::new();
 
-    // Additional neighbors are branches - pick from available directions
-    for &branch_neighbor in neighbors.iter().skip(1) {
-        if let Some(branch_dir) = available_directions.pop() {
-            let branch_pos = (
-                position.0 + branch_dir.cos() * spacing,
-                position.1 + branch_dir.sin() * spacing,
-            );
+    for &neighbor in &neighbors {
+        if let Some(&saved_angle) = graph.branch_angles.get(&(current_node.index(), neighbor.index())) {
+            neighbors_with_angles.push((neighbor, saved_angle));
+        } else {
+            neighbors_without_angles.push(neighbor);
+        }
+    }
 
-            layout_line(
-                graph,
-                branch_neighbor,
-                branch_pos,
-                branch_dir,
-                spacing,
-                visited,
-                available_directions,
-            );
+    // Layout neighbors with saved angles first using their saved directions
+    for (neighbor, saved_angle) in neighbors_with_angles {
+        let neighbor_pos = (
+            position.0 + saved_angle.cos() * spacing,
+            position.1 + saved_angle.sin() * spacing,
+        );
+        layout_line(
+            graph,
+            neighbor,
+            neighbor_pos,
+            saved_angle,
+            spacing,
+            visited,
+            available_directions,
+        );
+    }
+
+    // For neighbors without saved angles, first continues in same direction (main line), rest are branches
+    if !neighbors_without_angles.is_empty() {
+        let main_neighbor = neighbors_without_angles[0];
+        let next_pos = (
+            position.0 + direction.cos() * spacing,
+            position.1 + direction.sin() * spacing,
+        );
+        layout_line(
+            graph,
+            main_neighbor,
+            next_pos,
+            direction,
+            spacing,
+            visited,
+            available_directions,
+        );
+
+        // Additional neighbors are branches - pick from available directions
+        for &branch_neighbor in neighbors_without_angles.iter().skip(1) {
+            if let Some(branch_dir) = available_directions.pop() {
+                let branch_pos = (
+                    position.0 + branch_dir.cos() * spacing,
+                    position.1 + branch_dir.sin() * spacing,
+                );
+
+                layout_line(
+                    graph,
+                    branch_neighbor,
+                    branch_pos,
+                    branch_dir,
+                    spacing,
+                    visited,
+                    available_directions,
+                );
+            }
         }
     }
 }

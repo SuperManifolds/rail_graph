@@ -22,6 +22,8 @@ pub struct RailwayGraph {
     #[serde(with = "graph_serde")]
     pub graph: DiGraph<StationNode, TrackSegment>,
     pub station_name_to_index: HashMap<String, NodeIndex>,
+    #[serde(default)]
+    pub branch_angles: HashMap<(usize, usize), f64>,
 }
 
 impl RailwayGraph {
@@ -29,6 +31,7 @@ impl RailwayGraph {
         Self {
             graph: DiGraph::new(),
             station_name_to_index: HashMap::new(),
+            branch_angles: HashMap::new(),
         }
     }
 
