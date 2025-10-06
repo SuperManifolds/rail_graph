@@ -33,6 +33,8 @@ fn generate_random_color(seed: usize) -> String {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RouteSegment {
     pub edge_index: usize,
+    #[serde(default)]
+    pub track_index: usize,
     #[serde(with = "duration_serde")]
     pub duration: Duration,
     #[serde(with = "duration_serde", default = "default_wait_time")]
@@ -142,6 +144,7 @@ impl Line {
 
                         new_route.push(RouteSegment {
                             edge_index: bypass_edge_idx,
+                            track_index: 0,
                             duration: combined_duration,
                             wait_time: next_segment.wait_time,
                         });

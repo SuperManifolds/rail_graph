@@ -105,7 +105,8 @@ pub fn InfrastructureView(
             if let Some(connect_pos) = current_graph.get_station_position(connect_idx) {
                 current_graph.set_station_position(node_idx, (connect_pos.0 + 80.0, connect_pos.1 + 40.0));
             }
-            current_graph.add_track(connect_idx, node_idx, false);
+            use crate::models::{Track, TrackDirection};
+            current_graph.add_track(connect_idx, node_idx, vec![Track { direction: TrackDirection::Bidirectional }]);
         }
 
         set_graph.set(current_graph);
@@ -237,7 +238,8 @@ pub fn InfrastructureView(
                             // Create track between first_station and clicked_station
                             if first_station != clicked_station {
                                 let mut updated_graph = current_graph;
-                                updated_graph.add_track(first_station, clicked_station, false);
+                                use crate::models::{Track, TrackDirection};
+                                updated_graph.add_track(first_station, clicked_station, vec![Track { direction: TrackDirection::Bidirectional }]);
                                 set_graph.set(updated_graph);
                             }
                             set_selected_station.set(None);

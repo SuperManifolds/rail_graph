@@ -523,7 +523,14 @@ fn toggle_segment_double_track(
             let Some(weight) = graph.graph.edge_weight_mut(edge) else {
                 continue;
             };
-            weight.double_tracked = !weight.double_tracked;
+            // Toggle between single and double track
+            *weight = if weight.tracks.len() == 1 {
+                use crate::models::TrackSegment;
+                TrackSegment::new_double_track()
+            } else {
+                use crate::models::TrackSegment;
+                TrackSegment::new_single_track()
+            };
         }
     });
 }

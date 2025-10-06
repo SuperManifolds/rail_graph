@@ -77,21 +77,21 @@ pub fn draw_double_track_indicators(
         let station1 = &stations[segment_idx - 1];
         let station2 = &stations[segment_idx];
 
-        // Check if there's a double-tracked edge between these stations
-        let is_double_tracked = if let (Some(node1), Some(node2)) =
+        // Check if there's a multi-tracked edge between these stations
+        let has_multiple_tracks = if let (Some(node1), Some(node2)) =
             (graph.get_station_index(&station1.name), graph.get_station_index(&station2.name)) {
 
             // Check both directions for an edge
             graph.graph.edges(node1).any(|e| {
-                e.target() == node2 && e.weight().double_tracked
+                e.target() == node2 && e.weight().tracks.len() >= 2
             }) || graph.graph.edges(node2).any(|e| {
-                e.target() == node1 && e.weight().double_tracked
+                e.target() == node1 && e.weight().tracks.len() >= 2
             })
         } else {
             false
         };
 
-        if is_double_tracked {
+        if has_multiple_tracks {
             // Calculate the Y positions for the two stations
             let station1_y = calculate_station_y(dims, segment_idx - 1, station_height);
             let station2_y = calculate_station_y(dims, segment_idx, station_height);

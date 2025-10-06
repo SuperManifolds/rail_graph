@@ -315,6 +315,7 @@ pub fn StopsTab(
 
                                                                             updated_line.route.insert(0, crate::models::RouteSegment {
                                                                                 edge_index: edge.index(),
+                                                                                track_index: 0,
                                                                                 duration: Duration::minutes(5),
                                                                                 wait_time: default_wait,
                                                                             });
@@ -386,6 +387,7 @@ pub fn StopsTab(
 
                                                                             updated_line.route.push(crate::models::RouteSegment {
                                                                                 edge_index: edge.index(),
+                                                                                track_index: 0,
                                                                                 duration: Duration::minutes(5),
                                                                                 wait_time: default_wait,
                                                                             });

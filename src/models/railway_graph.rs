@@ -12,9 +12,38 @@ pub struct StationNode {
     pub passing_loop: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum TrackDirection {
+    Bidirectional,
+    Forward,    // From source to target only
+    Backward,   // From target to source only
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Track {
+    pub direction: TrackDirection,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackSegment {
-    pub double_tracked: bool,
+    pub tracks: Vec<Track>,
+}
+
+impl TrackSegment {
+    pub fn new_single_track() -> Self {
+        Self {
+            tracks: vec![Track { direction: TrackDirection::Bidirectional }],
+        }
+    }
+
+    pub fn new_double_track() -> Self {
+        Self {
+            tracks: vec![
+                Track { direction: TrackDirection::Forward },
+                Track { direction: TrackDirection::Backward },
+            ],
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,8 +92,8 @@ impl RailwayGraph {
     }
 
     /// Add a track segment between two stations, returns the EdgeIndex
-    pub fn add_track(&mut self, from: NodeIndex, to: NodeIndex, double_tracked: bool) -> petgraph::graph::EdgeIndex {
-        self.graph.add_edge(from, to, TrackSegment { double_tracked })
+    pub fn add_track(&mut self, from: NodeIndex, to: NodeIndex, tracks: Vec<Track>) -> petgraph::graph::EdgeIndex {
+        self.graph.add_edge(from, to, TrackSegment { tracks })
     }
 
     /// Get track segment by edge index
@@ -99,8 +128,8 @@ impl RailwayGraph {
     }
 
     /// Find stations connected through a given station
-    /// Returns a Vec of (station_before, station_after, double_tracked) tuples
-    pub fn find_connections_through_station(&self, station_idx: NodeIndex) -> Vec<(NodeIndex, NodeIndex, bool)> {
+    /// Returns a Vec of (station_before, station_after, tracks) tuples
+    pub fn find_connections_through_station(&self, station_idx: NodeIndex) -> Vec<(NodeIndex, NodeIndex, Vec<Track>)> {
         use petgraph::visit::EdgeRef;
         use petgraph::Direction;
 
@@ -108,20 +137,21 @@ impl RailwayGraph {
 
         // Get incoming edges (edges pointing to this station)
         let incoming: Vec<_> = self.graph.edges_directed(station_idx, Direction::Incoming)
-            .map(|e| (e.source(), e.weight().double_tracked))
+            .map(|e| (e.source(), &e.weight().tracks))
             .collect();
 
         // Get outgoing edges (edges from this station)
         let outgoing: Vec<_> = self.graph.edges(station_idx)
-            .map(|e| (e.target(), e.weight().double_tracked))
+            .map(|e| (e.target(), &e.weight().tracks))
             .collect();
 
         // Create connections from each incoming station to each outgoing station
-        for (from_station, from_double) in &incoming {
-            for (to_station, to_double) in &outgoing {
-                // Use double_tracked if either segment was double tracked
-                let double_tracked = *from_double || *to_double;
-                connections.push((*from_station, *to_station, double_tracked));
+        for (from_station, from_tracks) in &incoming {
+            for (to_station, to_tracks) in &outgoing {
+                // Use the max number of tracks from either segment
+                let track_count = from_tracks.len().max(to_tracks.len());
+                let tracks = (0..track_count).map(|_| Track { direction: TrackDirection::Bidirectional }).collect();
+                connections.push((*from_station, *to_station, tracks));
             }
         }
 
@@ -137,7 +167,7 @@ impl RailwayGraph {
         // Create bypass edges and track the mapping
         let mut bypass_mapping = std::collections::HashMap::new();
 
-        for (from_station, to_station, double_tracked) in connections {
+        for (from_station, to_station, tracks) in connections {
             // Find the incoming and outgoing edges for this connection
             use petgraph::visit::EdgeRef;
             use petgraph::Direction;
@@ -151,7 +181,7 @@ impl RailwayGraph {
                 .map(|e| e.id().index());
 
             if let (Some(edge1), Some(edge2)) = (incoming_edge, outgoing_edge) {
-                let new_edge = self.add_track(from_station, to_station, double_tracked);
+                let new_edge = self.add_track(from_station, to_station, tracks);
                 bypass_mapping.insert((edge1, edge2), new_edge.index());
             }
         }

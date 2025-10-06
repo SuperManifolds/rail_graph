@@ -64,15 +64,15 @@ pub fn draw_segment_toggles(
         let station1 = &stations[i - 1];
         let station2 = &stations[i];
 
-        // Check if there's a double-tracked edge between these stations
-        let is_double_tracked = if let (Some(node1), Some(node2)) =
+        // Check if there's a multi-tracked edge between these stations
+        let has_multiple_tracks = if let (Some(node1), Some(node2)) =
             (graph.get_station_index(&station1.name), graph.get_station_index(&station2.name)) {
 
             // Check both directions for an edge
             graph.graph.edges(node1).any(|e| {
-                e.target() == node2 && e.weight().double_tracked
+                e.target() == node2 && e.weight().tracks.len() >= 2
             }) || graph.graph.edges(node2).any(|e| {
-                e.target() == node1 && e.weight().double_tracked
+                e.target() == node1 && e.weight().tracks.len() >= 2
             })
         } else {
             false
@@ -87,7 +87,7 @@ pub fn draw_segment_toggles(
         // Only draw if visible
         if adjusted_y >= dims.top_margin && adjusted_y <= dims.top_margin + dims.graph_height {
             // Draw background
-            let bg_color = if is_double_tracked {
+            let bg_color = if has_multiple_tracks {
                 TOGGLE_DOUBLE_TRACK_BG
             } else {
                 TOGGLE_SINGLE_TRACK_BG
@@ -113,7 +113,7 @@ pub fn draw_segment_toggles(
             // Draw icon
             ctx.set_fill_style_str(TOGGLE_ICON_COLOR);
             ctx.set_font(TOGGLE_ICON_FONT);
-            let icon = if is_double_tracked {
+            let icon = if has_multiple_tracks {
                 TOGGLE_DOUBLE_TRACK_ICON
             } else {
                 TOGGLE_SINGLE_TRACK_ICON

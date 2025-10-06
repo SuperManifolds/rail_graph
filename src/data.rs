@@ -121,7 +121,10 @@ fn build_graph_and_routes_from_csv(
 
             // Check if edge already exists, or create new track segment (initially single-tracked)
             let edge_idx = *edge_map.entry((prev_idx, station_idx))
-                .or_insert_with(|| graph.add_track(prev_idx, station_idx, false));
+                .or_insert_with(|| {
+                    use crate::models::{Track, TrackDirection};
+                    graph.add_track(prev_idx, station_idx, vec![Track { direction: TrackDirection::Bidirectional }])
+                });
 
             // Passing loops have 0 wait time
             let station_wait_time = if is_passing_loop {
@@ -133,6 +136,7 @@ fn build_graph_and_routes_from_csv(
             // Add to this line's route
             route.push(RouteSegment {
                 edge_index: edge_idx.index(),
+                track_index: 0,
                 duration: travel_time,
                 wait_time: station_wait_time,
             });

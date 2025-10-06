@@ -208,9 +208,9 @@ fn check_segment_pair(
     let is_overtaking = (segment1.idx_start < segment1.idx_end && segment2.idx_start < segment2.idx_end)
         || (segment1.idx_start > segment1.idx_end && segment2.idx_start > segment2.idx_end);
 
-    // Double-tracked segments only prevent crossing conflicts, not overtaking
+    // Multi-tracked segments only prevent crossing conflicts, not overtaking
     if !is_overtaking
-        && is_segment_double_tracked(ctx, seg1_min, seg1_max) {
+        && has_multiple_tracks(ctx, seg1_min, seg1_max) {
             return;
         }
 
@@ -225,8 +225,8 @@ fn check_segment_pair(
     });
 }
 
-/// Check if a segment between two station indices is double-tracked
-fn is_segment_double_tracked(ctx: &ConflictContext, idx1: usize, idx2: usize) -> bool {
+/// Check if a segment between two station indices has multiple tracks
+fn has_multiple_tracks(ctx: &ConflictContext, idx1: usize, idx2: usize) -> bool {
     // Get station names from indices
     let station1 = &ctx.stations[idx1];
     let station2 = &ctx.stations[idx2];
@@ -242,13 +242,13 @@ fn is_segment_double_tracked(ctx: &ConflictContext, idx1: usize, idx2: usize) ->
     // Check both directions for an edge
     for edge in ctx.graph.graph.edges(node1) {
         if edge.target() == node2 {
-            return edge.weight().double_tracked;
+            return edge.weight().tracks.len() >= 2;
         }
     }
 
     for edge in ctx.graph.graph.edges(node2) {
         if edge.target() == node1 {
-            return edge.weight().double_tracked;
+            return edge.weight().tracks.len() >= 2;
         }
     }
 
