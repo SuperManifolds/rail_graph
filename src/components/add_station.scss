@@ -78,6 +78,16 @@
                     background-color: #3a8eef;
                 }
             }
+
+            &.danger {
+                background-color: #dc3545;
+                border-color: #dc3545;
+                color: #fff;
+
+                &:hover {
+                    background-color: #c82333;
+                }
+            }
         }
     }
 }

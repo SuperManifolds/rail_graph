@@ -1,8 +1,11 @@
-use crate::models::RailwayGraph;
+use crate::models::{RailwayGraph, Line};
 use crate::components::infrastructure_canvas::{auto_layout, station_renderer, track_renderer};
 use crate::components::add_station::AddStation;
+use crate::components::delete_station_confirmation::DeleteStationConfirmation;
+use crate::components::edit_station::EditStation;
 use leptos::*;
 use petgraph::graph::NodeIndex;
+use petgraph::visit::EdgeRef;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, MouseEvent, WheelEvent};
@@ -17,12 +20,23 @@ enum EditMode {
 pub fn InfrastructureView(
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<Line>>,
+    set_lines: WriteSignal<Vec<Line>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (auto_layout_enabled, set_auto_layout_enabled) = create_signal(true);
     let (edit_mode, set_edit_mode) = create_signal(EditMode::None);
     let (selected_station, set_selected_station) = create_signal(None::<NodeIndex>);
     let (show_add_station, set_show_add_station) = create_signal(false);
+    let (editing_station, set_editing_station) = create_signal(None::<NodeIndex>);
+    let (show_delete_confirmation, set_show_delete_confirmation) = create_signal(false);
+    let (station_to_delete, set_station_to_delete) = create_signal(None::<NodeIndex>);
+    let (delete_affected_lines, set_delete_affected_lines) = create_signal(Vec::<String>::new());
+    let (delete_station_name, set_delete_station_name) = create_signal(String::new());
+    let (is_over_station, set_is_over_station) = create_signal(false);
+    let (is_over_edited_station, set_is_over_edited_station) = create_signal(false);
+    let (dragging_station, set_dragging_station) = create_signal(None::<NodeIndex>);
+    let (drag_start_pos, set_drag_start_pos) = create_signal((0.0, 0.0));
 
     // Zoom and pan state
     let (zoom_level, set_zoom_level) = create_signal(1.0);
@@ -98,6 +112,70 @@ pub fn InfrastructureView(
         set_show_add_station.set(false);
     });
 
+    let handle_edit_station = Rc::new(move |station_idx: NodeIndex, new_name: String, passing_loop: bool| {
+        let mut current_graph = graph.get();
+
+        // Update the station name in the node
+        if let Some(node) = current_graph.graph.node_weight_mut(station_idx) {
+            let old_name = node.name.clone();
+            node.name = new_name.clone();
+            node.passing_loop = passing_loop;
+
+            // Update the name mapping
+            current_graph.station_name_to_index.remove(&old_name);
+            current_graph.station_name_to_index.insert(new_name, station_idx);
+        }
+
+        set_graph.set(current_graph);
+        set_editing_station.set(None);
+    });
+
+    let handle_delete_station = Rc::new(move |station_idx: NodeIndex| {
+        let current_graph = graph.get();
+        let current_lines = lines.get();
+
+        // Get edges connected to this station
+        let station_edges = current_graph.get_station_edges(station_idx);
+
+        // Find which lines are affected
+        let affected: Vec<String> = current_lines
+            .iter()
+            .filter(|line| {
+                line.route.iter().any(|segment| station_edges.contains(&segment.edge_index))
+            })
+            .map(|line| line.id.clone())
+            .collect();
+
+        // Store state for the confirmation dialog
+        set_delete_affected_lines.set(affected);
+        set_station_to_delete.set(Some(station_idx));
+        if let Some(name) = current_graph.get_station_name(station_idx) {
+            set_delete_station_name.set(name.to_string());
+        }
+        set_show_delete_confirmation.set(true);
+        set_editing_station.set(None);
+    });
+
+    let confirm_delete_station = Rc::new(move || {
+        let Some(station_idx) = station_to_delete.get() else { return };
+
+        let mut current_graph = graph.get();
+        let mut current_lines = lines.get();
+
+        // Delete the station and get removed edges + bypass mapping
+        let (removed_edges, bypass_mapping) = current_graph.delete_station(station_idx);
+
+        // Update all lines using the model method
+        for line in &mut current_lines {
+            line.update_route_after_deletion(&removed_edges, &bypass_mapping);
+        }
+
+        set_graph.set(current_graph);
+        set_lines.set(current_lines);
+        set_show_delete_confirmation.set(false);
+        set_station_to_delete.set(None);
+    });
+
     // Re-render when graph or viewport changes
     create_effect(move |_| {
         let current_graph = graph.get();
@@ -170,10 +248,17 @@ pub fn InfrastructureView(
                     }
                 }
                 EditMode::None => {
-                    // Pan mode
-                    if ev.button() == 2 || ev.ctrl_key() || ev.button() == 0 {
-                        set_is_panning.set(true);
-                        set_last_mouse_pos.set((screen_x, screen_y));
+                    let current_graph = graph.get();
+                    if let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) {
+                        if Some(clicked_station) == editing_station.get() && !auto_layout_enabled.get() {
+                            set_dragging_station.set(Some(clicked_station));
+                            set_drag_start_pos.set((world_x, world_y));
+                        }
+                    } else {
+                        if ev.button() == 2 || ev.ctrl_key() || ev.button() == 0 {
+                            set_is_panning.set(true);
+                            set_last_mouse_pos.set((screen_x, screen_y));
+                        }
                     }
                 }
             }
@@ -200,16 +285,67 @@ pub fn InfrastructureView(
                     set_pan_offset_y.set(current_pan_y + dy);
                     set_last_mouse_pos.set((x, y));
                 });
+            } else if let Some(station_idx) = dragging_station.get() {
+                // Dragging a station
+                let zoom = zoom_level.get();
+                let pan_x = pan_offset_x.get();
+                let pan_y = pan_offset_y.get();
+                let world_x = (x - pan_x) / zoom;
+                let world_y = (y - pan_y) / zoom;
+
+                let mut current_graph = graph.get();
+                current_graph.set_station_position(station_idx, (world_x, world_y));
+                set_graph.set(current_graph);
+            } else {
+                // Check if mouse is over a station
+                let zoom = zoom_level.get();
+                let pan_x = pan_offset_x.get();
+                let pan_y = pan_offset_y.get();
+                let world_x = (x - pan_x) / zoom;
+                let world_y = (y - pan_y) / zoom;
+
+                let current_graph = graph.get();
+                if let Some(hovered_station) = find_station_at_position(&current_graph, world_x, world_y) {
+                    // Check if we're hovering over the currently edited station
+                    let is_editing_this = Some(hovered_station) == editing_station.get();
+                    set_is_over_station.set(true);
+                    set_is_over_edited_station.set(is_editing_this);
+                } else {
+                    set_is_over_station.set(false);
+                    set_is_over_edited_station.set(false);
+                }
             }
         }
     };
 
     let handle_mouse_up = move |_ev: MouseEvent| {
         set_is_panning.set(false);
+        set_dragging_station.set(None);
+    };
+
+    let handle_double_click = move |ev: MouseEvent| {
+        if let Some(canvas_elem) = canvas_ref.get() {
+            let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
+            let rect = canvas.get_bounding_client_rect();
+            let screen_x = ev.client_x() as f64 - rect.left();
+            let screen_y = ev.client_y() as f64 - rect.top();
+
+            let zoom = zoom_level.get();
+            let pan_x = pan_offset_x.get();
+            let pan_y = pan_offset_y.get();
+            let world_x = (screen_x - pan_x) / zoom;
+            let world_y = (screen_y - pan_y) / zoom;
+
+            let current_graph = graph.get();
+            if let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) {
+                set_editing_station.set(Some(clicked_station));
+            }
+        }
     };
 
     let handle_mouse_leave = move |_ev: MouseEvent| {
         set_is_panning.set(false);
+        set_dragging_station.set(None);
     };
 
     let handle_wheel = move |ev: WheelEvent| {
@@ -282,12 +418,25 @@ pub fn InfrastructureView(
                     on:mousemove=handle_mouse_move
                     on:mouseup=handle_mouse_up
                     on:mouseleave=handle_mouse_leave
+                    on:dblclick=handle_double_click
                     on:wheel=handle_wheel
                     on:contextmenu=|ev| ev.prevent_default()
                     style=move || {
-                        match edit_mode.get() {
-                            EditMode::AddingTrack => "cursor: pointer;",
-                            EditMode::None => "cursor: grab;",
+                        if dragging_station.get().is_some() {
+                            "cursor: grabbing;"
+                        } else {
+                            match edit_mode.get() {
+                                EditMode::AddingTrack => "cursor: pointer;",
+                                EditMode::None => {
+                                    if is_over_edited_station.get() && !auto_layout_enabled.get() {
+                                        "cursor: grab;"
+                                    } else if is_over_station.get() {
+                                        "cursor: pointer;"
+                                    } else {
+                                        "cursor: grab;"
+                                    }
+                                }
+                            }
                         }
                     }
                 />
@@ -298,6 +447,22 @@ pub fn InfrastructureView(
                 on_close=Rc::new(move || set_show_add_station.set(false))
                 on_add=handle_add_station
                 graph=graph
+            />
+
+            <EditStation
+                editing_station=editing_station
+                on_close=Rc::new(move || set_editing_station.set(None))
+                on_save=handle_edit_station
+                on_delete=handle_delete_station
+                graph=graph
+            />
+
+            <DeleteStationConfirmation
+                is_open=show_delete_confirmation
+                station_name=delete_station_name
+                affected_lines=delete_affected_lines
+                on_cancel=Rc::new(move || set_show_delete_confirmation.set(false))
+                on_confirm=confirm_delete_station
             />
         </div>
     }

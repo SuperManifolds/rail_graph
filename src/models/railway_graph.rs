@@ -84,6 +84,89 @@ impl RailwayGraph {
         self.station_name_to_index.get(name).copied()
     }
 
+    /// Get all edge indices connected to a station
+    pub fn get_station_edges(&self, index: NodeIndex) -> Vec<usize> {
+        use petgraph::visit::EdgeRef;
+        use petgraph::Direction;
+
+        self.graph.edges(index)
+            .map(|e| e.id().index())
+            .chain(self.graph.edges_directed(index, Direction::Incoming).map(|e| e.id().index()))
+            .collect()
+    }
+
+    /// Find stations connected through a given station
+    /// Returns a Vec of (station_before, station_after, double_tracked) tuples
+    pub fn find_connections_through_station(&self, station_idx: NodeIndex) -> Vec<(NodeIndex, NodeIndex, bool)> {
+        use petgraph::visit::EdgeRef;
+        use petgraph::Direction;
+
+        let mut connections = Vec::new();
+
+        // Get incoming edges (edges pointing to this station)
+        let incoming: Vec<_> = self.graph.edges_directed(station_idx, Direction::Incoming)
+            .map(|e| (e.source(), e.weight().double_tracked))
+            .collect();
+
+        // Get outgoing edges (edges from this station)
+        let outgoing: Vec<_> = self.graph.edges(station_idx)
+            .map(|e| (e.target(), e.weight().double_tracked))
+            .collect();
+
+        // Create connections from each incoming station to each outgoing station
+        for (from_station, from_double) in &incoming {
+            for (to_station, to_double) in &outgoing {
+                // Use double_tracked if either segment was double tracked
+                let double_tracked = *from_double || *to_double;
+                connections.push((*from_station, *to_station, double_tracked));
+            }
+        }
+
+        connections
+    }
+
+    /// Delete a station and reconnect around it
+    /// Returns (removed_edges, bypass_mapping) where bypass_mapping maps (old_edge1, old_edge2) -> new_edge
+    pub fn delete_station(&mut self, index: NodeIndex) -> (Vec<usize>, std::collections::HashMap<(usize, usize), usize>) {
+        // Find connections through this station to create bypass edges
+        let connections = self.find_connections_through_station(index);
+
+        // Create bypass edges and track the mapping
+        let mut bypass_mapping = std::collections::HashMap::new();
+
+        for (from_station, to_station, double_tracked) in connections {
+            // Find the incoming and outgoing edges for this connection
+            use petgraph::visit::EdgeRef;
+            use petgraph::Direction;
+
+            let incoming_edge = self.graph.edges_directed(index, Direction::Incoming)
+                .find(|e| e.source() == from_station)
+                .map(|e| e.id().index());
+
+            let outgoing_edge = self.graph.edges(index)
+                .find(|e| e.target() == to_station)
+                .map(|e| e.id().index());
+
+            if let (Some(edge1), Some(edge2)) = (incoming_edge, outgoing_edge) {
+                let new_edge = self.add_track(from_station, to_station, double_tracked);
+                bypass_mapping.insert((edge1, edge2), new_edge.index());
+            }
+        }
+
+        // Get edges that will be removed
+        let removed_edges = self.get_station_edges(index);
+
+        // Remove station from name mapping
+        if let Some(station) = self.graph.node_weight(index) {
+            self.station_name_to_index.remove(&station.name);
+        }
+
+        // Remove the station node (this also removes all connected edges)
+        self.graph.remove_node(index);
+
+        (removed_edges, bypass_mapping)
+    }
+
     /// Get all stations in order by traversing the graph
     /// Performs a breadth-first traversal starting from the first station
     pub fn get_all_stations_ordered(&self) -> Vec<StationNode> {

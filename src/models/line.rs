@@ -114,6 +114,54 @@ impl Line {
             })
             .collect()
     }
+
+    /// Update route after station deletion with bypass edges
+    /// removed_edges: edges that were removed
+    /// bypass_mapping: maps (old_edge1, old_edge2) -> new_bypass_edge
+    pub fn update_route_after_deletion(
+        &mut self,
+        removed_edges: &[usize],
+        bypass_mapping: &std::collections::HashMap<(usize, usize), usize>,
+    ) {
+        let mut new_route = Vec::new();
+        let mut i = 0;
+
+        while i < self.route.len() {
+            let segment = &self.route[i];
+
+            // If this segment uses a removed edge
+            if removed_edges.contains(&segment.edge_index) {
+                // Look ahead to find the next segment
+                if i + 1 < self.route.len() {
+                    let next_segment = &self.route[i + 1];
+
+                    // Check if we have a bypass edge for this pair
+                    if let Some(&bypass_edge_idx) = bypass_mapping.get(&(segment.edge_index, next_segment.edge_index)) {
+                        // Combine durations (travel time + wait time at deleted station + next travel time)
+                        let combined_duration = segment.duration + segment.wait_time + next_segment.duration;
+
+                        new_route.push(RouteSegment {
+                            edge_index: bypass_edge_idx,
+                            duration: combined_duration,
+                            wait_time: next_segment.wait_time,
+                        });
+
+                        i += 2; // Skip both segments
+                        continue;
+                    }
+                }
+
+                // If we can't create a bypass, skip this segment
+                i += 1;
+            } else {
+                // Keep segments that don't use removed edges
+                new_route.push(segment.clone());
+                i += 1;
+            }
+        }
+
+        self.route = new_route;
+    }
 }
 
 mod duration_serde {

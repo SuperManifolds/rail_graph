@@ -98,7 +98,7 @@ pub fn App() -> impl IntoView {
                         <TimeGraph lines=lines set_lines=set_lines graph=graph set_graph=set_graph />
                     }.into_view(),
                     AppView::Infrastructure => view! {
-                        <InfrastructureView graph=graph set_graph=set_graph />
+                        <InfrastructureView graph=graph set_graph=set_graph lines=lines set_lines=set_lines />
                     }.into_view(),
                 }}
             </Show>
