@@ -250,7 +250,7 @@ pub fn InfrastructureView(
                 EditMode::None => {
                     let current_graph = graph.get();
                     if let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) {
-                        if Some(clicked_station) == editing_station.get() && !auto_layout_enabled.get() {
+                        if Some(clicked_station) == editing_station.get() {
                             set_dragging_station.set(Some(clicked_station));
                             set_drag_start_pos.set((world_x, world_y));
                         }
@@ -320,7 +320,29 @@ pub fn InfrastructureView(
 
     let handle_mouse_up = move |_ev: MouseEvent| {
         set_is_panning.set(false);
-        set_dragging_station.set(None);
+
+        // If we were dragging and auto layout is on, snap to nearest 45-degree angle
+        if let Some(station_idx) = dragging_station.get() {
+            if auto_layout_enabled.get() {
+                if let Some(canvas_elem) = canvas_ref.get() {
+                    let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
+                    let rect = canvas.get_bounding_client_rect();
+                    let x = _ev.client_x() as f64 - rect.left();
+                    let y = _ev.client_y() as f64 - rect.top();
+
+                    let zoom = zoom_level.get();
+                    let pan_x = pan_offset_x.get();
+                    let pan_y = pan_offset_y.get();
+                    let world_x = (x - pan_x) / zoom;
+                    let world_y = (y - pan_y) / zoom;
+
+                    let mut current_graph = graph.get();
+                    auto_layout::snap_to_angle(&mut current_graph, station_idx, world_x, world_y);
+                    set_graph.set(current_graph);
+                }
+            }
+            set_dragging_station.set(None);
+        }
     };
 
     let handle_double_click = move |ev: MouseEvent| {
@@ -428,7 +450,7 @@ pub fn InfrastructureView(
                             match edit_mode.get() {
                                 EditMode::AddingTrack => "cursor: pointer;",
                                 EditMode::None => {
-                                    if is_over_edited_station.get() && !auto_layout_enabled.get() {
+                                    if is_over_edited_station.get() {
                                         "cursor: grab;"
                                     } else if is_over_station.get() {
                                         "cursor: pointer;"
