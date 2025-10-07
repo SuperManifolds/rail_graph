@@ -37,7 +37,6 @@ pub fn AddStation(
             is_open=is_open
             title=Signal::derive(|| "Add New Station".to_string())
             on_close=move || on_close_clone()
-            initial_size=(400.0, 300.0)
         >
             <div class="add-station-form">
                 <div class="form-field">

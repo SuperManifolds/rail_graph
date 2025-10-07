@@ -10,7 +10,7 @@ pub fn Window(
     title: Signal<String>,
     on_close: impl Fn() + 'static,
     children: Children,
-    #[prop(default = (600.0, 500.0))] initial_size: (f64, f64),
+    #[prop(default = (1600.0, 1200.0))] max_size: (f64, f64),
 ) -> impl IntoView {
     // Random offset so windows don't stack exactly on top of each other
     // Use store_value to ensure this is only calculated once
@@ -23,25 +23,60 @@ pub fn Window(
     let (position, set_position) = create_signal(initial_position.get_value());
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (drag_offset, set_drag_offset) = create_signal((0.0, 0.0));
-    let (size, set_size) = create_signal(initial_size);
+    let (size, set_size) = create_signal((400.0, 300.0)); // Initial size, will be auto-adjusted
     let (is_resizing, set_is_resizing) = create_signal(false);
     let (resize_start, set_resize_start) = create_signal((0.0, 0.0));
     let (z_index, set_z_index) = create_signal(NEXT_Z_INDEX.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+    let content_ref = create_node_ref::<html::Div>();
+    let (resize_trigger, set_resize_trigger) = create_signal(0u32);
 
     let on_close = store_value(on_close);
+
+    // Provide context before children are created
+    provide_context(set_resize_trigger);
     let children = store_value(children());
 
     let bring_to_front = move || {
         set_z_index.set(NEXT_Z_INDEX.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
     };
 
-    // Bring window to front when it opens
+    // Auto-size function that can be called on demand
+    let auto_size = move || {
+        if let Some(content_el) = content_ref.get() {
+            let _ = leptos::set_timeout(
+                move || {
+                    let content_width = content_el.scroll_width() as f64;
+                    let content_height = content_el.scroll_height() as f64;
+
+                    let header_height = 45.0;
+                    let padding = 20.0;
+
+                    let target_width = (content_width + padding).min(max_size.0).max(250.0);
+                    let target_height = (content_height + header_height + padding).min(max_size.1).max(200.0);
+
+                    set_size.set((target_width, target_height));
+                },
+                std::time::Duration::from_millis(10),
+            );
+        }
+    };
+
+    // Bring window to front when it opens and auto-size to content
     create_effect(move |prev_open| {
         let currently_open = is_open.get();
         if currently_open && prev_open != Some(true) {
             bring_to_front();
+            auto_size();
         }
         currently_open
+    });
+
+    // Watch for resize trigger changes and auto-size
+    create_effect(move |_| {
+        let _ = resize_trigger.get(); // Track changes
+        if is_open.get() {
+            auto_size();
+        }
     });
 
     let handle_mouse_down = move |ev: web_sys::MouseEvent| {
@@ -132,7 +167,7 @@ pub fn Window(
                     <button class="close-button" on:click=move |_| on_close.with_value(|f| f())>"×"</button>
                 </div>
 
-                <div class="window-content">
+                <div class="window-content" node_ref=content_ref>
                     {children.with_value(|c| c.clone())}
                 </div>
 

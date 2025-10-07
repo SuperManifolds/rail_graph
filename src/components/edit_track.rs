@@ -109,7 +109,6 @@ pub fn EditTrack(
             is_open=is_open
             title=Signal::derive(|| "Edit Track".to_string())
             on_close=move || on_close_clone()
-            initial_size=(450.0, 450.0)
         >
             <div class="add-station-form">
                 <div class="track-stations">

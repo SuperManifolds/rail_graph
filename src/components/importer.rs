@@ -108,7 +108,6 @@ pub fn Importer(
             is_open=show_dialog
             title=Signal::derive(|| "Import Settings".to_string())
             on_close=move || set_show_dialog.set(false)
-            initial_size=(500.0, 400.0)
         >
             <p>"Set station wait time for each line (deducted from travel time)"</p>
             <div class="import-settings-list">

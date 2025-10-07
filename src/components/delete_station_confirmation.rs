@@ -17,7 +17,6 @@ pub fn DeleteStationConfirmation(
             is_open=is_open
             title=Signal::derive(|| "Delete Station".to_string())
             on_close=move || on_cancel_clone()
-            initial_size=(450.0, 300.0)
         >
             <div class="delete-confirmation">
                 <p class="warning-message">

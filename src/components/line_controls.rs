@@ -94,7 +94,6 @@ pub fn LineControls(
             is_open=Signal::derive(move || delete_pending.get().is_some())
             title=Signal::derive(|| "Delete Line".to_string())
             on_close=move || set_delete_pending.set(None)
-            initial_size=(400.0, 200.0)
         >
             <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1.5rem;">
                 <p style="color: #ccc; margin: 0;">

@@ -12,6 +12,18 @@ pub fn TabView(
     #[prop(into)] active_tab: RwSignal<String>,
     children: Children,
 ) -> impl IntoView {
+    // Try to get the window resize trigger from context
+    let maybe_trigger_resize = use_context::<WriteSignal<u32>>();
+
+    // Watch for tab changes and trigger window resize
+    create_effect(move |_| {
+        let _ = active_tab.get(); // Track tab changes
+        if let Some(trigger) = maybe_trigger_resize {
+            // Increment the trigger to signal a resize
+            trigger.update(|v| *v = v.wrapping_add(1));
+        }
+    });
+
     view! {
         <div class="tab-view">
             <div class="tab-header">

@@ -49,7 +49,6 @@ pub fn EditStation(
             is_open=is_open
             title=Signal::derive(|| "Edit Station".to_string())
             on_close=move || on_close_clone()
-            initial_size=(400.0, 250.0)
         >
             <div class="add-station-form">
                 <div class="form-field">
