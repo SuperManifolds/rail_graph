@@ -8,6 +8,7 @@ use leptos::*;
 use petgraph::graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::EdgeRef;
 use std::rc::Rc;
+use std::collections::HashMap;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, MouseEvent, WheelEvent};
 
@@ -37,6 +38,7 @@ pub fn InfrastructureView(
     let (delete_station_name, set_delete_station_name) = create_signal(String::new());
     let (is_over_station, set_is_over_station) = create_signal(false);
     let (is_over_edited_station, set_is_over_edited_station) = create_signal(false);
+    let (is_over_track, set_is_over_track) = create_signal(false);
     let (dragging_station, set_dragging_station) = create_signal(None::<NodeIndex>);
     let (drag_start_pos, set_drag_start_pos) = create_signal((0.0, 0.0));
 
@@ -340,7 +342,7 @@ pub fn InfrastructureView(
                 current_graph.set_station_position(station_idx, (world_x, world_y));
                 set_graph.set(current_graph);
             } else {
-                // Check if mouse is over a station
+                // Check if mouse is over a station or track
                 let zoom = zoom_level.get();
                 let pan_x = pan_offset_x.get();
                 let pan_y = pan_offset_y.get();
@@ -353,9 +355,16 @@ pub fn InfrastructureView(
                     let is_editing_this = Some(hovered_station) == editing_station.get();
                     set_is_over_station.set(true);
                     set_is_over_edited_station.set(is_editing_this);
+                    set_is_over_track.set(false);
+                } else if find_track_at_position(&current_graph, world_x, world_y).is_some() {
+                    // Hovering over a track
+                    set_is_over_station.set(false);
+                    set_is_over_edited_station.set(false);
+                    set_is_over_track.set(true);
                 } else {
                     set_is_over_station.set(false);
                     set_is_over_edited_station.set(false);
+                    set_is_over_track.set(false);
                 }
             }
         }
@@ -415,6 +424,9 @@ pub fn InfrastructureView(
     let handle_mouse_leave = move |_ev: MouseEvent| {
         set_is_panning.set(false);
         set_dragging_station.set(None);
+        set_is_over_station.set(false);
+        set_is_over_edited_station.set(false);
+        set_is_over_track.set(false);
     };
 
     let handle_wheel = move |ev: WheelEvent| {
@@ -499,7 +511,7 @@ pub fn InfrastructureView(
                                 EditMode::None => {
                                     if is_over_edited_station.get() {
                                         "cursor: grab;"
-                                    } else if is_over_station.get() {
+                                    } else if is_over_station.get() || is_over_track.get() {
                                         "cursor: pointer;"
                                     } else {
                                         "cursor: grab;"
@@ -599,40 +611,60 @@ fn find_station_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<Node
     None
 }
 
+fn distance_to_segment(point: (f64, f64), seg_start: (f64, f64), seg_end: (f64, f64)) -> f64 {
+    let dx = seg_end.0 - seg_start.0;
+    let dy = seg_end.1 - seg_start.1;
+    let len_sq = dx * dx + dy * dy;
+
+    if len_sq == 0.0 {
+        // Degenerate segment
+        let dx = point.0 - seg_start.0;
+        let dy = point.1 - seg_start.1;
+        return (dx * dx + dy * dy).sqrt();
+    }
+
+    // Calculate projection parameter t
+    let t = ((point.0 - seg_start.0) * dx + (point.1 - seg_start.1) * dy) / len_sq;
+    let t = t.clamp(0.0, 1.0);
+
+    // Find closest point on segment
+    let closest_x = seg_start.0 + t * dx;
+    let closest_y = seg_start.1 + t * dy;
+
+    // Calculate distance
+    let dist_x = point.0 - closest_x;
+    let dist_y = point.1 - closest_y;
+    (dist_x * dist_x + dist_y * dist_y).sqrt()
+}
+
 fn find_track_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<EdgeIndex> {
     const CLICK_THRESHOLD: f64 = 8.0;
 
+    // Build a mapping from segments to edge indices
+    // For each edge, get its actual rendered segments (including avoidance paths)
+    let mut edge_segments: HashMap<EdgeIndex, Vec<((f64, f64), (f64, f64))>> = HashMap::new();
+
+    // Use same logic as track renderer to get actual segments
     for edge in graph.graph.edge_references() {
+        let edge_id = edge.id();
         let source = edge.source();
         let target = edge.target();
 
         let Some(pos1) = graph.get_station_position(source) else { continue };
         let Some(pos2) = graph.get_station_position(target) else { continue };
 
-        // Calculate distance from point to line segment
-        let dx = pos2.0 - pos1.0;
-        let dy = pos2.1 - pos1.1;
-        let len_sq = dx * dx + dy * dy;
+        // Check if we need avoidance (using same logic as track_renderer)
+        let segments = track_renderer::get_segments_for_edge(graph, source, target, pos1, pos2);
+        edge_segments.insert(edge_id, segments);
+    }
 
-        if len_sq == 0.0 {
-            continue;
-        }
-
-        // Calculate projection of point onto line
-        let t = ((x - pos1.0) * dx + (y - pos1.1) * dy) / len_sq;
-        let t = t.clamp(0.0, 1.0);
-
-        // Find closest point on line segment
-        let closest_x = pos1.0 + t * dx;
-        let closest_y = pos1.1 + t * dy;
-
-        // Calculate distance to closest point
-        let dist_x = x - closest_x;
-        let dist_y = y - closest_y;
-        let dist = (dist_x * dist_x + dist_y * dist_y).sqrt();
-
-        if dist <= CLICK_THRESHOLD {
-            return Some(edge.id());
+    // Check each segment for each edge
+    for (edge_id, segments) in edge_segments {
+        for (seg_start, seg_end) in segments {
+            let dist = distance_to_segment((x, y), seg_start, seg_end);
+            if dist <= CLICK_THRESHOLD {
+                return Some(edge_id);
+            }
         }
     }
 

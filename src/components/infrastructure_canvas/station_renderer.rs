@@ -1,4 +1,5 @@
 use crate::models::RailwayGraph;
+use crate::components::infrastructure_canvas::track_renderer;
 use web_sys::CanvasRenderingContext2d;
 use std::collections::HashMap;
 use petgraph::graph::NodeIndex;
@@ -146,15 +147,8 @@ pub fn draw_stations(
 ) {
     let font_size = 14.0 / zoom;
 
-    // Collect all track segments
-    let mut track_segments: Vec<((f64, f64), (f64, f64))> = Vec::new();
-    for edge in graph.graph.edge_references() {
-        let source = edge.source();
-        let target = edge.target();
-        if let (Some(pos1), Some(pos2)) = (graph.get_station_position(source), graph.get_station_position(target)) {
-            track_segments.push((pos1, pos2));
-        }
-    }
+    // Collect all track segments (including intermediate points for avoidance)
+    let track_segments = track_renderer::get_track_segments(graph);
 
     // First pass: draw all nodes and collect positions
     let mut node_positions: Vec<(NodeIndex, (f64, f64), f64)> = Vec::new();
