@@ -8,12 +8,13 @@ use std::rc::Rc;
 pub fn EditTrack(
     editing_track: ReadSignal<Option<EdgeIndex>>,
     on_close: Rc<dyn Fn()>,
-    on_save: Rc<dyn Fn(EdgeIndex, Vec<Track>)>,
+    on_save: Rc<dyn Fn(EdgeIndex, Vec<Track>, Option<f64>)>,
     on_delete: Rc<dyn Fn(EdgeIndex)>,
     graph: ReadSignal<RailwayGraph>,
     lines: ReadSignal<Vec<Line>>,
 ) -> impl IntoView {
     let (tracks, set_tracks) = create_signal(Vec::<Track>::new());
+    let (distance, set_distance) = create_signal(String::new());
     let (from_station_name, set_from_station_name) = create_signal(String::new());
     let (to_station_name, set_to_station_name) = create_signal(String::new());
     let (affected_lines, set_affected_lines) = create_signal(Vec::<String>::new());
@@ -26,6 +27,9 @@ pub fn EditTrack(
 
             if let Some(track_segment) = current_graph.graph.edge_weight(edge_idx) {
                 set_tracks.set(track_segment.tracks.clone());
+
+                // Load distance if available
+                set_distance.set(track_segment.distance.map(|d| d.to_string()).unwrap_or_default());
 
                 // Get station names
                 if let Some((from, to)) = current_graph.graph.edge_endpoints(edge_idx) {
@@ -56,7 +60,14 @@ pub fn EditTrack(
         if let Some(edge_idx) = editing_track.get() {
             let current_tracks = tracks.get();
             if !current_tracks.is_empty() {
-                on_save(edge_idx, current_tracks);
+                // Parse distance, treating empty string as None
+                let parsed_distance = distance.get()
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|d| *d > 0.0); // Only accept positive distances
+
+                on_save(edge_idx, current_tracks, parsed_distance);
             }
         }
     };
@@ -127,6 +138,16 @@ pub fn EditTrack(
                         view! {}.into_view()
                     }
                 }}
+
+                <div class="form-field">
+                    <label>"Distance (km, optional)"</label>
+                    <input
+                        type="text"
+                        placeholder="e.g., 5.2"
+                        value=move || distance.get()
+                        on:input=move |ev| set_distance.set(event_target_value(&ev))
+                    />
+                </div>
 
                 <div class="form-field">
                     <label>"Tracks"</label>

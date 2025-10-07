@@ -27,12 +27,15 @@ pub struct Track {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackSegment {
     pub tracks: Vec<Track>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distance: Option<f64>,
 }
 
 impl TrackSegment {
     pub fn new_single_track() -> Self {
         Self {
             tracks: vec![Track { direction: TrackDirection::Bidirectional }],
+            distance: None,
         }
     }
 
@@ -42,6 +45,7 @@ impl TrackSegment {
                 Track { direction: TrackDirection::Forward },
                 Track { direction: TrackDirection::Backward },
             ],
+            distance: None,
         }
     }
 }
@@ -93,7 +97,7 @@ impl RailwayGraph {
 
     /// Add a track segment between two stations, returns the EdgeIndex
     pub fn add_track(&mut self, from: NodeIndex, to: NodeIndex, tracks: Vec<Track>) -> petgraph::graph::EdgeIndex {
-        self.graph.add_edge(from, to, TrackSegment { tracks })
+        self.graph.add_edge(from, to, TrackSegment { tracks, distance: None })
     }
 
     /// Get track segment by edge index

@@ -181,7 +181,7 @@ pub fn InfrastructureView(
         set_station_to_delete.set(None);
     });
 
-    let handle_edit_track = Rc::new(move |edge_idx: EdgeIndex, new_tracks: Vec<Track>| {
+    let handle_edit_track = Rc::new(move |edge_idx: EdgeIndex, new_tracks: Vec<Track>, new_distance: Option<f64>| {
         let mut current_graph = graph.get();
         let mut current_lines = lines.get();
         let edge_index = edge_idx.index();
@@ -190,6 +190,7 @@ pub fn InfrastructureView(
         // Update the track segment
         if let Some(track_segment) = current_graph.graph.edge_weight_mut(edge_idx) {
             track_segment.tracks = new_tracks;
+            track_segment.distance = new_distance;
         }
 
         // Fix any lines that reference invalid track indices
