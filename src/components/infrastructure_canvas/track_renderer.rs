@@ -38,7 +38,7 @@ fn calculate_avoidance_offset(
         let t = ((station_pos.0 - pos1.0) * dx + (station_pos.1 - pos1.1) * dy) / len_sq;
 
         // Only check if station is between the two endpoints (not beyond them)
-        if t < 0.1 || t > 0.9 {
+        if !(0.1..=0.9).contains(&t) {
             continue;
         }
 

@@ -4,11 +4,13 @@ use leptos::*;
 use petgraph::graph::EdgeIndex;
 use std::rc::Rc;
 
+type SaveTrackCallback = Rc<dyn Fn(EdgeIndex, Vec<Track>, Option<f64>)>;
+
 #[component]
 pub fn EditTrack(
     editing_track: ReadSignal<Option<EdgeIndex>>,
     on_close: Rc<dyn Fn()>,
-    on_save: Rc<dyn Fn(EdgeIndex, Vec<Track>, Option<f64>)>,
+    on_save: SaveTrackCallback,
     on_delete: Rc<dyn Fn(EdgeIndex)>,
     graph: ReadSignal<RailwayGraph>,
     lines: ReadSignal<Vec<Line>>,
@@ -30,15 +32,15 @@ pub fn EditTrack(
 
                 // Load distance if available
                 set_distance.set(track_segment.distance.map(|d| d.to_string()).unwrap_or_default());
+            }
 
-                // Get station names
-                if let Some((from, to)) = current_graph.graph.edge_endpoints(edge_idx) {
-                    if let Some(from_name) = current_graph.get_station_name(from) {
-                        set_from_station_name.set(from_name.to_string());
-                    }
-                    if let Some(to_name) = current_graph.get_station_name(to) {
-                        set_to_station_name.set(to_name.to_string());
-                    }
+            // Get station names
+            if let Some((from, to)) = current_graph.graph.edge_endpoints(edge_idx) {
+                if let Some(from_name) = current_graph.get_station_name(from) {
+                    set_from_station_name.set(from_name.to_string());
+                }
+                if let Some(to_name) = current_graph.get_station_name(to) {
+                    set_to_station_name.set(to_name.to_string());
                 }
             }
 

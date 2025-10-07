@@ -147,39 +147,45 @@ impl Line {
         while i < route.len() {
             let segment = &route[i];
 
-            // If this segment uses a removed edge
-            if removed_edges.contains(&segment.edge_index) {
-                // Look ahead to find the next segment
-                if i + 1 < route.len() {
-                    let next_segment = &route[i + 1];
-
-                    // Check if we have a bypass edge for this pair
-                    if let Some(&bypass_edge_idx) = bypass_mapping.get(&(segment.edge_index, next_segment.edge_index)) {
-                        // Combine durations (travel time + wait time at deleted station + next travel time)
-                        let combined_duration = segment.duration + segment.wait_time + next_segment.duration;
-
-                        // Preserve platforms from the original segments
-                        new_route.push(RouteSegment {
-                            edge_index: bypass_edge_idx,
-                            track_index: 0,
-                            origin_platform: segment.origin_platform,
-                            destination_platform: next_segment.destination_platform,
-                            duration: combined_duration,
-                            wait_time: next_segment.wait_time,
-                        });
-
-                        i += 2; // Skip both segments
-                        continue;
-                    }
-                }
-
-                // If we can't create a bypass, skip this segment
-                i += 1;
-            } else {
-                // Keep segments that don't use removed edges
+            // Keep segments that don't use removed edges
+            if !removed_edges.contains(&segment.edge_index) {
                 new_route.push(segment.clone());
                 i += 1;
+                continue;
             }
+
+            // Segment uses a removed edge - try to create a bypass
+            let next_segment = match route.get(i + 1) {
+                Some(seg) => seg,
+                None => {
+                    i += 1;
+                    continue;
+                }
+            };
+
+            // Check if we have a bypass edge for this pair
+            let bypass_edge_idx = match bypass_mapping.get(&(segment.edge_index, next_segment.edge_index)) {
+                Some(&idx) => idx,
+                None => {
+                    i += 1;
+                    continue;
+                }
+            };
+
+            // Combine durations (travel time + wait time at deleted station + next travel time)
+            let combined_duration = segment.duration + segment.wait_time + next_segment.duration;
+
+            // Preserve platforms from the original segments
+            new_route.push(RouteSegment {
+                edge_index: bypass_edge_idx,
+                track_index: 0,
+                origin_platform: segment.origin_platform,
+                destination_platform: next_segment.destination_platform,
+                duration: combined_duration,
+                wait_time: next_segment.wait_time,
+            });
+
+            i += 2; // Skip both segments
         }
 
         new_route

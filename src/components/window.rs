@@ -43,7 +43,7 @@ pub fn Window(
     // Auto-size function that can be called on demand
     let auto_size = move || {
         if let Some(content_el) = content_ref.get() {
-            let _ = leptos::set_timeout(
+            leptos::set_timeout(
                 move || {
                     let content_width = content_el.scroll_width() as f64;
                     let content_height = content_el.scroll_height() as f64;

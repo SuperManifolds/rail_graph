@@ -40,7 +40,6 @@ pub fn InfrastructureView(
     let (is_over_edited_station, set_is_over_edited_station) = create_signal(false);
     let (is_over_track, set_is_over_track) = create_signal(false);
     let (dragging_station, set_dragging_station) = create_signal(None::<NodeIndex>);
-    let (drag_start_pos, set_drag_start_pos) = create_signal((0.0, 0.0));
 
     // Zoom and pan state
     let (zoom_level, set_zoom_level) = create_signal(1.0);
@@ -63,14 +62,12 @@ pub fn InfrastructureView(
             .node_indices()
             .any(|idx| current_graph.get_station_position(idx).is_none());
 
-        if has_unpositioned {
-            if current_graph.graph.node_count() > 0 {
-                let Some(canvas) = canvas_ref.get() else { return };
-                let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
-                let height = canvas_elem.client_height() as f64;
-                auto_layout::apply_layout(&mut current_graph, height);
-                set_graph.set(current_graph);
-            }
+        if has_unpositioned && current_graph.graph.node_count() > 0 {
+            let Some(canvas) = canvas_ref.get() else { return };
+            let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+            let height = canvas_elem.client_height() as f64;
+            auto_layout::apply_layout(&mut current_graph, height);
+            set_graph.set(current_graph);
         }
     });
 
@@ -281,34 +278,36 @@ pub fn InfrastructureView(
                 EditMode::AddingTrack => {
                     // Find if we clicked on a station
                     let current_graph = graph.get();
-                    if let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) {
-                        if let Some(first_station) = selected_station.get() {
-                            // Create track between first_station and clicked_station
-                            if first_station != clicked_station {
-                                let mut updated_graph = current_graph;
-                                use crate::models::{Track, TrackDirection};
-                                updated_graph.add_track(first_station, clicked_station, vec![Track { direction: TrackDirection::Bidirectional }]);
-                                set_graph.set(updated_graph);
-                            }
-                            set_selected_station.set(None);
-                        } else {
-                            // Select first station
-                            set_selected_station.set(Some(clicked_station));
-                        }
+                    let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) else {
+                        return;
+                    };
+
+                    let Some(first_station) = selected_station.get() else {
+                        // Select first station
+                        set_selected_station.set(Some(clicked_station));
+                        return;
+                    };
+
+                    // Create track between first_station and clicked_station
+                    if first_station != clicked_station {
+                        let mut updated_graph = current_graph;
+                        use crate::models::{Track, TrackDirection};
+                        updated_graph.add_track(first_station, clicked_station, vec![Track { direction: TrackDirection::Bidirectional }]);
+                        set_graph.set(updated_graph);
                     }
+                    set_selected_station.set(None);
                 }
                 EditMode::None => {
                     let current_graph = graph.get();
-                    if let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) {
-                        if Some(clicked_station) == editing_station.get() {
+                    match find_station_at_position(&current_graph, world_x, world_y) {
+                        Some(clicked_station) if Some(clicked_station) == editing_station.get() => {
                             set_dragging_station.set(Some(clicked_station));
-                            set_drag_start_pos.set((world_x, world_y));
                         }
-                    } else {
-                        if ev.button() == 2 || ev.ctrl_key() || ev.button() == 0 {
+                        None if ev.button() == 2 || ev.ctrl_key() || ev.button() == 0 => {
                             set_is_panning.set(true);
                             set_last_mouse_pos.set((screen_x, screen_y));
                         }
+                        _ => {}
                     }
                 }
             }
@@ -642,12 +641,14 @@ fn distance_to_segment(point: (f64, f64), seg_start: (f64, f64), seg_end: (f64, 
     (dist_x * dist_x + dist_y * dist_y).sqrt()
 }
 
+type TrackSegments = Vec<((f64, f64), (f64, f64))>;
+
 fn find_track_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<EdgeIndex> {
     const CLICK_THRESHOLD: f64 = 8.0;
 
     // Build a mapping from segments to edge indices
     // For each edge, get its actual rendered segments (including avoidance paths)
-    let mut edge_segments: HashMap<EdgeIndex, Vec<((f64, f64), (f64, f64))>> = HashMap::new();
+    let mut edge_segments: HashMap<EdgeIndex, TrackSegments> = HashMap::new();
 
     // Use same logic as track renderer to get actual segments
     for edge in graph.graph.edge_references() {

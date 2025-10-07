@@ -11,11 +11,9 @@ pub fn snap_to_angle(graph: &mut RailwayGraph, station_idx: NodeIndex, target_x:
     // Find the nearest junction (node with 3+ neighbors) by walking from station_idx
     let junction_idx = find_nearest_junction(graph, station_idx);
 
-    let junction_pos = graph.get_station_position(junction_idx);
-    if junction_pos.is_none() {
+    let Some(junction_pos) = graph.get_station_position(junction_idx) else {
         return;
-    }
-    let junction_pos = junction_pos.unwrap();
+    };
 
     // Calculate target snapped angle from junction to drop position
     let dx = target_x - junction_pos.0;
@@ -141,29 +139,6 @@ fn contains_node(
     false
 }
 
-/// Count how many nodes are reachable from a given node
-fn count_nodes_in_direction(graph: &RailwayGraph, start_idx: NodeIndex, visited: &mut HashSet<NodeIndex>) -> usize {
-    if visited.contains(&start_idx) {
-        return 0;
-    }
-
-    visited.insert(start_idx);
-    let mut count = 1;
-
-    // Count all neighbors recursively
-    let neighbors: Vec<_> = graph.graph.edges(start_idx)
-        .map(|e| e.target())
-        .chain(graph.graph.edges_directed(start_idx, Direction::Incoming)
-            .map(|e| e.source()))
-        .collect();
-
-    for neighbor in neighbors {
-        count += count_nodes_in_direction(graph, neighbor, visited);
-    }
-
-    count
-}
-
 /// Recursively realign a branch in the given direction
 fn realign_branch(
     graph: &mut RailwayGraph,
@@ -217,7 +192,7 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
             // Prefer endpoints (1 connection), then nodes with fewer connections
             if total == 1 { 0 } else { total }
         })
-        .unwrap();
+        .expect("Graph has at least one node");
 
     let mut visited = HashSet::new();
     let mut available_directions = vec![

@@ -137,7 +137,7 @@ fn lines_intersect(p1: (f64, f64), p2: (f64, f64), p3: (f64, f64), p4: (f64, f64
     let t = ((p3.0 - p1.0) * (p4.1 - p3.1) - (p3.1 - p1.1) * (p4.0 - p3.0)) / d;
     let u = ((p3.0 - p1.0) * (p2.1 - p1.1) - (p3.1 - p1.1) * (p2.0 - p1.0)) / d;
 
-    t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0
+    (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u)
 }
 
 pub fn draw_stations(

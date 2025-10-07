@@ -53,10 +53,9 @@ pub fn Importer(
                         .collect();
 
                     // Initialize wait times with 30 second default
-                    let mut times = HashMap::new();
-                    for id in &ids {
-                        times.insert(id.clone(), Duration::seconds(30));
-                    }
+                    let times: HashMap<String, Duration> = ids.iter()
+                        .map(|id| (id.clone(), Duration::seconds(30)))
+                        .collect();
 
                     set_line_ids.set(ids);
                     set_wait_times.set(times);

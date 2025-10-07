@@ -5,11 +5,13 @@ use leptos::*;
 use petgraph::graph::NodeIndex;
 use std::rc::Rc;
 
+type AddStationCallback = Rc<dyn Fn(String, bool, Option<NodeIndex>, Vec<Platform>)>;
+
 #[component]
 pub fn AddStation(
     is_open: ReadSignal<bool>,
     on_close: Rc<dyn Fn()>,
-    on_add: Rc<dyn Fn(String, bool, Option<NodeIndex>, Vec<Platform>)>,
+    on_add: AddStationCallback,
     graph: ReadSignal<RailwayGraph>,
 ) -> impl IntoView {
     let (station_name, set_station_name) = create_signal(String::new());
