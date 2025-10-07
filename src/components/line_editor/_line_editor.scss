@@ -189,6 +189,7 @@
         gap: 0.75rem;
         margin-bottom: 1rem;
 
+        .route-direction-toggle,
         .time-mode-toggle {
             background-color: #2a2a2a;
             border: 1px solid #444;
@@ -212,6 +213,10 @@
             }
         }
 
+        .route-direction-toggle {
+            min-width: 100px;
+        }
+
         .time-mode-label {
             color: #ccc;
             font-size: 0.85rem;
@@ -225,8 +230,8 @@
 
         .stops-header {
             display: grid;
-            grid-template-columns: 1fr 200px 120px 40px;
-            gap: 1rem;
+            grid-template-columns: 1.5fr 80px 80px 240px 110px 40px;
+            gap: 0.5rem;
             padding: 0.25rem 0.5rem;
             font-weight: 600;
             color: #aaa;
@@ -236,8 +241,8 @@
 
         .stop-row {
             display: grid;
-            grid-template-columns: 1fr 200px 120px 40px;
-            gap: 1rem;
+            grid-template-columns: 1.5fr 80px 80px 240px 110px 40px;
+            gap: 0.5rem;
             align-items: center;
             padding: 0.35rem 0.5rem;
             background-color: #222;
@@ -285,6 +290,42 @@
                 i {
                     pointer-events: none;
                 }
+            }
+
+            .platform-select,
+            .track-select {
+                background-color: #2a2a2a;
+                border: 1px solid #444;
+                border-radius: 3px;
+                color: #fff;
+                padding: 0.3rem 0.4rem;
+                font-size: 0.8rem;
+                cursor: pointer;
+                width: 100%;
+
+                &:focus {
+                    outline: none;
+                    border-color: #4a9eff;
+                    background-color: #333;
+                }
+
+                option {
+                    background-color: #2a2a2a;
+                    color: #fff;
+                }
+            }
+
+            .platform-placeholder,
+            .track-placeholder {
+                color: #555;
+                font-size: 0.8rem;
+                text-align: center;
+            }
+
+            .track-info {
+                color: #ccc;
+                font-size: 0.8rem;
+                text-align: center;
             }
         }
     }
