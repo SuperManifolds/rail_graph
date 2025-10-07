@@ -1,5 +1,6 @@
 use crate::components::window::Window;
-use crate::models::RailwayGraph;
+use crate::components::platform_editor::PlatformEditor;
+use crate::models::{RailwayGraph, Platform};
 use leptos::*;
 use petgraph::graph::NodeIndex;
 use std::rc::Rc;
@@ -8,12 +9,16 @@ use std::rc::Rc;
 pub fn AddStation(
     is_open: ReadSignal<bool>,
     on_close: Rc<dyn Fn()>,
-    on_add: Rc<dyn Fn(String, bool, Option<NodeIndex>)>,
+    on_add: Rc<dyn Fn(String, bool, Option<NodeIndex>, Vec<Platform>)>,
     graph: ReadSignal<RailwayGraph>,
 ) -> impl IntoView {
     let (station_name, set_station_name) = create_signal(String::new());
     let (is_passing_loop, set_is_passing_loop) = create_signal(false);
     let (connect_to_station, set_connect_to_station) = create_signal(None::<NodeIndex>);
+    let (platforms, set_platforms) = create_signal(vec![
+        Platform { name: "1".to_string() },
+        Platform { name: "2".to_string() },
+    ]);
 
     // Reset form when dialog opens
     create_effect(move |_| {
@@ -21,14 +26,19 @@ pub fn AddStation(
             set_station_name.set(format!("Station {}", graph.get().graph.node_count() + 1));
             set_is_passing_loop.set(false);
             set_connect_to_station.set(None);
+            set_platforms.set(vec![
+                Platform { name: "1".to_string() },
+                Platform { name: "2".to_string() },
+            ]);
         }
     });
 
     let on_close_clone = on_close.clone();
     let handle_add = move |_| {
         let name = station_name.get();
-        if !name.is_empty() {
-            on_add(name, is_passing_loop.get(), connect_to_station.get());
+        let current_platforms = platforms.get();
+        if !name.is_empty() && !current_platforms.is_empty() {
+            on_add(name, is_passing_loop.get(), connect_to_station.get(), current_platforms);
         }
     };
 
@@ -57,6 +67,11 @@ pub fn AddStation(
                         " Passing Loop"
                     </label>
                 </div>
+                <PlatformEditor
+                    platforms=platforms
+                    set_platforms=set_platforms
+                    is_passing_loop=is_passing_loop
+                />
                 <div class="form-field">
                     <label>"Connect to (optional)"</label>
                     <select

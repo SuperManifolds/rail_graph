@@ -133,10 +133,12 @@ fn build_graph_and_routes_from_csv(
                 line_wait_time
             };
 
-            // Add to this line's route
+            // Add to this line's forward route (using platform 0)
             route.push(RouteSegment {
                 edge_index: edge_idx.index(),
                 track_index: 0,
+                origin_platform: 0,
+                destination_platform: 0,
                 duration: travel_time,
                 wait_time: station_wait_time,
             });
@@ -144,8 +146,23 @@ fn build_graph_and_routes_from_csv(
             prev_station = Some((station_idx, cumulative_time));
         }
 
-        // Assign route to line
-        lines[line_idx].route = route;
+        // Assign forward route to line
+        lines[line_idx].forward_route = route.clone();
+
+        // Generate return route (reverse direction, using platform 1)
+        let mut return_route = Vec::new();
+        for i in (0..route.len()).rev() {
+            let forward_segment = &route[i];
+            return_route.push(RouteSegment {
+                edge_index: forward_segment.edge_index,
+                track_index: if forward_segment.track_index == 0 { 0 } else { forward_segment.track_index },
+                origin_platform: 1, // Use platform 1 for return direction
+                destination_platform: 1,
+                duration: forward_segment.duration,
+                wait_time: forward_segment.wait_time,
+            });
+        }
+        lines[line_idx].return_route = return_route;
     }
 
     (lines, graph)

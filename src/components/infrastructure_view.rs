@@ -94,13 +94,14 @@ pub fn InfrastructureView(
         }
     };
 
-    let handle_add_station = Rc::new(move |name: String, passing_loop: bool, connect_to: Option<NodeIndex>| {
+    let handle_add_station = Rc::new(move |name: String, passing_loop: bool, connect_to: Option<NodeIndex>, platforms: Vec<crate::models::Platform>| {
         let mut current_graph = graph.get();
         let node_idx = current_graph.add_or_get_station(name.clone());
 
-        // Set passing loop status
+        // Set passing loop status and platforms
         if let Some(node) = current_graph.graph.node_weight_mut(node_idx) {
             node.passing_loop = passing_loop;
+            node.platforms = platforms;
         }
 
         // If connecting to another station, position the new station near it
@@ -117,7 +118,7 @@ pub fn InfrastructureView(
         set_show_add_station.set(false);
     });
 
-    let handle_edit_station = Rc::new(move |station_idx: NodeIndex, new_name: String, passing_loop: bool| {
+    let handle_edit_station = Rc::new(move |station_idx: NodeIndex, new_name: String, passing_loop: bool, platforms: Vec<crate::models::Platform>| {
         let mut current_graph = graph.get();
 
         // Update the station name in the node
@@ -125,6 +126,7 @@ pub fn InfrastructureView(
             let old_name = node.name.clone();
             node.name = new_name.clone();
             node.passing_loop = passing_loop;
+            node.platforms = platforms;
 
             // Update the name mapping
             current_graph.station_name_to_index.remove(&old_name);
@@ -146,7 +148,8 @@ pub fn InfrastructureView(
         let affected: Vec<String> = current_lines
             .iter()
             .filter(|line| {
-                line.route.iter().any(|segment| station_edges.contains(&segment.edge_index))
+                line.forward_route.iter().any(|segment| station_edges.contains(&segment.edge_index)) ||
+                line.return_route.iter().any(|segment| station_edges.contains(&segment.edge_index))
             })
             .map(|line| line.id.clone())
             .collect();
@@ -213,7 +216,8 @@ pub fn InfrastructureView(
         // Update all lines that use this edge
         let edge_index = edge_idx.index();
         for line in &mut current_lines {
-            line.route.retain(|segment| segment.edge_index != edge_index);
+            line.forward_route.retain(|segment| segment.edge_index != edge_index);
+            line.return_route.retain(|segment| segment.edge_index != edge_index);
         }
 
         set_graph.set(current_graph);
@@ -413,11 +417,11 @@ pub fn InfrastructureView(
 
             let current_graph = graph.get();
 
-            // Check for track click first
-            if let Some(clicked_track) = find_track_at_position(&current_graph, world_x, world_y) {
-                set_editing_track.set(Some(clicked_track));
-            } else if let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) {
+            // Check for station click first (stations are smaller/more precise targets)
+            if let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) {
                 set_editing_station.set(Some(clicked_station));
+            } else if let Some(clicked_track) = find_track_at_position(&current_graph, world_x, world_y) {
+                set_editing_track.set(Some(clicked_track));
             }
         }
     };

@@ -101,6 +101,25 @@
         text-align: center;
     }
 
+    .track-number-input {
+        width: 100%;
+        max-width: 50px;
+        padding: 0.2rem 0.3rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-align: center;
+        background-color: #1a1a1a;
+        border: 1px solid #444;
+        border-radius: 3px;
+        color: #e0e0e0;
+
+        &:focus {
+            outline: none;
+            border-color: #4a9eff;
+            background-color: #2a2a2a;
+        }
+    }
+
     .direction-button {
         width: 36px;
         height: 36px;

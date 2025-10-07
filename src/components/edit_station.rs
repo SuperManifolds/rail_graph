@@ -1,5 +1,6 @@
 use crate::components::window::Window;
-use crate::models::RailwayGraph;
+use crate::components::platform_editor::PlatformEditor;
+use crate::models::{RailwayGraph, Platform};
 use leptos::*;
 use petgraph::graph::NodeIndex;
 use std::rc::Rc;
@@ -8,12 +9,13 @@ use std::rc::Rc;
 pub fn EditStation(
     editing_station: ReadSignal<Option<NodeIndex>>,
     on_close: Rc<dyn Fn()>,
-    on_save: Rc<dyn Fn(NodeIndex, String, bool)>,
+    on_save: Rc<dyn Fn(NodeIndex, String, bool, Vec<Platform>)>,
     on_delete: Rc<dyn Fn(NodeIndex)>,
     graph: ReadSignal<RailwayGraph>,
 ) -> impl IntoView {
     let (station_name, set_station_name) = create_signal(String::new());
     let (is_passing_loop, set_is_passing_loop) = create_signal(false);
+    let (platforms, set_platforms) = create_signal(Vec::<Platform>::new());
 
     // Load current station data when dialog opens
     create_effect(move |_| {
@@ -22,6 +24,7 @@ pub fn EditStation(
             if let Some(station) = current_graph.graph.node_weight(idx) {
                 set_station_name.set(station.name.clone());
                 set_is_passing_loop.set(station.passing_loop);
+                set_platforms.set(station.platforms.clone());
             }
         }
     });
@@ -30,8 +33,9 @@ pub fn EditStation(
     let handle_save = move |_| {
         if let Some(idx) = editing_station.get() {
             let name = station_name.get();
-            if !name.is_empty() {
-                on_save(idx, name, is_passing_loop.get());
+            let current_platforms = platforms.get();
+            if !name.is_empty() && !current_platforms.is_empty() {
+                on_save(idx, name, is_passing_loop.get(), current_platforms);
             }
         }
     };
@@ -69,6 +73,11 @@ pub fn EditStation(
                         " Passing Loop"
                     </label>
                 </div>
+                <PlatformEditor
+                    platforms=platforms
+                    set_platforms=set_platforms
+                    is_passing_loop=is_passing_loop
+                />
                 <div class="form-buttons">
                     <button class="danger" on:click=handle_delete>"Delete"</button>
                     <div style="flex: 1;"></div>

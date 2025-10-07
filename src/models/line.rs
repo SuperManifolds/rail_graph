@@ -35,6 +35,10 @@ pub struct RouteSegment {
     pub edge_index: usize,
     #[serde(default)]
     pub track_index: usize,
+    #[serde(default)]
+    pub origin_platform: usize,
+    #[serde(default)]
+    pub destination_platform: usize,
     #[serde(with = "duration_serde")]
     pub duration: Duration,
     #[serde(with = "duration_serde", default = "default_wait_time")]
@@ -83,7 +87,9 @@ pub struct Line {
     #[serde(default)]
     pub manual_departures: Vec<ManualDeparture>,
     #[serde(default)]
-    pub route: Vec<RouteSegment>,
+    pub forward_route: Vec<RouteSegment>,
+    #[serde(default)]
+    pub return_route: Vec<RouteSegment>,
 }
 
 fn default_visible() -> bool {
@@ -112,7 +118,8 @@ impl Line {
                 visible: true,
                 schedule_mode: ScheduleMode::Auto,
                 manual_departures: Vec::new(),
-                route: Vec::new(),
+                forward_route: Vec::new(),
+                return_route: Vec::new(),
             })
             .collect()
     }
@@ -125,26 +132,38 @@ impl Line {
         removed_edges: &[usize],
         bypass_mapping: &std::collections::HashMap<(usize, usize), usize>,
     ) {
+        self.forward_route = Self::update_single_route(&self.forward_route, removed_edges, bypass_mapping);
+        self.return_route = Self::update_single_route(&self.return_route, removed_edges, bypass_mapping);
+    }
+
+    fn update_single_route(
+        route: &[RouteSegment],
+        removed_edges: &[usize],
+        bypass_mapping: &std::collections::HashMap<(usize, usize), usize>,
+    ) -> Vec<RouteSegment> {
         let mut new_route = Vec::new();
         let mut i = 0;
 
-        while i < self.route.len() {
-            let segment = &self.route[i];
+        while i < route.len() {
+            let segment = &route[i];
 
             // If this segment uses a removed edge
             if removed_edges.contains(&segment.edge_index) {
                 // Look ahead to find the next segment
-                if i + 1 < self.route.len() {
-                    let next_segment = &self.route[i + 1];
+                if i + 1 < route.len() {
+                    let next_segment = &route[i + 1];
 
                     // Check if we have a bypass edge for this pair
                     if let Some(&bypass_edge_idx) = bypass_mapping.get(&(segment.edge_index, next_segment.edge_index)) {
                         // Combine durations (travel time + wait time at deleted station + next travel time)
                         let combined_duration = segment.duration + segment.wait_time + next_segment.duration;
 
+                        // Preserve platforms from the original segments
                         new_route.push(RouteSegment {
                             edge_index: bypass_edge_idx,
                             track_index: 0,
+                            origin_platform: segment.origin_platform,
+                            destination_platform: next_segment.destination_platform,
                             duration: combined_duration,
                             wait_time: next_segment.wait_time,
                         });
@@ -163,7 +182,7 @@ impl Line {
             }
         }
 
-        self.route = new_route;
+        new_route
     }
 
     /// Fix track indices after track count changes on an edge
@@ -171,7 +190,13 @@ impl Line {
     pub fn fix_track_indices_after_change(&mut self, edge_index: usize, new_track_count: usize) {
         let max_track_index = new_track_count.saturating_sub(1);
 
-        for segment in &mut self.route {
+        for segment in &mut self.forward_route {
+            if segment.edge_index == edge_index && segment.track_index > max_track_index {
+                segment.track_index = 0;
+            }
+        }
+
+        for segment in &mut self.return_route {
             if segment.edge_index == edge_index && segment.track_index > max_track_index {
                 segment.track_index = 0;
             }

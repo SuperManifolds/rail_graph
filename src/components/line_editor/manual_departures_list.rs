@@ -21,10 +21,10 @@ pub fn ManualDeparturesList(
                         edited_line.get().map(|line| {
                             let current_graph = graph.get();
 
-                            // Build list of station names from route
+                            // Build list of station names from forward route
                             let mut station_names = Vec::new();
 
-                            if let Some(segment) = line.route.first() {
+                            if let Some(segment) = line.forward_route.first() {
                                 let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
                                 if let Some((from, _)) = current_graph.get_track_endpoints(edge_idx) {
                                     if let Some(name) = current_graph.get_station_name(from) {
@@ -33,7 +33,7 @@ pub fn ManualDeparturesList(
                                 }
                             }
 
-                            for segment in &line.route {
+                            for segment in &line.forward_route {
                                 let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
                                 if let Some((_, to)) = current_graph.get_track_endpoints(edge_idx) {
                                     if let Some(name) = current_graph.get_station_name(to) {
@@ -88,15 +88,15 @@ pub fn ManualDeparturesList(
                         if let Some(mut updated_line) = edited_line.get_untracked() {
                             let current_graph = graph.get();
 
-                            // Get first and last station NodeIndex from route
-                            let from_station = updated_line.route.first()
+                            // Get first and last station NodeIndex from forward route
+                            let from_station = updated_line.forward_route.first()
                                 .and_then(|segment| {
                                     let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
                                     current_graph.get_track_endpoints(edge_idx).map(|(from, _)| from)
                                 })
                                 .unwrap_or_else(|| petgraph::graph::NodeIndex::new(0));
 
-                            let to_station = updated_line.route.last()
+                            let to_station = updated_line.forward_route.last()
                                 .and_then(|segment| {
                                     let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
                                     current_graph.get_track_endpoints(edge_idx).map(|(_, to)| to)

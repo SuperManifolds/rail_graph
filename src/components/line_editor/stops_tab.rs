@@ -25,13 +25,13 @@ fn StopRow(
     let cumulative_seconds: i64 = if index == 0 {
         0
     } else {
-        line.route.iter().take(index).map(|seg| (seg.duration + seg.wait_time).num_seconds()).sum()
+        line.forward_route.iter().take(index).map(|seg| (seg.duration + seg.wait_time).num_seconds()).sum()
     };
 
     let column_content = match time_mode {
         TimeDisplayMode::Difference => {
-            if index < line.route.len() {
-                let segment_duration = line.route[index].duration;
+            if index < line.forward_route.len() {
+                let segment_duration = line.forward_route[index].duration;
                 let hours = cumulative_seconds / 3600;
                 let minutes = (cumulative_seconds % 3600) / 60;
                 let seconds = cumulative_seconds % 60;
@@ -45,7 +45,7 @@ fn StopRow(
                                 let on_save = on_save.clone();
                                 move |new_duration| {
                                     if let Some(mut updated_line) = edited_line.get_untracked() {
-                                        updated_line.route[index].duration = new_duration;
+                                        updated_line.forward_route[index].duration = new_duration;
                                         on_save(updated_line);
                                     }
                                 }
@@ -71,15 +71,15 @@ fn StopRow(
                             Box::new(move |new_time| {
                                 if let Some(mut updated_line) = edited_line.get_untracked() {
                                     let new_cumulative_seconds = (new_time - BASE_MIDNIGHT).num_seconds();
-                                    let prev_cumulative_seconds: i64 = updated_line.route.iter()
+                                    let prev_cumulative_seconds: i64 = updated_line.forward_route.iter()
                                         .take(index - 1)
                                         .map(|seg| (seg.duration + seg.wait_time).num_seconds())
                                         .sum();
-                                    let prev_wait_seconds = updated_line.route[index - 1].wait_time.num_seconds();
+                                    let prev_wait_seconds = updated_line.forward_route[index - 1].wait_time.num_seconds();
                                     let segment_duration_seconds = new_cumulative_seconds - prev_cumulative_seconds - prev_wait_seconds;
 
                                     if segment_duration_seconds >= 0 {
-                                        updated_line.route[index - 1].duration = Duration::seconds(segment_duration_seconds);
+                                        updated_line.forward_route[index - 1].duration = Duration::seconds(segment_duration_seconds);
                                         on_save(updated_line);
                                     }
                                 }
@@ -93,8 +93,8 @@ fn StopRow(
         }
     };
 
-    let wait_time_content = if index > 0 && index - 1 < line.route.len() {
-        let wait_duration = line.route[index - 1].wait_time;
+    let wait_time_content = if index > 0 && index - 1 < line.forward_route.len() {
+        let wait_duration = line.forward_route[index - 1].wait_time;
         view! {
             <DurationInput
                 duration=Signal::derive(move || wait_duration)
@@ -102,8 +102,8 @@ fn StopRow(
                     let on_save = on_save.clone();
                     move |new_wait_time| {
                         if let Some(mut updated_line) = edited_line.get_untracked() {
-                            if index > 0 && index - 1 < updated_line.route.len() {
-                                updated_line.route[index - 1].wait_time = new_wait_time;
+                            if index > 0 && index - 1 < updated_line.forward_route.len() {
+                                updated_line.forward_route[index - 1].wait_time = new_wait_time;
                                 on_save(updated_line);
                             }
                         }
@@ -115,7 +115,7 @@ fn StopRow(
         view! { <span class="travel-time">"-"</span> }.into_view()
     };
 
-    let can_delete = (is_first || is_last) && line.route.len() > 1;
+    let can_delete = (is_first || is_last) && line.forward_route.len() > 1;
 
     view! {
         <div class="stop-row">
@@ -130,11 +130,11 @@ fn StopRow(
                             let on_save = on_save.clone();
                             move |_| {
                                 if let Some(mut updated_line) = edited_line.get_untracked() {
-                                    if is_first && !updated_line.route.is_empty() {
-                                        updated_line.route.remove(0);
+                                    if is_first && !updated_line.forward_route.is_empty() {
+                                        updated_line.forward_route.remove(0);
                                         on_save(updated_line);
-                                    } else if is_last && !updated_line.route.is_empty() {
-                                        updated_line.route.pop();
+                                    } else if is_last && !updated_line.forward_route.is_empty() {
+                                        updated_line.forward_route.pop();
                                         on_save(updated_line);
                                     }
                                 }
@@ -197,7 +197,7 @@ pub fn StopsTab(
                         edited_line.get().map(|line| {
                             let current_graph = graph.get();
 
-                            if line.route.is_empty() {
+                            if line.forward_route.is_empty() {
                                 view! {
                                     <p class="no-stops">"No stops defined for this line yet. Import a CSV to set up the route."</p>
                                 }.into_view()
@@ -206,7 +206,7 @@ pub fn StopsTab(
                                 let mut stations = Vec::new();
 
                                 // Add first station
-                                if let Some(segment) = line.route.first() {
+                                if let Some(segment) = line.forward_route.first() {
                                     let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
                                     if let Some((from, _)) = current_graph.get_track_endpoints(edge_idx) {
                                         if let Some(name) = current_graph.get_station_name(from) {
@@ -216,7 +216,7 @@ pub fn StopsTab(
                                 }
 
                                 // Add stations from each segment
-                                for segment in &line.route {
+                                for segment in &line.forward_route {
                                     let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
                                     if let Some((_, to)) = current_graph.get_track_endpoints(edge_idx) {
                                         if let Some(name) = current_graph.get_station_name(to) {
@@ -232,13 +232,13 @@ pub fn StopsTab(
                                 };
 
                                 // Get first and last stations for add stop functionality
-                                let first_station_idx = line.route.first()
+                                let first_station_idx = line.forward_route.first()
                                     .and_then(|seg| {
                                         let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
                                         current_graph.get_track_endpoints(edge).map(|(from, _)| from)
                                     });
 
-                                let last_station_idx = line.route.last()
+                                let last_station_idx = line.forward_route.last()
                                     .and_then(|seg| {
                                         let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
                                         current_graph.get_track_endpoints(edge).map(|(_, to)| to)
@@ -313,9 +313,12 @@ pub fn StopsTab(
                                                                                 Duration::seconds(30)
                                                                             };
 
-                                                                            updated_line.route.insert(0, crate::models::RouteSegment {
+                                                                            // Use platform 0 for forward direction by default
+                                                                            updated_line.forward_route.insert(0, crate::models::RouteSegment {
                                                                                 edge_index: edge.index(),
                                                                                 track_index: 0,
+                                                                                origin_platform: 0,
+                                                                                destination_platform: 0,
                                                                                 duration: Duration::minutes(5),
                                                                                 wait_time: default_wait,
                                                                             });
@@ -385,9 +388,12 @@ pub fn StopsTab(
                                                                                 Duration::seconds(30)
                                                                             };
 
-                                                                            updated_line.route.push(crate::models::RouteSegment {
+                                                                            // Use platform 0 for forward direction by default
+                                                                            updated_line.forward_route.push(crate::models::RouteSegment {
                                                                                 edge_index: edge.index(),
                                                                                 track_index: 0,
+                                                                                origin_platform: 0,
+                                                                                destination_platform: 0,
                                                                                 duration: Duration::minutes(5),
                                                                                 wait_time: default_wait,
                                                                             });

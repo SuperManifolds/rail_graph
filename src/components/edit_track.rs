@@ -47,7 +47,8 @@ pub fn EditTrack(
             let affected: Vec<String> = current_lines
                 .iter()
                 .filter(|line| {
-                    line.route.iter().any(|segment| segment.edge_index == edge_index)
+                    line.forward_route.iter().any(|segment| segment.edge_index == edge_index) ||
+                    line.return_route.iter().any(|segment| segment.edge_index == edge_index)
                 })
                 .map(|line| line.id.clone())
                 .collect();

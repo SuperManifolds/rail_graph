@@ -4,12 +4,26 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Platform {
+    pub name: String,
+}
+
+fn default_platforms() -> Vec<Platform> {
+    vec![
+        Platform { name: "1".to_string() },
+        Platform { name: "2".to_string() },
+    ]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StationNode {
     pub name: String,
     #[serde(default)]
     pub position: Option<(f64, f64)>,
     #[serde(default)]
     pub passing_loop: bool,
+    #[serde(default = "default_platforms")]
+    pub platforms: Vec<Platform>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -77,6 +91,7 @@ impl RailwayGraph {
                 name: name.clone(),
                 position: None,
                 passing_loop: false,
+                platforms: default_platforms(),
             });
             self.station_name_to_index.insert(name, index);
             index
