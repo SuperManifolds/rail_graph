@@ -12,7 +12,7 @@ pub struct StationNode {
     pub passing_loop: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum TrackDirection {
     Bidirectional,
     Forward,    // From source to target only

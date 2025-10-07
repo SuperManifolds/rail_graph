@@ -1,10 +1,11 @@
-use crate::models::{RailwayGraph, Line};
+use crate::models::{RailwayGraph, Line, Track};
 use crate::components::infrastructure_canvas::{auto_layout, station_renderer, track_renderer};
 use crate::components::add_station::AddStation;
 use crate::components::delete_station_confirmation::DeleteStationConfirmation;
 use crate::components::edit_station::EditStation;
+use crate::components::edit_track::EditTrack;
 use leptos::*;
-use petgraph::graph::NodeIndex;
+use petgraph::graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::EdgeRef;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
@@ -29,6 +30,7 @@ pub fn InfrastructureView(
     let (selected_station, set_selected_station) = create_signal(None::<NodeIndex>);
     let (show_add_station, set_show_add_station) = create_signal(false);
     let (editing_station, set_editing_station) = create_signal(None::<NodeIndex>);
+    let (editing_track, set_editing_track) = create_signal(None::<EdgeIndex>);
     let (show_delete_confirmation, set_show_delete_confirmation) = create_signal(false);
     let (station_to_delete, set_station_to_delete) = create_signal(None::<NodeIndex>);
     let (delete_affected_lines, set_delete_affected_lines) = create_signal(Vec::<String>::new());
@@ -175,6 +177,45 @@ pub fn InfrastructureView(
         set_lines.set(current_lines);
         set_show_delete_confirmation.set(false);
         set_station_to_delete.set(None);
+    });
+
+    let handle_edit_track = Rc::new(move |edge_idx: EdgeIndex, new_tracks: Vec<Track>| {
+        let mut current_graph = graph.get();
+        let mut current_lines = lines.get();
+        let edge_index = edge_idx.index();
+        let new_track_count = new_tracks.len();
+
+        // Update the track segment
+        if let Some(track_segment) = current_graph.graph.edge_weight_mut(edge_idx) {
+            track_segment.tracks = new_tracks;
+        }
+
+        // Fix any lines that reference invalid track indices
+        for line in &mut current_lines {
+            line.fix_track_indices_after_change(edge_index, new_track_count);
+        }
+
+        set_graph.set(current_graph);
+        set_lines.set(current_lines);
+        set_editing_track.set(None);
+    });
+
+    let handle_delete_track = Rc::new(move |edge_idx: EdgeIndex| {
+        let mut current_graph = graph.get();
+        let mut current_lines = lines.get();
+
+        // Remove the edge
+        current_graph.graph.remove_edge(edge_idx);
+
+        // Update all lines that use this edge
+        let edge_index = edge_idx.index();
+        for line in &mut current_lines {
+            line.route.retain(|segment| segment.edge_index != edge_index);
+        }
+
+        set_graph.set(current_graph);
+        set_lines.set(current_lines);
+        set_editing_track.set(None);
     });
 
     // Re-render when graph or viewport changes
@@ -361,7 +402,11 @@ pub fn InfrastructureView(
             let world_y = (screen_y - pan_y) / zoom;
 
             let current_graph = graph.get();
-            if let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) {
+
+            // Check for track click first
+            if let Some(clicked_track) = find_track_at_position(&current_graph, world_x, world_y) {
+                set_editing_track.set(Some(clicked_track));
+            } else if let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) {
                 set_editing_station.set(Some(clicked_station));
             }
         }
@@ -481,6 +526,15 @@ pub fn InfrastructureView(
                 graph=graph
             />
 
+            <EditTrack
+                editing_track=editing_track
+                on_close=Rc::new(move || set_editing_track.set(None))
+                on_save=handle_edit_track
+                on_delete=handle_delete_track
+                graph=graph
+                lines=lines
+            />
+
             <DeleteStationConfirmation
                 is_open=show_delete_confirmation
                 station_name=delete_station_name
@@ -539,6 +593,46 @@ fn find_station_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<Node
             if dist <= CLICK_THRESHOLD {
                 return Some(idx);
             }
+        }
+    }
+
+    None
+}
+
+fn find_track_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<EdgeIndex> {
+    const CLICK_THRESHOLD: f64 = 8.0;
+
+    for edge in graph.graph.edge_references() {
+        let source = edge.source();
+        let target = edge.target();
+
+        let Some(pos1) = graph.get_station_position(source) else { continue };
+        let Some(pos2) = graph.get_station_position(target) else { continue };
+
+        // Calculate distance from point to line segment
+        let dx = pos2.0 - pos1.0;
+        let dy = pos2.1 - pos1.1;
+        let len_sq = dx * dx + dy * dy;
+
+        if len_sq == 0.0 {
+            continue;
+        }
+
+        // Calculate projection of point onto line
+        let t = ((x - pos1.0) * dx + (y - pos1.1) * dy) / len_sq;
+        let t = t.clamp(0.0, 1.0);
+
+        // Find closest point on line segment
+        let closest_x = pos1.0 + t * dx;
+        let closest_y = pos1.1 + t * dy;
+
+        // Calculate distance to closest point
+        let dist_x = x - closest_x;
+        let dist_y = y - closest_y;
+        let dist = (dist_x * dist_x + dist_y * dist_y).sqrt();
+
+        if dist <= CLICK_THRESHOLD {
+            return Some(edge.id());
         }
     }
 

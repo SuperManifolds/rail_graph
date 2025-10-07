@@ -165,6 +165,18 @@ impl Line {
 
         self.route = new_route;
     }
+
+    /// Fix track indices after track count changes on an edge
+    /// Resets track_index to 0 if it references a track that no longer exists
+    pub fn fix_track_indices_after_change(&mut self, edge_index: usize, new_track_count: usize) {
+        let max_track_index = new_track_count.saturating_sub(1);
+
+        for segment in &mut self.route {
+            if segment.edge_index == edge_index && segment.track_index > max_track_index {
+                segment.track_index = 0;
+            }
+        }
+    }
 }
 
 mod duration_serde {
