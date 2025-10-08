@@ -328,21 +328,23 @@ fn are_reverse_bidirectional_edges(
         return false;
     }
 
-    // Both edges must exist and have bidirectional tracks at the specified track index
+    // For reverse edges to conflict, they must be on tracks that allow bidirectional travel
+    // This only applies to single-track bidirectional sections, not double-track sections
     let edge1_idx = petgraph::graph::EdgeIndex::new(edge1_index);
     let edge2_idx = petgraph::graph::EdgeIndex::new(edge2_index);
 
-    let edge1_bidirectional = ctx.graph.graph.edge_weight(edge1_idx)
+    // Check if both tracks are bidirectional (single-track case)
+    let edge1_bidir = ctx.graph.graph.edge_weight(edge1_idx)
         .and_then(|ts| ts.tracks.get(track1_index))
         .map(|t| matches!(t.direction, TrackDirection::Bidirectional))
         .unwrap_or(false);
 
-    let edge2_bidirectional = ctx.graph.graph.edge_weight(edge2_idx)
+    let edge2_bidir = ctx.graph.graph.edge_weight(edge2_idx)
         .and_then(|ts| ts.tracks.get(track2_index))
         .map(|t| matches!(t.direction, TrackDirection::Bidirectional))
         .unwrap_or(false);
 
-    edge1_bidirectional && edge2_bidirectional
+    edge1_bidir && edge2_bidir
 }
 
 /// Check if an edge has only 1 bidirectional track (single-track section)

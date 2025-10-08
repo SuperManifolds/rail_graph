@@ -193,9 +193,9 @@ pub fn InfrastructureView(
             track_segment.distance = new_distance;
         }
 
-        // Fix any lines that reference invalid track indices
+        // Fix any lines that reference invalid track indices or incompatible directions
         for line in &mut current_lines {
-            line.fix_track_indices_after_change(edge_index, new_track_count);
+            line.fix_track_indices_after_change(edge_index, new_track_count, &current_graph);
         }
 
         set_graph.set(current_graph);

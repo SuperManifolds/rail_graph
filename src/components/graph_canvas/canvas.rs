@@ -21,6 +21,8 @@ pub const BOTTOM_PADDING: f64 = 20.0;
 pub fn GraphCanvas(
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<crate::models::Line>>,
+    set_lines: WriteSignal<Vec<crate::models::Line>>,
     train_journeys: ReadSignal<Vec<TrainJourney>>,
     visualization_time: ReadSignal<NaiveDateTime>,
     set_visualization_time: WriteSignal<NaiveDateTime>,
@@ -165,7 +167,7 @@ pub fn GraphCanvas(
                     x, y, canvas_height, &current_stations,
                     zoom_level.get(), pan_offset_y.get()
                 ) {
-                    toggle_segment_double_track(clicked_segment, &current_stations, set_graph);
+                    toggle_segment_double_track(clicked_segment, &current_stations, graph, set_graph, lines, set_lines);
                 } else {
                     handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
                 }
@@ -493,7 +495,10 @@ fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
 fn toggle_segment_double_track(
     clicked_segment: usize,
     stations: &[crate::models::StationNode],
+    graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<crate::models::Line>>,
+    set_lines: WriteSignal<Vec<crate::models::Line>>,
 ) {
     // segment index i represents the segment between stations[i-1] and stations[i]
     if clicked_segment == 0 || clicked_segment >= stations.len() {
@@ -502,13 +507,18 @@ fn toggle_segment_double_track(
 
     let station1 = &stations[clicked_segment - 1];
     let station2 = &stations[clicked_segment];
+    let station1_name = station1.name.clone();
+    let station2_name = station2.name.clone();
 
-    set_graph.update(move |graph| {
+    let mut current_lines = lines.get_untracked();
+    let mut changed_edges = Vec::new();
+
+    set_graph.update(|graph| {
         // Get node indices for both stations
-        let Some(node1) = graph.get_station_index(&station1.name) else {
+        let Some(node1) = graph.get_station_index(&station1_name) else {
             return;
         };
-        let Some(node2) = graph.get_station_index(&station2.name) else {
+        let Some(node2) = graph.get_station_index(&station2_name) else {
             return;
         };
 
@@ -524,15 +534,28 @@ fn toggle_segment_double_track(
                 continue;
             };
             // Toggle between single and double track
-            *weight = if weight.tracks.len() == 1 {
+            let new_weight = if weight.tracks.len() == 1 {
                 use crate::models::TrackSegment;
                 TrackSegment::new_double_track()
             } else {
                 use crate::models::TrackSegment;
                 TrackSegment::new_single_track()
             };
+            let new_track_count = new_weight.tracks.len();
+            *weight = new_weight;
+            changed_edges.push((edge.index(), new_track_count));
         }
     });
+
+    // Update lines to fix incompatible track assignments
+    let current_graph = graph.get();
+    for (edge_index, new_track_count) in changed_edges {
+        for line in &mut current_lines {
+            line.fix_track_indices_after_change(edge_index, new_track_count, &current_graph);
+        }
+    }
+
+    set_lines.set(current_lines);
 }
 
 fn handle_time_scrubbing(

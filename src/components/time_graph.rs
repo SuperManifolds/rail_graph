@@ -57,6 +57,8 @@ pub fn TimeGraph(
                 <GraphCanvas
                     graph=graph
                     set_graph=set_graph
+                    lines=lines
+                    set_lines=set_lines
                     train_journeys=train_journeys
                     visualization_time=visualization_time
                     set_visualization_time=set_visualization_time

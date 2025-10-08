@@ -149,13 +149,26 @@ fn build_graph_and_routes_from_csv(
         // Assign forward route to line
         lines[line_idx].forward_route = route.clone();
 
-        // Generate return route (reverse direction, using platform 1)
+        // Generate return route (reverse direction, using platform 1 and opposite track)
         let mut return_route = Vec::new();
         for i in (0..route.len()).rev() {
             let forward_segment = &route[i];
+
+            // Determine return track: use track 1 if edge has multiple tracks, else track 0 (bidirectional)
+            let edge_idx = petgraph::graph::EdgeIndex::new(forward_segment.edge_index);
+            let return_track_index = if let Some(track_segment) = graph.get_track(edge_idx) {
+                if track_segment.tracks.len() > 1 {
+                    1 // Multi-track: use track 1 for return
+                } else {
+                    0 // Single track: use same track (bidirectional)
+                }
+            } else {
+                0 // Default to track 0 if edge not found
+            };
+
             return_route.push(RouteSegment {
                 edge_index: forward_segment.edge_index,
-                track_index: if forward_segment.track_index == 0 { 0 } else { forward_segment.track_index },
+                track_index: return_track_index,
                 origin_platform: 1, // Use platform 1 for return direction
                 destination_platform: 1,
                 duration: forward_segment.duration,

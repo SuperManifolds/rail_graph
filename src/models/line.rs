@@ -2,6 +2,7 @@ use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use crate::constants::BASE_DATE;
 use petgraph::graph::NodeIndex;
+use super::{RailwayGraph, TrackSegment, TrackDirection};
 
 fn generate_random_color(seed: usize) -> String {
     // Use a simple hash-based color generator for deterministic but varied colors
@@ -191,22 +192,73 @@ impl Line {
         new_route
     }
 
-    /// Fix track indices after track count changes on an edge
-    /// Resets track_index to 0 if it references a track that no longer exists
-    pub fn fix_track_indices_after_change(&mut self, edge_index: usize, new_track_count: usize) {
+    /// Fix track indices after track changes on an edge
+    /// Reassigns tracks that are out of bounds or have incompatible directions
+    pub fn fix_track_indices_after_change(&mut self, edge_index: usize, new_track_count: usize, graph: &RailwayGraph) {
         let max_track_index = new_track_count.saturating_sub(1);
+        let edge_idx = petgraph::graph::EdgeIndex::new(edge_index);
 
+        // Get track segment to check directions
+        let track_segment = graph.get_track(edge_idx);
+
+        // Fix forward route
         for segment in &mut self.forward_route {
-            if segment.edge_index == edge_index && segment.track_index > max_track_index {
-                segment.track_index = 0;
+            if segment.edge_index == edge_index {
+                // Check if track index is out of bounds
+                if segment.track_index > max_track_index {
+                    segment.track_index = Self::find_compatible_track(track_segment, true, max_track_index);
+                } else if let Some(ts) = track_segment {
+                    // Check if track direction is compatible with forward route
+                    if let Some(track) = ts.tracks.get(segment.track_index) {
+                        if !matches!(track.direction, TrackDirection::Forward | TrackDirection::Bidirectional) {
+                            // Track direction incompatible, find a compatible one
+                            segment.track_index = Self::find_compatible_track(track_segment, true, max_track_index);
+                        }
+                    }
+                }
             }
         }
 
+        // Fix return route
         for segment in &mut self.return_route {
-            if segment.edge_index == edge_index && segment.track_index > max_track_index {
-                segment.track_index = 0;
+            if segment.edge_index == edge_index {
+                // Check if track index is out of bounds
+                if segment.track_index > max_track_index {
+                    segment.track_index = Self::find_compatible_track(track_segment, false, max_track_index);
+                } else if let Some(ts) = track_segment {
+                    // Check if track direction is compatible with return route
+                    if let Some(track) = ts.tracks.get(segment.track_index) {
+                        if !matches!(track.direction, TrackDirection::Backward | TrackDirection::Bidirectional) {
+                            // Track direction incompatible, find a compatible one
+                            segment.track_index = Self::find_compatible_track(track_segment, false, max_track_index);
+                        }
+                    }
+                }
             }
         }
+    }
+
+    /// Find a compatible track for a given route direction
+    fn find_compatible_track(track_segment: Option<&TrackSegment>, is_forward: bool, max_index: usize) -> usize {
+        let Some(ts) = track_segment else {
+            return 0;
+        };
+
+        // Find first track compatible with the route direction
+        for (i, track) in ts.tracks.iter().enumerate().take(max_index + 1) {
+            let compatible = if is_forward {
+                matches!(track.direction, TrackDirection::Forward | TrackDirection::Bidirectional)
+            } else {
+                matches!(track.direction, TrackDirection::Backward | TrackDirection::Bidirectional)
+            };
+
+            if compatible {
+                return i;
+            }
+        }
+
+        // Fallback to track 0 if no compatible track found
+        0
     }
 }
 

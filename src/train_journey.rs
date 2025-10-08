@@ -256,11 +256,11 @@ impl TrainJourney {
             let mut segments = Vec::new();
             let mut cumulative_time = Duration::zero();
 
-            // Add first station (source of first edge in return route)
+            // Add first station (destination of first edge in return route, since we travel backwards)
             if let Some(segment) = line.return_route.first() {
                 let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
                 let _ = graph.get_track_endpoints(edge_idx)
-                    .and_then(|(from, _)| graph.get_station_name(from))
+                    .and_then(|(_, to)| graph.get_station_name(to))
                     .map(|name| station_times.push((name.to_string(), return_departure_time, return_departure_time)));
             }
 
@@ -274,10 +274,10 @@ impl TrainJourney {
                 let departure_from_station = return_departure_time + cumulative_time;
 
                 let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                let Some((_, to)) = graph.get_track_endpoints(edge_idx) else {
+                let Some((from, _)) = graph.get_track_endpoints(edge_idx) else {
                     continue;
                 };
-                let Some(name) = graph.get_station_name(to) else {
+                let Some(name) = graph.get_station_name(from) else {
                     continue;
                 };
                 station_times.push((name.to_string(), arrival_time, departure_from_station));
