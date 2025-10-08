@@ -192,3 +192,89 @@ pub fn draw_station_crossings(
     }
 }
 
+pub fn draw_block_violation_visualization(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    conflict: &Conflict,
+    train_journeys: &[crate::train_journey::TrainJourney],
+    station_height: f64,
+    zoom_level: f64,
+    time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
+) {
+    // Use the segment times stored in the conflict
+    if let (Some((s1_start, s1_end)), Some((s2_start, s2_end))) =
+        (conflict.segment1_times, conflict.segment2_times) {
+
+        let start_idx = conflict.station1_idx;
+        let end_idx = conflict.station2_idx;
+
+        // Find the journeys to get their colors
+        let journey1 = train_journeys.iter().find(|j| j.line_id == conflict.journey1_id);
+        let journey2 = train_journeys.iter().find(|j| j.line_id == conflict.journey2_id);
+
+        // Get colors from journeys (hex format like #FF0000)
+        let color1 = journey1.map(|j| j.color.as_str()).unwrap_or("#FF0000");
+        let color2 = journey2.map(|j| j.color.as_str()).unwrap_or("#0000FF");
+
+        // Convert hex to rgba with transparency
+        let fill1 = format!("{}33", color1); // Add 33 for ~20% opacity
+        let fill2 = format!("{}33", color2);
+
+        // Draw first journey's block
+        draw_block_rectangle(
+            ctx,
+            dims,
+            (s1_start, s1_end),
+            (start_idx, end_idx),
+            station_height,
+            zoom_level,
+            time_to_fraction,
+            (&fill1, color1),
+        );
+
+        // Draw second journey's block
+        draw_block_rectangle(
+            ctx,
+            dims,
+            (s2_start, s2_end),
+            (start_idx, end_idx),
+            station_height,
+            zoom_level,
+            time_to_fraction,
+            (&fill2, color2),
+        );
+    }
+}
+
+fn draw_block_rectangle(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    times: (chrono::NaiveDateTime, chrono::NaiveDateTime),
+    stations: (usize, usize),
+    station_height: f64,
+    zoom_level: f64,
+    time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
+    colors: (&str, &str),
+) {
+    let (start_time, end_time) = times;
+    let (start_station_idx, end_station_idx) = stations;
+    let (fill_color, stroke_color) = colors;
+
+    let x1 = dims.left_margin + (time_to_fraction(start_time) * dims.hour_width);
+    let x2 = dims.left_margin + (time_to_fraction(end_time) * dims.hour_width);
+    let y1 = dims.top_margin + (start_station_idx as f64 * station_height) + (station_height / 2.0);
+    let y2 = dims.top_margin + (end_station_idx as f64 * station_height) + (station_height / 2.0);
+
+    let width = x2 - x1;
+    let height = y2 - y1;
+
+    // Draw rectangle
+    ctx.set_fill_style_str(fill_color);
+    ctx.fill_rect(x1, y1, width, height);
+
+    // Draw border with zoom-adjusted line width
+    ctx.set_stroke_style_str(stroke_color);
+    ctx.set_line_width(1.0 / zoom_level);
+    ctx.stroke_rect(x1, y1, width, height);
+}
+

@@ -25,6 +25,9 @@ pub struct Conflict {
     pub journey1_id: String,
     pub journey2_id: String,
     pub conflict_type: ConflictType,
+    // For block violations: store the time ranges of the two segments
+    pub segment1_times: Option<(NaiveDateTime, NaiveDateTime)>,
+    pub segment2_times: Option<(NaiveDateTime, NaiveDateTime)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -199,10 +202,8 @@ fn check_segment_pair(
         info2.edge_index,
         info1.track_index,
         info2.track_index,
-        segment1.idx_start,
-        segment1.idx_end,
-        segment2.idx_start,
-        segment2.idx_end,
+        (segment1.idx_start, segment1.idx_end),
+        (segment2.idx_start, segment2.idx_end),
     );
 
     if !same_edge && !reverse_edges {
@@ -214,8 +215,61 @@ fn check_segment_pair(
         return; // Different tracks on same edge, no conflict
     }
 
-    // Same edge and same track - check for conflicts
-    // Calculate intersection point
+    // Determine travel directions
+    let same_direction = (segment1.idx_start < segment1.idx_end && segment2.idx_start < segment2.idx_end)
+        || (segment1.idx_start > segment1.idx_end && segment2.idx_start > segment2.idx_end);
+
+    let is_single_track = is_single_track_bidirectional(ctx, info1.edge_index);
+
+    // For same-direction on single-track, check time overlap (block violation)
+    if same_direction && is_single_track {
+        // Check if time ranges overlap
+        let time_overlap = segment1.time_start < segment2.time_end && segment2.time_start < segment1.time_end;
+
+        if time_overlap {
+            // Two trains on same single-track block at same time, same direction = block violation
+            // Conflict occurs when the trailing train enters while leading train is still in block
+            let conflict_time = segment1.time_start.max(segment2.time_start);
+
+            // Calculate where the leading train is when the trailing train enters
+            let (leading_start, leading_end) = if segment1.time_start < segment2.time_start {
+                (segment1.time_start, segment1.time_end)
+            } else {
+                (segment2.time_start, segment2.time_end)
+            };
+
+            // Calculate progress of leading train at conflict time
+            let duration = (leading_end - leading_start).num_seconds() as f64;
+            let elapsed = (conflict_time - leading_start).num_seconds() as f64;
+            let mut position = if duration > 0.0 {
+                (elapsed / duration).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
+            // If traveling backward (from higher to lower index), invert position
+            // because rendering expects position relative to seg1_min -> seg1_max
+            let traveling_backward = segment1.idx_start > segment1.idx_end;
+            if traveling_backward {
+                position = 1.0 - position;
+            }
+
+            results.conflicts.push(Conflict {
+                time: conflict_time,
+                position,
+                station1_idx: seg1_min,
+                station2_idx: seg1_max,
+                journey1_id: journey1.line_id.clone(),
+                journey2_id: journey2.line_id.clone(),
+                conflict_type: ConflictType::BlockViolation,
+                segment1_times: Some((segment1.time_start, segment1.time_end)),
+                segment2_times: Some((segment2.time_start, segment2.time_end)),
+            });
+        }
+        return;
+    }
+
+    // For all other cases, calculate geometric intersection
     let Some(intersection) = calculate_intersection(
         segment1.time_start,
         segment1.time_end,
@@ -242,20 +296,13 @@ fn check_segment_pair(
         return;
     }
 
-    // Determine conflict type based on travel directions
-    let same_direction = (segment1.idx_start < segment1.idx_end && segment2.idx_start < segment2.idx_end)
-        || (segment1.idx_start > segment1.idx_end && segment2.idx_start > segment2.idx_end);
-
-    // Get track direction to classify conflict type
-    let conflict_type = if same_direction {
+    // Determine conflict type based on track type
+    let conflict_type = if is_single_track {
+        ConflictType::BlockViolation
+    } else if same_direction {
         ConflictType::Overtaking
     } else {
-        // Check if this is a single-track bidirectional (block violation)
-        if is_single_track_bidirectional(ctx, info1.edge_index) {
-            ConflictType::BlockViolation
-        } else {
-            ConflictType::HeadOn
-        }
+        ConflictType::HeadOn
     };
 
     results.conflicts.push(Conflict {
@@ -266,6 +313,8 @@ fn check_segment_pair(
         journey1_id: journey1.line_id.clone(),
         journey2_id: journey2.line_id.clone(),
         conflict_type,
+        segment1_times: None,
+        segment2_times: None,
     });
 }
 
@@ -308,11 +357,12 @@ fn are_reverse_bidirectional_edges(
     edge2_index: usize,
     track1_index: usize,
     track2_index: usize,
-    seg1_start: usize,
-    seg1_end: usize,
-    seg2_start: usize,
-    seg2_end: usize,
+    seg1: (usize, usize),
+    seg2: (usize, usize),
 ) -> bool {
+    let (seg1_start, seg1_end) = seg1;
+    let (seg2_start, seg2_end) = seg2;
+
     // Check if the segments connect the same stations in reverse order
     // seg1 goes from seg1_start to seg1_end
     // seg2 goes from seg2_start to seg2_end

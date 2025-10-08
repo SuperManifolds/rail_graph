@@ -203,38 +203,55 @@ impl Line {
 
         // Fix forward route
         for segment in &mut self.forward_route {
-            if segment.edge_index == edge_index {
-                // Check if track index is out of bounds
-                if segment.track_index > max_track_index {
-                    segment.track_index = Self::find_compatible_track(track_segment, true, max_track_index);
-                } else if let Some(ts) = track_segment {
-                    // Check if track direction is compatible with forward route
-                    if let Some(track) = ts.tracks.get(segment.track_index) {
-                        if !matches!(track.direction, TrackDirection::Forward | TrackDirection::Bidirectional) {
-                            // Track direction incompatible, find a compatible one
-                            segment.track_index = Self::find_compatible_track(track_segment, true, max_track_index);
-                        }
-                    }
-                }
+            if segment.edge_index != edge_index {
+                continue;
+            }
+
+            // Check if track index is out of bounds
+            if segment.track_index > max_track_index {
+                segment.track_index = Self::find_compatible_track(track_segment, true, max_track_index);
+                continue;
+            }
+
+            // Check if track direction is compatible with forward route
+            if Self::is_track_incompatible(track_segment, segment.track_index, true) {
+                segment.track_index = Self::find_compatible_track(track_segment, true, max_track_index);
             }
         }
 
         // Fix return route
         for segment in &mut self.return_route {
-            if segment.edge_index == edge_index {
-                // Check if track index is out of bounds
-                if segment.track_index > max_track_index {
-                    segment.track_index = Self::find_compatible_track(track_segment, false, max_track_index);
-                } else if let Some(ts) = track_segment {
-                    // Check if track direction is compatible with return route
-                    if let Some(track) = ts.tracks.get(segment.track_index) {
-                        if !matches!(track.direction, TrackDirection::Backward | TrackDirection::Bidirectional) {
-                            // Track direction incompatible, find a compatible one
-                            segment.track_index = Self::find_compatible_track(track_segment, false, max_track_index);
-                        }
-                    }
-                }
+            if segment.edge_index != edge_index {
+                continue;
             }
+
+            // Check if track index is out of bounds
+            if segment.track_index > max_track_index {
+                segment.track_index = Self::find_compatible_track(track_segment, false, max_track_index);
+                continue;
+            }
+
+            // Check if track direction is compatible with return route
+            if Self::is_track_incompatible(track_segment, segment.track_index, false) {
+                segment.track_index = Self::find_compatible_track(track_segment, false, max_track_index);
+            }
+        }
+    }
+
+    /// Check if a track is incompatible with the route direction
+    fn is_track_incompatible(track_segment: Option<&TrackSegment>, track_index: usize, is_forward: bool) -> bool {
+        let Some(ts) = track_segment else {
+            return false;
+        };
+
+        let Some(track) = ts.tracks.get(track_index) else {
+            return false;
+        };
+
+        if is_forward {
+            !matches!(track.direction, TrackDirection::Forward | TrackDirection::Bidirectional)
+        } else {
+            !matches!(track.direction, TrackDirection::Backward | TrackDirection::Bidirectional)
         }
     }
 

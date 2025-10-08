@@ -87,6 +87,7 @@ pub fn GraphCanvas(
         let _ = conflicts_and_crossings.get();
         let _ = show_station_crossings.get();
         let _ = show_conflicts.get();
+        let _ = hovered_conflict.get();
 
         // Only request render if one isn't already pending
         if !render_requested.get_untracked() {
@@ -136,7 +137,8 @@ pub fn GraphCanvas(
                     show_conflicts: show_conf,
                     show_station_crossings: show_crossings,
                 };
-                render_graph(canvas, &stations_for_render, &journeys, current, viewport, conflict_display, &current_graph);
+                let hovered = hovered_conflict.get_untracked();
+                render_graph(canvas, &stations_for_render, &journeys, current, viewport, conflict_display, hovered.as_ref().map(|(c, _, _)| c), &current_graph);
             });
 
             let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
@@ -350,6 +352,7 @@ fn render_graph(
     current_time: chrono::NaiveDateTime,
     viewport: ViewportState,
     conflict_display: ConflictDisplayState,
+    hovered_conflict: Option<&Conflict>,
     graph: &RailwayGraph,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
@@ -423,6 +426,21 @@ fn render_graph(
             viewport.zoom_level,
             time_to_fraction,
         );
+
+        // Draw block visualization for hovered block violation
+        if let Some(conflict) = hovered_conflict {
+            if conflict.conflict_type == crate::conflict::ConflictType::BlockViolation {
+                conflict_indicators::draw_block_violation_visualization(
+                    &ctx,
+                    &zoomed_dimensions,
+                    conflict,
+                    train_journeys,
+                    station_height,
+                    viewport.zoom_level,
+                    time_to_fraction,
+                );
+            }
+        }
     }
 
     // Draw station crossings if enabled
