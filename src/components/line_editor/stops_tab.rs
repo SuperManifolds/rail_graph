@@ -561,26 +561,53 @@ pub fn StopsTab(
                                 };
 
                                 // Get first and last stations for add stop functionality
-                                let first_station_idx = current_route.first()
-                                    .and_then(|seg| {
-                                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
-                                        current_graph.get_track_endpoints(edge).map(|(from, _)| from)
-                                    });
+                                // Account for route direction: return routes travel backwards along edges
+                                let (first_station_idx, last_station_idx) = match route_direction.get() {
+                                    RouteDirection::Forward => {
+                                        let first = current_route.first()
+                                            .and_then(|seg| {
+                                                let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                                                current_graph.get_track_endpoints(edge).map(|(from, _)| from)
+                                            });
+                                        let last = current_route.last()
+                                            .and_then(|seg| {
+                                                let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                                                current_graph.get_track_endpoints(edge).map(|(_, to)| to)
+                                            });
+                                        (first, last)
+                                    }
+                                    RouteDirection::Return => {
+                                        // Return route segments travel backwards on edges
+                                        // First segment's 'to' is the starting station
+                                        let first = current_route.first()
+                                            .and_then(|seg| {
+                                                let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                                                current_graph.get_track_endpoints(edge).map(|(_, to)| to)
+                                            });
+                                        // Last segment's 'from' is the ending station
+                                        let last = current_route.last()
+                                            .and_then(|seg| {
+                                                let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                                                current_graph.get_track_endpoints(edge).map(|(from, _)| from)
+                                            });
+                                        (first, last)
+                                    }
+                                };
 
-                                let last_station_idx = current_route.last()
-                                    .and_then(|seg| {
-                                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
-                                        current_graph.get_track_endpoints(edge).map(|(_, to)| to)
-                                    });
-
-                                // Get available stations for start (stations that connect TO first station)
+                                // Get available stations for start
                                 let available_start: Vec<String> = first_station_idx
                                     .map(|first_idx| {
                                         current_graph.get_all_stations_ordered()
                                             .iter()
                                             .filter_map(|station| {
                                                 let station_idx = current_graph.get_station_index(&station.name)?;
-                                                if current_graph.graph.find_edge(station_idx, first_idx).is_some() {
+                                                // For forward: find edge from station_idx to first_idx
+                                                // For return: find edge from first_idx to station_idx (traveling backwards)
+                                                let has_edge = match route_direction.get() {
+                                                    RouteDirection::Forward => current_graph.graph.find_edge(station_idx, first_idx).is_some(),
+                                                    RouteDirection::Return => current_graph.graph.find_edge(first_idx, station_idx).is_some(),
+                                                };
+                                                if has_edge {
                                                     Some(station.name.clone())
                                                 } else {
                                                     None
@@ -590,14 +617,20 @@ pub fn StopsTab(
                                     })
                                     .unwrap_or_default();
 
-                                // Get available stations for end (stations that connect FROM last station)
+                                // Get available stations for end
                                 let available_end: Vec<String> = last_station_idx
                                     .map(|last_idx| {
                                         current_graph.get_all_stations_ordered()
                                             .iter()
                                             .filter_map(|station| {
                                                 let station_idx = current_graph.get_station_index(&station.name)?;
-                                                if current_graph.graph.find_edge(last_idx, station_idx).is_some() {
+                                                // For forward: find edge from last_idx to station_idx
+                                                // For return: find edge from station_idx to last_idx (traveling backwards)
+                                                let has_edge = match route_direction.get() {
+                                                    RouteDirection::Forward => current_graph.graph.find_edge(last_idx, station_idx).is_some(),
+                                                    RouteDirection::Return => current_graph.graph.find_edge(station_idx, last_idx).is_some(),
+                                                };
+                                                if has_edge {
                                                     Some(station.name.clone())
                                                 } else {
                                                     None
@@ -633,7 +666,13 @@ pub fn StopsTab(
                                                                         graph.get_station_index(&station_name),
                                                                         first_station_idx
                                                                     ) {
-                                                                        if let Some(edge) = graph.graph.find_edge(station_idx, first_idx) {
+                                                                        // Find edge based on route direction
+                                                                        let edge = match route_direction.get() {
+                                                                            RouteDirection::Forward => graph.graph.find_edge(station_idx, first_idx),
+                                                                            RouteDirection::Return => graph.graph.find_edge(first_idx, station_idx),
+                                                                        };
+
+                                                                        if let Some(edge) = edge {
                                                                             // Check if station is a passing loop
                                                                             let is_passing_loop = graph.graph.node_weight(station_idx)
                                                                                 .map(|node| node.passing_loop)
@@ -644,15 +683,23 @@ pub fn StopsTab(
                                                                                 Duration::seconds(30)
                                                                             };
 
-                                                                            // Use platform 0 for forward direction by default
-                                                                            updated_line.forward_route.insert(0, crate::models::RouteSegment {
+                                                                            let segment = crate::models::RouteSegment {
                                                                                 edge_index: edge.index(),
                                                                                 track_index: 0,
                                                                                 origin_platform: 0,
                                                                                 destination_platform: 0,
                                                                                 duration: Duration::minutes(5),
                                                                                 wait_time: default_wait,
-                                                                            });
+                                                                            };
+
+                                                                            match route_direction.get() {
+                                                                                RouteDirection::Forward => {
+                                                                                    updated_line.forward_route.insert(0, segment);
+                                                                                }
+                                                                                RouteDirection::Return => {
+                                                                                    updated_line.return_route.insert(0, segment);
+                                                                                }
+                                                                            }
                                                                             on_save_add.with_value(|f| f(updated_line));
                                                                         }
                                                                     }
@@ -711,7 +758,13 @@ pub fn StopsTab(
                                                                         graph.get_station_index(&station_name),
                                                                         last_station_idx
                                                                     ) {
-                                                                        if let Some(edge) = graph.graph.find_edge(last_idx, station_idx) {
+                                                                        // Find edge based on route direction
+                                                                        let edge = match route_direction.get() {
+                                                                            RouteDirection::Forward => graph.graph.find_edge(last_idx, station_idx),
+                                                                            RouteDirection::Return => graph.graph.find_edge(station_idx, last_idx),
+                                                                        };
+
+                                                                        if let Some(edge) = edge {
                                                                             // Check if station is a passing loop
                                                                             let is_passing_loop = graph.graph.node_weight(station_idx)
                                                                                 .map(|node| node.passing_loop)
@@ -722,15 +775,23 @@ pub fn StopsTab(
                                                                                 Duration::seconds(30)
                                                                             };
 
-                                                                            // Use platform 0 for forward direction by default
-                                                                            updated_line.forward_route.push(crate::models::RouteSegment {
+                                                                            let segment = crate::models::RouteSegment {
                                                                                 edge_index: edge.index(),
                                                                                 track_index: 0,
                                                                                 origin_platform: 0,
                                                                                 destination_platform: 0,
                                                                                 duration: Duration::minutes(5),
                                                                                 wait_time: default_wait,
-                                                                            });
+                                                                            };
+
+                                                                            match route_direction.get() {
+                                                                                RouteDirection::Forward => {
+                                                                                    updated_line.forward_route.push(segment);
+                                                                                }
+                                                                                RouteDirection::Return => {
+                                                                                    updated_line.return_route.push(segment);
+                                                                                }
+                                                                            }
                                                                             on_save_add.with_value(|f| f(updated_line));
                                                                         }
                                                                     }
