@@ -1,13 +1,15 @@
 use leptos::*;
 use leptos::leptos_dom::helpers::window_event_listener;
 use wasm_bindgen::JsCast;
-use crate::conflict::{Conflict, ConflictType};
+use crate::conflict::Conflict;
 use crate::time::time_to_fraction;
+use crate::models::{RailwayGraph, StationNode};
 
 #[component]
 fn ErrorListPopover(
     conflicts: Signal<Vec<Conflict>>,
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
+    stations: Signal<Vec<StationNode>>,
 ) -> impl IntoView {
     view! {
         <div class="error-list-popover">
@@ -21,38 +23,47 @@ fn ErrorListPopover(
                     } else {
                         view! {
                             <div class="error-items">
-                                {current_conflicts.into_iter().map(|conflict| {
-                                    let conflict_type_text = match conflict.conflict_type {
-                                        ConflictType::HeadOn => "Head-on Conflict",
-                                        ConflictType::Overtaking => "Overtaking",
-                                        ConflictType::BlockViolation => "Block Violation",
-                                    };
+                                {
+                                    let current_stations = stations.get();
+                                    current_conflicts.into_iter().map(|conflict| {
+                                        let conflict_type_text = conflict.type_name();
 
-                                    let time_fraction = time_to_fraction(conflict.time);
-                                    let station_position = conflict.station1_idx as f64 + conflict.position;
+                                        // Get station names
+                                        let station1_name = current_stations.get(conflict.station1_idx)
+                                            .map(|s| s.name.as_str())
+                                            .unwrap_or("Unknown");
+                                        let station2_name = current_stations.get(conflict.station2_idx)
+                                            .map(|s| s.name.as_str())
+                                            .unwrap_or("Unknown");
 
-                                    view! {
-                                        <div
-                                            class="error-item clickable"
-                                            on:click=move |_| {
-                                                on_conflict_click(time_fraction, station_position);
-                                            }
-                                        >
-                                            <div class="error-item-header">
-                                                <i class="fa-solid fa-triangle-exclamation"></i>
-                                                <span class="error-type">{conflict_type_text}</span>
-                                            </div>
-                                            <div class="error-item-details">
-                                                <div class="error-detail">
-                                                    <span class="value">{format!("{} × {}", conflict.journey1_id, conflict.journey2_id)}</span>
+                                        let conflict_message = conflict.format_message(station1_name, station2_name);
+
+                                        let time_fraction = time_to_fraction(conflict.time);
+                                        let station_position = conflict.station1_idx as f64 + conflict.position;
+
+                                        view! {
+                                            <div
+                                                class="error-item clickable"
+                                                on:click=move |_| {
+                                                    on_conflict_click(time_fraction, station_position);
+                                                }
+                                            >
+                                                <div class="error-item-header">
+                                                    <i class="fa-solid fa-triangle-exclamation"></i>
+                                                    <span class="error-type">{conflict_type_text}</span>
                                                 </div>
-                                                <div class="error-detail">
-                                                    <span class="value">{conflict.time.format("%H:%M:%S").to_string()}</span>
+                                                <div class="error-item-details">
+                                                    <div class="error-detail">
+                                                        <span class="value">{conflict_message}</span>
+                                                    </div>
+                                                    <div class="error-detail">
+                                                        <span class="value">{conflict.time.format("%H:%M:%S").to_string()}</span>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    }
-                                }).collect::<Vec<_>>()}
+                                        }
+                                    }).collect::<Vec<_>>()
+                                }
                             </div>
                         }.into_view()
                     }
@@ -66,6 +77,7 @@ fn ErrorListPopover(
 pub fn ErrorList(
     conflicts: Signal<Vec<Conflict>>,
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
+    graph: ReadSignal<RailwayGraph>,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
 
@@ -120,6 +132,7 @@ pub fn ErrorList(
                         <ErrorListPopover
                             conflicts=conflicts
                             on_conflict_click=on_conflict_click
+                            stations=Signal::derive(move || graph.get().get_all_stations_ordered())
                         />
                     }.into_view()
                 } else {

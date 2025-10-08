@@ -84,6 +84,7 @@ pub fn TimeGraph(
                         on_conflict_click=move |time_fraction, station_pos| {
                             set_pan_to_conflict.set(Some((time_fraction, station_pos)));
                         }
+                        graph=graph
                     />
                 </div>
                 <LineControls lines=lines set_lines=set_lines graph=graph />

@@ -1,19 +1,21 @@
-use chrono::NaiveDateTime;
-use crate::train_journey::TrainJourney;
+use crate::constants::BASE_DATE;
 use crate::models::{RailwayGraph, TrackDirection};
 use crate::time::time_to_fraction;
-use crate::constants::BASE_DATE;
+use crate::train_journey::TrainJourney;
+use chrono::NaiveDateTime;
 use std::collections::HashMap;
 
 // Conflict detection constants
 const STATION_MARGIN_MINUTES: i64 = 1;
+const PLATFORM_BUFFER_MINUTES: i64 = 1;
 const MAX_CONFLICTS: usize = 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConflictType {
-    HeadOn,         // Trains meeting on same track, opposite directions
-    Overtaking,     // Train catching up on same track, same direction
-    BlockViolation, // Two trains in same single-track block simultaneously
+    HeadOn,            // Trains meeting on same track, opposite directions
+    Overtaking,        // Train catching up on same track, same direction
+    BlockViolation,    // Two trains in same single-track block simultaneously
+    PlatformViolation, // Two trains using same platform at same time
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,6 +30,51 @@ pub struct Conflict {
     // For block violations: store the time ranges of the two segments
     pub segment1_times: Option<(NaiveDateTime, NaiveDateTime)>,
     pub segment2_times: Option<(NaiveDateTime, NaiveDateTime)>,
+    // For platform violations: store the platform index
+    pub platform_idx: Option<usize>,
+}
+
+impl Conflict {
+    /// Format a human-readable message describing the conflict (without timestamp)
+    pub fn format_message(&self, station1_name: &str, station2_name: &str) -> String {
+        match self.conflict_type {
+            ConflictType::PlatformViolation => {
+                let platform_num = self.platform_idx.unwrap_or(0) + 1;
+                format!(
+                    "{} conflicts with {} at {} Platform {}",
+                    self.journey1_id, self.journey2_id, station1_name, platform_num
+                )
+            }
+            ConflictType::HeadOn => {
+                format!(
+                    "{} conflicts with {} between {} and {}",
+                    self.journey1_id, self.journey2_id, station1_name, station2_name
+                )
+            }
+            ConflictType::Overtaking => {
+                format!(
+                    "{} overtakes {} between {} and {}",
+                    self.journey2_id, self.journey1_id, station1_name, station2_name
+                )
+            }
+            ConflictType::BlockViolation => {
+                format!(
+                    "{} block violation with {} between {} and {}",
+                    self.journey1_id, self.journey2_id, station1_name, station2_name
+                )
+            }
+        }
+    }
+
+    /// Get a short name for the conflict type
+    pub fn type_name(&self) -> &'static str {
+        match self.conflict_type {
+            ConflictType::HeadOn => "Head-on Conflict",
+            ConflictType::Overtaking => "Overtaking",
+            ConflictType::BlockViolation => "Block Violation",
+            ConflictType::PlatformViolation => "Platform Violation",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +101,13 @@ struct ConflictContext<'a> {
     station_indices: HashMap<&'a str, usize>,
     graph: &'a RailwayGraph,
     station_margin: chrono::Duration,
+}
+
+struct PlatformOccupancy {
+    station_idx: usize,
+    platform_idx: usize,
+    time_start: NaiveDateTime,
+    time_end: NaiveDateTime,
 }
 
 pub fn detect_line_conflicts(
@@ -103,6 +157,9 @@ fn check_journey_pair(
     ctx: &ConflictContext,
     results: &mut ConflictResults,
 ) {
+    // Check for platform conflicts first
+    check_platform_conflicts(journey1, journey2, ctx, results);
+
     let mut prev1: Option<(NaiveDateTime, usize)> = None;
 
     for (station1, arrival_time1, departure_time1) in &journey1.station_times {
@@ -149,14 +206,7 @@ fn check_segment_against_journey(
             };
 
             check_segment_pair(
-                segment1,
-                &segment2,
-                seg1_min,
-                seg1_max,
-                journey1,
-                journey2,
-                ctx,
-                results,
+                segment1, &segment2, seg1_min, seg1_max, journey1, journey2, ctx, results,
             );
             if results.conflicts.len() >= MAX_CONFLICTS {
                 return;
@@ -216,7 +266,8 @@ fn check_segment_pair(
     }
 
     // Determine travel directions
-    let same_direction = (segment1.idx_start < segment1.idx_end && segment2.idx_start < segment2.idx_end)
+    let same_direction = (segment1.idx_start < segment1.idx_end
+        && segment2.idx_start < segment2.idx_end)
         || (segment1.idx_start > segment1.idx_end && segment2.idx_start > segment2.idx_end);
 
     let is_single_track = is_single_track_bidirectional(ctx, info1.edge_index);
@@ -224,7 +275,8 @@ fn check_segment_pair(
     // For same-direction on single-track, check time overlap (block violation)
     if same_direction && is_single_track {
         // Check if time ranges overlap
-        let time_overlap = segment1.time_start < segment2.time_end && segment2.time_start < segment1.time_end;
+        let time_overlap =
+            segment1.time_start < segment2.time_end && segment2.time_start < segment1.time_end;
 
         if time_overlap {
             // Two trains on same single-track block at same time, same direction = block violation
@@ -264,6 +316,7 @@ fn check_segment_pair(
                 conflict_type: ConflictType::BlockViolation,
                 segment1_times: Some((segment1.time_start, segment1.time_end)),
                 segment2_times: Some((segment2.time_start, segment2.time_end)),
+                platform_idx: None,
             });
         }
         return;
@@ -315,6 +368,7 @@ fn check_segment_pair(
         conflict_type,
         segment1_times: None,
         segment2_times: None,
+        platform_idx: None,
     });
 }
 
@@ -384,12 +438,18 @@ fn are_reverse_bidirectional_edges(
     let edge2_idx = petgraph::graph::EdgeIndex::new(edge2_index);
 
     // Check if both tracks are bidirectional (single-track case)
-    let edge1_bidir = ctx.graph.graph.edge_weight(edge1_idx)
+    let edge1_bidir = ctx
+        .graph
+        .graph
+        .edge_weight(edge1_idx)
         .and_then(|ts| ts.tracks.get(track1_index))
         .map(|t| matches!(t.direction, TrackDirection::Bidirectional))
         .unwrap_or(false);
 
-    let edge2_bidir = ctx.graph.graph.edge_weight(edge2_idx)
+    let edge2_bidir = ctx
+        .graph
+        .graph
+        .edge_weight(edge2_idx)
         .and_then(|ts| ts.tracks.get(track2_index))
         .map(|t| matches!(t.direction, TrackDirection::Bidirectional))
         .unwrap_or(false);
@@ -403,7 +463,10 @@ fn is_single_track_bidirectional(ctx: &ConflictContext, edge_index: usize) -> bo
 
     if let Some(track_segment) = ctx.graph.graph.edge_weight(edge_idx) {
         if track_segment.tracks.len() == 1 {
-            return matches!(track_segment.tracks[0].direction, TrackDirection::Bidirectional);
+            return matches!(
+                track_segment.tracks[0].direction,
+                TrackDirection::Bidirectional
+            );
         }
     }
 
@@ -424,9 +487,9 @@ fn is_near_station(
         segment2.time_end,
     ];
 
-    times.iter().any(|t| {
-        (*t - intersection.time).abs() < station_margin
-    })
+    times
+        .iter()
+        .any(|t| (*t - intersection.time).abs() < station_margin)
 }
 
 fn find_nearest_station(
@@ -514,3 +577,91 @@ fn calculate_intersection(
     }
 }
 
+/// Extract all platform occupancies from a journey
+fn extract_platform_occupancies(
+    journey: &TrainJourney,
+    ctx: &ConflictContext,
+) -> Vec<PlatformOccupancy> {
+    let mut occupancies = Vec::new();
+    let buffer = chrono::Duration::minutes(PLATFORM_BUFFER_MINUTES);
+
+    for (i, (station_name, arrival_time, departure_time)) in
+        journey.station_times.iter().enumerate()
+    {
+        let Some(&station_idx) = ctx.station_indices.get(station_name.as_str()) else {
+            continue;
+        };
+
+        // Determine which platform(s) this journey uses at this station
+        let mut platforms = Vec::new();
+
+        // If not the first station, the train arrives on the destination_platform of the previous segment
+        if i > 0 && i - 1 < journey.segments.len() {
+            platforms.push(journey.segments[i - 1].destination_platform);
+        }
+
+        // If not the last station, the train departs from the origin_platform of the next segment
+        if i < journey.segments.len() {
+            let departure_platform = journey.segments[i].origin_platform;
+            // Only add if different from arrival platform (to avoid duplicates)
+            if platforms.is_empty() || platforms[0] != departure_platform {
+                platforms.push(departure_platform);
+            }
+        }
+
+        // For each platform used, create an occupancy with buffer times
+        for &platform_idx in &platforms {
+            occupancies.push(PlatformOccupancy {
+                station_idx,
+                platform_idx,
+                time_start: *arrival_time - buffer,
+                time_end: *departure_time + buffer,
+            });
+        }
+    }
+
+    occupancies
+}
+
+/// Check for platform conflicts between two journeys
+fn check_platform_conflicts(
+    journey1: &TrainJourney,
+    journey2: &TrainJourney,
+    ctx: &ConflictContext,
+    results: &mut ConflictResults,
+) {
+    let occupancies1 = extract_platform_occupancies(journey1, ctx);
+    let occupancies2 = extract_platform_occupancies(journey2, ctx);
+
+    for occ1 in &occupancies1 {
+        for occ2 in &occupancies2 {
+            // Check if same station and same platform
+            if occ1.station_idx != occ2.station_idx || occ1.platform_idx != occ2.platform_idx {
+                continue;
+            }
+
+            // Check if time ranges overlap
+            if occ1.time_start < occ2.time_end && occ2.time_start < occ1.time_end {
+                // Platform conflict detected
+                let conflict_time = occ1.time_start.max(occ2.time_start);
+
+                results.conflicts.push(Conflict {
+                    time: conflict_time,
+                    position: 0.0, // Platform conflicts occur at a station, not between stations
+                    station1_idx: occ1.station_idx,
+                    station2_idx: occ1.station_idx,
+                    journey1_id: journey1.line_id.clone(),
+                    journey2_id: journey2.line_id.clone(),
+                    conflict_type: ConflictType::PlatformViolation,
+                    segment1_times: Some((occ1.time_start, occ1.time_end)),
+                    segment2_times: Some((occ2.time_start, occ2.time_end)),
+                    platform_idx: Some(occ1.platform_idx),
+                });
+
+                if results.conflicts.len() >= MAX_CONFLICTS {
+                    return;
+                }
+            }
+        }
+    }
+}

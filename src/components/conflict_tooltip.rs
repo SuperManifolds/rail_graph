@@ -1,34 +1,28 @@
 use leptos::*;
-use crate::conflict::{Conflict, ConflictType};
+use crate::conflict::Conflict;
+use crate::models::StationNode;
 
 #[component]
 pub fn ConflictTooltip(
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
+    stations: Signal<Vec<StationNode>>,
 ) -> impl IntoView {
     view! {
         {move || {
             if let Some((conflict, tooltip_x, tooltip_y)) = hovered_conflict.get() {
-                // Determine conflict type text and train order
-                let (conflict_text, first_train, second_train) = match conflict.conflict_type {
-                    ConflictType::Overtaking => {
-                        // For overtaking, swap the order
-                        ("overtakes", &conflict.journey2_id, &conflict.journey1_id)
-                    }
-                    ConflictType::HeadOn => {
-                        ("conflicts with", &conflict.journey1_id, &conflict.journey2_id)
-                    }
-                    ConflictType::BlockViolation => {
-                        ("block violation with", &conflict.journey1_id, &conflict.journey2_id)
-                    }
-                };
+                let current_stations = stations.get();
 
-                let tooltip_text = format!(
-                    "{} {} {} at {}",
-                    first_train,
-                    conflict_text,
-                    second_train,
-                    conflict.time.format("%H:%M")
-                );
+                // Get station names
+                let station1_name = current_stations.get(conflict.station1_idx)
+                    .map(|s| s.name.as_str())
+                    .unwrap_or("Unknown");
+                let station2_name = current_stations.get(conflict.station2_idx)
+                    .map(|s| s.name.as_str())
+                    .unwrap_or("Unknown");
+
+                let message = conflict.format_message(station1_name, station2_name);
+                let timestamp = conflict.time.format("%H:%M:%S");
+                let tooltip_text = format!("{} - {}", timestamp, message);
 
                 view! {
                     <div

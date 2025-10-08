@@ -339,7 +339,7 @@ pub fn GraphCanvas(
                 style="cursor: crosshair;"
             ></canvas>
 
-            <ConflictTooltip hovered_conflict=hovered_conflict />
+            <ConflictTooltip hovered_conflict=hovered_conflict stations=Signal::derive(move || graph.get().get_all_stations_ordered()) />
         </div>
     }
 }
