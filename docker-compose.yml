@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  nimby-graph:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nimby-graph
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info

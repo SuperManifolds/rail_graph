@@ -1,0 +1,32 @@
+# Build artifacts
+target/
+dist/
+
+# Dependencies
+node_modules/
+
+# Version control
+.git/
+.github/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+
+# Documentation
+*.md
+!README.md
+
+# OS
+.DS_Store
+Thumbs.db
