@@ -2,12 +2,12 @@ use leptos::*;
 
 #[component]
 pub fn Legend(
-    show_station_crossings: ReadSignal<bool>,
-    set_show_station_crossings: WriteSignal<bool>,
-    show_conflicts: ReadSignal<bool>,
-    set_show_conflicts: WriteSignal<bool>,
-    show_line_blocks: ReadSignal<bool>,
-    set_show_line_blocks: WriteSignal<bool>,
+    show_station_crossings: Signal<bool>,
+    set_show_station_crossings: impl Fn(bool) + 'static + Copy,
+    show_conflicts: Signal<bool>,
+    set_show_conflicts: impl Fn(bool) + 'static + Copy,
+    show_line_blocks: Signal<bool>,
+    set_show_line_blocks: impl Fn(bool) + 'static + Copy,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
 
@@ -35,7 +35,7 @@ pub fn Legend(
                                     type="checkbox"
                                     checked=move || show_station_crossings.get()
                                     on:change=move |ev| {
-                                        set_show_station_crossings.set(event_target_checked(&ev));
+                                        set_show_station_crossings(event_target_checked(&ev));
                                     }
                                 />
                                 <span class="legend-icon station-crossing-icon"></span>
@@ -50,7 +50,7 @@ pub fn Legend(
                                     type="checkbox"
                                     checked=move || show_conflicts.get()
                                     on:change=move |ev| {
-                                        set_show_conflicts.set(event_target_checked(&ev));
+                                        set_show_conflicts(event_target_checked(&ev));
                                     }
                                 />
                                 <span class="legend-icon conflict-icon">"⚠"</span>
@@ -65,7 +65,7 @@ pub fn Legend(
                                     type="checkbox"
                                     checked=move || show_line_blocks.get()
                                     on:change=move |ev| {
-                                        set_show_line_blocks.set(event_target_checked(&ev));
+                                        set_show_line_blocks(event_target_checked(&ev));
                                     }
                                 />
                                 <span class="legend-icon">"▭"</span>

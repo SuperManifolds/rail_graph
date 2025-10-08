@@ -15,15 +15,27 @@ pub fn TimeGraph(
     set_lines: WriteSignal<Vec<Line>>,
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
+    legend: ReadSignal<crate::models::Legend>,
+    set_legend: WriteSignal<crate::models::Legend>,
 ) -> impl IntoView {
     let (visualization_time, set_visualization_time) =
         create_signal(chrono::Local::now().naive_local());
     let (train_journeys, set_train_journeys) = create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
 
-    // Legend visibility toggles
-    let (show_station_crossings, set_show_station_crossings) = create_signal(true);
-    let (show_conflicts, set_show_conflicts) = create_signal(true);
-    let (show_line_blocks, set_show_line_blocks) = create_signal(false);
+    // Extract legend signals
+    let show_station_crossings = Signal::derive(move || legend.get().show_station_crossings);
+    let show_conflicts = Signal::derive(move || legend.get().show_conflicts);
+    let show_line_blocks = Signal::derive(move || legend.get().show_line_blocks);
+
+    let set_show_station_crossings = move |value: bool| {
+        set_legend.update(|l| l.show_station_crossings = value);
+    };
+    let set_show_conflicts = move |value: bool| {
+        set_legend.update(|l| l.show_conflicts = value);
+    };
+    let set_show_line_blocks = move |value: bool| {
+        set_legend.update(|l| l.show_line_blocks = value);
+    };
 
     // Track hovered journey for block visualization
     let (hovered_journey_id, set_hovered_journey_id) = create_signal(None::<uuid::Uuid>);
