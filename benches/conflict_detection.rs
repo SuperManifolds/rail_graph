@@ -7,6 +7,7 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
     // Load real data from lines.csv
     let (lines, graph) = parse_csv_data();
     let journeys = TrainJourney::generate_journeys(&lines, &graph);
+    let journeys_vec: Vec<_> = journeys.values().cloned().collect();
 
     // Benchmark journey generation
     c.bench_function("generate_journeys", |b| {
@@ -19,7 +20,7 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
     c.bench_function("conflict_detection", |b| {
         b.iter(|| {
             detect_line_conflicts(
-                black_box(&journeys),
+                black_box(&journeys_vec),
                 black_box(&graph),
             )
         });
@@ -29,8 +30,9 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
     c.bench_function("full_pipeline", |b| {
         b.iter(|| {
             let journeys = TrainJourney::generate_journeys(black_box(&lines), black_box(&graph));
+            let journeys_vec: Vec<_> = journeys.values().cloned().collect();
             detect_line_conflicts(
-                black_box(&journeys),
+                black_box(&journeys_vec),
                 black_box(&graph),
             )
         });
