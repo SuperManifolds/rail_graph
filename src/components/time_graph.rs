@@ -18,11 +18,15 @@ pub fn TimeGraph(
 ) -> impl IntoView {
     let (visualization_time, set_visualization_time) =
         create_signal(chrono::Local::now().naive_local());
-    let (train_journeys, set_train_journeys) = create_signal(Vec::<TrainJourney>::new());
+    let (train_journeys, set_train_journeys) = create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
 
     // Legend visibility toggles
     let (show_station_crossings, set_show_station_crossings) = create_signal(true);
     let (show_conflicts, set_show_conflicts) = create_signal(true);
+    let (show_line_blocks, set_show_line_blocks) = create_signal(false);
+
+    // Track hovered journey for block visualization
+    let (hovered_journey_id, set_hovered_journey_id) = create_signal(None::<uuid::Uuid>);
 
     // Update train journeys only when lines configuration changes
     create_effect(move |_| {
@@ -42,8 +46,9 @@ pub fn TimeGraph(
     // Compute conflicts and station crossings
     let conflicts_and_crossings = create_memo(move |_| {
         let journeys = train_journeys.get();
+        let journeys_vec: Vec<_> = journeys.values().cloned().collect();
         let current_graph = graph.get();
-        crate::conflict::detect_line_conflicts(&journeys, &current_graph)
+        crate::conflict::detect_line_conflicts(&journeys_vec, &current_graph)
     });
 
     let conflicts_only = Signal::derive(move || conflicts_and_crossings.get().0);
@@ -64,6 +69,9 @@ pub fn TimeGraph(
                     set_visualization_time=set_visualization_time
                     show_station_crossings=show_station_crossings
                     show_conflicts=show_conflicts
+                    show_line_blocks=show_line_blocks
+                    hovered_journey_id=hovered_journey_id
+                    set_hovered_journey_id=set_hovered_journey_id
                     conflicts_and_crossings=conflicts_and_crossings
                     pan_to_conflict_signal=pan_to_conflict
                 />
@@ -86,6 +94,8 @@ pub fn TimeGraph(
                         set_show_station_crossings=set_show_station_crossings
                         show_conflicts=show_conflicts
                         set_show_conflicts=set_show_conflicts
+                        show_line_blocks=show_line_blocks
+                        set_show_line_blocks=set_show_line_blocks
                     />
                 </div>
             </div>

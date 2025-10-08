@@ -246,6 +246,54 @@ pub fn draw_block_violation_visualization(
     }
 }
 
+pub fn draw_journey_blocks(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    journey: &crate::train_journey::TrainJourney,
+    stations: &[crate::models::StationNode],
+    station_height: f64,
+    zoom_level: f64,
+    time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
+) {
+
+    // Get journey color
+    let color = journey.color.as_str();
+    let fill_color = format!("{}33", color); // ~20% opacity
+    let stroke_color = format!("{}99", color); // ~60% opacity
+
+    // Create station name to index mapping
+    let station_map: std::collections::HashMap<&str, usize> = stations
+        .iter()
+        .enumerate()
+        .map(|(idx, station)| (station.name.as_str(), idx))
+        .collect();
+
+    // Draw a block for each segment
+    for i in 1..journey.station_times.len() {
+        let (station_from, _arrival_from, departure_from) = &journey.station_times[i - 1];
+        let (station_to, arrival_to, _departure_to) = &journey.station_times[i];
+
+        // Look up station indices
+        let Some(&start_idx) = station_map.get(station_from.as_str()) else {
+            continue;
+        };
+        let Some(&end_idx) = station_map.get(station_to.as_str()) else {
+            continue;
+        };
+
+        draw_block_rectangle(
+            ctx,
+            dims,
+            (*departure_from, *arrival_to),
+            (start_idx, end_idx),
+            station_height,
+            zoom_level,
+            time_to_fraction,
+            (&fill_color, &stroke_color),
+        );
+    }
+}
+
 fn draw_block_rectangle(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,

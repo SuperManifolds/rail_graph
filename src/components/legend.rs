@@ -6,6 +6,8 @@ pub fn Legend(
     set_show_station_crossings: WriteSignal<bool>,
     show_conflicts: ReadSignal<bool>,
     set_show_conflicts: WriteSignal<bool>,
+    show_line_blocks: ReadSignal<bool>,
+    set_show_line_blocks: WriteSignal<bool>,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
 
@@ -55,6 +57,21 @@ pub fn Legend(
                                 <span>"Conflict Markers"</span>
                             </label>
                             <p class="legend-description">"Track conflicts between trains (yellow triangles)"</p>
+                        </div>
+
+                        <div class="legend-item">
+                            <label class="legend-label">
+                                <input
+                                    type="checkbox"
+                                    checked=move || show_line_blocks.get()
+                                    on:change=move |ev| {
+                                        set_show_line_blocks.set(event_target_checked(&ev));
+                                    }
+                                />
+                                <span class="legend-icon">"▭"</span>
+                                <span>"Block Occupancy on Hover"</span>
+                            </label>
+                            <p class="legend-description">"Show reservation block when hovering over train lines"</p>
                         </div>
                     </div>
                 </div>

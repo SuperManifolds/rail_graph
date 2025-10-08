@@ -9,7 +9,7 @@ use crate::components::conflict_tooltip::ConflictTooltip;
 use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
 use super::{station_labels, time_labels, conflict_indicators, train_positions, train_journeys, time_scrubber, graph_content};
-use super::types::{GraphDimensions, ViewportState, ConflictDisplayState};
+use super::types::{GraphDimensions, ViewportState, ConflictDisplayState, HoverState};
 
 // Layout constants for the graph canvas
 pub const LEFT_MARGIN: f64 = 120.0;
@@ -23,11 +23,14 @@ pub fn GraphCanvas(
     set_graph: WriteSignal<RailwayGraph>,
     lines: ReadSignal<Vec<crate::models::Line>>,
     set_lines: WriteSignal<Vec<crate::models::Line>>,
-    train_journeys: ReadSignal<Vec<TrainJourney>>,
+    train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     visualization_time: ReadSignal<NaiveDateTime>,
     set_visualization_time: WriteSignal<NaiveDateTime>,
     show_station_crossings: ReadSignal<bool>,
     show_conflicts: ReadSignal<bool>,
+    show_line_blocks: ReadSignal<bool>,
+    hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
+    set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
     conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
     #[prop(optional)] pan_to_conflict_signal: Option<ReadSignal<Option<(f64, f64)>>>,
 ) -> impl IntoView {
@@ -88,6 +91,8 @@ pub fn GraphCanvas(
         let _ = show_station_crossings.get();
         let _ = show_conflicts.get();
         let _ = hovered_conflict.get();
+        let _ = show_line_blocks.get();
+        let _ = hovered_journey_id.get();
 
         // Only request render if one isn't already pending
         if !render_requested.get_untracked() {
@@ -138,7 +143,14 @@ pub fn GraphCanvas(
                     show_station_crossings: show_crossings,
                 };
                 let hovered = hovered_conflict.get_untracked();
-                render_graph(canvas, &stations_for_render, &journeys, current, viewport, conflict_display, hovered.as_ref().map(|(c, _, _)| c), &current_graph);
+                let show_blocks = show_line_blocks.get_untracked();
+                let hovered_journey = hovered_journey_id.get_untracked();
+                let hover_state = HoverState {
+                    hovered_conflict: hovered.as_ref().map(|(c, _, _)| c),
+                    show_line_blocks: show_blocks,
+                    hovered_journey_id: hovered_journey.as_ref(),
+                };
+                render_graph(canvas, &stations_for_render, &journeys, current, viewport, conflict_display, hover_state, &current_graph);
             });
 
             let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
@@ -216,6 +228,26 @@ pub fn GraphCanvas(
                     zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), pan_offset_y.get()
                 );
                 set_hovered_conflict.set(hovered);
+
+                // Check for journey hover if line blocks are enabled
+                if show_line_blocks.get() {
+                    let journeys = train_journeys.get();
+                    let journeys_vec: Vec<_> = journeys.values().collect();
+                    let viewport = ViewportState {
+                        zoom_level: zoom_level.get(),
+                        zoom_level_x: zoom_level_x.get(),
+                        pan_offset_x: pan_offset_x.get(),
+                        pan_offset_y: pan_offset_y.get(),
+                    };
+                    let hovered_journey = train_journeys::check_journey_hover(
+                        x, y, &journeys_vec, &current_stations,
+                        canvas.width() as f64, canvas.height() as f64,
+                        &viewport
+                    );
+                    set_hovered_journey_id.set(hovered_journey);
+                } else {
+                    set_hovered_journey_id.set(None);
+                }
             }
         }
     };
@@ -348,16 +380,19 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
 fn render_graph(
     canvas: leptos::HtmlElement<leptos::html::Canvas>,
     stations: &[crate::models::StationNode],
-    train_journeys: &[TrainJourney],
+    train_journeys: &std::collections::HashMap<uuid::Uuid, TrainJourney>,
     current_time: chrono::NaiveDateTime,
     viewport: ViewportState,
     conflict_display: ConflictDisplayState,
-    hovered_conflict: Option<&Conflict>,
+    hover_state: HoverState,
     graph: &RailwayGraph,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
     let canvas_width = canvas_element.width() as f64;
     let canvas_height = canvas_element.height() as f64;
+
+    // Convert HashMap to Vec for drawing functions
+    let journeys_vec: Vec<_> = train_journeys.values().cloned().collect();
 
     let Ok(Some(context)) = canvas_element.get_context("2d") else {
         leptos::logging::warn!("Failed to get 2D context");
@@ -411,7 +446,7 @@ fn render_graph(
         &ctx,
         &zoomed_dimensions,
         stations,
-        train_journeys,
+        &journeys_vec,
         viewport.zoom_level,
         time_to_fraction,
     );
@@ -428,13 +463,30 @@ fn render_graph(
         );
 
         // Draw block visualization for hovered block violation
-        if let Some(conflict) = hovered_conflict {
+        if let Some(conflict) = hover_state.hovered_conflict {
             if conflict.conflict_type == crate::conflict::ConflictType::BlockViolation {
                 conflict_indicators::draw_block_violation_visualization(
                     &ctx,
                     &zoomed_dimensions,
                     conflict,
-                    train_journeys,
+                    &journeys_vec,
+                    station_height,
+                    viewport.zoom_level,
+                    time_to_fraction,
+                );
+            }
+        }
+    }
+
+    // Draw journey blocks if enabled and hovering over a journey
+    if hover_state.show_line_blocks {
+        if let Some(journey_id) = hover_state.hovered_journey_id {
+            if let Some(journey) = train_journeys.get(journey_id) {
+                conflict_indicators::draw_journey_blocks(
+                    &ctx,
+                    &zoomed_dimensions,
+                    journey,
+                    stations,
                     station_height,
                     viewport.zoom_level,
                     time_to_fraction,
@@ -460,7 +512,7 @@ fn render_graph(
         &ctx,
         &zoomed_dimensions,
         stations,
-        train_journeys,
+        &journeys_vec,
         station_height,
         current_time,
         viewport.zoom_level,

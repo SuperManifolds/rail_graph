@@ -1,6 +1,7 @@
 use crate::models::{Line, RailwayGraph, ScheduleMode};
 use crate::constants::{BASE_DATE, GENERATION_END_HOUR};
 use chrono::{Duration, NaiveDateTime, Timelike};
+use std::collections::HashMap;
 
 const MAX_JOURNEYS_PER_LINE: i32 = 100; // Limit to prevent performance issues
 
@@ -14,6 +15,7 @@ pub struct JourneySegment {
 
 #[derive(Debug, Clone)]
 pub struct TrainJourney {
+    pub id: uuid::Uuid,
     pub line_id: String,
     pub departure_time: NaiveDateTime,
     pub station_times: Vec<(String, NaiveDateTime, NaiveDateTime)>, // (station_name, arrival_time, departure_time)
@@ -24,12 +26,12 @@ pub struct TrainJourney {
 
 impl TrainJourney {
     /// Generate train journeys for all lines throughout the day
-    pub fn generate_journeys(lines: &[Line], graph: &RailwayGraph) -> Vec<TrainJourney> {
+    pub fn generate_journeys(lines: &[Line], graph: &RailwayGraph) -> HashMap<uuid::Uuid, TrainJourney> {
         let Some(day_end) = BASE_DATE.and_hms_opt(23, 59, 59) else {
-            return Vec::new();
+            return HashMap::new();
         };
 
-        let mut journeys = Vec::new();
+        let mut journeys = HashMap::new();
 
         for line in lines {
             if line.forward_route.is_empty() && line.return_route.is_empty() {
@@ -55,7 +57,7 @@ impl TrainJourney {
     }
 
     fn generate_forward_journeys(
-        journeys: &mut Vec<TrainJourney>,
+        journeys: &mut HashMap<uuid::Uuid, TrainJourney>,
         line: &Line,
         graph: &RailwayGraph,
         day_end: NaiveDateTime,
@@ -104,7 +106,9 @@ impl TrainJourney {
             }
 
             if station_times.len() >= 2 {
-                journeys.push(TrainJourney {
+                let id = uuid::Uuid::new_v4();
+                journeys.insert(id, TrainJourney {
+                    id,
                     line_id: line.id.clone(),
                     departure_time,
                     station_times,
@@ -124,7 +128,7 @@ impl TrainJourney {
     }
 
     fn generate_manual_journeys(
-        journeys: &mut Vec<TrainJourney>,
+        journeys: &mut HashMap<uuid::Uuid, TrainJourney>,
         line: &Line,
         graph: &RailwayGraph,
     ) {
@@ -141,7 +145,7 @@ impl TrainJourney {
                 from_idx,
                 to_idx,
             ) {
-                journeys.push(journey);
+                journeys.insert(journey.id, journey);
                 continue;
             }
 
@@ -154,7 +158,7 @@ impl TrainJourney {
                 from_idx,
                 to_idx,
             ) {
-                journeys.push(journey);
+                journeys.insert(journey.id, journey);
             }
         }
     }
@@ -226,6 +230,7 @@ impl TrainJourney {
 
         if station_times.len() >= 2 {
             Some(TrainJourney {
+                id: uuid::Uuid::new_v4(),
                 line_id: line.id.clone(),
                 departure_time,
                 station_times,
@@ -239,7 +244,7 @@ impl TrainJourney {
     }
 
     fn generate_return_journeys(
-        journeys: &mut Vec<TrainJourney>,
+        journeys: &mut HashMap<uuid::Uuid, TrainJourney>,
         line: &Line,
         graph: &RailwayGraph,
         day_end: NaiveDateTime,
@@ -292,7 +297,9 @@ impl TrainJourney {
             }
 
             if station_times.len() >= 2 {
-                journeys.push(TrainJourney {
+                let id = uuid::Uuid::new_v4();
+                journeys.insert(id, TrainJourney {
+                    id,
                     line_id: line.id.clone(),
                     departure_time: return_departure_time,
                     station_times,

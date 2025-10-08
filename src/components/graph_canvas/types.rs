@@ -40,3 +40,9 @@ pub struct ConflictDisplayState<'a> {
     pub show_conflicts: bool,
     pub show_station_crossings: bool,
 }
+
+pub struct HoverState<'a> {
+    pub hovered_conflict: Option<&'a Conflict>,
+    pub show_line_blocks: bool,
+    pub hovered_journey_id: Option<&'a uuid::Uuid>,
+}
