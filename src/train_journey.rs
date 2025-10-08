@@ -5,10 +5,19 @@ use chrono::{Duration, NaiveDateTime, Timelike};
 const MAX_JOURNEYS_PER_LINE: i32 = 100; // Limit to prevent performance issues
 
 #[derive(Debug, Clone)]
+pub struct JourneySegment {
+    pub edge_index: usize,
+    pub track_index: usize,
+    pub origin_platform: usize,
+    pub destination_platform: usize,
+}
+
+#[derive(Debug, Clone)]
 pub struct TrainJourney {
     pub line_id: String,
     pub departure_time: NaiveDateTime,
     pub station_times: Vec<(String, NaiveDateTime, NaiveDateTime)>, // (station_name, arrival_time, departure_time)
+    pub segments: Vec<JourneySegment>, // Track and platform info for each segment
     pub color: String,
     pub thickness: f64,
 }
@@ -56,6 +65,7 @@ impl TrainJourney {
 
         while departure_time <= day_end && journey_count < MAX_JOURNEYS_PER_LINE {
             let mut station_times = Vec::new();
+            let mut segments = Vec::new();
             let mut cumulative_time = Duration::zero();
 
             // Add first station (source of first edge)
@@ -83,6 +93,14 @@ impl TrainJourney {
                     continue;
                 };
                 station_times.push((name.to_string(), arrival_time, departure_from_station));
+
+                // Add segment info
+                segments.push(JourneySegment {
+                    edge_index: segment.edge_index,
+                    track_index: segment.track_index,
+                    origin_platform: segment.origin_platform,
+                    destination_platform: segment.destination_platform,
+                });
             }
 
             if station_times.len() >= 2 {
@@ -90,6 +108,7 @@ impl TrainJourney {
                     line_id: line.id.clone(),
                     departure_time,
                     station_times,
+                    segments,
                     color: line.color.clone(),
                     thickness: line.thickness,
                 });
@@ -178,6 +197,7 @@ impl TrainJourney {
 
         // Build station times for this journey segment
         let mut station_times = Vec::new();
+        let mut segments = Vec::new();
 
         // Get from station name for display
         let from_name = graph.get_station_name(from_idx)?;
@@ -194,6 +214,14 @@ impl TrainJourney {
 
             let name = graph.get_station_name(route_stations[i + 1])?;
             station_times.push((name.to_string(), arrival_time, departure_from_station));
+
+            // Add segment info
+            segments.push(JourneySegment {
+                edge_index: route[i].edge_index,
+                track_index: route[i].track_index,
+                origin_platform: route[i].origin_platform,
+                destination_platform: route[i].destination_platform,
+            });
         }
 
         if station_times.len() >= 2 {
@@ -201,6 +229,7 @@ impl TrainJourney {
                 line_id: line.id.clone(),
                 departure_time,
                 station_times,
+                segments,
                 color: line.color.clone(),
                 thickness: line.thickness,
             })
@@ -224,6 +253,7 @@ impl TrainJourney {
 
         while return_departure_time <= day_end && return_journey_count < MAX_JOURNEYS_PER_LINE {
             let mut station_times = Vec::new();
+            let mut segments = Vec::new();
             let mut cumulative_time = Duration::zero();
 
             // Add first station (source of first edge in return route)
@@ -251,6 +281,14 @@ impl TrainJourney {
                     continue;
                 };
                 station_times.push((name.to_string(), arrival_time, departure_from_station));
+
+                // Add segment info
+                segments.push(JourneySegment {
+                    edge_index: segment.edge_index,
+                    track_index: segment.track_index,
+                    origin_platform: segment.origin_platform,
+                    destination_platform: segment.destination_platform,
+                });
             }
 
             if station_times.len() >= 2 {
@@ -258,6 +296,7 @@ impl TrainJourney {
                     line_id: line.id.clone(),
                     departure_time: return_departure_time,
                     station_times,
+                    segments,
                     color: line.color.clone(),
                     thickness: line.thickness,
                 });

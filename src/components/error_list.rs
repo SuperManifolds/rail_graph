@@ -1,7 +1,7 @@
 use leptos::*;
 use leptos::leptos_dom::helpers::window_event_listener;
 use wasm_bindgen::JsCast;
-use crate::conflict::Conflict;
+use crate::conflict::{Conflict, ConflictType};
 use crate::time::time_to_fraction;
 
 #[component]
@@ -22,10 +22,10 @@ fn ErrorListPopover(
                         view! {
                             <div class="error-items">
                                 {current_conflicts.into_iter().map(|conflict| {
-                                    let conflict_type = if conflict.is_overtaking {
-                                        "Overtaking"
-                                    } else {
-                                        "Crossing"
+                                    let conflict_type_text = match conflict.conflict_type {
+                                        ConflictType::HeadOn => "Head-on Conflict",
+                                        ConflictType::Overtaking => "Overtaking",
+                                        ConflictType::BlockViolation => "Block Violation",
                                     };
 
                                     let time_fraction = time_to_fraction(conflict.time);
@@ -40,7 +40,7 @@ fn ErrorListPopover(
                                         >
                                             <div class="error-item-header">
                                                 <i class="fa-solid fa-triangle-exclamation"></i>
-                                                <span class="error-type">{conflict_type}</span>
+                                                <span class="error-type">{conflict_type_text}</span>
                                             </div>
                                             <div class="error-item-details">
                                                 <div class="error-detail">

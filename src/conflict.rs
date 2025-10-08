@@ -1,14 +1,20 @@
 use chrono::NaiveDateTime;
 use crate::train_journey::TrainJourney;
-use crate::models::{RailwayGraph, StationNode};
+use crate::models::{RailwayGraph, TrackDirection};
 use crate::time::time_to_fraction;
 use crate::constants::BASE_DATE;
-use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
 
 // Conflict detection constants
 const STATION_MARGIN_MINUTES: i64 = 1;
 const MAX_CONFLICTS: usize = 1000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictType {
+    HeadOn,         // Trains meeting on same track, opposite directions
+    Overtaking,     // Train catching up on same track, same direction
+    BlockViolation, // Two trains in same single-track block simultaneously
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Conflict {
@@ -18,7 +24,7 @@ pub struct Conflict {
     pub station2_idx: usize,
     pub journey1_id: String,
     pub journey2_id: String,
-    pub is_overtaking: bool, // True for same-direction conflicts, false for crossing
+    pub conflict_type: ConflictType,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -43,7 +49,6 @@ struct JourneySegment {
 
 struct ConflictContext<'a> {
     station_indices: HashMap<&'a str, usize>,
-    stations: &'a [StationNode],
     graph: &'a RailwayGraph,
     station_margin: chrono::Duration,
 }
@@ -69,7 +74,6 @@ pub fn detect_line_conflicts(
 
     let ctx = ConflictContext {
         station_indices,
-        stations: &stations,
         graph,
         station_margin: chrono::Duration::minutes(STATION_MARGIN_MINUTES),
     };
@@ -177,6 +181,40 @@ fn check_segment_pair(
         return;
     }
 
+    // Get segment info from journeys for track-level checking
+    // Find which segment indices these correspond to
+    let seg1_info = find_journey_segment_info(journey1, segment1.idx_start, segment1.idx_end, ctx);
+    let seg2_info = find_journey_segment_info(journey2, segment2.idx_start, segment2.idx_end, ctx);
+
+    // Both segments must have track info to check for conflicts
+    let (Some(info1), Some(info2)) = (seg1_info, seg2_info) else {
+        return;
+    };
+
+    // Check if they're on the same edge OR reverse edges on the same bidirectional track
+    let same_edge = info1.edge_index == info2.edge_index;
+    let reverse_edges = are_reverse_bidirectional_edges(
+        ctx,
+        info1.edge_index,
+        info2.edge_index,
+        info1.track_index,
+        info2.track_index,
+        segment1.idx_start,
+        segment1.idx_end,
+        segment2.idx_start,
+        segment2.idx_end,
+    );
+
+    if !same_edge && !reverse_edges {
+        return; // Different edges, no conflict
+    }
+
+    // Check if they're on the same track (only if same edge, reverse edges already checked track)
+    if same_edge && info1.track_index != info2.track_index {
+        return; // Different tracks on same edge, no conflict
+    }
+
+    // Same edge and same track - check for conflicts
     // Calculate intersection point
     let Some(intersection) = calculate_intersection(
         segment1.time_start,
@@ -204,15 +242,21 @@ fn check_segment_pair(
         return;
     }
 
-    // Determine if it's an overtaking or crossing conflict
-    let is_overtaking = (segment1.idx_start < segment1.idx_end && segment2.idx_start < segment2.idx_end)
+    // Determine conflict type based on travel directions
+    let same_direction = (segment1.idx_start < segment1.idx_end && segment2.idx_start < segment2.idx_end)
         || (segment1.idx_start > segment1.idx_end && segment2.idx_start > segment2.idx_end);
 
-    // Multi-tracked segments only prevent crossing conflicts, not overtaking
-    if !is_overtaking
-        && has_multiple_tracks(ctx, seg1_min, seg1_max) {
-            return;
+    // Get track direction to classify conflict type
+    let conflict_type = if same_direction {
+        ConflictType::Overtaking
+    } else {
+        // Check if this is a single-track bidirectional (block violation)
+        if is_single_track_bidirectional(ctx, info1.edge_index) {
+            ConflictType::BlockViolation
+        } else {
+            ConflictType::HeadOn
         }
+    };
 
     results.conflicts.push(Conflict {
         time: intersection.time,
@@ -221,34 +265,93 @@ fn check_segment_pair(
         station2_idx: seg1_max,
         journey1_id: journey1.line_id.clone(),
         journey2_id: journey2.line_id.clone(),
-        is_overtaking,
+        conflict_type,
     });
 }
 
-/// Check if a segment between two station indices has multiple tracks
-fn has_multiple_tracks(ctx: &ConflictContext, idx1: usize, idx2: usize) -> bool {
-    // Get station names from indices
-    let station1 = &ctx.stations[idx1];
-    let station2 = &ctx.stations[idx2];
+/// Find segment info (edge_index, track_index) for a journey segment
+fn find_journey_segment_info<'a>(
+    journey: &'a TrainJourney,
+    idx_start: usize,
+    idx_end: usize,
+    ctx: &ConflictContext,
+) -> Option<&'a crate::train_journey::JourneySegment> {
+    // idx_start and idx_end are global station indices from station_indices HashMap
+    // We need to find which segment in this journey connects those two stations
 
-    // Get NodeIndex for both stations
-    let Some(node1) = ctx.graph.get_station_index(&station1.name) else {
-        return false;
-    };
-    let Some(node2) = ctx.graph.get_station_index(&station2.name) else {
-        return false;
-    };
+    for (i, _) in journey.station_times.iter().enumerate().skip(1) {
+        if i - 1 < journey.segments.len() {
+            // Get the station names at positions i-1 and i in this journey
+            let station1_name = &journey.station_times[i - 1].0;
+            let station2_name = &journey.station_times[i].0;
 
-    // Check both directions for an edge
-    for edge in ctx.graph.graph.edges(node1) {
-        if edge.target() == node2 {
-            return edge.weight().tracks.len() >= 2;
+            // Look up their global indices
+            if let (Some(&s1_idx), Some(&s2_idx)) = (
+                ctx.station_indices.get(station1_name.as_str()),
+                ctx.station_indices.get(station2_name.as_str()),
+            ) {
+                // Check if this segment matches (must match exact direction)
+                if idx_start == s1_idx && idx_end == s2_idx {
+                    return Some(&journey.segments[i - 1]);
+                }
+            }
         }
     }
 
-    for edge in ctx.graph.graph.edges(node2) {
-        if edge.target() == node1 {
-            return edge.weight().tracks.len() >= 2;
+    None
+}
+
+/// Check if two edges are reverse edges connecting the same stations with bidirectional tracks
+fn are_reverse_bidirectional_edges(
+    ctx: &ConflictContext,
+    edge1_index: usize,
+    edge2_index: usize,
+    track1_index: usize,
+    track2_index: usize,
+    seg1_start: usize,
+    seg1_end: usize,
+    seg2_start: usize,
+    seg2_end: usize,
+) -> bool {
+    // Check if the segments connect the same stations in reverse order
+    // seg1 goes from seg1_start to seg1_end
+    // seg2 goes from seg2_start to seg2_end
+    // They're reverse if seg1_start == seg2_end AND seg1_end == seg2_start
+    let connects_reverse = seg1_start == seg2_end && seg1_end == seg2_start;
+
+    if !connects_reverse {
+        return false;
+    }
+
+    // Both must be using the same track index
+    if track1_index != track2_index {
+        return false;
+    }
+
+    // Both edges must exist and have bidirectional tracks at the specified track index
+    let edge1_idx = petgraph::graph::EdgeIndex::new(edge1_index);
+    let edge2_idx = petgraph::graph::EdgeIndex::new(edge2_index);
+
+    let edge1_bidirectional = ctx.graph.graph.edge_weight(edge1_idx)
+        .and_then(|ts| ts.tracks.get(track1_index))
+        .map(|t| matches!(t.direction, TrackDirection::Bidirectional))
+        .unwrap_or(false);
+
+    let edge2_bidirectional = ctx.graph.graph.edge_weight(edge2_idx)
+        .and_then(|ts| ts.tracks.get(track2_index))
+        .map(|t| matches!(t.direction, TrackDirection::Bidirectional))
+        .unwrap_or(false);
+
+    edge1_bidirectional && edge2_bidirectional
+}
+
+/// Check if an edge has only 1 bidirectional track (single-track section)
+fn is_single_track_bidirectional(ctx: &ConflictContext, edge_index: usize) -> bool {
+    let edge_idx = petgraph::graph::EdgeIndex::new(edge_index);
+
+    if let Some(track_segment) = ctx.graph.graph.edge_weight(edge_idx) {
+        if track_segment.tracks.len() == 1 {
+            return matches!(track_segment.tracks[0].direction, TrackDirection::Bidirectional);
         }
     }
 

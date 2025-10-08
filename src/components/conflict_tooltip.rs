@@ -1,5 +1,5 @@
 use leptos::*;
-use crate::conflict::Conflict;
+use crate::conflict::{Conflict, ConflictType};
 
 #[component]
 pub fn ConflictTooltip(
@@ -8,25 +8,24 @@ pub fn ConflictTooltip(
     view! {
         {move || {
             if let Some((conflict, tooltip_x, tooltip_y)) = hovered_conflict.get() {
-                // Use the stored flag to determine conflict type
-                let conflict_type = if conflict.is_overtaking {
-                    "overtakes"
-                } else {
-                    "conflicts with"
-                };
-
-                let (first_train, second_train) = if conflict_type == "overtakes" {
-                    // For overtaking, swap the order
-                    (&conflict.journey2_id, &conflict.journey1_id)
-                } else {
-                    // For crossing conflicts, keep original order
-                    (&conflict.journey1_id, &conflict.journey2_id)
+                // Determine conflict type text and train order
+                let (conflict_text, first_train, second_train) = match conflict.conflict_type {
+                    ConflictType::Overtaking => {
+                        // For overtaking, swap the order
+                        ("overtakes", &conflict.journey2_id, &conflict.journey1_id)
+                    }
+                    ConflictType::HeadOn => {
+                        ("conflicts with", &conflict.journey1_id, &conflict.journey2_id)
+                    }
+                    ConflictType::BlockViolation => {
+                        ("block violation with", &conflict.journey1_id, &conflict.journey2_id)
+                    }
                 };
 
                 let tooltip_text = format!(
                     "{} {} {} at {}",
                     first_train,
-                    conflict_type,
+                    conflict_text,
                     second_train,
                     conflict.time.format("%H:%M")
                 );
