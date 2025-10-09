@@ -23,7 +23,7 @@ pub fn ConflictTooltip(
 
                 let message = conflict.format_message(station1_name, station2_name);
                 let timestamp = conflict.time.format("%H:%M:%S");
-                let tooltip_text = format!("{} - {}", timestamp, message);
+                let tooltip_text = format!("{timestamp} - {message}");
 
                 view! {
                     <div

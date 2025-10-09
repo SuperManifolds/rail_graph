@@ -229,8 +229,8 @@ pub fn draw_block_violation_visualization(
         let color2 = journey2.map(|j| j.color.as_str()).unwrap_or("#0000FF");
 
         // Convert hex to rgba with transparency
-        let fill1 = format!("{}{}", color1, BLOCK_FILL_OPACITY);
-        let fill2 = format!("{}{}", color2, BLOCK_FILL_OPACITY);
+        let fill1 = format!("{color1}{BLOCK_FILL_OPACITY}");
+        let fill2 = format!("{color2}{BLOCK_FILL_OPACITY}");
 
         // Draw first journey's block
         draw_block_rectangle(
@@ -271,8 +271,8 @@ pub fn draw_journey_blocks(
 
     // Get journey color
     let color = journey.color.as_str();
-    let fill_color = format!("{}{}", color, BLOCK_FILL_OPACITY);
-    let stroke_color = format!("{}{}", color, BLOCK_STROKE_OPACITY);
+    let fill_color = format!("{color}{BLOCK_FILL_OPACITY}");
+    let stroke_color = format!("{color}{BLOCK_STROKE_OPACITY}");
 
     // Create station name to index mapping
     let station_map: std::collections::HashMap<&str, usize> = stations

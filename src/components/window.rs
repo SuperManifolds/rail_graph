@@ -158,7 +158,7 @@ pub fn Window(
                     let (x, y) = position.get();
                     let (width, height) = size.get();
                     let z = z_index.get();
-                    format!("left: {}px; top: {}px; width: {}px; height: {}px; z-index: {};", x, y, width, height, z)
+                    format!("left: {x}px; top: {y}px; width: {width}px; height: {height}px; z-index: {z};")
                 }
                 on:mousedown=move |_| bring_to_front()
             >

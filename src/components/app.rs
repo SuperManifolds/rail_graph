@@ -54,7 +54,7 @@ pub fn App() -> impl IntoView {
             let project = Project::new(current_lines, current_graph, current_legend);
             spawn_local(async move {
                 if let Err(e) = save_project_to_storage(&project).await {
-                    web_sys::console::error_1(&format!("Auto-save failed: {}", e).into());
+                    web_sys::console::error_1(&format!("Auto-save failed: {e}").into());
                 }
             });
         }

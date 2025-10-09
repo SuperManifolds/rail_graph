@@ -330,7 +330,7 @@ pub fn draw_stations(
 
     // Third pass: draw labels at calculated positions with rotation
     ctx.set_fill_style_str("#fff");
-    ctx.set_font(&format!("{}px sans-serif", font_size));
+    ctx.set_font(&format!("{font_size}px sans-serif"));
 
     for (idx, pos, _radius) in &node_positions {
         let Some(station) = graph.graph.node_weight(*idx) else { continue };

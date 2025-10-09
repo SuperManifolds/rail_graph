@@ -114,7 +114,7 @@ pub async fn save_project_to_storage(project: &Project) -> Result<(), String> {
 
     // Serialize to MessagePack binary format
     let project_bytes = rmp_serde::to_vec(project)
-        .map_err(|e| format!("Failed to serialize project: {}", e))?;
+        .map_err(|e| format!("Failed to serialize project: {e}"))?;
 
     // Create versioned format: [4 bytes f32 version][MessagePack data]
     let mut bytes = Vec::with_capacity(4 + project_bytes.len());
@@ -175,10 +175,10 @@ pub async fn load_project_from_storage() -> Result<Project, String> {
             v if (v - 1.0).abs() < f32::EPSILON => {
                 // Version 1.0 - current format
                 let project: Project = rmp_serde::from_slice(project_bytes)
-                    .map_err(|e| format!("Failed to parse project: {}", e))?;
+                    .map_err(|e| format!("Failed to parse project: {e}"))?;
                 Ok(project)
             }
-            _ => Err(format!("Unsupported project version: {}", version))
+            _ => Err(format!("Unsupported project version: {version}"))
         }
     } else {
         // Legacy format without version header - treat as error

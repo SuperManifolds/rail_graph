@@ -77,7 +77,7 @@ pub fn GeneralTab(
                                     }
                                 />
                                 <span class="thickness-value">
-                                    {format!("{:.1}", current_thickness)}
+                                    {format!("{current_thickness:.1}")}
                                 </span>
                             }
                         }}

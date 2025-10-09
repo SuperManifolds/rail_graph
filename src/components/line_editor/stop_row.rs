@@ -44,7 +44,7 @@ pub fn StopRow(
                 let hours = cumulative_seconds / 3600;
                 let minutes = (cumulative_seconds % 3600) / 60;
                 let seconds = cumulative_seconds % 60;
-                let preview_text = format!("(Σ {:02}:{:02}:{:02})", hours, minutes, seconds);
+                let preview_text = format!("(Σ {hours:02}:{minutes:02}:{seconds:02})");
 
                 view! {
                     <div class="time-input-with-preview">

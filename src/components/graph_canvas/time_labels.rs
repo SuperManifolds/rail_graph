@@ -206,21 +206,21 @@ fn draw_hour_label_with_day(
     if day == 0 {
         // First day, just show time
         let _ = ctx.fill_text(
-            &format!("{:02}:00", hour),
+            &format!("{hour:02}:00"),
             x + HOUR_LABEL_X_OFFSET,
             top + HOUR_LABEL_Y_OFFSET_TOP,
         );
     } else {
         // Past midnight, show day indicator
         let _ = ctx.fill_text(
-            &format!("{:02}:00", hour),
+            &format!("{hour:02}:00"),
             x + HOUR_LABEL_X_OFFSET,
             top + HOUR_LABEL_Y_OFFSET_TOP,
         );
         ctx.set_font(DAY_INDICATOR_FONT);
         ctx.set_fill_style_str(DAY_INDICATOR_COLOR);
         let _ = ctx.fill_text(
-            &format!("+{}", day),
+            &format!("+{day}"),
             x + DAY_INDICATOR_X_OFFSET,
             top + DAY_INDICATOR_Y_OFFSET,
         );
@@ -231,7 +231,7 @@ fn draw_ten_min_label(ctx: &CanvasRenderingContext2d, ten_minutes: i32, x: f64, 
     ctx.set_fill_style_str(TEN_MIN_LABEL_COLOR);
     ctx.set_font(TEN_MIN_LABEL_FONT);
     let _ = ctx.fill_text(
-        &format!(":{:02}", ten_minutes),
+        &format!(":{ten_minutes:02}"),
         x + TEN_MIN_LABEL_X_OFFSET,
         top + HOUR_LABEL_Y_OFFSET_TOP,
     );
@@ -243,7 +243,7 @@ fn draw_minute_label(ctx: &CanvasRenderingContext2d, minute: i32, x: f64, top: f
         ctx.set_fill_style_str(MINUTE_LABEL_BOLD_COLOR);
         ctx.set_font(MINUTE_LABEL_BOLD_FONT);
         let _ = ctx.fill_text(
-            &format!(":{:02}", minute),
+            &format!(":{minute:02}"),
             x + TEN_MIN_LABEL_X_OFFSET,
             top + HOUR_LABEL_Y_OFFSET_TOP,
         );
@@ -251,7 +251,7 @@ fn draw_minute_label(ctx: &CanvasRenderingContext2d, minute: i32, x: f64, top: f
         ctx.set_fill_style_str(MINUTE_LABEL_COLOR);
         ctx.set_font(MINUTE_LABEL_FONT);
         let _ = ctx.fill_text(
-            &format!(":{:02}", minute),
+            &format!(":{minute:02}"),
             x + MINUTE_LABEL_X_OFFSET,
             top + HOUR_LABEL_Y_OFFSET_TOP,
         );

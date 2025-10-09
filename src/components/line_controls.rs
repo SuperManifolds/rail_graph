@@ -97,7 +97,7 @@ pub fn LineControls(
             title=Signal::derive(|| "Delete Line".to_string())
             message=Signal::derive(move || {
                 delete_pending.get()
-                    .map(|id| format!("Are you sure you want to delete line \"{}\"? This action cannot be undone.", id))
+                    .map(|id| format!("Are you sure you want to delete line \"{id}\"? This action cannot be undone."))
                     .unwrap_or_default()
             })
             on_confirm=Rc::new(move || {
