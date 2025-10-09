@@ -565,6 +565,7 @@ fn calculate_intersection(
 
         // Convert back to time
         let base_datetime = BASE_DATE.and_hms_opt(0, 0, 0).expect("Valid datetime");
+        #[allow(clippy::cast_possible_truncation)]
         let intersection_time =
             base_datetime + chrono::Duration::seconds((x_intersect * 3600.0) as i64);
 

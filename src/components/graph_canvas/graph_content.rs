@@ -33,6 +33,7 @@ fn calculate_station_y(dims: &GraphDimensions, index: usize, station_height: f64
     dims.top_margin + (index as f64 * station_height) + (station_height / 2.0)
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, y: f64, zoom_level: f64, pan_offset_x: f64) {
     ctx.set_stroke_style_str(STATION_GRID_COLOR);
     ctx.set_line_width(1.0 / zoom_level);
@@ -54,7 +55,7 @@ fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, 
     ctx.stroke();
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 pub fn draw_double_track_indicators(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,

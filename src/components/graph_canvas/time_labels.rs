@@ -33,6 +33,7 @@ const DAY_INDICATOR_FONT: &str = "10px monospace";
 const DAY_INDICATOR_X_OFFSET: f64 = -10.0;
 const DAY_INDICATOR_Y_OFFSET: f64 = 5.0;
 
+#[allow(clippy::cast_possible_truncation)]
 pub fn draw_hour_grid(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -111,6 +112,7 @@ fn draw_vertical_line(ctx: &CanvasRenderingContext2d, x: f64, top: f64, height: 
     ctx.stroke();
 }
 
+#[allow(clippy::cast_possible_truncation)]
 pub fn draw_hour_labels(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
