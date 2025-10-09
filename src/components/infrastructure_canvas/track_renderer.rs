@@ -136,6 +136,7 @@ pub fn get_track_segments(graph: &RailwayGraph) -> Vec<((f64, f64), (f64, f64))>
     segments
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub fn draw_tracks(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,

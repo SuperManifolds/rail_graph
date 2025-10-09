@@ -29,6 +29,7 @@ const BLOCK_FILL_OPACITY: &str = "33"; // ~20% opacity in hex
 const BLOCK_STROKE_OPACITY: &str = "99"; // ~60% opacity in hex
 const BLOCK_BORDER_WIDTH: f64 = 1.0;
 
+#[allow(clippy::cast_precision_loss)]
 pub fn draw_conflict_highlights(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -102,7 +103,7 @@ pub fn draw_conflict_highlights(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::cast_precision_loss)]
 pub fn check_conflict_hover(
     mouse_x: f64,
     mouse_y: f64,
@@ -165,6 +166,7 @@ pub fn check_conflict_hover(
     None
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub fn draw_station_crossings(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -200,6 +202,7 @@ pub fn draw_station_crossings(
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub fn draw_block_violation_visualization(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -254,6 +257,7 @@ pub fn draw_block_violation_visualization(
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub fn draw_journey_blocks(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -302,6 +306,7 @@ pub fn draw_journey_blocks(
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn draw_block_rectangle(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,

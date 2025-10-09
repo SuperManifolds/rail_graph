@@ -22,6 +22,7 @@ const TOGGLE_ICON_Y_OFFSET: f64 = 4.0;
 const TOGGLE_DOUBLE_TRACK_ICON: &str = "≡";
 const TOGGLE_SINGLE_TRACK_ICON: &str = "─";
 
+#[allow(clippy::cast_precision_loss)]
 pub fn draw_station_labels(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -48,6 +49,7 @@ fn draw_station_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
     let _ = ctx.fill_text(station, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub fn draw_segment_toggles(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -61,12 +63,12 @@ pub fn draw_segment_toggles(
     let station_height = dims.graph_height / stations.len() as f64;
 
     for i in 1..stations.len() {
-        let station1 = &stations[i - 1];
-        let station2 = &stations[i];
+        let prev_station = &stations[i - 1];
+        let curr_station = &stations[i];
 
         // Check if there's a multi-tracked edge between these stations
         let has_multiple_tracks = if let (Some(node1), Some(node2)) =
-            (graph.get_station_index(&station1.name), graph.get_station_index(&station2.name)) {
+            (graph.get_station_index(&prev_station.name), graph.get_station_index(&curr_station.name)) {
 
             // Check both directions for an edge
             graph.graph.edges(node1).any(|e| {
@@ -128,6 +130,7 @@ pub fn draw_segment_toggles(
 }
 
 /// Check if a mouse click hit a toggle button for double-track segments
+#[allow(clippy::cast_precision_loss)]
 pub fn check_toggle_click(
     mouse_x: f64,
     mouse_y: f64,

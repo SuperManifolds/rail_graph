@@ -58,7 +58,7 @@ pub fn draw_hour_grid(
     let end_hour = (x_max / dims.hour_width).ceil() as i32 + HOUR_GRID_PADDING;
 
     for i in start_hour..=end_hour {
-        let x = dims.left_margin + (i as f64 * dims.hour_width);
+        let x = dims.left_margin + (f64::from(i) * dims.hour_width);
         draw_vertical_line(ctx, x, dims.top_margin, dims.graph_height);
     }
 
@@ -72,7 +72,7 @@ pub fn draw_hour_grid(
         for i in start_min..=end_min {
             if i % 60 != 0 {
                 // Skip hour marks
-                let x = dims.left_margin + (i as f64 * minute_width);
+                let x = dims.left_margin + (f64::from(i) * minute_width);
 
                 // Make 10-minute marks bolder
                 if i % 10 == 0 {
@@ -97,7 +97,7 @@ pub fn draw_hour_grid(
         for i in start_ten_min..=end_ten_min {
             if i % 6 != 0 {
                 // Skip hour marks
-                let x = dims.left_margin + (i as f64 * ten_min_width);
+                let x = dims.left_margin + (f64::from(i) * ten_min_width);
                 draw_vertical_line(ctx, x, dims.top_margin, dims.graph_height);
             }
         }
@@ -130,7 +130,7 @@ pub fn draw_hour_labels(
     let end_hour = ((-pan_offset_x + dims.graph_width) / effective_hour_width).ceil() as i32 + 1;
 
     for i in start_hour..=end_hour {
-        let base_x = i as f64 * dims.hour_width;
+        let base_x = f64::from(i) * dims.hour_width;
         let adjusted_x = dims.left_margin + (base_x * zoom_level * zoom_level_x) + pan_offset_x;
 
         if adjusted_x >= dims.left_margin
@@ -155,7 +155,7 @@ pub fn draw_hour_labels(
         for i in start_min..=end_min {
             if i % 60 != 0 && i >= 0 {
                 // Skip hour marks and negative
-                let base_x = i as f64 * minute_width;
+                let base_x = f64::from(i) * minute_width;
                 let adjusted_x =
                     dims.left_margin + (base_x * zoom_level * zoom_level_x) + pan_offset_x;
 
@@ -178,7 +178,7 @@ pub fn draw_hour_labels(
         for i in start_ten_min..=end_ten_min {
             if i % 6 != 0 && i >= 0 {
                 // Skip hour marks and negative
-                let base_x = i as f64 * ten_min_width;
+                let base_x = f64::from(i) * ten_min_width;
                 let adjusted_x =
                     dims.left_margin + (base_x * zoom_level * zoom_level_x) + pan_offset_x;
 

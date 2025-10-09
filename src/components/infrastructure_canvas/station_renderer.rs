@@ -140,6 +140,7 @@ fn lines_intersect(p1: (f64, f64), p2: (f64, f64), p3: (f64, f64), p4: (f64, f64
     (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u)
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub fn draw_stations(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,

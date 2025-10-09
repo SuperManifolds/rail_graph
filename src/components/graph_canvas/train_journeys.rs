@@ -10,6 +10,7 @@ const DOT_RADIUS_MULTIPLIER: f64 = 1.5; // Scale dots relative to line thickness
 const MIN_DOT_RADIUS: f64 = 2.0; // Minimum dot radius in pixels
 const TOTAL_HOURS: f64 = 48.0; // Total hours displayed on the graph
 
+#[allow(clippy::cast_precision_loss)]
 pub fn draw_train_journeys(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -104,6 +105,7 @@ pub fn draw_train_journeys(
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub fn check_journey_hover(
     mouse_x: f64,
     mouse_y: f64,
@@ -141,6 +143,7 @@ pub fn check_journey_hover(
         })
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn check_single_journey_hover(
     mouse_x: f64,
     mouse_y: f64,

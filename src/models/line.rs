@@ -4,30 +4,31 @@ use crate::constants::BASE_DATE;
 use petgraph::graph::NodeIndex;
 use super::{RailwayGraph, TrackSegment, TrackDirection};
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn generate_random_color(seed: usize) -> String {
     // Use a simple hash-based color generator for deterministic but varied colors
-    let hue = ((seed * 137) % 360) as f64;
-    let saturation = 65.0 + ((seed * 97) % 20) as f64; // 65-85%
-    let lightness = 55.0 + ((seed * 53) % 15) as f64;  // 55-70%
+    let hue = f64::from(((seed * 137) % 360) as i32);
+    let saturation = 65.0 + f64::from(((seed * 97) % 20) as i32); // 65-85%
+    let lightness = 55.0 + f64::from(((seed * 53) % 15) as i32);  // 55-70%
 
     // Convert HSL to RGB
-    let c = (1.0 - (2.0 * lightness / 100.0 - 1.0).abs()) * saturation / 100.0;
-    let x = c * (1.0 - ((hue / 60.0) % 2.0 - 1.0).abs());
-    let m = lightness / 100.0 - c / 2.0;
+    let chroma = (1.0 - (2.0 * lightness / 100.0 - 1.0).abs()) * saturation / 100.0;
+    let second_component = chroma * (1.0 - ((hue / 60.0) % 2.0 - 1.0).abs());
+    let lightness_match = lightness / 100.0 - chroma / 2.0;
 
-    let (r, g, b) = match hue as u32 {
-        0..=59 => (c, x, 0.0),
-        60..=119 => (x, c, 0.0),
-        120..=179 => (0.0, c, x),
-        180..=239 => (0.0, x, c),
-        240..=299 => (x, 0.0, c),
-        _ => (c, 0.0, x),
+    let (red, green, blue) = match hue as u32 {
+        0..=59 => (chroma, second_component, 0.0),
+        60..=119 => (second_component, chroma, 0.0),
+        120..=179 => (0.0, chroma, second_component),
+        180..=239 => (0.0, second_component, chroma),
+        240..=299 => (second_component, 0.0, chroma),
+        _ => (chroma, 0.0, second_component),
     };
 
     format!("#{:02X}{:02X}{:02X}",
-        ((r + m) * 255.0) as u8,
-        ((g + m) * 255.0) as u8,
-        ((b + m) * 255.0) as u8
+        ((red + lightness_match) * 255.0) as u8,
+        ((green + lightness_match) * 255.0) as u8,
+        ((blue + lightness_match) * 255.0) as u8
     )
 }
 
@@ -112,9 +113,9 @@ impl Line {
                 frequency: Duration::hours(1), // Default, configurable by user
                 color: generate_random_color(i),
                 thickness: 2.0,
-                first_departure: BASE_DATE.and_hms_opt(5, i as u32 * 15, 0)
+                first_departure: BASE_DATE.and_hms_opt(5, (i as u32).saturating_mul(15), 0)
                     .unwrap_or_else(|| BASE_DATE.and_hms_opt(5, 0, 0).expect("Valid time")),
-                return_first_departure: BASE_DATE.and_hms_opt(6, i as u32 * 15, 0)
+                return_first_departure: BASE_DATE.and_hms_opt(6, (i as u32).saturating_mul(15), 0)
                     .unwrap_or_else(|| BASE_DATE.and_hms_opt(6, 0, 0).expect("Valid time")),
                 visible: true,
                 schedule_mode: ScheduleMode::Auto,

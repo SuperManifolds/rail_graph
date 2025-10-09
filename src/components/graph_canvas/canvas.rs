@@ -18,6 +18,7 @@ pub const TOP_MARGIN: f64 = 60.0;
 pub const RIGHT_PADDING: f64 = 20.0;
 pub const BOTTOM_PADDING: f64 = 20.0;
 
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[component]
 pub fn GraphCanvas(
     graph: ReadSignal<RailwayGraph>,
@@ -300,6 +301,7 @@ pub fn GraphCanvas(
     }
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f64, zoom_level_x: f64, pan_offset_x: f64, set_time: WriteSignal<NaiveDateTime>) {
     // Transform mouse coordinates to account for zoom and pan
     // Reverse the transformations applied in render_graph:
