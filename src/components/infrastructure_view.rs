@@ -65,7 +65,7 @@ pub fn InfrastructureView(
         if has_unpositioned && current_graph.graph.node_count() > 0 {
             let Some(canvas) = canvas_ref.get() else { return };
             let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
-            let height = canvas_elem.client_height() as f64;
+            let height = f64::from(canvas_elem.client_height());
             auto_layout::apply_layout(&mut current_graph, height);
             set_graph.set(current_graph);
         }
@@ -84,7 +84,7 @@ pub fn InfrastructureView(
 
             if let Some(canvas) = canvas_ref.get() {
                 let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
-                let height = canvas_elem.client_height() as f64;
+                let height = f64::from(canvas_elem.client_height());
                 auto_layout::apply_layout(&mut current_graph, height);
                 set_graph.set(current_graph);
             }
@@ -251,7 +251,7 @@ pub fn InfrastructureView(
         let pan_x = pan_offset_x.get_untracked();
         let pan_y = pan_offset_y.get_untracked();
 
-        renderer::draw_infrastructure(&ctx, &current_graph, (container_width as f64, container_height as f64), zoom, pan_x, pan_y);
+        renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y);
     });
 
     // Mouse event handlers
@@ -259,8 +259,8 @@ pub fn InfrastructureView(
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
-            let screen_x = ev.client_x() as f64 - rect.left();
-            let screen_y = ev.client_y() as f64 - rect.top();
+            let screen_x = f64::from(ev.client_x()) - rect.left();
+            let screen_y = f64::from(ev.client_y()) - rect.top();
 
             let current_mode = edit_mode.get();
 
@@ -314,8 +314,8 @@ pub fn InfrastructureView(
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
-            let x = ev.client_x() as f64 - rect.left();
-            let y = ev.client_y() as f64 - rect.top();
+            let x = f64::from(ev.client_x()) - rect.left();
+            let y = f64::from(ev.client_y()) - rect.top();
 
             if is_panning.get() {
                 canvas_viewport::handle_pan_move(x, y, &viewport);
@@ -368,8 +368,8 @@ pub fn InfrastructureView(
                 if let Some(canvas_elem) = canvas_ref.get() {
                     let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
                     let rect = canvas.get_bounding_client_rect();
-                    let x = _ev.client_x() as f64 - rect.left();
-                    let y = _ev.client_y() as f64 - rect.top();
+                    let x = f64::from(_ev.client_x()) - rect.left();
+                    let y = f64::from(_ev.client_y()) - rect.top();
 
                     let zoom = zoom_level.get();
                     let pan_x = pan_offset_x.get();
@@ -390,8 +390,8 @@ pub fn InfrastructureView(
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
-            let screen_x = ev.client_x() as f64 - rect.left();
-            let screen_y = ev.client_y() as f64 - rect.top();
+            let screen_x = f64::from(ev.client_x()) - rect.left();
+            let screen_y = f64::from(ev.client_y()) - rect.top();
 
             let zoom = zoom_level.get();
             let pan_x = pan_offset_x.get();
@@ -424,8 +424,8 @@ pub fn InfrastructureView(
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
-            let mouse_x = ev.client_x() as f64 - rect.left();
-            let mouse_y = ev.client_y() as f64 - rect.top();
+            let mouse_x = f64::from(ev.client_x()) - rect.left();
+            let mouse_y = f64::from(ev.client_y()) - rect.top();
 
             canvas_viewport::handle_zoom(&ev, mouse_x, mouse_y, &viewport);
         }

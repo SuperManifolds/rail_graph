@@ -45,8 +45,8 @@ pub fn Window(
         if let Some(content_el) = content_ref.get() {
             leptos::set_timeout(
                 move || {
-                    let content_width = content_el.scroll_width() as f64;
-                    let content_height = content_el.scroll_height() as f64;
+                    let content_width = f64::from(content_el.scroll_width());
+                    let content_height = f64::from(content_el.scroll_height());
 
                     let header_height = 45.0;
                     let padding = 20.0;
@@ -83,13 +83,13 @@ pub fn Window(
         bring_to_front();
         set_is_dragging.set(true);
         let (pos_x, pos_y) = position.get_untracked();
-        set_drag_offset.set((ev.client_x() as f64 - pos_x, ev.client_y() as f64 - pos_y));
+        set_drag_offset.set((f64::from(ev.client_x()) - pos_x, f64::from(ev.client_y()) - pos_y));
     };
 
     let handle_mouse_move = move |ev: web_sys::MouseEvent| {
         if is_dragging.try_get_untracked().unwrap_or(false) {
             if let Some((offset_x, offset_y)) = drag_offset.try_get_untracked() {
-                let _ = set_position.try_set((ev.client_x() as f64 - offset_x, ev.client_y() as f64 - offset_y));
+                let _ = set_position.try_set((f64::from(ev.client_x()) - offset_x, f64::from(ev.client_y()) - offset_y));
             }
         }
     };
@@ -104,15 +104,15 @@ pub fn Window(
         bring_to_front();
         let _ = set_is_resizing.try_set(true);
         if let Some((width, height)) = size.try_get_untracked() {
-            let _ = set_resize_start.try_set((ev.client_x() as f64 - width, ev.client_y() as f64 - height));
+            let _ = set_resize_start.try_set((f64::from(ev.client_x()) - width, f64::from(ev.client_y()) - height));
         }
     };
 
     let handle_resize_move = move |ev: web_sys::MouseEvent| {
         if is_resizing.try_get_untracked().unwrap_or(false) {
             if let Some((start_x, start_y)) = resize_start.try_get_untracked() {
-                let new_width = (ev.client_x() as f64 - start_x).max(250.0);
-                let new_height = (ev.client_y() as f64 - start_y).max(200.0);
+                let new_width = (f64::from(ev.client_x()) - start_x).max(250.0);
+                let new_height = (f64::from(ev.client_y()) - start_y).max(200.0);
                 let _ = set_size.try_set((new_width, new_height));
             }
         }

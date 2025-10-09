@@ -57,8 +57,8 @@ pub fn GraphCanvas(
             if let Some((time_fraction, station_pos)) = pan_signal.get() {
                 if let Some(canvas_elem) = canvas_ref.get() {
                     let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
-                    let canvas_width = canvas.width() as f64;
-                    let canvas_height = canvas.height() as f64;
+                    let canvas_width = f64::from(canvas.width());
+                    let canvas_height = f64::from(canvas.height());
 
                     let dims = GraphDimensions::new(canvas_width, canvas_height);
 
@@ -170,16 +170,16 @@ pub fn GraphCanvas(
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
-            let x = ev.client_x() as f64 - rect.left();
-            let y = ev.client_y() as f64 - rect.top();
+            let x = f64::from(ev.client_x()) - rect.left();
+            let y = f64::from(ev.client_y()) - rect.top();
 
             // If right click or ctrl+click, start panning
             if ev.button() == 2 || ev.ctrl_key() {
                 canvas_viewport::handle_pan_start(x, y, &viewport);
             } else {
                 // Check for toggle button clicks first
-                let canvas_width = canvas.width() as f64;
-                let canvas_height = canvas.height() as f64;
+                let canvas_width = f64::from(canvas.width());
+                let canvas_height = f64::from(canvas.height());
                 let current_graph = graph.get();
                 let current_stations = current_graph.get_all_stations_ordered();
 
@@ -199,13 +199,13 @@ pub fn GraphCanvas(
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
-            let x = ev.client_x() as f64 - rect.left();
-            let y = ev.client_y() as f64 - rect.top();
+            let x = f64::from(ev.client_x()) - rect.left();
+            let y = f64::from(ev.client_y()) - rect.top();
 
             if is_panning.get() {
                 canvas_viewport::handle_pan_move(x, y, &viewport);
             } else if is_dragging.get() {
-                let canvas_width = canvas.width() as f64;
+                let canvas_width = f64::from(canvas.width());
                 let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
 
                 if x >= LEFT_MARGIN && x <= LEFT_MARGIN + graph_width {
@@ -218,7 +218,7 @@ pub fn GraphCanvas(
                 let current_stations = current_graph.get_all_stations_ordered();
                 let hovered = conflict_indicators::check_conflict_hover(
                     x, y, &current_conflicts, &current_stations,
-                    canvas.width() as f64, canvas.height() as f64,
+                    f64::from(canvas.width()), f64::from(canvas.height()),
                     zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), pan_offset_y.get()
                 );
                 set_hovered_conflict.set(hovered);
@@ -235,7 +235,7 @@ pub fn GraphCanvas(
                     };
                     let hovered_journey = train_journeys::check_journey_hover(
                         x, y, &journeys_vec, &current_stations,
-                        canvas.width() as f64, canvas.height() as f64,
+                        f64::from(canvas.width()), f64::from(canvas.height()),
                         &viewport
                     );
                     set_hovered_journey_id.set(hovered_journey);
@@ -263,12 +263,12 @@ pub fn GraphCanvas(
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
-            let mouse_x = ev.client_x() as f64 - rect.left();
-            let mouse_y = ev.client_y() as f64 - rect.top();
+            let mouse_x = f64::from(ev.client_x()) - rect.left();
+            let mouse_y = f64::from(ev.client_y()) - rect.top();
 
             // Only zoom if mouse is within the graph area
-            let canvas_width = canvas.width() as f64;
-            let canvas_height = canvas.height() as f64;
+            let canvas_width = f64::from(canvas.width());
+            let canvas_height = f64::from(canvas.height());
             let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
             let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
 
@@ -328,7 +328,7 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
     let hours = remaining_minutes / 60;
     let minutes = remaining_minutes % 60;
 
-    let target_date = BASE_DATE + chrono::Duration::days(days as i64);
+    let target_date = BASE_DATE + chrono::Duration::days(i64::from(days));
 
     if let Some(new_time) = chrono::NaiveTime::from_hms_opt(hours, minutes, 0) {
         let new_datetime = target_date.and_time(new_time);
@@ -347,8 +347,8 @@ fn render_graph(
     graph: &RailwayGraph,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
-    let canvas_width = canvas_element.width() as f64;
-    let canvas_height = canvas_element.height() as f64;
+    let canvas_width = f64::from(canvas_element.width());
+    let canvas_height = f64::from(canvas_element.height());
 
     // Convert HashMap to Vec for drawing functions
     let journeys_vec: Vec<_> = train_journeys.values().cloned().collect();

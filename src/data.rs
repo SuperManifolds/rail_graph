@@ -66,9 +66,9 @@ fn build_graph_and_routes_from_csv(
                     crate::time::parse_time_hms(s)
                         .ok()
                         .map(|t| {
-                            Duration::hours(t.hour() as i64) +
-                            Duration::minutes(t.minute() as i64) +
-                            Duration::seconds(t.second() as i64)
+                            Duration::hours(i64::from(t.hour())) +
+                            Duration::minutes(i64::from(t.minute())) +
+                            Duration::seconds(i64::from(t.second()))
                         })
                 });
             times.push(time_opt);
