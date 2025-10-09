@@ -7,6 +7,7 @@ pub struct Tab {
 }
 
 #[component]
+#[must_use]
 pub fn TabView(
     tabs: Vec<Tab>,
     #[prop(into)] active_tab: RwSignal<String>,
@@ -51,6 +52,7 @@ pub fn TabView(
 }
 
 #[component]
+#[must_use]
 pub fn TabPanel(when: Signal<bool>, children: Children) -> impl IntoView {
     let children = store_value(children());
     view! {

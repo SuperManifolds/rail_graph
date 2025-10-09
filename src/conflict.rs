@@ -36,6 +36,7 @@ pub struct Conflict {
 
 impl Conflict {
     /// Format a human-readable message describing the conflict (without timestamp)
+    #[must_use]
     pub fn format_message(&self, station1_name: &str, station2_name: &str) -> String {
         match self.conflict_type {
             ConflictType::PlatformViolation => {
@@ -67,6 +68,7 @@ impl Conflict {
     }
 
     /// Get a short name for the conflict type
+    #[must_use]
     pub fn type_name(&self) -> &'static str {
         match self.conflict_type {
             ConflictType::HeadOn => "Head-on Conflict",
@@ -110,6 +112,7 @@ struct PlatformOccupancy {
     time_end: NaiveDateTime,
 }
 
+#[must_use]
 pub fn detect_line_conflicts(
     train_journeys: &[TrainJourney],
     graph: &RailwayGraph,

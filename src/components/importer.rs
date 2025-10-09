@@ -9,6 +9,7 @@ use chrono::Duration;
 use std::collections::HashMap;
 
 #[component]
+#[must_use]
 pub fn Importer(
     set_lines: WriteSignal<Vec<Line>>,
     set_graph: WriteSignal<RailwayGraph>,

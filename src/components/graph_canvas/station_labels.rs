@@ -131,6 +131,7 @@ pub fn draw_segment_toggles(
 
 /// Check if a mouse click hit a toggle button for double-track segments
 #[allow(clippy::cast_precision_loss)]
+#[must_use]
 pub fn check_toggle_click(
     mouse_x: f64,
     mouse_y: f64,

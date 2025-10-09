@@ -106,6 +106,7 @@ pub fn draw_train_journeys(
 }
 
 #[allow(clippy::cast_precision_loss)]
+#[must_use]
 pub fn check_journey_hover(
     mouse_x: f64,
     mouse_y: f64,

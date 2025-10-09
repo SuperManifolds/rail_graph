@@ -104,6 +104,7 @@ pub fn draw_conflict_highlights(
 }
 
 #[allow(clippy::too_many_arguments, clippy::cast_precision_loss)]
+#[must_use]
 pub fn check_conflict_hover(
     mouse_x: f64,
     mouse_y: f64,

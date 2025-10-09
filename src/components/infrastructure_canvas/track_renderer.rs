@@ -80,6 +80,7 @@ fn calculate_avoidance_offset(
 }
 
 /// Get segments for a specific edge (used for both rendering and click detection)
+#[must_use]
 pub fn get_segments_for_edge(
     graph: &RailwayGraph,
     source: petgraph::graph::NodeIndex,
@@ -121,6 +122,7 @@ pub fn get_segments_for_edge(
 
 /// Get all track segments including intermediate points for avoidance
 /// Returns a list of line segments (start, end) that represent the actual drawn tracks
+#[must_use]
 pub fn get_track_segments(graph: &RailwayGraph) -> Vec<((f64, f64), (f64, f64))> {
     let mut segments = Vec::new();
 

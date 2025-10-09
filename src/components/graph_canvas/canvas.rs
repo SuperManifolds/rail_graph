@@ -20,6 +20,7 @@ pub const BOTTOM_PADDING: f64 = 20.0;
 
 #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[component]
+#[must_use]
 pub fn GraphCanvas(
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,

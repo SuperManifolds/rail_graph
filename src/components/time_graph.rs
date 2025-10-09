@@ -10,6 +10,7 @@ use crate::train_journey::TrainJourney;
 use leptos::*;
 
 #[component]
+#[must_use]
 pub fn TimeGraph(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,

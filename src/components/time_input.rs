@@ -3,6 +3,7 @@ use chrono::NaiveDateTime;
 use crate::constants::BASE_DATE;
 
 #[component]
+#[must_use]
 pub fn TimeInput(
     label: &'static str,
     value: Signal<NaiveDateTime>,

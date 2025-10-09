@@ -2,6 +2,7 @@ use crate::models::Platform;
 use leptos::*;
 
 #[component]
+#[must_use]
 pub fn PlatformEditor(
     platforms: ReadSignal<Vec<Platform>>,
     set_platforms: WriteSignal<Vec<Platform>>,

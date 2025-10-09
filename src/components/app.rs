@@ -12,6 +12,7 @@ enum AppView {
 }
 
 #[component]
+#[must_use]
 pub fn App() -> impl IntoView {
     provide_meta_context();
 

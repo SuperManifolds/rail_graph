@@ -26,6 +26,7 @@ pub struct TrainJourney {
 
 impl TrainJourney {
     /// Generate train journeys for all lines throughout the day
+    #[must_use]
     pub fn generate_journeys(lines: &[Line], graph: &RailwayGraph) -> HashMap<uuid::Uuid, TrainJourney> {
         let Some(day_end) = BASE_DATE.and_hms_opt(23, 59, 59) else {
             return HashMap::new();

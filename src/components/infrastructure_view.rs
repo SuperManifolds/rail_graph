@@ -18,6 +18,7 @@ enum EditMode {
 }
 
 #[component]
+#[must_use]
 pub fn InfrastructureView(
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,

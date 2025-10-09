@@ -9,6 +9,7 @@ const TRACK_CLICK_THRESHOLD: f64 = 8.0;
 
 type TrackSegments = Vec<((f64, f64), (f64, f64))>;
 
+#[must_use]
 pub fn find_station_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<NodeIndex> {
     for idx in graph.graph.node_indices() {
         if let Some(pos) = graph.get_station_position(idx) {
@@ -51,6 +52,7 @@ fn distance_to_segment(point: (f64, f64), seg_start: (f64, f64), seg_end: (f64, 
     (dist_x * dist_x + dist_y * dist_y).sqrt()
 }
 
+#[must_use]
 pub fn find_track_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<EdgeIndex> {
     // Build a mapping from segments to edge indices
     // For each edge, get its actual rendered segments (including avoidance paths)

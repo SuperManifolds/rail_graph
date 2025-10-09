@@ -3,6 +3,7 @@ use crate::conflict::Conflict;
 use crate::models::StationNode;
 
 #[component]
+#[must_use]
 pub fn ConflictTooltip(
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
     stations: Signal<Vec<StationNode>>,

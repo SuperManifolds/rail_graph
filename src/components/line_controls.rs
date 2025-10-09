@@ -7,6 +7,7 @@ use std::rc::Rc;
 
 
 #[component]
+#[must_use]
 pub fn LineControls(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
