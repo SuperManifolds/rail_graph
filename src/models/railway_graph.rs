@@ -2,67 +2,8 @@ use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Platform {
-    pub name: String,
-}
-
-fn default_platforms() -> Vec<Platform> {
-    vec![
-        Platform { name: "1".to_string() },
-        Platform { name: "2".to_string() },
-    ]
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StationNode {
-    pub name: String,
-    #[serde(default)]
-    pub position: Option<(f64, f64)>,
-    #[serde(default)]
-    pub passing_loop: bool,
-    #[serde(default = "default_platforms")]
-    pub platforms: Vec<Platform>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum TrackDirection {
-    Bidirectional,
-    Forward,    // From source to target only
-    Backward,   // From target to source only
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Track {
-    pub direction: TrackDirection,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TrackSegment {
-    pub tracks: Vec<Track>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub distance: Option<f64>,
-}
-
-impl TrackSegment {
-    pub fn new_single_track() -> Self {
-        Self {
-            tracks: vec![Track { direction: TrackDirection::Bidirectional }],
-            distance: None,
-        }
-    }
-
-    pub fn new_double_track() -> Self {
-        Self {
-            tracks: vec![
-                Track { direction: TrackDirection::Forward },
-                Track { direction: TrackDirection::Backward },
-            ],
-            distance: None,
-        }
-    }
-}
+use super::station::{StationNode, default_platforms};
+use super::track::{Track, TrackSegment, TrackDirection};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RailwayGraph {
@@ -262,6 +203,203 @@ impl RailwayGraph {
         }
 
         ordered
+    }
+
+    /// Toggle between single and double track for edges between two stations
+    /// Returns a Vec of (edge_index, new_track_count) for all modified edges
+    pub fn toggle_segment_double_track(&mut self, station1_name: &str, station2_name: &str) -> Vec<(usize, usize)> {
+        let mut changed_edges = Vec::new();
+
+        // Get node indices for both stations
+        let Some(node1) = self.get_station_index(station1_name) else {
+            return changed_edges;
+        };
+        let Some(node2) = self.get_station_index(station2_name) else {
+            return changed_edges;
+        };
+
+        // Find and toggle edges in both directions
+        for edge in self.graph.edge_indices() {
+            let Some((from, to)) = self.graph.edge_endpoints(edge) else {
+                continue;
+            };
+            if (from != node1 || to != node2) && (from != node2 || to != node1) {
+                continue;
+            }
+            let Some(weight) = self.graph.edge_weight_mut(edge) else {
+                continue;
+            };
+            // Toggle between single and double track
+            let new_weight = if weight.tracks.len() == 1 {
+                TrackSegment::new_double_track()
+            } else {
+                TrackSegment::new_single_track()
+            };
+            let new_track_count = new_weight.tracks.len();
+            *weight = new_weight;
+            changed_edges.push((edge.index(), new_track_count));
+        }
+
+        changed_edges
+    }
+
+    /// Extract ordered list of stations from a route based on direction
+    /// Returns Vec of (station_name, NodeIndex) in the order they're visited
+    pub fn get_stations_from_route(
+        &self,
+        route: &[crate::models::RouteSegment],
+        direction: crate::models::RouteDirection,
+    ) -> Vec<(String, NodeIndex)> {
+        let mut stations = Vec::new();
+
+        match direction {
+            crate::models::RouteDirection::Forward => {
+                // Forward: extract from -> to for each edge
+                if let Some(segment) = route.first() {
+                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                    if let Some((from, _)) = self.get_track_endpoints(edge_idx) {
+                        if let Some(name) = self.get_station_name(from) {
+                            stations.push((name.to_string(), from));
+                        }
+                    }
+                }
+
+                for segment in route {
+                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                    if let Some((_, to)) = self.get_track_endpoints(edge_idx) {
+                        if let Some(name) = self.get_station_name(to) {
+                            stations.push((name.to_string(), to));
+                        }
+                    }
+                }
+            }
+            crate::models::RouteDirection::Return => {
+                // Return: extract to -> from for each edge (traveling backwards)
+                if let Some(segment) = route.first() {
+                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                    if let Some((_, to)) = self.get_track_endpoints(edge_idx) {
+                        if let Some(name) = self.get_station_name(to) {
+                            stations.push((name.to_string(), to));
+                        }
+                    }
+                }
+
+                for segment in route {
+                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                    if let Some((from, _)) = self.get_track_endpoints(edge_idx) {
+                        if let Some(name) = self.get_station_name(from) {
+                            stations.push((name.to_string(), from));
+                        }
+                    }
+                }
+            }
+        }
+
+        stations
+    }
+
+    /// Get the first and last station indices for a route based on direction
+    /// Returns (Option<first_station>, Option<last_station>)
+    pub fn get_route_endpoints(
+        &self,
+        route: &[crate::models::RouteSegment],
+        direction: crate::models::RouteDirection,
+    ) -> (Option<NodeIndex>, Option<NodeIndex>) {
+        match direction {
+            crate::models::RouteDirection::Forward => {
+                let first = route.first()
+                    .and_then(|seg| {
+                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                        self.get_track_endpoints(edge).map(|(from, _)| from)
+                    });
+                let last = route.last()
+                    .and_then(|seg| {
+                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                        self.get_track_endpoints(edge).map(|(_, to)| to)
+                    });
+                (first, last)
+            }
+            crate::models::RouteDirection::Return => {
+                // Return route segments travel backwards on edges
+                // First segment's 'to' is the starting station
+                let first = route.first()
+                    .and_then(|seg| {
+                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                        self.get_track_endpoints(edge).map(|(_, to)| to)
+                    });
+                // Last segment's 'from' is the ending station
+                let last = route.last()
+                    .and_then(|seg| {
+                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                        self.get_track_endpoints(edge).map(|(from, _)| from)
+                    });
+                (first, last)
+            }
+        }
+    }
+
+    /// Get available stations that can be added at the start of a route
+    /// Returns station names that have edges connecting to the first station
+    pub fn get_available_start_stations(
+        &self,
+        route: &[crate::models::RouteSegment],
+        direction: crate::models::RouteDirection,
+    ) -> Vec<String> {
+        let (first_idx, _) = self.get_route_endpoints(route, direction);
+
+        let Some(first_idx) = first_idx else {
+            return Vec::new();
+        };
+
+        self.get_all_stations_ordered()
+            .iter()
+            .filter_map(|station| {
+                let station_idx = self.get_station_index(&station.name)?;
+                // For forward: find edge from station_idx to first_idx
+                // For return: find edge from first_idx to station_idx (traveling backwards)
+                let has_edge = match direction {
+                    crate::models::RouteDirection::Forward => self.graph.find_edge(station_idx, first_idx).is_some(),
+                    crate::models::RouteDirection::Return => self.graph.find_edge(first_idx, station_idx).is_some(),
+                };
+                if has_edge {
+                    Some(station.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Get available stations that can be added at the end of a route
+    /// Returns station names that have edges connecting from the last station
+    pub fn get_available_end_stations(
+        &self,
+        route: &[crate::models::RouteSegment],
+        direction: crate::models::RouteDirection,
+    ) -> Vec<String> {
+        let (_, last_idx) = self.get_route_endpoints(route, direction);
+
+        let Some(last_idx) = last_idx else {
+            return Vec::new();
+        };
+
+        self.get_all_stations_ordered()
+            .iter()
+            .filter_map(|station| {
+                let station_idx = self.get_station_index(&station.name)?;
+                // For forward: find edge from last_idx to station_idx
+                // For return: find edge from station_idx to last_idx (traveling backwards)
+                let has_edge = match direction {
+                    crate::models::RouteDirection::Forward => self.graph.find_edge(last_idx, station_idx).is_some(),
+                    crate::models::RouteDirection::Return => self.graph.find_edge(station_idx, last_idx).is_some(),
+                };
+                if has_edge {
+                    Some(station.name.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 

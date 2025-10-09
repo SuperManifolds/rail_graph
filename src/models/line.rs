@@ -277,6 +277,18 @@ impl Line {
         // Fallback to track 0 if no compatible track found
         0
     }
+
+    /// Check if this line uses a specific edge in either route
+    pub fn uses_edge(&self, edge_index: usize) -> bool {
+        self.forward_route.iter().any(|segment| segment.edge_index == edge_index) ||
+        self.return_route.iter().any(|segment| segment.edge_index == edge_index)
+    }
+
+    /// Check if this line uses any of the given edges in either route
+    pub fn uses_any_edge(&self, edge_indices: &[usize]) -> bool {
+        self.forward_route.iter().any(|segment| edge_indices.contains(&segment.edge_index)) ||
+        self.return_route.iter().any(|segment| edge_indices.contains(&segment.edge_index))
+    }
 }
 
 mod duration_serde {

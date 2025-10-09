@@ -1,7 +1,10 @@
 pub mod add_station;
+pub mod canvas_viewport;
+pub mod confirmation_dialog;
 pub mod delete_station_confirmation;
 pub mod edit_station;
 pub mod edit_track;
+pub mod track_editor;
 pub mod app;
 pub mod conflict_tooltip;
 pub mod duration_input;

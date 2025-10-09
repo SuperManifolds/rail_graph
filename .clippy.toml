@@ -1,3 +1,4 @@
 excessive-nesting-threshold = 5
 min-ident-chars-threshold = 3
 too-many-arguments-threshold = 8
+too-many-lines-threshold = 100

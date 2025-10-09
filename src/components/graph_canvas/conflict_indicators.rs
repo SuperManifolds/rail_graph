@@ -10,8 +10,11 @@ const CONFLICT_FILL_COLOR: &str = "rgba(255, 200, 0, 0.9)";
 const CONFLICT_STROKE_COLOR: &str = "rgba(0, 0, 0, 0.8)";
 const CONFLICT_ICON_COLOR: &str = "#000";
 const CONFLICT_ICON_FONT_SIZE: f64 = 12.0;
+const CONFLICT_ICON_OFFSET_X: f64 = 2.0;
+const CONFLICT_ICON_OFFSET_Y: f64 = 4.0;
 const CONFLICT_LABEL_COLOR: &str = "rgba(255, 255, 255, 0.9)";
 const CONFLICT_LABEL_FONT_SIZE: f64 = 9.0;
+const CONFLICT_LABEL_OFFSET: f64 = 5.0;
 const CONFLICT_WARNING_COLOR: &str = "rgba(255, 0, 0, 0.8)";
 const CONFLICT_WARNING_FONT_SIZE: f64 = 14.0;
 const MAX_CONFLICTS_DISPLAYED: usize = 1000;
@@ -20,6 +23,11 @@ const MAX_CONFLICTS_DISPLAYED: usize = 1000;
 const CROSSING_FILL_COLOR: &str = "rgba(0, 200, 100, 0.3)";
 const CROSSING_STROKE_COLOR: &str = "rgba(0, 150, 75, 0.6)";
 const CROSSING_LINE_WIDTH: f64 = 2.0;
+
+// Block visualization constants
+const BLOCK_FILL_OPACITY: &str = "33"; // ~20% opacity in hex
+const BLOCK_STROKE_OPACITY: &str = "99"; // ~60% opacity in hex
+const BLOCK_BORDER_WIDTH: f64 = 1.0;
 
 pub fn draw_conflict_highlights(
     ctx: &CanvasRenderingContext2d,
@@ -67,7 +75,7 @@ pub fn draw_conflict_highlights(
             "bold {}px sans-serif",
             CONFLICT_ICON_FONT_SIZE / zoom_level
         ));
-        let _ = ctx.fill_text("!", x - 2.0 / zoom_level, y + 4.0 / zoom_level);
+        let _ = ctx.fill_text("!", x - CONFLICT_ICON_OFFSET_X / zoom_level, y + CONFLICT_ICON_OFFSET_Y / zoom_level);
 
         // Draw conflict details (simplified - just show line IDs)
         ctx.set_fill_style_str(CONFLICT_LABEL_COLOR);
@@ -76,7 +84,7 @@ pub fn draw_conflict_highlights(
             CONFLICT_LABEL_FONT_SIZE / zoom_level
         ));
         let label = format!("{} × {}", conflict.journey1_id, conflict.journey2_id);
-        let _ = ctx.fill_text(&label, x + size + 5.0 / zoom_level, y);
+        let _ = ctx.fill_text(&label, x + size + CONFLICT_LABEL_OFFSET / zoom_level, y);
     }
 
     // If there are more conflicts than displayed, show a count
@@ -144,7 +152,7 @@ pub fn check_conflict_hover(
         let screen_y = TOP_MARGIN + (y_in_zoomed * zoom_level) + pan_offset_y;
 
         // Check if mouse is within conflict marker bounds
-        let size = 15.0;
+        let size = CONFLICT_TRIANGLE_SIZE;
         if mouse_x >= screen_x - size
             && mouse_x <= screen_x + size
             && mouse_y >= screen_y - size
@@ -217,8 +225,8 @@ pub fn draw_block_violation_visualization(
         let color2 = journey2.map(|j| j.color.as_str()).unwrap_or("#0000FF");
 
         // Convert hex to rgba with transparency
-        let fill1 = format!("{}33", color1); // Add 33 for ~20% opacity
-        let fill2 = format!("{}33", color2);
+        let fill1 = format!("{}{}", color1, BLOCK_FILL_OPACITY);
+        let fill2 = format!("{}{}", color2, BLOCK_FILL_OPACITY);
 
         // Draw first journey's block
         draw_block_rectangle(
@@ -258,8 +266,8 @@ pub fn draw_journey_blocks(
 
     // Get journey color
     let color = journey.color.as_str();
-    let fill_color = format!("{}33", color); // ~20% opacity
-    let stroke_color = format!("{}99", color); // ~60% opacity
+    let fill_color = format!("{}{}", color, BLOCK_FILL_OPACITY);
+    let stroke_color = format!("{}{}", color, BLOCK_STROKE_OPACITY);
 
     // Create station name to index mapping
     let station_map: std::collections::HashMap<&str, usize> = stations
@@ -322,7 +330,7 @@ fn draw_block_rectangle(
 
     // Draw border with zoom-adjusted line width
     ctx.set_stroke_style_str(stroke_color);
-    ctx.set_line_width(1.0 / zoom_level);
+    ctx.set_line_width(BLOCK_BORDER_WIDTH / zoom_level);
     ctx.stroke_rect(x1, y1, width, height);
 }
 

@@ -6,6 +6,7 @@ use crate::models::RailwayGraph;
 use crate::conflict::{Conflict, StationCrossing};
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
+use crate::components::canvas_viewport;
 use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
 use super::{station_labels, time_labels, conflict_indicators, train_positions, train_journeys, time_scrubber, graph_content};
@@ -21,7 +22,6 @@ pub const BOTTOM_PADDING: f64 = 20.0;
 pub fn GraphCanvas(
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
-    lines: ReadSignal<Vec<crate::models::Line>>,
     set_lines: WriteSignal<Vec<crate::models::Line>>,
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     visualization_time: ReadSignal<NaiveDateTime>,
@@ -36,13 +36,18 @@ pub fn GraphCanvas(
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
-    let (zoom_level, set_zoom_level) = create_signal(1.0);
-    let (zoom_level_x, set_zoom_level_x) = create_signal(1.0); // Horizontal (time) zoom
-    let (pan_offset_x, set_pan_offset_x) = create_signal(0.0);
-    let (pan_offset_y, set_pan_offset_y) = create_signal(0.0);
-    let (is_panning, set_is_panning) = create_signal(false);
-    let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
     let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
+
+    // Zoom and pan state using shared viewport utilities (with horizontal zoom enabled)
+    let viewport = canvas_viewport::create_viewport_signals(true);
+    let zoom_level = viewport.zoom_level;
+    let set_zoom_level = viewport.set_zoom_level;
+    let (zoom_level_x, set_zoom_level_x) = viewport.zoom_level_x.expect("horizontal zoom enabled");
+    let pan_offset_x = viewport.pan_offset_x;
+    let set_pan_offset_x = viewport.set_pan_offset_x;
+    let pan_offset_y = viewport.pan_offset_y;
+    let set_pan_offset_y = viewport.set_pan_offset_y;
+    let is_panning = viewport.is_panning;
 
     // Handle pan to conflict requests
     if let Some(pan_signal) = pan_to_conflict_signal {
@@ -168,8 +173,7 @@ pub fn GraphCanvas(
 
             // If right click or ctrl+click, start panning
             if ev.button() == 2 || ev.ctrl_key() {
-                set_is_panning.set(true);
-                set_last_mouse_pos.set((x, y));
+                canvas_viewport::handle_pan_start(x, y, &viewport);
             } else {
                 // Check for toggle button clicks first
                 let canvas_width = canvas.width() as f64;
@@ -181,7 +185,7 @@ pub fn GraphCanvas(
                     x, y, canvas_height, &current_stations,
                     zoom_level.get(), pan_offset_y.get()
                 ) {
-                    toggle_segment_double_track(clicked_segment, &current_stations, graph, set_graph, lines, set_lines);
+                    toggle_segment_double_track(clicked_segment, &current_stations, set_graph, set_lines);
                 } else {
                     handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
                 }
@@ -197,19 +201,7 @@ pub fn GraphCanvas(
             let y = ev.client_y() as f64 - rect.top();
 
             if is_panning.get() {
-                let (last_x, last_y) = last_mouse_pos.get();
-                let dx = x - last_x;
-                let dy = y - last_y;
-
-                let current_pan_x = pan_offset_x.get();
-                let current_pan_y = pan_offset_y.get();
-
-                // Batch pan updates to trigger only one re-render
-                batch(move || {
-                    set_pan_offset_x.set(current_pan_x + dx);
-                    set_pan_offset_y.set(current_pan_y + dy);
-                    set_last_mouse_pos.set((x, y));
-                });
+                canvas_viewport::handle_pan_move(x, y, &viewport);
             } else if is_dragging.get() {
                 let canvas_width = canvas.width() as f64;
                 let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
@@ -254,38 +246,13 @@ pub fn GraphCanvas(
 
     let handle_mouse_up = move |_ev: MouseEvent| {
         set_is_dragging.set(false);
-        set_is_panning.set(false);
+        canvas_viewport::handle_pan_end(&viewport);
     };
 
     let handle_mouse_leave = move |_ev: MouseEvent| {
         set_is_dragging.set(false);
-        set_is_panning.set(false);
+        canvas_viewport::handle_pan_end(&viewport);
         set_hovered_conflict.set(None);
-    };
-
-    let apply_horizontal_zoom = move |zoom_factor: f64, graph_mouse_x: f64, pan_x: f64| {
-        let old_zoom_x = zoom_level_x.get();
-        let new_zoom_x = (old_zoom_x * zoom_factor).clamp(0.1, 25.0);
-        let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom_x / old_zoom_x);
-
-        batch(move || {
-            set_zoom_level_x.set(new_zoom_x);
-            set_pan_offset_x.set(new_pan_x);
-        });
-    };
-
-    let apply_normal_zoom = move |zoom_factor: f64, graph_mouse_x: f64, graph_mouse_y: f64, pan_x: f64, pan_y: f64| {
-        let old_zoom = zoom_level.get();
-        let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 25.0);
-
-        let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom / old_zoom);
-        let new_pan_y = graph_mouse_y - (graph_mouse_y - pan_y) * (new_zoom / old_zoom);
-
-        batch(move || {
-            set_zoom_level.set(new_zoom);
-            set_pan_offset_x.set(new_pan_x);
-            set_pan_offset_y.set(new_pan_y);
-        });
     };
 
     let handle_wheel = move |ev: WheelEvent| {
@@ -306,22 +273,11 @@ pub fn GraphCanvas(
             if mouse_x >= LEFT_MARGIN && mouse_x <= LEFT_MARGIN + graph_width &&
                mouse_y >= TOP_MARGIN && mouse_y <= TOP_MARGIN + graph_height {
 
-                let delta = ev.delta_y();
-                let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
-                let shift_pressed = ev.shift_key();
-
                 // Calculate zoom point relative to graph area
                 let graph_mouse_x = mouse_x - LEFT_MARGIN;
                 let graph_mouse_y = mouse_y - TOP_MARGIN;
 
-                let pan_x = pan_offset_x.get();
-                let pan_y = pan_offset_y.get();
-
-                if shift_pressed {
-                    apply_horizontal_zoom(zoom_factor, graph_mouse_x, pan_x);
-                } else {
-                    apply_normal_zoom(zoom_factor, graph_mouse_x, graph_mouse_y, pan_x, pan_y);
-                }
+                canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport);
             }
         }
     };
@@ -565,9 +521,7 @@ fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
 fn toggle_segment_double_track(
     clicked_segment: usize,
     stations: &[crate::models::StationNode],
-    graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
-    lines: ReadSignal<Vec<crate::models::Line>>,
     set_lines: WriteSignal<Vec<crate::models::Line>>,
 ) {
     // segment index i represents the segment between stations[i-1] and stations[i]
@@ -575,57 +529,22 @@ fn toggle_segment_double_track(
         return;
     }
 
-    let station1 = &stations[clicked_segment - 1];
-    let station2 = &stations[clicked_segment];
-    let station1_name = station1.name.clone();
-    let station2_name = station2.name.clone();
+    let station1_name = stations[clicked_segment - 1].name.clone();
+    let station2_name = stations[clicked_segment].name.clone();
 
-    let mut current_lines = lines.get_untracked();
-    let mut changed_edges = Vec::new();
+    // Toggle track in the graph model
+    set_graph.update(|g| {
+        let changed_edges = g.toggle_segment_double_track(&station1_name, &station2_name);
 
-    set_graph.update(|graph| {
-        // Get node indices for both stations
-        let Some(node1) = graph.get_station_index(&station1_name) else {
-            return;
-        };
-        let Some(node2) = graph.get_station_index(&station2_name) else {
-            return;
-        };
-
-        // Find and toggle edges in both directions
-        for edge in graph.graph.edge_indices() {
-            let Some((from, to)) = graph.graph.edge_endpoints(edge) else {
-                continue;
-            };
-            if (from != node1 || to != node2) && (from != node2 || to != node1) {
-                continue;
+        // Update lines to fix incompatible track assignments
+        set_lines.update(|current_lines| {
+            for (edge_index, new_track_count) in changed_edges {
+                for line in current_lines.iter_mut() {
+                    line.fix_track_indices_after_change(edge_index, new_track_count, g);
+                }
             }
-            let Some(weight) = graph.graph.edge_weight_mut(edge) else {
-                continue;
-            };
-            // Toggle between single and double track
-            let new_weight = if weight.tracks.len() == 1 {
-                use crate::models::TrackSegment;
-                TrackSegment::new_double_track()
-            } else {
-                use crate::models::TrackSegment;
-                TrackSegment::new_single_track()
-            };
-            let new_track_count = new_weight.tracks.len();
-            *weight = new_weight;
-            changed_edges.push((edge.index(), new_track_count));
-        }
+        });
     });
-
-    // Update lines to fix incompatible track assignments
-    let current_graph = graph.get();
-    for (edge_index, new_track_count) in changed_edges {
-        for line in &mut current_lines {
-            line.fix_track_indices_after_change(edge_index, new_track_count, &current_graph);
-        }
-    }
-
-    set_lines.set(current_lines);
 }
 
 fn handle_time_scrubbing(

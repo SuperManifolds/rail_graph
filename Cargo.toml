@@ -8,6 +8,7 @@ complexity = "warn"
 perf = "warn"
 style = "warn"
 suspicious = "warn"
+pedantic = "warn"
 unwrap_used = "warn"
 
 [dependencies]

@@ -2,10 +2,19 @@ use crate::models::RailwayGraph;
 use petgraph::visit::EdgeRef;
 use web_sys::CanvasRenderingContext2d;
 
+// Track layout constants
 const TRACK_SPACING: f64 = 3.0;
 const STATION_AVOIDANCE_THRESHOLD: f64 = 20.0; // Minimum distance from station
 const STATION_AVOIDANCE_OFFSET: f64 = 25.0; // How far to push track away
 const TRANSITION_LENGTH: f64 = 30.0; // Distance over which to transition to/from offset
+const AVOIDANCE_OFFSET_THRESHOLD: f64 = 0.1; // Minimum offset to trigger avoidance rendering
+const PROJECTION_MIN: f64 = 0.1; // Minimum projection parameter for station checking
+const PROJECTION_MAX: f64 = 0.9; // Maximum projection parameter for station checking
+
+// Track rendering constants
+const TRACK_LINE_WIDTH: f64 = 2.0;
+const SINGLE_TRACK_COLOR: &str = "#444";
+const MULTIPLE_TRACK_COLOR: &str = "#555";
 
 /// Check if a line segment from pos1 to pos2 passes near any stations (excluding source and target)
 /// Returns a perpendicular offset to shift the track away from the station
@@ -38,7 +47,7 @@ fn calculate_avoidance_offset(
         let t = ((station_pos.0 - pos1.0) * dx + (station_pos.1 - pos1.1) * dy) / len_sq;
 
         // Only check if station is between the two endpoints (not beyond them)
-        if !(0.1..=0.9).contains(&t) {
+        if !(PROJECTION_MIN..=PROJECTION_MAX).contains(&t) {
             continue;
         }
 
@@ -82,7 +91,7 @@ pub fn get_segments_for_edge(
 
     // Check if we need to offset to avoid any stations
     let (avoid_x, avoid_y) = calculate_avoidance_offset(graph, pos1, pos2, source, target);
-    let needs_avoidance = avoid_x.abs() > 0.1 || avoid_y.abs() > 0.1;
+    let needs_avoidance = avoid_x.abs() > AVOIDANCE_OFFSET_THRESHOLD || avoid_y.abs() > AVOIDANCE_OFFSET_THRESHOLD;
 
     if needs_avoidance {
         // Add segmented path
@@ -151,32 +160,31 @@ pub fn draw_tracks(
         let nx = -dy / len;
         let ny = dx / len;
 
-        ctx.set_line_width(2.0 / zoom);
+        ctx.set_line_width(TRACK_LINE_WIDTH / zoom);
 
         // Check if we need to offset to avoid any stations
         let (avoid_x, avoid_y) = calculate_avoidance_offset(graph, pos1, pos2, source, target);
-        let needs_avoidance = avoid_x.abs() > 0.1 || avoid_y.abs() > 0.1;
+        let needs_avoidance = avoid_x.abs() > AVOIDANCE_OFFSET_THRESHOLD || avoid_y.abs() > AVOIDANCE_OFFSET_THRESHOLD;
 
         if track_count == 1 {
             // Single track - draw in center (with avoidance if needed)
-            ctx.set_stroke_style_str("#444");
+            ctx.set_stroke_style_str(SINGLE_TRACK_COLOR);
             ctx.begin_path();
 
             if needs_avoidance {
                 // Draw segmented path: start -> offset section -> end
                 let segment_length = ((pos2.0 - pos1.0).powi(2) + (pos2.1 - pos1.1).powi(2)).sqrt();
-                let transition_length = 30.0; // Distance over which to transition
 
                 ctx.move_to(pos1.0, pos1.1);
 
                 // Transition to offset
-                let t1 = transition_length / segment_length;
+                let t1 = TRANSITION_LENGTH / segment_length;
                 let mid1_x = pos1.0 + (pos2.0 - pos1.0) * t1;
                 let mid1_y = pos1.1 + (pos2.1 - pos1.1) * t1;
                 ctx.line_to(mid1_x + avoid_x, mid1_y + avoid_y);
 
                 // Continue with offset
-                let t2 = (segment_length - transition_length) / segment_length;
+                let t2 = (segment_length - TRANSITION_LENGTH) / segment_length;
                 let mid2_x = pos1.0 + (pos2.0 - pos1.0) * t2;
                 let mid2_y = pos1.1 + (pos2.1 - pos1.1) * t2;
                 ctx.line_to(mid2_x + avoid_x, mid2_y + avoid_y);
@@ -199,22 +207,21 @@ pub fn draw_tracks(
                 let ox = nx * offset;
                 let oy = ny * offset;
 
-                ctx.set_stroke_style_str("#555");
+                ctx.set_stroke_style_str(MULTIPLE_TRACK_COLOR);
                 ctx.begin_path();
 
                 if needs_avoidance {
                     // Draw segmented path with offset
                     let segment_length = ((pos2.0 - pos1.0).powi(2) + (pos2.1 - pos1.1).powi(2)).sqrt();
-                    let transition_length = 30.0;
 
                     ctx.move_to(pos1.0 + ox, pos1.1 + oy);
 
-                    let t1 = transition_length / segment_length;
+                    let t1 = TRANSITION_LENGTH / segment_length;
                     let mid1_x = pos1.0 + (pos2.0 - pos1.0) * t1;
                     let mid1_y = pos1.1 + (pos2.1 - pos1.1) * t1;
                     ctx.line_to(mid1_x + ox + avoid_x, mid1_y + oy + avoid_y);
 
-                    let t2 = (segment_length - transition_length) / segment_length;
+                    let t2 = (segment_length - TRANSITION_LENGTH) / segment_length;
                     let mid2_x = pos1.0 + (pos2.0 - pos1.0) * t2;
                     let mid2_y = pos1.1 + (pos2.1 - pos1.1) * t2;
                     ctx.line_to(mid2_x + ox + avoid_x, mid2_y + oy + avoid_y);

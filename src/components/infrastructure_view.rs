@@ -1,14 +1,13 @@
 use crate::models::{RailwayGraph, Line, Track};
-use crate::components::infrastructure_canvas::{auto_layout, station_renderer, track_renderer};
+use crate::components::infrastructure_canvas::{auto_layout, renderer, hit_detection};
+use crate::components::canvas_viewport;
 use crate::components::add_station::AddStation;
 use crate::components::delete_station_confirmation::DeleteStationConfirmation;
 use crate::components::edit_station::EditStation;
 use crate::components::edit_track::EditTrack;
 use leptos::*;
 use petgraph::graph::{NodeIndex, EdgeIndex};
-use petgraph::visit::EdgeRef;
 use std::rc::Rc;
-use std::collections::HashMap;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, MouseEvent, WheelEvent};
 
@@ -41,12 +40,12 @@ pub fn InfrastructureView(
     let (is_over_track, set_is_over_track) = create_signal(false);
     let (dragging_station, set_dragging_station) = create_signal(None::<NodeIndex>);
 
-    // Zoom and pan state
-    let (zoom_level, set_zoom_level) = create_signal(1.0);
-    let (pan_offset_x, set_pan_offset_x) = create_signal(0.0);
-    let (pan_offset_y, set_pan_offset_y) = create_signal(0.0);
-    let (is_panning, set_is_panning) = create_signal(false);
-    let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
+    // Zoom and pan state using shared viewport utilities
+    let viewport = canvas_viewport::create_viewport_signals(false);
+    let zoom_level = viewport.zoom_level;
+    let pan_offset_x = viewport.pan_offset_x;
+    let pan_offset_y = viewport.pan_offset_y;
+    let is_panning = viewport.is_panning;
 
     // Apply auto layout when enabled and there are unpositioned stations
     create_effect(move |_| {
@@ -144,10 +143,7 @@ pub fn InfrastructureView(
         // Find which lines are affected
         let affected: Vec<String> = current_lines
             .iter()
-            .filter(|line| {
-                line.forward_route.iter().any(|segment| station_edges.contains(&segment.edge_index)) ||
-                line.return_route.iter().any(|segment| station_edges.contains(&segment.edge_index))
-            })
+            .filter(|line| line.uses_any_edge(&station_edges))
             .map(|line| line.id.clone())
             .collect();
 
@@ -254,7 +250,7 @@ pub fn InfrastructureView(
         let pan_x = pan_offset_x.get_untracked();
         let pan_y = pan_offset_y.get_untracked();
 
-        draw_infrastructure(&ctx, &current_graph, (container_width as f64, container_height as f64), zoom, pan_x, pan_y);
+        renderer::draw_infrastructure(&ctx, &current_graph, (container_width as f64, container_height as f64), zoom, pan_x, pan_y);
     });
 
     // Mouse event handlers
@@ -278,7 +274,7 @@ pub fn InfrastructureView(
                 EditMode::AddingTrack => {
                     // Find if we clicked on a station
                     let current_graph = graph.get();
-                    let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) else {
+                    let Some(clicked_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) else {
                         return;
                     };
 
@@ -299,13 +295,12 @@ pub fn InfrastructureView(
                 }
                 EditMode::None => {
                     let current_graph = graph.get();
-                    match find_station_at_position(&current_graph, world_x, world_y) {
+                    match hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
                         Some(clicked_station) if Some(clicked_station) == editing_station.get() => {
                             set_dragging_station.set(Some(clicked_station));
                         }
                         None if ev.button() == 2 || ev.ctrl_key() || ev.button() == 0 => {
-                            set_is_panning.set(true);
-                            set_last_mouse_pos.set((screen_x, screen_y));
+                            canvas_viewport::handle_pan_start(screen_x, screen_y, &viewport);
                         }
                         _ => {}
                     }
@@ -322,18 +317,7 @@ pub fn InfrastructureView(
             let y = ev.client_y() as f64 - rect.top();
 
             if is_panning.get() {
-                let (last_x, last_y) = last_mouse_pos.get();
-                let dx = x - last_x;
-                let dy = y - last_y;
-
-                let current_pan_x = pan_offset_x.get();
-                let current_pan_y = pan_offset_y.get();
-
-                batch(move || {
-                    set_pan_offset_x.set(current_pan_x + dx);
-                    set_pan_offset_y.set(current_pan_y + dy);
-                    set_last_mouse_pos.set((x, y));
-                });
+                canvas_viewport::handle_pan_move(x, y, &viewport);
             } else if let Some(station_idx) = dragging_station.get() {
                 // Dragging a station
                 let zoom = zoom_level.get();
@@ -354,13 +338,13 @@ pub fn InfrastructureView(
                 let world_y = (y - pan_y) / zoom;
 
                 let current_graph = graph.get();
-                if let Some(hovered_station) = find_station_at_position(&current_graph, world_x, world_y) {
+                if let Some(hovered_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
                     // Check if we're hovering over the currently edited station
                     let is_editing_this = Some(hovered_station) == editing_station.get();
                     set_is_over_station.set(true);
                     set_is_over_edited_station.set(is_editing_this);
                     set_is_over_track.set(false);
-                } else if find_track_at_position(&current_graph, world_x, world_y).is_some() {
+                } else if hit_detection::find_track_at_position(&current_graph, world_x, world_y).is_some() {
                     // Hovering over a track
                     set_is_over_station.set(false);
                     set_is_over_edited_station.set(false);
@@ -375,7 +359,7 @@ pub fn InfrastructureView(
     };
 
     let handle_mouse_up = move |_ev: MouseEvent| {
-        set_is_panning.set(false);
+        canvas_viewport::handle_pan_end(&viewport);
 
         // If we were dragging and auto layout is on, snap to nearest 45-degree angle
         if let Some(station_idx) = dragging_station.get() {
@@ -417,16 +401,16 @@ pub fn InfrastructureView(
             let current_graph = graph.get();
 
             // Check for station click first (stations are smaller/more precise targets)
-            if let Some(clicked_station) = find_station_at_position(&current_graph, world_x, world_y) {
+            if let Some(clicked_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
                 set_editing_station.set(Some(clicked_station));
-            } else if let Some(clicked_track) = find_track_at_position(&current_graph, world_x, world_y) {
+            } else if let Some(clicked_track) = hit_detection::find_track_at_position(&current_graph, world_x, world_y) {
                 set_editing_track.set(Some(clicked_track));
             }
         }
     };
 
     let handle_mouse_leave = move |_ev: MouseEvent| {
-        set_is_panning.set(false);
+        canvas_viewport::handle_pan_end(&viewport);
         set_dragging_station.set(None);
         set_is_over_station.set(false);
         set_is_over_edited_station.set(false);
@@ -442,23 +426,7 @@ pub fn InfrastructureView(
             let mouse_x = ev.client_x() as f64 - rect.left();
             let mouse_y = ev.client_y() as f64 - rect.top();
 
-            let delta = ev.delta_y();
-            let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
-
-            let old_zoom = zoom_level.get();
-            let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 25.0);
-
-            let pan_x = pan_offset_x.get();
-            let pan_y = pan_offset_y.get();
-
-            let new_pan_x = mouse_x - (mouse_x - pan_x) * (new_zoom / old_zoom);
-            let new_pan_y = mouse_y - (mouse_y - pan_y) * (new_zoom / old_zoom);
-
-            batch(move || {
-                set_zoom_level.set(new_zoom);
-                set_pan_offset_x.set(new_pan_x);
-                set_pan_offset_y.set(new_pan_y);
-            });
+            canvas_viewport::handle_zoom(&ev, mouse_x, mouse_y, &viewport);
         }
     };
 
@@ -560,119 +528,4 @@ pub fn InfrastructureView(
             />
         </div>
     }
-}
-
-fn draw_infrastructure(
-    ctx: &CanvasRenderingContext2d,
-    graph: &RailwayGraph,
-    (width, height): (f64, f64),
-    zoom: f64,
-    pan_x: f64,
-    pan_y: f64,
-) {
-    // Clear canvas
-    ctx.set_fill_style_str("#0a0a0a");
-    ctx.fill_rect(0.0, 0.0, width, height);
-
-    if graph.graph.node_count() == 0 {
-        // Show message if no stations
-        ctx.set_fill_style_str("#666");
-        ctx.set_font("16px sans-serif");
-        let _ = ctx.fill_text("No stations in network", width / 2.0 - 80.0, height / 2.0);
-        return;
-    }
-
-    // Save context and apply transformations
-    ctx.save();
-    let _ = ctx.translate(pan_x, pan_y);
-    let _ = ctx.scale(zoom, zoom);
-
-    // Draw tracks first so they're behind nodes
-    track_renderer::draw_tracks(ctx, graph, zoom);
-
-    // Draw stations on top
-    station_renderer::draw_stations(ctx, graph, zoom);
-
-    // Restore context
-    ctx.restore();
-}
-
-fn find_station_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<NodeIndex> {
-    const CLICK_THRESHOLD: f64 = 15.0;
-
-    for idx in graph.graph.node_indices() {
-        if let Some(pos) = graph.get_station_position(idx) {
-            let dx = pos.0 - x;
-            let dy = pos.1 - y;
-            let dist = (dx * dx + dy * dy).sqrt();
-
-            if dist <= CLICK_THRESHOLD {
-                return Some(idx);
-            }
-        }
-    }
-
-    None
-}
-
-fn distance_to_segment(point: (f64, f64), seg_start: (f64, f64), seg_end: (f64, f64)) -> f64 {
-    let dx = seg_end.0 - seg_start.0;
-    let dy = seg_end.1 - seg_start.1;
-    let len_sq = dx * dx + dy * dy;
-
-    if len_sq == 0.0 {
-        // Degenerate segment
-        let dx = point.0 - seg_start.0;
-        let dy = point.1 - seg_start.1;
-        return (dx * dx + dy * dy).sqrt();
-    }
-
-    // Calculate projection parameter t
-    let t = ((point.0 - seg_start.0) * dx + (point.1 - seg_start.1) * dy) / len_sq;
-    let t = t.clamp(0.0, 1.0);
-
-    // Find closest point on segment
-    let closest_x = seg_start.0 + t * dx;
-    let closest_y = seg_start.1 + t * dy;
-
-    // Calculate distance
-    let dist_x = point.0 - closest_x;
-    let dist_y = point.1 - closest_y;
-    (dist_x * dist_x + dist_y * dist_y).sqrt()
-}
-
-type TrackSegments = Vec<((f64, f64), (f64, f64))>;
-
-fn find_track_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<EdgeIndex> {
-    const CLICK_THRESHOLD: f64 = 8.0;
-
-    // Build a mapping from segments to edge indices
-    // For each edge, get its actual rendered segments (including avoidance paths)
-    let mut edge_segments: HashMap<EdgeIndex, TrackSegments> = HashMap::new();
-
-    // Use same logic as track renderer to get actual segments
-    for edge in graph.graph.edge_references() {
-        let edge_id = edge.id();
-        let source = edge.source();
-        let target = edge.target();
-
-        let Some(pos1) = graph.get_station_position(source) else { continue };
-        let Some(pos2) = graph.get_station_position(target) else { continue };
-
-        // Check if we need avoidance (using same logic as track_renderer)
-        let segments = track_renderer::get_segments_for_edge(graph, source, target, pos1, pos2);
-        edge_segments.insert(edge_id, segments);
-    }
-
-    // Check each segment for each edge
-    for (edge_id, segments) in edge_segments {
-        for (seg_start, seg_end) in segments {
-            let dist = distance_to_segment((x, y), seg_start, seg_end);
-            if dist <= CLICK_THRESHOLD {
-                return Some(edge_id);
-            }
-        }
-    }
-
-    None
 }
