@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::{component, event_target_value, IntoView, Signal, SignalGet, view};
 use chrono::Duration;
 
 fn duration_to_hhmmss(duration: Duration) -> String {

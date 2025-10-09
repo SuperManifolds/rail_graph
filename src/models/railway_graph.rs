@@ -265,12 +265,7 @@ impl RailwayGraph {
                 }
 
                 for segment in route {
-                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                    if let Some((_, to)) = self.get_track_endpoints(edge_idx) {
-                        if let Some(name) = self.get_station_name(to) {
-                            stations.push((name.to_string(), to));
-                        }
-                    }
+                    self.add_station_if_exists(segment.edge_index, false, &mut stations);
                 }
             }
             crate::models::RouteDirection::Return => {
@@ -285,17 +280,26 @@ impl RailwayGraph {
                 }
 
                 for segment in route {
-                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                    if let Some((from, _)) = self.get_track_endpoints(edge_idx) {
-                        if let Some(name) = self.get_station_name(from) {
-                            stations.push((name.to_string(), from));
-                        }
-                    }
+                    self.add_station_if_exists(segment.edge_index, true, &mut stations);
                 }
             }
         }
 
         stations
+    }
+
+    /// Helper to add a station to the list if it exists
+    /// If `use_from` is true, adds the 'from' station, otherwise adds the 'to' station
+    fn add_station_if_exists(&self, edge_index: usize, use_from: bool, stations: &mut Vec<(String, NodeIndex)>) {
+        let edge_idx = petgraph::graph::EdgeIndex::new(edge_index);
+        let Some((from, to)) = self.get_track_endpoints(edge_idx) else {
+            return;
+        };
+        let station_idx = if use_from { from } else { to };
+        let Some(name) = self.get_station_name(station_idx) else {
+            return;
+        };
+        stations.push((name.to_string(), station_idx));
     }
 
     /// Get the first and last station indices for a route based on direction

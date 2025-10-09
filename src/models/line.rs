@@ -4,7 +4,7 @@ use crate::constants::BASE_DATE;
 use petgraph::graph::NodeIndex;
 use super::{RailwayGraph, TrackSegment, TrackDirection};
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 fn generate_random_color(seed: usize) -> String {
     // Use a simple hash-based color generator for deterministic but varied colors
     let hue = f64::from(((seed * 137) % 360) as i32);
@@ -104,6 +104,7 @@ fn default_thickness() -> f64 {
 
 impl Line {
     /// Create lines from IDs with default settings
+    #[must_use]
     pub fn create_from_ids(line_ids: &[String]) -> Vec<Line> {
         line_ids
             .iter()
@@ -280,12 +281,14 @@ impl Line {
     }
 
     /// Check if this line uses a specific edge in either route
+    #[must_use]
     pub fn uses_edge(&self, edge_index: usize) -> bool {
         self.forward_route.iter().any(|segment| segment.edge_index == edge_index) ||
         self.return_route.iter().any(|segment| segment.edge_index == edge_index)
     }
 
     /// Check if this line uses any of the given edges in either route
+    #[must_use]
     pub fn uses_any_edge(&self, edge_indices: &[usize]) -> bool {
         self.forward_route.iter().any(|segment| edge_indices.contains(&segment.edge_index)) ||
         self.return_route.iter().any(|segment| edge_indices.contains(&segment.edge_index))

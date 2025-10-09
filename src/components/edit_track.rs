@@ -1,7 +1,7 @@
 use crate::components::window::Window;
 use crate::components::track_editor::TrackEditor;
 use crate::models::{RailwayGraph, Track, TrackDirection, Line};
-use leptos::*;
+use leptos::{component, create_effect, create_signal, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalUpdate, view};
 use petgraph::graph::EdgeIndex;
 use std::rc::Rc;
 

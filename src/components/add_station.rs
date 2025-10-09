@@ -1,7 +1,7 @@
 use crate::components::window::Window;
 use crate::components::platform_editor::PlatformEditor;
 use crate::models::{RailwayGraph, Platform};
-use leptos::*;
+use leptos::{component, create_effect, create_signal, event_target_checked, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, view};
 use petgraph::graph::NodeIndex;
 use std::rc::Rc;
 
