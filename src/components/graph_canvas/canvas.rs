@@ -157,7 +157,7 @@ pub fn GraphCanvas(
                     show_line_blocks: show_blocks,
                     hovered_journey_id: hovered_journey.as_ref(),
                 };
-                render_graph(canvas, &stations_for_render, &journeys, current, viewport, conflict_display, hover_state, &current_graph);
+                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph);
             });
 
             let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
@@ -337,13 +337,13 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
 }
 
 fn render_graph(
-    canvas: leptos::HtmlElement<leptos::html::Canvas>,
+    canvas: &leptos::HtmlElement<leptos::html::Canvas>,
     stations: &[crate::models::StationNode],
     train_journeys: &std::collections::HashMap<uuid::Uuid, TrainJourney>,
     current_time: chrono::NaiveDateTime,
-    viewport: ViewportState,
-    conflict_display: ConflictDisplayState,
-    hover_state: HoverState,
+    viewport: &ViewportState,
+    conflict_display: &ConflictDisplayState,
+    hover_state: &HoverState,
     graph: &RailwayGraph,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = &canvas;

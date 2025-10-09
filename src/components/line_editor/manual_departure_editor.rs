@@ -3,9 +3,10 @@ use crate::models::{ManualDeparture, RailwayGraph};
 use leptos::{component, view, Props, IntoView, create_signal, store_value, Signal, SignalGet, SignalUpdate, SignalGetUntracked, event_target_value};
 
 #[component]
+#[allow(clippy::needless_pass_by_value)]
 pub fn ManualDepartureEditor(
     index: usize,
-    departure: ManualDeparture,
+    #[prop(into)] departure: ManualDeparture,
     station_names: Vec<String>,
     graph: RailwayGraph,
     on_update: impl Fn(usize, ManualDeparture) + 'static,

@@ -11,7 +11,7 @@ pub enum PlatformField {
 
 #[component]
 pub fn PlatformSelect(
-    platforms: Vec<Platform>,
+    #[prop(into)] platforms: Vec<Platform>,
     current_platform: usize,
     index: usize,
     field: PlatformField,

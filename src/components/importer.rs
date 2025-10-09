@@ -74,7 +74,7 @@ pub fn Importer(
     };
 
     let handle_import = move |_| {
-        let (new_lines, new_graph) = parse_csv_string(&csv_content.get(), wait_times.get());
+        let (new_lines, new_graph) = parse_csv_string(&csv_content.get(), &wait_times.get());
         set_lines.set(new_lines);
         set_graph.set(new_graph);
         set_show_dialog.set(false);

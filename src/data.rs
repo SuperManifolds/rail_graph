@@ -7,12 +7,12 @@ use std::collections::HashMap;
 #[must_use]
 pub fn parse_csv_data() -> (Vec<Line>, RailwayGraph) {
     let csv_content = include_str!("../lines.csv");
-    parse_csv_string(csv_content, HashMap::new())
+    parse_csv_string(csv_content, &HashMap::new())
 }
 
 /// Parse CSV string into lines and railway graph
 #[must_use]
-pub fn parse_csv_string(csv_content: &str, wait_times: HashMap<String, Duration>) -> (Vec<Line>, RailwayGraph) {
+pub fn parse_csv_string(csv_content: &str, wait_times: &HashMap<String, Duration>) -> (Vec<Line>, RailwayGraph) {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(csv_content.as_bytes());

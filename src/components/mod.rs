@@ -1,3 +1,5 @@
+#![allow(clippy::needless_pass_by_value)]
+
 pub mod add_station;
 pub mod canvas_viewport;
 pub mod confirmation_dialog;
