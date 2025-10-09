@@ -168,7 +168,7 @@ pub fn Window(
                 </div>
 
                 <div class="window-content" node_ref=content_ref>
-                    {children.with_value(|c| c.clone())}
+                    {children.with_value(Clone::clone)}
                 </div>
 
                 <div class="resize-handle" on:mousedown=handle_resize_down></div>

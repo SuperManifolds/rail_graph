@@ -50,7 +50,7 @@ pub fn Importer(
                     let ids: Vec<String> = header.iter()
                         .skip(1)
                         .filter(|s| !s.is_empty())
-                        .map(|s| s.to_string())
+                        .map(ToString::to_string)
                         .collect();
 
                     // Initialize wait times with 30 second default

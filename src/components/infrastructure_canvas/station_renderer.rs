@@ -49,7 +49,7 @@ impl LabelPosition {
         }
     }
 
-    fn rotation_angle(&self) -> f64 {
+    fn rotation_angle(self) -> f64 {
         match self {
             LabelPosition::Top | LabelPosition::TopRight | LabelPosition::BottomLeft => -std::f64::consts::PI / 4.0,
             LabelPosition::Bottom | LabelPosition::BottomRight | LabelPosition::TopLeft => std::f64::consts::PI / 4.0,
@@ -57,7 +57,7 @@ impl LabelPosition {
         }
     }
 
-    fn is_diagonal(&self) -> bool {
+    fn is_diagonal(self) -> bool {
         matches!(self,
             LabelPosition::Top |
             LabelPosition::Bottom |
@@ -168,7 +168,7 @@ fn draw_station_nodes(
 }
 
 fn calculate_label_bounds(
-    position: &LabelPosition,
+    position: LabelPosition,
     pos: (f64, f64),
     text_width: f64,
     font_size: f64,
@@ -249,7 +249,7 @@ fn draw_station_label(
     station_name: &str,
     pos: (f64, f64),
     bounds: &LabelBounds,
-    position: &LabelPosition,
+    position: LabelPosition,
     font_size: f64,
 ) {
     if position.is_diagonal() {
@@ -335,7 +335,7 @@ pub fn draw_stations(
         let mut best_overlaps = usize::MAX;
 
         for position in positions_to_try {
-            let bounds = calculate_label_bounds(&position, *pos, text_width, font_size);
+            let bounds = calculate_label_bounds(position, *pos, text_width, font_size);
             let overlaps = count_label_overlaps(&bounds, idx, &label_positions, &node_positions, &track_segments);
 
             if overlaps < best_overlaps {
@@ -365,6 +365,6 @@ pub fn draw_stations(
     for (idx, pos, _radius) in &node_positions {
         let Some(station) = graph.graph.node_weight(*idx) else { continue };
         let Some((bounds, position)) = label_positions.get(idx) else { continue };
-        draw_station_label(ctx, &station.name, *pos, bounds, position, font_size);
+        draw_station_label(ctx, &station.name, *pos, bounds, *position, font_size);
     }
 }

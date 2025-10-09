@@ -57,7 +57,7 @@ pub fn TabPanel(when: Signal<bool>, children: Children) -> impl IntoView {
     let children = store_value(children());
     view! {
         <Show when=move || when.get()>
-            {children.with_value(|c| c.clone())}
+            {children.with_value(Clone::clone)}
         </Show>
     }
 }

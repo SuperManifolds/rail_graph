@@ -33,7 +33,7 @@ fn extract_line_ids(header: &csv::StringRecord) -> Vec<String> {
     header.iter()
         .skip(1)
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 

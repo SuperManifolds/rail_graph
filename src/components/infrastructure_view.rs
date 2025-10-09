@@ -24,6 +24,8 @@ fn handle_mouse_down_adding_track(
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
 ) {
+    use crate::models::{Track, TrackDirection};
+
     let Some(first_station) = selected_station.get() else {
         set_selected_station.set(Some(clicked_station));
         return;
@@ -31,7 +33,6 @@ fn handle_mouse_down_adding_track(
 
     if first_station != clicked_station {
         let mut updated_graph = graph.get();
-        use crate::models::{Track, TrackDirection};
         updated_graph.add_track(first_station, clicked_station, vec![Track { direction: TrackDirection::Bidirectional }]);
         set_graph.set(updated_graph);
     }
@@ -83,6 +84,8 @@ fn add_station_handler(
     set_graph: WriteSignal<RailwayGraph>,
     set_show_add_station: WriteSignal<bool>,
 ) {
+    use crate::models::{Track, TrackDirection};
+
     let mut current_graph = graph.get();
     let node_idx = current_graph.add_or_get_station(name.clone());
 
@@ -95,7 +98,6 @@ fn add_station_handler(
         if let Some(connect_pos) = current_graph.get_station_position(connect_idx) {
             current_graph.set_station_position(node_idx, (connect_pos.0 + 80.0, connect_pos.1 + 40.0));
         }
-        use crate::models::{Track, TrackDirection};
         current_graph.add_track(connect_idx, node_idx, vec![Track { direction: TrackDirection::Bidirectional }]);
     }
 
