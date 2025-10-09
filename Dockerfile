@@ -1,4 +1,4 @@
-# Dockerfile for Nimby Graph production deployment
+# Dockerfile for RailGraph production deployment
 
 FROM rust:1.83
 

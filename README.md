@@ -1,4 +1,4 @@
-# Nimby Graph
+# RailGraph
 
 A web-based railway timetabling and conflict detection application for planning and visualizing train schedules on complex railway networks.
 
@@ -67,8 +67,8 @@ rustup target add wasm32-unknown-unknown
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/nimby_graph.git
-cd nimby_graph
+git clone https://github.com/supermanifolds/rail_graph.git
+cd rail_graph
 ```
 
 ## Usage
@@ -122,10 +122,10 @@ docker-compose down
 
 ```bash
 # Build image
-docker build -t nimby-graph .
+docker build -t rail-graph .
 
 # Run container
-docker run -d -p 8080:8080 --name nimby-graph nimby-graph
+docker run -d -p 8080:8080 --name rail-graph rail-graph
 
 # Access at http://localhost:8080
 ```

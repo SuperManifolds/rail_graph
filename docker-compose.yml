@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
-  nimby-graph:
+  rail-graph:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: nimby-graph
+    container_name: rail-graph
     ports:
       - "8080:8080"
     restart: unless-stopped
