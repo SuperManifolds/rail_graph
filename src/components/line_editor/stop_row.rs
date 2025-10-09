@@ -2,7 +2,7 @@ use crate::components::{duration_input::DurationInput, time_input::TimeInput};
 use crate::models::{Line, RailwayGraph, RouteDirection};
 use crate::constants::BASE_MIDNIGHT;
 use super::{PlatformSelect, PlatformField};
-use leptos::*;
+use leptos::{component, view, ReadSignal, Props, IntoView, Signal, SignalGetUntracked, event_target_value};
 use chrono::Duration;
 use std::rc::Rc;
 

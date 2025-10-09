@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::{component, view, RwSignal, Children, Props, IntoView, use_context, WriteSignal, create_effect, SignalGet, SignalUpdate, SignalSet, Signal, store_value, Show};
 
 #[derive(Clone, PartialEq)]
 pub struct Tab {

@@ -1,6 +1,6 @@
 use crate::components::tab_view::TabPanel;
 use crate::models::Line;
-use leptos::*;
+use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, Props, IntoView, store_value, Signal, SignalGet, event_target_value, SignalGetUntracked, SignalSet};
 use std::rc::Rc;
 
 #[component]

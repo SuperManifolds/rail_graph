@@ -1,5 +1,5 @@
 use crate::models::Platform;
-use leptos::*;
+use leptos::{component, view, ReadSignal, WriteSignal, Props, IntoView, SignalUpdate, SignalGet, event_target_value};
 
 #[component]
 #[must_use]

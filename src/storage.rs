@@ -1,5 +1,5 @@
 use crate::models::Project;
-use leptos::*;
+use leptos::{wasm_bindgen, web_sys, SignalGet};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;

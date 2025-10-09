@@ -7,7 +7,7 @@ use crate::components::{
 };
 use crate::models::{Line, RailwayGraph};
 use crate::train_journey::TrainJourney;
-use leptos::*;
+use leptos::{component, view, Signal, Props, IntoView, SignalGet, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect};
 
 #[component]
 #[must_use]
