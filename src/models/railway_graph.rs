@@ -215,7 +215,7 @@ impl RailwayGraph {
     }
 
     /// Toggle between single and double track for edges between two stations
-    /// Returns a Vec of (edge_index, new_track_count) for all modified edges
+    /// Returns a Vec of (`edge_index`, `new_track_count`) for all modified edges
     pub fn toggle_segment_double_track(&mut self, station1_name: &str, station2_name: &str) -> Vec<(usize, usize)> {
         let mut changed_edges = Vec::new();
 
@@ -253,7 +253,7 @@ impl RailwayGraph {
     }
 
     /// Extract ordered list of stations from a route based on direction
-    /// Returns Vec of (station_name, NodeIndex) in the order they're visited
+    /// Returns Vec of (`station_name`, `NodeIndex`) in the order they're visited
     #[must_use]
     pub fn get_stations_from_route(
         &self,
@@ -313,7 +313,7 @@ impl RailwayGraph {
     }
 
     /// Get the first and last station indices for a route based on direction
-    /// Returns (Option<first_station>, Option<last_station>)
+    /// Returns (Option<`first_station`>, Option<`last_station`>)
     #[must_use]
     pub fn get_route_endpoints(
         &self,

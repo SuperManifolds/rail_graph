@@ -71,8 +71,8 @@ pub fn snap_to_angle(graph: &mut RailwayGraph, station_idx: NodeIndex, target_x:
     realign_branch(graph, branch_to_move, (new_x, new_y), snapped_angle, &mut visited);
 }
 
-/// Find the nearest junction (node with 3+ neighbors) starting from start_node
-/// If no junction found, returns start_node
+/// Find the nearest junction (node with 3+ neighbors) starting from `start_node`
+/// If no junction found, returns `start_node`
 fn find_nearest_junction(graph: &RailwayGraph, start_node: NodeIndex) -> NodeIndex {
     let mut queue = std::collections::VecDeque::new();
     let mut visited = HashSet::new();
@@ -106,7 +106,7 @@ fn find_nearest_junction(graph: &RailwayGraph, start_node: NodeIndex) -> NodeInd
     start_node
 }
 
-/// Check if a branch starting from start_node contains target_node
+/// Check if a branch starting from `start_node` contains `target_node`
 fn contains_node(
     graph: &RailwayGraph,
     start_node: NodeIndex,

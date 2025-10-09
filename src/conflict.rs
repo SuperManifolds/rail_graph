@@ -372,7 +372,7 @@ fn check_segment_pair(
     });
 }
 
-/// Find segment info (edge_index, track_index) for a journey segment
+/// Find segment info (`edge_index`, `track_index`) for a journey segment
 fn find_journey_segment_info<'a>(
     journey: &'a TrainJourney,
     idx_start: usize,
