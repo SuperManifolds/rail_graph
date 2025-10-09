@@ -56,7 +56,7 @@ pub fn GeneralTab(
                     <label>"Line Thickness"</label>
                     <div class="thickness-control">
                         {move || {
-                            let current_thickness = edited_line.get().map(|l| l.thickness).unwrap_or(2.0);
+                            let current_thickness = edited_line.get().map_or(2.0, |l| l.thickness);
                             view! {
                                 <input
                                     type="range"

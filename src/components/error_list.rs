@@ -30,11 +30,9 @@ fn ErrorListPopover(
 
                                         // Get station names
                                         let station1_name = current_stations.get(conflict.station1_idx)
-                                            .map(|s| s.name.as_str())
-                                            .unwrap_or("Unknown");
+                                            .map_or("Unknown", |s| s.name.as_str());
                                         let station2_name = current_stations.get(conflict.station2_idx)
-                                            .map(|s| s.name.as_str())
-                                            .unwrap_or("Unknown");
+                                            .map_or("Unknown", |s| s.name.as_str());
 
                                         let conflict_message = conflict.format_message(station1_name, station2_name);
 

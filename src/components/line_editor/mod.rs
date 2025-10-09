@@ -57,8 +57,7 @@ pub fn LineEditor(
     let window_title = Signal::derive(move || {
         edited_line
             .get()
-            .map(|line| format!("Edit Line: {}", line.id))
-            .unwrap_or_else(|| "Edit Line".to_string())
+            .map_or_else(|| "Edit Line".to_string(), |line| format!("Edit Line: {}", line.id))
     });
 
     let is_window_open = Signal::derive(move || is_open.get() && edited_line.get().is_some());

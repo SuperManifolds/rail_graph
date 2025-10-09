@@ -53,8 +53,7 @@ pub fn ManualDepartureEditor(
                                 value=name.clone()
                                 selected=move || {
                                     graph_clone.get_station_name(local_departure.get().from_station)
-                                        .map(|n| n == name_clone.as_str())
-                                        .unwrap_or(false)
+                                        .is_some_and(|n| n == name_clone.as_str())
                                 }
                             >
                                 {name.clone()}
@@ -86,8 +85,7 @@ pub fn ManualDepartureEditor(
                                 value=name.clone()
                                 selected=move || {
                                     graph_clone.get_station_name(local_departure.get().to_station)
-                                        .map(|n| n == name_clone.as_str())
-                                        .unwrap_or(false)
+                                        .is_some_and(|n| n == name_clone.as_str())
                                 }
                             >
                                 {name.clone()}

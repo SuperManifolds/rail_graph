@@ -62,8 +62,7 @@ pub fn StationSelect(
                                     if let Some(edge) = edge {
                                         // Check if station is a passing loop
                                         let is_passing_loop = graph.graph.node_weight(new_station_idx)
-                                            .map(|node| node.passing_loop)
-                                            .unwrap_or(false);
+                                            .is_some_and(|node| node.passing_loop);
                                         let default_wait = if is_passing_loop {
                                             Duration::seconds(0)
                                         } else {

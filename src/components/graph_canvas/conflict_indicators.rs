@@ -225,8 +225,8 @@ pub fn draw_block_violation_visualization(
         let journey2 = train_journeys.iter().find(|j| j.line_id == conflict.journey2_id);
 
         // Get colors from journeys (hex format like #FF0000)
-        let color1 = journey1.map(|j| j.color.as_str()).unwrap_or("#FF0000");
-        let color2 = journey2.map(|j| j.color.as_str()).unwrap_or("#0000FF");
+        let color1 = journey1.map_or("#FF0000", |j| j.color.as_str());
+        let color2 = journey2.map_or("#0000FF", |j| j.color.as_str());
 
         // Convert hex to rgba with transparency
         let fill1 = format!("{color1}{BLOCK_FILL_OPACITY}");

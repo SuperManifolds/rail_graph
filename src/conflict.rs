@@ -446,16 +446,14 @@ fn are_reverse_bidirectional_edges(
         .graph
         .edge_weight(edge1_idx)
         .and_then(|ts| ts.tracks.get(track1_index))
-        .map(|t| matches!(t.direction, TrackDirection::Bidirectional))
-        .unwrap_or(false);
+        .is_some_and(|t| matches!(t.direction, TrackDirection::Bidirectional));
 
     let edge2_bidir = ctx
         .graph
         .graph
         .edge_weight(edge2_idx)
         .and_then(|ts| ts.tracks.get(track2_index))
-        .map(|t| matches!(t.direction, TrackDirection::Bidirectional))
-        .unwrap_or(false);
+        .is_some_and(|t| matches!(t.direction, TrackDirection::Bidirectional));
 
     edge1_bidir && edge2_bidir
 }
@@ -511,8 +509,7 @@ fn find_nearest_station(
     times_with_idx
         .iter()
         .min_by_key(|(t, _)| (*t - intersection.time).abs())
-        .map(|(_, idx)| *idx)
-        .unwrap_or(segment1.idx_start)
+        .map_or(segment1.idx_start, |(_, idx)| *idx)
 }
 
 #[derive(Debug)]
