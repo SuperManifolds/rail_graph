@@ -421,8 +421,8 @@ fn render_graph(
     graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, graph, viewport.zoom_level, viewport.pan_offset_x);
 
     // Draw train journeys
-    // Convert via i32 to avoid precision loss (station counts are small)
-    let station_height = zoomed_dimensions.graph_height / f64::from(stations.len() as i32);
+    #[allow(clippy::cast_precision_loss)]
+    let station_height = zoomed_dimensions.graph_height / (stations.len() as f64);
     train_journeys::draw_train_journeys(
         &ctx,
         &zoomed_dimensions,

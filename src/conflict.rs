@@ -545,14 +545,18 @@ fn calculate_intersection(
     let x1_end = time_to_fraction(t1_end);
 
     // Convert station indices to f64 for geometric calculations
-    // Convert via i32 to avoid precision loss (station counts are always small)
-    let y1_start = f64::from(s1_start as i32);
-    let y1_end = f64::from(s1_end as i32);
+    // f64 can represent integers up to 2^53 exactly, sufficient for any realistic station count
+    #[allow(clippy::cast_precision_loss)]
+    let y1_start = s1_start as f64;
+    #[allow(clippy::cast_precision_loss)]
+    let y1_end = s1_end as f64;
 
     let x2_start = time_to_fraction(t2_start);
     let x2_end = time_to_fraction(t2_end);
-    let y2_start = f64::from(s2_start as i32);
-    let y2_end = f64::from(s2_end as i32);
+    #[allow(clippy::cast_precision_loss)]
+    let y2_start = s2_start as f64;
+    #[allow(clippy::cast_precision_loss)]
+    let y2_end = s2_end as f64;
 
     // Calculate line intersection using parametric equations
     let denom =

@@ -55,7 +55,7 @@ pub fn draw_train_journeys(
                 }
 
                 // Draw vertical line for wait time (from arrival to departure)
-                if arrival_x != departure_x {
+                if (arrival_x - departure_x).abs() > f64::EPSILON {
                     ctx.line_to(departure_x, y);
                 }
 
@@ -93,7 +93,7 @@ pub fn draw_train_journeys(
                 ctx.fill();
 
                 // Draw dot at departure point (if different from arrival)
-                if arrival_x != departure_x {
+                if (arrival_x - departure_x).abs() > f64::EPSILON {
                     ctx.begin_path();
                     let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
                     ctx.fill();
@@ -195,7 +195,7 @@ fn check_single_journey_hover(
         }
 
         // Check horizontal segment from arrival to departure at this station
-        if arrival_screen_x != departure_screen_x {
+        if (arrival_screen_x - departure_screen_x).abs() > f64::EPSILON {
             let distance = point_to_line_distance(mouse_x, mouse_y, arrival_screen_x, screen_y, departure_screen_x, screen_y);
             if distance < HOVER_DISTANCE_THRESHOLD {
                 return Some(journey.id);
