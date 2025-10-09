@@ -18,7 +18,7 @@ pub use station_select::{StationSelect, StationPosition};
 
 use crate::components::{tab_view::{Tab, TabView}, window::Window};
 use crate::models::{Line, RailwayGraph};
-use leptos::{component, view, MaybeSignal, Signal, ReadSignal, Props, IntoView, create_signal, create_rw_signal, create_effect, SignalGet, SignalGetUntracked, SignalSet, store_value};
+use leptos::{component, view, MaybeSignal, Signal, ReadSignal, IntoView, create_signal, create_rw_signal, create_effect, SignalGet, SignalGetUntracked, SignalSet, store_value};
 use std::rc::Rc;
 
 #[component]

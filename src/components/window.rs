@@ -1,4 +1,4 @@
-use leptos::{wasm_bindgen, component, view, MaybeSignal, Signal, Children, Props, IntoView, store_value, create_signal, create_node_ref, html, provide_context, SignalSet, SignalGet, create_effect, web_sys, SignalGetUntracked, Show};
+use leptos::{wasm_bindgen, component, view, MaybeSignal, Signal, Children, IntoView, store_value, create_signal, create_node_ref, html, provide_context, SignalSet, SignalGet, create_effect, web_sys, SignalGetUntracked, Show};
 use wasm_bindgen::{prelude::*, JsCast};
 
 // Global window z-index counter

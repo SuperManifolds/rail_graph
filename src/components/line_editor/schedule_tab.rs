@@ -5,7 +5,7 @@ use crate::components::{
     time_input::TimeInput,
 };
 use crate::models::{Line, ScheduleMode, RailwayGraph};
-use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, Props, IntoView, store_value, Signal, SignalGet, event_target_checked, SignalGetUntracked, SignalSet, Show};
+use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_checked, SignalGetUntracked, SignalSet, Show};
 use std::rc::Rc;
 
 #[component]

@@ -2,7 +2,7 @@ use crate::components::{duration_input::DurationInput, time_input::TimeInput};
 use crate::models::{Line, RailwayGraph, RouteDirection};
 use crate::constants::BASE_MIDNIGHT;
 use super::{PlatformSelect, PlatformField};
-use leptos::{component, view, ReadSignal, Props, IntoView, Signal, SignalGetUntracked, event_target_value};
+use leptos::{component, view, ReadSignal, IntoView, Signal, SignalGetUntracked, event_target_value};
 use chrono::Duration;
 use std::rc::Rc;
 
@@ -12,32 +12,16 @@ pub enum TimeDisplayMode {
     Absolute,    // Cumulative time from start
 }
 
-#[component]
-pub fn StopRow(
-    index: usize,
-    name: String,
-    station_idx: petgraph::graph::NodeIndex,
-    #[prop(into)] line: Line,
-    #[prop(into)] graph: RailwayGraph,
+fn render_time_column(
     time_mode: TimeDisplayMode,
+    index: usize,
+    route: &[crate::models::RouteSegment],
+    cumulative_seconds: i64,
     route_direction: RouteDirection,
     edited_line: ReadSignal<Option<Line>>,
     on_save: Rc<dyn Fn(Line)>,
-    is_first: bool,
-    is_last: bool,
-) -> impl IntoView {
-    let route = match route_direction {
-        RouteDirection::Forward => &line.forward_route,
-        RouteDirection::Return => &line.return_route,
-    };
-
-    let cumulative_seconds: i64 = if index == 0 {
-        0
-    } else {
-        route.iter().take(index).map(|seg| (seg.duration + seg.wait_time).num_seconds()).sum()
-    };
-
-    let column_content = match time_mode {
+) -> leptos::View {
+    match time_mode {
         TimeDisplayMode::Difference => {
             if index < route.len() {
                 let segment_duration = route[index].duration;
@@ -129,9 +113,17 @@ pub fn StopRow(
                 view! { <span class="travel-time">"00:00:00"</span> }.into_view()
             }
         }
-    };
+    }
+}
 
-    let wait_time_content = if index > 0 && index - 1 < route.len() {
+fn render_wait_time(
+    index: usize,
+    route: &[crate::models::RouteSegment],
+    route_direction: RouteDirection,
+    edited_line: ReadSignal<Option<Line>>,
+    on_save: Rc<dyn Fn(Line)>,
+) -> leptos::View {
+    if index > 0 && index - 1 < route.len() {
         let wait_duration = route[index - 1].wait_time;
         view! {
             <DurationInput
@@ -160,79 +152,83 @@ pub fn StopRow(
         }.into_view()
     } else {
         view! { <span class="travel-time">"-"</span> }.into_view()
-    };
+    }
+}
 
-    // Get station platforms
-    let platforms = graph.graph.node_weight(station_idx)
-        .map(|node| node.platforms.clone())
-        .unwrap_or_default();
-
-    // Platform selector - one per station
-    // For first stop: use origin_platform of first segment
-    // For middle stops: use destination_platform of previous segment (= origin_platform of current segment)
-    // For last stop: use destination_platform of last segment
-    let platform_content = if is_first && index < route.len() {
-        // First stop: departure platform
+fn render_platform_selector(
+    platforms: Vec<crate::models::Platform>,
+    route: &[crate::models::RouteSegment],
+    index: usize,
+    is_first: bool,
+    is_last: bool,
+    route_direction: RouteDirection,
+    edited_line: ReadSignal<Option<Line>>,
+    on_save: Rc<dyn Fn(Line)>,
+) -> leptos::View {
+    if is_first && index < route.len() {
         let current_platform = route[index].origin_platform;
         view! {
             <PlatformSelect
-                platforms=platforms.clone()
+                platforms=platforms
                 current_platform=current_platform
                 index=index
                 field=PlatformField::Origin
                 route_direction=route_direction
                 edited_line=edited_line
-                on_save=on_save.clone()
+                on_save=on_save
             />
         }.into_view()
     } else if is_last && index > 0 && index - 1 < route.len() {
-        // Last stop: arrival platform
         let current_platform = route[index - 1].destination_platform;
         view! {
             <PlatformSelect
-                platforms=platforms.clone()
+                platforms=platforms
                 current_platform=current_platform
                 index=index - 1
                 field=PlatformField::Destination
                 route_direction=route_direction
                 edited_line=edited_line
-                on_save=on_save.clone()
+                on_save=on_save
             />
         }.into_view()
     } else if !is_first && !is_last && index > 0 && index - 1 < route.len() && index < route.len() {
-        // Middle stop: platform where train is (update both arrival and departure)
         let current_platform = route[index - 1].destination_platform;
         view! {
             <PlatformSelect
-                platforms=platforms.clone()
+                platforms=platforms
                 current_platform=current_platform
                 index=index
                 field=PlatformField::Both
                 route_direction=route_direction
                 edited_line=edited_line
-                on_save=on_save.clone()
+                on_save=on_save
             />
         }.into_view()
     } else {
         view! { <span class="platform-placeholder">"-"</span> }.into_view()
-    };
+    }
+}
 
-    // Track selector (for segment leaving this station)
-    let track_content = if index < route.len() {
+fn render_track_selector(
+    graph: &RailwayGraph,
+    route: &[crate::models::RouteSegment],
+    index: usize,
+    route_direction: RouteDirection,
+    edited_line: ReadSignal<Option<Line>>,
+    on_save: Rc<dyn Fn(Line)>,
+) -> leptos::View {
+    if index < route.len() {
         let current_track = route[index].track_index;
         let edge_idx = petgraph::graph::EdgeIndex::new(route[index].edge_index);
 
-        // Get available tracks for this edge based on direction
         let available_tracks: Vec<(usize, String)> = if let Some(track_segment) = graph.graph.edge_weight(edge_idx) {
             track_segment.tracks.iter().enumerate()
                 .filter(|(_, track)| {
                     match route_direction {
                         RouteDirection::Forward => {
-                            // Forward route can only use Forward or Bidirectional tracks
                             matches!(track.direction, crate::models::TrackDirection::Forward | crate::models::TrackDirection::Bidirectional)
                         }
                         RouteDirection::Return => {
-                            // Return route can only use Backward or Bidirectional tracks
                             matches!(track.direction, crate::models::TrackDirection::Backward | crate::models::TrackDirection::Bidirectional)
                         }
                     }
@@ -251,12 +247,10 @@ pub fn StopRow(
         };
 
         if available_tracks.len() == 1 {
-            // Only one track - show as read-only text
             view! {
                 <span class="track-info">{available_tracks[0].1.clone()}</span>
             }.into_view()
         } else {
-            // Multiple tracks - show selector
             view! {
                 <select
                     class="track-select"
@@ -295,9 +289,91 @@ pub fn StopRow(
         }
     } else {
         view! { <span class="track-placeholder">"-"</span> }.into_view()
+    }
+}
+
+fn render_delete_button(
+    is_first: bool,
+    is_last: bool,
+    route_len: usize,
+    route_direction: RouteDirection,
+    edited_line: ReadSignal<Option<Line>>,
+    on_save: Rc<dyn Fn(Line)>,
+) -> leptos::View {
+    let can_delete = (is_first || is_last) && route_len > 1;
+
+    if can_delete {
+        view! {
+            <button
+                class="delete-stop-button"
+                on:click={
+                    let on_save = on_save.clone();
+                    move |_| {
+                        if let Some(mut updated_line) = edited_line.get_untracked() {
+                            match route_direction {
+                                RouteDirection::Forward => {
+                                    if is_first && !updated_line.forward_route.is_empty() {
+                                        updated_line.forward_route.remove(0);
+                                    } else if is_last && !updated_line.forward_route.is_empty() {
+                                        updated_line.forward_route.pop();
+                                    }
+                                }
+                                RouteDirection::Return => {
+                                    if is_first && !updated_line.return_route.is_empty() {
+                                        updated_line.return_route.remove(0);
+                                    } else if is_last && !updated_line.return_route.is_empty() {
+                                        updated_line.return_route.pop();
+                                    }
+                                }
+                            }
+                            on_save(updated_line);
+                        }
+                    }
+                }
+                title=if is_first { "Remove first stop" } else { "Remove last stop" }
+            >
+                <i class="fa-solid fa-circle-minus"></i>
+            </button>
+        }.into_view()
+    } else {
+        view! { <span></span> }.into_view()
+    }
+}
+
+#[component]
+pub fn StopRow(
+    index: usize,
+    name: String,
+    station_idx: petgraph::graph::NodeIndex,
+    #[prop(into)] line: Line,
+    #[prop(into)] graph: RailwayGraph,
+    time_mode: TimeDisplayMode,
+    route_direction: RouteDirection,
+    edited_line: ReadSignal<Option<Line>>,
+    on_save: Rc<dyn Fn(Line)>,
+    is_first: bool,
+    is_last: bool,
+) -> impl IntoView {
+    let route = match route_direction {
+        RouteDirection::Forward => &line.forward_route,
+        RouteDirection::Return => &line.return_route,
     };
 
-    let can_delete = (is_first || is_last) && route.len() > 1;
+    let cumulative_seconds: i64 = if index == 0 {
+        0
+    } else {
+        route.iter().take(index).map(|seg| (seg.duration + seg.wait_time).num_seconds()).sum()
+    };
+
+    let platforms = graph.graph.node_weight(station_idx)
+        .map(|node| node.platforms.clone())
+        .unwrap_or_default();
+
+    let column_content = render_time_column(time_mode, index, route, cumulative_seconds, route_direction, edited_line, on_save.clone());
+    let wait_time_content = render_wait_time(index, route, route_direction, edited_line, on_save.clone());
+    let platform_content = render_platform_selector(platforms, route, index, is_first, is_last, route_direction, edited_line, on_save.clone());
+    let track_content = render_track_selector(&graph, route, index, route_direction, edited_line, on_save.clone());
+    let delete_button = render_delete_button(is_first, is_last, route.len(), route_direction, edited_line, on_save);
 
     view! {
         <div class="stop-row">
@@ -306,42 +382,7 @@ pub fn StopRow(
             {track_content}
             {column_content}
             {wait_time_content}
-            {if can_delete {
-                view! {
-                    <button
-                        class="delete-stop-button"
-                        on:click={
-                            let on_save = on_save.clone();
-                            move |_| {
-                                if let Some(mut updated_line) = edited_line.get_untracked() {
-                                    match route_direction {
-                                        RouteDirection::Forward => {
-                                            if is_first && !updated_line.forward_route.is_empty() {
-                                                updated_line.forward_route.remove(0);
-                                            } else if is_last && !updated_line.forward_route.is_empty() {
-                                                updated_line.forward_route.pop();
-                                            }
-                                        }
-                                        RouteDirection::Return => {
-                                            if is_first && !updated_line.return_route.is_empty() {
-                                                updated_line.return_route.remove(0);
-                                            } else if is_last && !updated_line.return_route.is_empty() {
-                                                updated_line.return_route.pop();
-                                            }
-                                        }
-                                    }
-                                    on_save(updated_line);
-                                }
-                            }
-                        }
-                        title=if is_first { "Remove first stop" } else { "Remove last stop" }
-                    >
-                        <i class="fa-solid fa-circle-minus"></i>
-                    </button>
-                }.into_view()
-            } else {
-                view! { <span></span> }.into_view()
-            }}
+            {delete_button}
         </div>
     }
 }

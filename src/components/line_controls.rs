@@ -1,4 +1,4 @@
-use leptos::{component, view, ReadSignal, WriteSignal, Props, IntoView, create_signal, SignalGet, SignalUpdate, SignalSet, For, Signal, store_value};
+use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, SignalGet, SignalUpdate, SignalSet, For, Signal, store_value};
 use crate::models::{Line, RailwayGraph};
 use crate::components::line_editor::LineEditor;
 use crate::components::confirmation_dialog::ConfirmationDialog;

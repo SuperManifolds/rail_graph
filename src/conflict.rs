@@ -294,10 +294,21 @@ fn check_segment_pair(
             };
 
             // Calculate progress of leading train at conflict time
-            let duration = (leading_end - leading_start).num_seconds() as f64;
-            let elapsed = (conflict_time - leading_start).num_seconds() as f64;
-            let mut position = if duration > 0.0 {
-                (elapsed / duration).clamp(0.0, 1.0)
+            // Break down durations to avoid precision loss in i64 to f64 conversion
+            let duration = leading_end - leading_start;
+            let elapsed = conflict_time - leading_start;
+
+            let mut position = if duration.num_milliseconds() > 0 {
+                // Use floating point division on Duration to avoid precision loss
+                let elapsed_secs = f64::from(elapsed.num_seconds() as i32);
+                let elapsed_subsec_ms = f64::from((elapsed.num_milliseconds() % 1000) as i32);
+                let duration_secs = f64::from(duration.num_seconds() as i32);
+                let duration_subsec_ms = f64::from((duration.num_milliseconds() % 1000) as i32);
+
+                let elapsed_total = elapsed_secs + elapsed_subsec_ms / 1000.0;
+                let duration_total = duration_secs + duration_subsec_ms / 1000.0;
+
+                (elapsed_total / duration_total).clamp(0.0, 1.0)
             } else {
                 0.0
             };
@@ -532,13 +543,16 @@ fn calculate_intersection(
     // Convert times to fractions
     let x1_start = time_to_fraction(t1_start);
     let x1_end = time_to_fraction(t1_end);
-    let y1_start = s1_start as f64;
-    let y1_end = s1_end as f64;
+
+    // Convert station indices to f64 for geometric calculations
+    // Convert via i32 to avoid precision loss (station counts are always small)
+    let y1_start = f64::from(s1_start as i32);
+    let y1_end = f64::from(s1_end as i32);
 
     let x2_start = time_to_fraction(t2_start);
     let x2_end = time_to_fraction(t2_end);
-    let y2_start = s2_start as f64;
-    let y2_end = s2_end as f64;
+    let y2_start = f64::from(s2_start as i32);
+    let y2_end = f64::from(s2_end as i32);
 
     // Calculate line intersection using parametric equations
     let denom =

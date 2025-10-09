@@ -18,6 +18,143 @@ pub const TOP_MARGIN: f64 = 60.0;
 pub const RIGHT_PADDING: f64 = 20.0;
 pub const BOTTOM_PADDING: f64 = 20.0;
 
+fn setup_render_effect(
+    canvas_ref: leptos::NodeRef<leptos::html::Canvas>,
+    train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
+    visualization_time: ReadSignal<NaiveDateTime>,
+    graph: ReadSignal<RailwayGraph>,
+    viewport: &canvas_viewport::ViewportSignals,
+    conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
+    show_station_crossings: Signal<bool>,
+    show_conflicts: Signal<bool>,
+    show_line_blocks: Signal<bool>,
+    hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
+    hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
+) {
+    let (render_requested, set_render_requested) = create_signal(false);
+    let zoom_level = viewport.zoom_level;
+    let zoom_level_x = viewport.zoom_level_x.expect("horizontal zoom enabled").0;
+    let pan_offset_x = viewport.pan_offset_x;
+    let pan_offset_y = viewport.pan_offset_y;
+
+    create_effect(move |_| {
+        // Track all dependencies
+        let _ = train_journeys.get();
+        let _ = visualization_time.get();
+        let _ = graph.get();
+        let _ = zoom_level.get();
+        let _ = zoom_level_x.get();
+        let _ = pan_offset_x.get();
+        let _ = pan_offset_y.get();
+        let _ = conflicts_and_crossings.get();
+        let _ = show_station_crossings.get();
+        let _ = show_conflicts.get();
+        let _ = hovered_conflict.get();
+        let _ = show_line_blocks.get();
+        let _ = hovered_journey_id.get();
+
+        if !render_requested.get_untracked() {
+            set_render_requested.set(true);
+
+            let window = web_sys::window().expect("window");
+            let callback = Closure::once(move || {
+                set_render_requested.set(false);
+
+                let journeys = train_journeys.get_untracked();
+                let current = visualization_time.get_untracked();
+                let current_graph = graph.get_untracked();
+                let stations_for_render = current_graph.get_all_stations_ordered();
+
+                let Some(canvas) = canvas_ref.get_untracked() else { return };
+
+                let zoom = zoom_level.get_untracked();
+                let zoom_x = zoom_level_x.get_untracked();
+                let pan_x = pan_offset_x.get_untracked();
+                let pan_y = pan_offset_y.get_untracked();
+
+                let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+                let container_width = canvas_elem.client_width() as u32;
+                let container_height = canvas_elem.client_height() as u32;
+
+                if container_width > 0 && container_height > 0 {
+                    canvas_elem.set_width(container_width);
+                    canvas_elem.set_height(container_height);
+                }
+
+                let viewport = ViewportState {
+                    zoom_level: zoom,
+                    zoom_level_x: zoom_x,
+                    pan_offset_x: pan_x,
+                    pan_offset_y: pan_y,
+                };
+                let (current_conflicts, current_station_crossings) = conflicts_and_crossings.get_untracked();
+                let conflict_display = ConflictDisplayState {
+                    conflicts: &current_conflicts,
+                    station_crossings: &current_station_crossings,
+                    show_conflicts: show_conflicts.get_untracked(),
+                    show_station_crossings: show_station_crossings.get_untracked(),
+                };
+                let hovered = hovered_conflict.get_untracked();
+                let hovered_journey_value = hovered_journey_id.get_untracked();
+                let hover_state = HoverState {
+                    hovered_conflict: hovered.as_ref().map(|(c, _, _)| c),
+                    show_line_blocks: show_line_blocks.get_untracked(),
+                    hovered_journey_id: hovered_journey_value.as_ref(),
+                };
+                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph);
+            });
+
+            let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
+            callback.forget();
+        }
+    });
+}
+
+fn handle_mouse_move_hover(
+    x: f64,
+    y: f64,
+    canvas: &web_sys::HtmlCanvasElement,
+    conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
+    graph: ReadSignal<RailwayGraph>,
+    zoom_level: ReadSignal<f64>,
+    zoom_level_x: ReadSignal<f64>,
+    pan_offset_x: ReadSignal<f64>,
+    pan_offset_y: ReadSignal<f64>,
+    show_line_blocks: Signal<bool>,
+    train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
+    set_hovered_conflict: WriteSignal<Option<(Conflict, f64, f64)>>,
+    set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
+) {
+    let (current_conflicts, _) = conflicts_and_crossings.get();
+    let current_graph = graph.get();
+    let current_stations = current_graph.get_all_stations_ordered();
+    let hovered = conflict_indicators::check_conflict_hover(
+        x, y, &current_conflicts, &current_stations,
+        f64::from(canvas.width()), f64::from(canvas.height()),
+        zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), pan_offset_y.get()
+    );
+    set_hovered_conflict.set(hovered);
+
+    if show_line_blocks.get() {
+        let journeys = train_journeys.get();
+        let journeys_vec: Vec<_> = journeys.values().collect();
+        let viewport = ViewportState {
+            zoom_level: zoom_level.get(),
+            zoom_level_x: zoom_level_x.get(),
+            pan_offset_x: pan_offset_x.get(),
+            pan_offset_y: pan_offset_y.get(),
+        };
+        let hovered_journey = train_journeys::check_journey_hover(
+            x, y, &journeys_vec, &current_stations,
+            f64::from(canvas.width()), f64::from(canvas.height()),
+            &viewport
+        );
+        set_hovered_journey_id.set(hovered_journey);
+    } else {
+        set_hovered_journey_id.set(None);
+    }
+}
+
 #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 #[component]
 #[must_use]
@@ -40,7 +177,6 @@ pub fn GraphCanvas(
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
 
-    // Zoom and pan state using shared viewport utilities (with horizontal zoom enabled)
     let viewport = canvas_viewport::create_viewport_signals(true);
     let zoom_level = viewport.zoom_level;
     let set_zoom_level = viewport.set_zoom_level;
@@ -51,7 +187,6 @@ pub fn GraphCanvas(
     let set_pan_offset_y = viewport.set_pan_offset_y;
     let is_panning = viewport.is_panning;
 
-    // Handle pan to conflict requests
     if let Some(pan_signal) = pan_to_conflict_signal {
         create_effect(move |_| {
             if let Some((time_fraction, station_pos)) = pan_signal.get() {
@@ -65,12 +200,10 @@ pub fn GraphCanvas(
                     let current_graph = graph.get();
                     let station_count = current_graph.get_all_stations_ordered().len() as f64;
 
-                    // Set a comfortable zoom level for viewing conflicts
                     let target_zoom = 4.0;
                     set_zoom_level.set(target_zoom);
                     set_zoom_level_x.set(target_zoom);
 
-                    // Center the conflict in the viewport with zoom applied
                     let target_x = (time_fraction * dims.hour_width * target_zoom * target_zoom) - (canvas_width / 2.0);
                     let target_y = (station_pos * (dims.graph_height / station_count.max(1.0)) * target_zoom) - (canvas_height / 2.0);
 
@@ -81,91 +214,12 @@ pub fn GraphCanvas(
         });
     }
 
-    // Render the graph whenever train journeys or graph change
-    // Use requestAnimationFrame to throttle renders to 60fps max
-    let (render_requested, set_render_requested) = create_signal(false);
+    setup_render_effect(
+        canvas_ref, train_journeys, visualization_time, graph, &viewport,
+        conflicts_and_crossings, show_station_crossings, show_conflicts, show_line_blocks,
+        hovered_conflict, hovered_journey_id
+    );
 
-    create_effect(move |_| {
-        // Track all dependencies
-        let _ = train_journeys.get();
-        let _ = visualization_time.get();
-        let _ = graph.get();
-        let _ = zoom_level.get();
-        let _ = zoom_level_x.get();
-        let _ = pan_offset_x.get();
-        let _ = pan_offset_y.get();
-        let _ = conflicts_and_crossings.get();
-        let _ = show_station_crossings.get();
-        let _ = show_conflicts.get();
-        let _ = hovered_conflict.get();
-        let _ = show_line_blocks.get();
-        let _ = hovered_journey_id.get();
-
-        // Only request render if one isn't already pending
-        if !render_requested.get_untracked() {
-            set_render_requested.set(true);
-
-            let window = web_sys::window().expect("window");
-            let callback = Closure::once(move || {
-                set_render_requested.set(false);
-
-                // Perform actual render
-                let journeys = train_journeys.get_untracked();
-                let current = visualization_time.get_untracked();
-                let current_graph = graph.get_untracked();
-                let stations_for_render = current_graph.get_all_stations_ordered();
-
-                let Some(canvas) = canvas_ref.get_untracked() else {
-                    return;
-                };
-
-                let zoom = zoom_level.get_untracked();
-                let zoom_x = zoom_level_x.get_untracked();
-                let pan_x = pan_offset_x.get_untracked();
-                let pan_y = pan_offset_y.get_untracked();
-
-                // Update canvas size to match container
-                let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
-                let container_width = canvas_elem.client_width() as u32;
-                let container_height = canvas_elem.client_height() as u32;
-
-                if container_width > 0 && container_height > 0 {
-                    canvas_elem.set_width(container_width);
-                    canvas_elem.set_height(container_height);
-                }
-
-                let viewport = ViewportState {
-                    zoom_level: zoom,
-                    zoom_level_x: zoom_x,
-                    pan_offset_x: pan_x,
-                    pan_offset_y: pan_y,
-                };
-                let (current_conflicts, current_station_crossings) = conflicts_and_crossings.get_untracked();
-                let show_crossings = show_station_crossings.get_untracked();
-                let show_conf = show_conflicts.get_untracked();
-                let conflict_display = ConflictDisplayState {
-                    conflicts: &current_conflicts,
-                    station_crossings: &current_station_crossings,
-                    show_conflicts: show_conf,
-                    show_station_crossings: show_crossings,
-                };
-                let hovered = hovered_conflict.get_untracked();
-                let show_blocks = show_line_blocks.get_untracked();
-                let hovered_journey = hovered_journey_id.get_untracked();
-                let hover_state = HoverState {
-                    hovered_conflict: hovered.as_ref().map(|(c, _, _)| c),
-                    show_line_blocks: show_blocks,
-                    hovered_journey_id: hovered_journey.as_ref(),
-                };
-                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph);
-            });
-
-            let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
-            callback.forget();
-        }
-    });
-
-    // Handle mouse events for dragging the time indicator and panning
     let handle_mouse_down = move |ev: MouseEvent| {
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
@@ -173,11 +227,9 @@ pub fn GraphCanvas(
             let x = f64::from(ev.client_x()) - rect.left();
             let y = f64::from(ev.client_y()) - rect.top();
 
-            // If right click or ctrl+click, start panning
             if ev.button() == 2 || ev.ctrl_key() {
                 canvas_viewport::handle_pan_start(x, y, &viewport);
             } else {
-                // Check for toggle button clicks first
                 let canvas_width = f64::from(canvas.width());
                 let canvas_height = f64::from(canvas.height());
                 let current_graph = graph.get();
@@ -212,36 +264,7 @@ pub fn GraphCanvas(
                     update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_visualization_time);
                 }
             } else {
-                // Check for conflict hover
-                let (current_conflicts, _) = conflicts_and_crossings.get();
-                let current_graph = graph.get();
-                let current_stations = current_graph.get_all_stations_ordered();
-                let hovered = conflict_indicators::check_conflict_hover(
-                    x, y, &current_conflicts, &current_stations,
-                    f64::from(canvas.width()), f64::from(canvas.height()),
-                    zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), pan_offset_y.get()
-                );
-                set_hovered_conflict.set(hovered);
-
-                // Check for journey hover if line blocks are enabled
-                if show_line_blocks.get() {
-                    let journeys = train_journeys.get();
-                    let journeys_vec: Vec<_> = journeys.values().collect();
-                    let viewport = ViewportState {
-                        zoom_level: zoom_level.get(),
-                        zoom_level_x: zoom_level_x.get(),
-                        pan_offset_x: pan_offset_x.get(),
-                        pan_offset_y: pan_offset_y.get(),
-                    };
-                    let hovered_journey = train_journeys::check_journey_hover(
-                        x, y, &journeys_vec, &current_stations,
-                        f64::from(canvas.width()), f64::from(canvas.height()),
-                        &viewport
-                    );
-                    set_hovered_journey_id.set(hovered_journey);
-                } else {
-                    set_hovered_journey_id.set(None);
-                }
+                handle_mouse_move_hover(x, y, canvas, conflicts_and_crossings, graph, zoom_level, zoom_level_x, pan_offset_x, pan_offset_y, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id);
             }
         }
     };
@@ -266,7 +289,6 @@ pub fn GraphCanvas(
             let mouse_x = f64::from(ev.client_x()) - rect.left();
             let mouse_y = f64::from(ev.client_y()) - rect.top();
 
-            // Only zoom if mouse is within the graph area
             let canvas_width = f64::from(canvas.width());
             let canvas_height = f64::from(canvas.height());
             let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
@@ -275,7 +297,6 @@ pub fn GraphCanvas(
             if mouse_x >= LEFT_MARGIN && mouse_x <= LEFT_MARGIN + graph_width &&
                mouse_y >= TOP_MARGIN && mouse_y <= TOP_MARGIN + graph_height {
 
-                // Calculate zoom point relative to graph area
                 let graph_mouse_x = mouse_x - LEFT_MARGIN;
                 let graph_mouse_y = mouse_y - TOP_MARGIN;
 
@@ -400,7 +421,8 @@ fn render_graph(
     graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, graph, viewport.zoom_level, viewport.pan_offset_x);
 
     // Draw train journeys
-    let station_height = zoomed_dimensions.graph_height / stations.len() as f64;
+    // Convert via i32 to avoid precision loss (station counts are small)
+    let station_height = zoomed_dimensions.graph_height / f64::from(stations.len() as i32);
     train_journeys::draw_train_journeys(
         &ctx,
         &zoomed_dimensions,

@@ -83,7 +83,7 @@ pub fn draw_segment_toggles(
         // Calculate position between the two stations
         let base_y1 = ((i - 1) as f64 * station_height) + (station_height / 2.0);
         let base_y2 = (i as f64 * station_height) + (station_height / 2.0);
-        let center_y = (base_y1 + base_y2) / 2.0;
+        let center_y = f64::midpoint(base_y1, base_y2);
         let adjusted_y = dims.top_margin + (center_y * zoom_level) + pan_offset_y;
 
         // Only draw if visible
@@ -154,7 +154,7 @@ pub fn check_toggle_click(
             // Calculate position between the two stations (same logic as draw_segment_toggles)
             let base_y1 = ((i - 1) as f64 * station_height) + (station_height / 2.0);
             let base_y2 = (i as f64 * station_height) + (station_height / 2.0);
-            let center_y = (base_y1 + base_y2) / 2.0;
+            let center_y = f64::midpoint(base_y1, base_y2);
             let adjusted_y = TOP_MARGIN + (center_y * zoom_level) + pan_offset_y;
 
             // Check if click is within this toggle button

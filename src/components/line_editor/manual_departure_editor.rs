@@ -1,6 +1,6 @@
 use crate::components::time_input::TimeInput;
 use crate::models::{ManualDeparture, RailwayGraph};
-use leptos::{component, view, Props, IntoView, create_signal, store_value, Signal, SignalGet, SignalUpdate, SignalGetUntracked, event_target_value};
+use leptos::{component, view, IntoView, create_signal, store_value, Signal, SignalGet, SignalUpdate, SignalGetUntracked, event_target_value};
 
 #[component]
 #[allow(clippy::needless_pass_by_value)]

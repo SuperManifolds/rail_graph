@@ -1,5 +1,5 @@
 use crate::models::{Platform, Line, RouteDirection};
-use leptos::{component, view, ReadSignal, Props, IntoView, event_target_value, SignalGetUntracked};
+use leptos::{component, view, ReadSignal, IntoView, event_target_value, SignalGetUntracked};
 use std::rc::Rc;
 
 #[derive(Clone, Copy, PartialEq)]

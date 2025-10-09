@@ -51,12 +51,8 @@ impl LabelPosition {
 
     fn rotation_angle(&self) -> f64 {
         match self {
-            LabelPosition::Top => -std::f64::consts::PI / 4.0,
-            LabelPosition::Bottom => std::f64::consts::PI / 4.0,
-            LabelPosition::TopRight => -std::f64::consts::PI / 4.0,
-            LabelPosition::BottomRight => std::f64::consts::PI / 4.0,
-            LabelPosition::TopLeft => std::f64::consts::PI / 4.0,
-            LabelPosition::BottomLeft => -std::f64::consts::PI / 4.0,
+            LabelPosition::Top | LabelPosition::TopRight | LabelPosition::BottomLeft => -std::f64::consts::PI / 4.0,
+            LabelPosition::Bottom | LabelPosition::BottomRight | LabelPosition::TopLeft => std::f64::consts::PI / 4.0,
             _ => 0.0,
         }
     }
@@ -140,19 +136,12 @@ fn lines_intersect(p1: (f64, f64), p2: (f64, f64), p3: (f64, f64), p4: (f64, f64
     (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u)
 }
 
-#[allow(clippy::cast_precision_loss)]
-pub fn draw_stations(
+fn draw_station_nodes(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
     zoom: f64,
-) {
-    let font_size = 14.0 / zoom;
-
-    // Collect all track segments (including intermediate points for avoidance)
-    let track_segments = track_renderer::get_track_segments(graph);
-
-    // First pass: draw all nodes and collect positions
-    let mut node_positions: Vec<(NodeIndex, (f64, f64), f64)> = Vec::new();
+) -> Vec<(NodeIndex, (f64, f64), f64)> {
+    let mut node_positions = Vec::new();
 
     for idx in graph.graph.node_indices() {
         let Some(pos) = graph.get_station_position(idx) else { continue };
@@ -164,7 +153,6 @@ pub fn draw_stations(
             ("#4a9eff", NODE_RADIUS)
         };
 
-        // Draw node circle
         ctx.set_fill_style_str("#2a2a2a");
         ctx.set_stroke_style_str(border_color);
         ctx.set_line_width(2.0 / zoom);
@@ -176,43 +164,156 @@ pub fn draw_stations(
         node_positions.push((idx, pos, radius));
     }
 
-    // Second pass: calculate optimal label positions
-    let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
+    node_positions
+}
 
-    // Build adjacency information to identify branches
+fn calculate_label_bounds(
+    position: &LabelPosition,
+    pos: (f64, f64),
+    text_width: f64,
+    font_size: f64,
+) -> LabelBounds {
+    let label_pos = position.calculate_label_pos(pos, text_width, font_size);
+
+    if position.is_diagonal() {
+        let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+        let text_height = font_size * 1.2;
+        let rotated_width = text_width * cos45 + text_height * cos45;
+        let rotated_height = text_width * cos45 + text_height * cos45;
+
+        let offset = LABEL_OFFSET;
+        let angle = position.rotation_angle();
+
+        let (x_offset_rotated, y_offset_rotated) = match position {
+            LabelPosition::Top => (offset * cos45, -offset * cos45),
+            LabelPosition::Bottom => (offset * cos45, offset * cos45),
+            LabelPosition::TopRight | LabelPosition::BottomRight => (offset, 0.0),
+            LabelPosition::TopLeft | LabelPosition::BottomLeft => (-offset, 0.0),
+            _ => (0.0, 0.0),
+        };
+
+        let world_x = x_offset_rotated * angle.cos() - y_offset_rotated * angle.sin();
+        let world_y = x_offset_rotated * angle.sin() + y_offset_rotated * angle.cos();
+
+        let center_x = pos.0 + world_x + (text_width / 2.0) * angle.cos();
+        let center_y = pos.1 + world_y + (text_width / 2.0) * angle.sin();
+
+        LabelBounds {
+            x: center_x - rotated_width / 2.0,
+            y: center_y - rotated_height / 2.0,
+            width: rotated_width,
+            height: rotated_height,
+        }
+    } else {
+        LabelBounds {
+            x: label_pos.0,
+            y: label_pos.1 - font_size,
+            width: text_width,
+            height: font_size * 1.2,
+        }
+    }
+}
+
+fn count_label_overlaps(
+    bounds: &LabelBounds,
+    idx: NodeIndex,
+    label_positions: &HashMap<NodeIndex, (LabelBounds, LabelPosition)>,
+    node_positions: &[(NodeIndex, (f64, f64), f64)],
+    track_segments: &[((f64, f64), (f64, f64))],
+) -> usize {
+    let mut overlaps = 0;
+
+    for (other_bounds, _) in label_positions.values() {
+        if bounds.overlaps(other_bounds) {
+            overlaps += 1;
+        }
+    }
+
+    for (other_idx, other_pos, other_radius) in node_positions {
+        if *other_idx != idx && bounds.overlaps_node(*other_pos, *other_radius + 3.0) {
+            overlaps += 1;
+        }
+    }
+
+    for (p1, p2) in track_segments {
+        if bounds.intersects_line(*p1, *p2) {
+            overlaps += 1;
+        }
+    }
+
+    overlaps
+}
+
+fn draw_station_label(
+    ctx: &CanvasRenderingContext2d,
+    station_name: &str,
+    pos: (f64, f64),
+    bounds: &LabelBounds,
+    position: &LabelPosition,
+    font_size: f64,
+) {
+    if position.is_diagonal() {
+        ctx.save();
+        let _ = ctx.translate(pos.0, pos.1);
+        let _ = ctx.rotate(position.rotation_angle());
+
+        let offset = LABEL_OFFSET;
+        let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+
+        let (x_offset, y_offset) = match position {
+            LabelPosition::Top => (offset * cos45, -offset * cos45),
+            LabelPosition::Bottom => (offset * cos45, offset * cos45),
+            LabelPosition::TopRight | LabelPosition::BottomRight => (offset, 0.0),
+            LabelPosition::TopLeft | LabelPosition::BottomLeft => (-offset, 0.0),
+            _ => (0.0, 0.0),
+        };
+
+        let _ = ctx.fill_text(station_name, x_offset, y_offset);
+        ctx.restore();
+    } else {
+        let _ = ctx.fill_text(station_name, bounds.x, bounds.y + font_size);
+    }
+}
+
+#[allow(clippy::cast_precision_loss)]
+pub fn draw_stations(
+    ctx: &CanvasRenderingContext2d,
+    graph: &RailwayGraph,
+    zoom: f64,
+) {
+    let font_size = 14.0 / zoom;
+    let track_segments = track_renderer::get_track_segments(graph);
+
+    let node_positions = draw_station_nodes(ctx, graph, zoom);
+
+    // Calculate optimal label positions using BFS traversal
+    let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
     let mut node_neighbors: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+
     for edge in graph.graph.edge_references() {
         node_neighbors.entry(edge.source()).or_insert_with(Vec::new).push(edge.target());
         node_neighbors.entry(edge.target()).or_insert_with(Vec::new).push(edge.source());
     }
 
-    // Process nodes in BFS order to ensure we handle neighbors sequentially
     let mut visited_for_traversal = std::collections::HashSet::new();
     let mut queue = std::collections::VecDeque::new();
-
-    // Track parent in BFS tree to know which node we came from
     let mut bfs_parent: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+    let mut branch_positions: HashMap<NodeIndex, LabelPosition> = HashMap::new();
 
-    // Start from the first node
     if let Some((first_idx, _, _)) = node_positions.first() {
         queue.push_back(*first_idx);
         visited_for_traversal.insert(*first_idx);
     }
-
-    // Track the current position used on each branch for consistency
-    let mut branch_positions: HashMap<NodeIndex, LabelPosition> = HashMap::new();
 
     while let Some(idx) = queue.pop_front() {
         let Some((_, pos, _radius)) = node_positions.iter().find(|(i, _, _)| *i == idx) else { continue };
         let Some(station) = graph.graph.node_weight(idx) else { continue };
         let text_width = station.name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
 
-        // Always try to inherit from parent node in BFS tree
-        let preferred_position: Option<LabelPosition> = bfs_parent.get(&idx)
+        let preferred_position = bfs_parent.get(&idx)
             .and_then(|parent| branch_positions.get(parent))
             .copied();
 
-        // Add unvisited neighbors to queue and track parent
         if let Some(neighbors) = node_neighbors.get(&idx) {
             for &neighbor in neighbors {
                 if visited_for_traversal.insert(neighbor) {
@@ -222,10 +323,6 @@ pub fn draw_stations(
             }
         }
 
-        let mut best_position = LabelPosition::Right;
-        let mut best_overlaps = usize::MAX;
-
-        // Always try preferred position first if we have one
         let positions_to_try: Vec<LabelPosition> = if let Some(pref_pos) = preferred_position {
             let mut positions = vec![pref_pos];
             positions.extend(LabelPosition::all().into_iter().filter(|p| *p != pref_pos));
@@ -234,77 +331,12 @@ pub fn draw_stations(
             LabelPosition::all()
         };
 
+        let mut best_position = LabelPosition::Right;
+        let mut best_overlaps = usize::MAX;
+
         for position in positions_to_try {
-            let label_pos = position.calculate_label_pos(*pos, text_width, font_size);
-
-            // For diagonal positions, calculate bounds for rotated text
-            let bounds = if position.is_diagonal() {
-                // For 45-degree rotated rectangle, the axis-aligned bounding box is:
-                // new_width = width * |cos(45°)| + height * |sin(45°)|
-                // new_height = width * |sin(45°)| + height * |cos(45°)|
-                let cos45 = std::f64::consts::FRAC_1_SQRT_2; // 0.707...
-                let text_height = font_size * 1.2;
-                let rotated_width = text_width * cos45 + text_height * cos45;
-                let rotated_height = text_width * cos45 + text_height * cos45;
-
-                // Calculate offset in rotated coordinate system (matching draw code)
-                let offset = LABEL_OFFSET;
-                let angle = position.rotation_angle();
-
-                let (x_offset_rotated, y_offset_rotated) = match position {
-                    LabelPosition::Top => (offset * cos45, -offset * cos45),
-                    LabelPosition::Bottom => (offset * cos45, offset * cos45),
-                    LabelPosition::TopRight => (offset, 0.0),
-                    LabelPosition::BottomRight => (offset, 0.0),
-                    LabelPosition::TopLeft => (-offset, 0.0),
-                    LabelPosition::BottomLeft => (-offset, 0.0),
-                    _ => (0.0, 0.0),
-                };
-
-                // Transform from rotated coordinate system back to world coordinates
-                let world_x = x_offset_rotated * angle.cos() - y_offset_rotated * angle.sin();
-                let world_y = x_offset_rotated * angle.sin() + y_offset_rotated * angle.cos();
-
-                // Center of the text in world coordinates
-                let center_x = pos.0 + world_x + (text_width / 2.0) * angle.cos();
-                let center_y = pos.1 + world_y + (text_width / 2.0) * angle.sin();
-
-                LabelBounds {
-                    x: center_x - rotated_width / 2.0,
-                    y: center_y - rotated_height / 2.0,
-                    width: rotated_width,
-                    height: rotated_height,
-                }
-            } else {
-                LabelBounds {
-                    x: label_pos.0,
-                    y: label_pos.1 - font_size,
-                    width: text_width,
-                    height: font_size * 1.2,
-                }
-            };
-
-            // Count overlaps with existing labels, nodes, and track segments
-            let mut overlaps: usize = 0;
-
-            for (other_bounds, _) in label_positions.values() {
-                if bounds.overlaps(other_bounds) {
-                    overlaps += 1;
-                }
-            }
-
-            for (other_idx, other_pos, other_radius) in &node_positions {
-                if *other_idx != idx && bounds.overlaps_node(*other_pos, *other_radius + 3.0) {
-                    overlaps += 1;
-                }
-            }
-
-            // Check for overlap with track segments
-            for (p1, p2) in &track_segments {
-                if bounds.intersects_line(*p1, *p2) {
-                    overlaps += 1;
-                }
-            }
+            let bounds = calculate_label_bounds(&position, *pos, text_width, font_size);
+            let overlaps = count_label_overlaps(&bounds, idx, &label_positions, &node_positions, &track_segments);
 
             if overlaps < best_overlaps {
                 best_overlaps = overlaps;
@@ -323,47 +355,16 @@ pub fn draw_stations(
             height: font_size * 1.2,
         };
         label_positions.insert(idx, (bounds, best_position));
-
-        // Store the chosen position - this becomes the new default for connected nodes
         branch_positions.insert(idx, best_position);
     }
 
-    // Third pass: draw labels at calculated positions with rotation
+    // Draw all labels
     ctx.set_fill_style_str("#fff");
     ctx.set_font(&format!("{font_size}px sans-serif"));
 
     for (idx, pos, _radius) in &node_positions {
         let Some(station) = graph.graph.node_weight(*idx) else { continue };
         let Some((bounds, position)) = label_positions.get(idx) else { continue };
-
-        if position.is_diagonal() {
-            // Draw rotated text for diagonal positions
-            ctx.save();
-            let _ = ctx.translate(pos.0, pos.1);
-            let _ = ctx.rotate(position.rotation_angle());
-
-            // After rotation, position text so first letter aligns with node center horizontally
-            // but is offset vertically in world coordinates
-            let offset = LABEL_OFFSET;
-            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-
-            // Calculate position in rotated coordinate system
-            // For vertical offsets (Top/Bottom), transform world offset to rotated coords
-            let (x_offset, y_offset) = match position {
-                LabelPosition::Top => (offset * cos45, -offset * cos45),
-                LabelPosition::Bottom => (offset * cos45, offset * cos45),
-                LabelPosition::TopRight => (offset, 0.0),
-                LabelPosition::BottomRight => (offset, 0.0),
-                LabelPosition::TopLeft => (-offset, 0.0),
-                LabelPosition::BottomLeft => (-offset, 0.0),
-                _ => (0.0, 0.0),
-            };
-
-            let _ = ctx.fill_text(&station.name, x_offset, y_offset);
-            ctx.restore();
-        } else {
-            // Draw normal text
-            let _ = ctx.fill_text(&station.name, bounds.x, bounds.y + font_size);
-        }
+        draw_station_label(ctx, &station.name, *pos, bounds, position, font_size);
     }
 }

@@ -37,7 +37,8 @@ fn ErrorListPopover(
                                         let conflict_message = conflict.format_message(station1_name, station2_name);
 
                                         let time_fraction = time_to_fraction(conflict.time);
-                                        let station_position = conflict.station1_idx as f64 + conflict.position;
+                                        // Convert via i32 to avoid precision loss (station counts are small)
+                                        let station_position = f64::from(conflict.station1_idx as i32) + conflict.position;
 
                                         view! {
                                             <div

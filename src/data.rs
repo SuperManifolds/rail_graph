@@ -159,11 +159,7 @@ fn build_graph_and_routes_from_csv(
             // Determine return track: use track 1 if edge has multiple tracks, else track 0 (bidirectional)
             let edge_idx = petgraph::graph::EdgeIndex::new(forward_segment.edge_index);
             let return_track_index = if let Some(track_segment) = graph.get_track(edge_idx) {
-                if track_segment.tracks.len() > 1 {
-                    1 // Multi-track: use track 1 for return
-                } else {
-                    0 // Single track: use same track (bidirectional)
-                }
+                usize::from(track_segment.tracks.len() > 1)
             } else {
                 0 // Default to track 0 if edge not found
             };
