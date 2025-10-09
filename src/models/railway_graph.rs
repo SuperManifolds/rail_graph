@@ -15,6 +15,7 @@ pub struct RailwayGraph {
 }
 
 impl RailwayGraph {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             graph: DiGraph::new(),
@@ -23,7 +24,7 @@ impl RailwayGraph {
         }
     }
 
-    /// Add a station node if it doesn't exist, return its NodeIndex
+    /// Add a station node if it doesn't exist, return its `NodeIndex`
     pub fn add_or_get_station(&mut self, name: String) -> NodeIndex {
         if let Some(&index) = self.station_name_to_index.get(&name) {
             index
@@ -47,36 +48,42 @@ impl RailwayGraph {
     }
 
     /// Get station position
+    #[must_use]
     pub fn get_station_position(&self, index: NodeIndex) -> Option<(f64, f64)> {
         self.graph.node_weight(index).and_then(|node| node.position)
     }
 
-    /// Add a track segment between two stations, returns the EdgeIndex
+    /// Add a track segment between two stations, returns the `EdgeIndex`
     pub fn add_track(&mut self, from: NodeIndex, to: NodeIndex, tracks: Vec<Track>) -> petgraph::graph::EdgeIndex {
         self.graph.add_edge(from, to, TrackSegment { tracks, distance: None })
     }
 
     /// Get track segment by edge index
+    #[must_use]
     pub fn get_track(&self, edge_idx: petgraph::graph::EdgeIndex) -> Option<&TrackSegment> {
         self.graph.edge_weight(edge_idx)
     }
 
     /// Get endpoints of a track segment
+    #[must_use]
     pub fn get_track_endpoints(&self, edge_idx: petgraph::graph::EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
         self.graph.edge_endpoints(edge_idx)
     }
 
-    /// Get station name by NodeIndex
+    /// Get station name by `NodeIndex`
+    #[must_use]
     pub fn get_station_name(&self, index: NodeIndex) -> Option<&str> {
         self.graph.node_weight(index).map(|node| node.name.as_str())
     }
 
-    /// Get NodeIndex by station name
+    /// Get `NodeIndex` by station name
+    #[must_use]
     pub fn get_station_index(&self, name: &str) -> Option<NodeIndex> {
         self.station_name_to_index.get(name).copied()
     }
 
     /// Get all edge indices connected to a station
+    #[must_use]
     pub fn get_station_edges(&self, index: NodeIndex) -> Vec<usize> {
         use petgraph::visit::EdgeRef;
         use petgraph::Direction;
@@ -88,7 +95,8 @@ impl RailwayGraph {
     }
 
     /// Find stations connected through a given station
-    /// Returns a Vec of (station_before, station_after, tracks) tuples
+    /// Returns a Vec of (`station_before`, `station_after`, tracks) tuples
+    #[must_use]
     pub fn find_connections_through_station(&self, station_idx: NodeIndex) -> Vec<(NodeIndex, NodeIndex, Vec<Track>)> {
         use petgraph::visit::EdgeRef;
         use petgraph::Direction;
@@ -119,7 +127,7 @@ impl RailwayGraph {
     }
 
     /// Delete a station and reconnect around it
-    /// Returns (removed_edges, bypass_mapping) where bypass_mapping maps (old_edge1, old_edge2) -> new_edge
+    /// Returns (`removed_edges`, `bypass_mapping`) where `bypass_mapping` maps (`old_edge1`, `old_edge2`) -> `new_edge`
     pub fn delete_station(&mut self, index: NodeIndex) -> (Vec<usize>, std::collections::HashMap<(usize, usize), usize>) {
         // Find connections through this station to create bypass edges
         let connections = self.find_connections_through_station(index);
@@ -162,6 +170,7 @@ impl RailwayGraph {
 
     /// Get all stations in order by traversing the graph
     /// Performs a breadth-first traversal starting from the first station
+    #[must_use]
     pub fn get_all_stations_ordered(&self) -> Vec<StationNode> {
         if self.graph.node_count() == 0 {
             return Vec::new();
@@ -245,6 +254,7 @@ impl RailwayGraph {
 
     /// Extract ordered list of stations from a route based on direction
     /// Returns Vec of (station_name, NodeIndex) in the order they're visited
+    #[must_use]
     pub fn get_stations_from_route(
         &self,
         route: &[crate::models::RouteSegment],
@@ -255,13 +265,13 @@ impl RailwayGraph {
         match direction {
             crate::models::RouteDirection::Forward => {
                 // Forward: extract from -> to for each edge
-                if let Some(segment) = route.first() {
+                if let Some((from, name)) = route.first().and_then(|segment| {
                     let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                    if let Some((from, _)) = self.get_track_endpoints(edge_idx) {
-                        if let Some(name) = self.get_station_name(from) {
-                            stations.push((name.to_string(), from));
-                        }
-                    }
+                    self.get_track_endpoints(edge_idx).and_then(|(from, _)| {
+                        self.get_station_name(from).map(|name| (from, name.to_string()))
+                    })
+                }) {
+                    stations.push((name, from));
                 }
 
                 for segment in route {
@@ -270,13 +280,13 @@ impl RailwayGraph {
             }
             crate::models::RouteDirection::Return => {
                 // Return: extract to -> from for each edge (traveling backwards)
-                if let Some(segment) = route.first() {
+                if let Some((to, name)) = route.first().and_then(|segment| {
                     let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                    if let Some((_, to)) = self.get_track_endpoints(edge_idx) {
-                        if let Some(name) = self.get_station_name(to) {
-                            stations.push((name.to_string(), to));
-                        }
-                    }
+                    self.get_track_endpoints(edge_idx).and_then(|(_, to)| {
+                        self.get_station_name(to).map(|name| (to, name.to_string()))
+                    })
+                }) {
+                    stations.push((name, to));
                 }
 
                 for segment in route {
@@ -304,6 +314,7 @@ impl RailwayGraph {
 
     /// Get the first and last station indices for a route based on direction
     /// Returns (Option<first_station>, Option<last_station>)
+    #[must_use]
     pub fn get_route_endpoints(
         &self,
         route: &[crate::models::RouteSegment],
@@ -344,6 +355,7 @@ impl RailwayGraph {
 
     /// Get available stations that can be added at the start of a route
     /// Returns station names that have edges connecting to the first station
+    #[must_use]
     pub fn get_available_start_stations(
         &self,
         route: &[crate::models::RouteSegment],
@@ -376,6 +388,7 @@ impl RailwayGraph {
 
     /// Get available stations that can be added at the end of a route
     /// Returns station names that have edges connecting from the last station
+    #[must_use]
     pub fn get_available_end_stations(
         &self,
         route: &[crate::models::RouteSegment],

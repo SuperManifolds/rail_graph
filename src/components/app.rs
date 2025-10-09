@@ -1,4 +1,4 @@
-use leptos::{component, create_effect, create_node_ref, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view};
+use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view};
 use leptos_meta::{provide_meta_context, Stylesheet, Title};
 use crate::components::time_graph::TimeGraph;
 use crate::components::infrastructure_view::InfrastructureView;

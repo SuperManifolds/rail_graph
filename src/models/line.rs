@@ -1,6 +1,6 @@
 use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
-use crate::constants::BASE_DATE;
+use crate::constants::{BASE_DATE, BASE_MIDNIGHT};
 use petgraph::graph::NodeIndex;
 use super::{RailwayGraph, TrackSegment, TrackDirection};
 
@@ -109,27 +109,28 @@ impl Line {
         line_ids
             .iter()
             .enumerate()
-            .map(|(i, id)| Line {
-                id: id.clone(),
-                frequency: Duration::hours(1), // Default, configurable by user
-                color: generate_random_color(i),
-                thickness: 2.0,
-                first_departure: BASE_DATE.and_hms_opt(5, (i as u32).saturating_mul(15), 0)
-                    .unwrap_or_else(|| BASE_DATE.and_hms_opt(5, 0, 0).expect("Valid time")),
-                return_first_departure: BASE_DATE.and_hms_opt(6, (i as u32).saturating_mul(15), 0)
-                    .unwrap_or_else(|| BASE_DATE.and_hms_opt(6, 0, 0).expect("Valid time")),
-                visible: true,
-                schedule_mode: ScheduleMode::Auto,
-                manual_departures: Vec::new(),
-                forward_route: Vec::new(),
-                return_route: Vec::new(),
+            .map(|(i, id)| {
+                let offset_minutes = u32::try_from(i).unwrap_or(0).saturating_mul(15);
+                Line {
+                    id: id.clone(),
+                    frequency: Duration::hours(1), // Default, configurable by user
+                    color: generate_random_color(i),
+                    thickness: 2.0,
+                    first_departure: BASE_DATE.and_hms_opt(5, offset_minutes, 0).unwrap_or(BASE_MIDNIGHT),
+                    return_first_departure: BASE_DATE.and_hms_opt(6, offset_minutes, 0).unwrap_or(BASE_MIDNIGHT),
+                    visible: true,
+                    schedule_mode: ScheduleMode::Auto,
+                    manual_departures: Vec::new(),
+                    forward_route: Vec::new(),
+                    return_route: Vec::new(),
+                }
             })
             .collect()
     }
 
     /// Update route after station deletion with bypass edges
-    /// removed_edges: edges that were removed
-    /// bypass_mapping: maps (old_edge1, old_edge2) -> new_bypass_edge
+    /// `removed_edges`: edges that were removed
+    /// `bypass_mapping`: maps (`old_edge1`, `old_edge2`) -> `new_bypass_edge`
     pub fn update_route_after_deletion(
         &mut self,
         removed_edges: &[usize],
@@ -158,21 +159,15 @@ impl Line {
             }
 
             // Segment uses a removed edge - try to create a bypass
-            let next_segment = match route.get(i + 1) {
-                Some(seg) => seg,
-                None => {
-                    i += 1;
-                    continue;
-                }
+            let Some(next_segment) = route.get(i + 1) else {
+                i += 1;
+                continue;
             };
 
             // Check if we have a bypass edge for this pair
-            let bypass_edge_idx = match bypass_mapping.get(&(segment.edge_index, next_segment.edge_index)) {
-                Some(&idx) => idx,
-                None => {
-                    i += 1;
-                    continue;
-                }
+            let Some(&bypass_edge_idx) = bypass_mapping.get(&(segment.edge_index, next_segment.edge_index)) else {
+                i += 1;
+                continue;
             };
 
             // Combine durations (travel time + wait time at deleted station + next travel time)
@@ -340,11 +335,13 @@ mod node_index_serde {
     use petgraph::graph::NodeIndex;
     use serde::{Deserialize, Deserializer, Serializer};
 
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn serialize<S>(node: &NodeIndex, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serializer.serialize_u32(node.index() as u32)
+        let index_u32 = u32::try_from(node.index()).unwrap_or(u32::MAX);
+        serializer.serialize_u32(index_u32)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<NodeIndex, D::Error>

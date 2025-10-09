@@ -1,4 +1,4 @@
-use leptos::{component, create_node_ref, create_signal, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalUpdate, spawn_local, view};
+use leptos::{component, create_node_ref, create_signal, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalUpdate, view};
 use leptos::leptos_dom::helpers::window_event_listener;
 use wasm_bindgen::JsCast;
 use crate::conflict::Conflict;
