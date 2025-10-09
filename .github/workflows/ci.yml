@@ -90,13 +90,13 @@ jobs:
           context: .
           push: false
           load: true
-          tags: nimby-graph:test
+          tags: rail-graph:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Test Docker container
         run: |
-          docker run -d -p 8080:8080 --name nimby-graph-test nimby-graph:test
+          docker run -d -p 8080:8080 --name rail-graph-test rail-graph:test
           sleep 10
-          curl -f http://localhost:8080 || (docker logs nimby-graph-test && exit 1)
-          docker stop nimby-graph-test
+          curl -f http://localhost:8080 || (docker logs rail-graph-test && exit 1)
+          docker stop rail-graph-test

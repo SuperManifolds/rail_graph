@@ -5,7 +5,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{IdbDatabase, IdbRequest, IdbTransactionMode};
 
-const DB_NAME: &str = "nimby_graph_db";
+const DB_NAME: &str = "rail_graph_db";
 const DB_VERSION: u32 = 1;
 const PROJECT_STORE: &str = "projects";
 const PROJECT_KEY: &str = "current_project";
