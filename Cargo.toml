@@ -9,7 +9,8 @@ perf = "warn"
 style = "warn"
 suspicious = "warn"
 pedantic = "warn"
-unwrap_used = "warn"
+unwrap_used = { level = "warn", priority = 1 }
+implicit_hasher = { level = "allow", priority = 1 }
 
 [dependencies]
 leptos = { version = "0.6", features = ["csr"] }

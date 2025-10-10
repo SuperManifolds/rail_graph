@@ -1,3 +1,5 @@
+#![allow(clippy::implicit_hasher)]
+
 pub mod models;
 pub mod components;
 pub mod storage;

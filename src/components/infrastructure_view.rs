@@ -1,6 +1,7 @@
 use crate::models::{RailwayGraph, Line, Track};
 use crate::components::infrastructure_canvas::{auto_layout, renderer, hit_detection};
 use crate::components::canvas_viewport;
+use crate::components::graph_canvas::types::ViewportState;
 use crate::components::add_station::AddStation;
 use crate::components::delete_station_confirmation::DeleteStationConfirmation;
 use crate::components::edit_station::EditStation;
@@ -42,17 +43,15 @@ fn handle_mouse_down_adding_track(
 fn handle_mouse_move_hover_detection(
     x: f64,
     y: f64,
-    zoom: f64,
-    pan_x: f64,
-    pan_y: f64,
+    viewport: ViewportState,
     graph: ReadSignal<RailwayGraph>,
     editing_station: ReadSignal<Option<NodeIndex>>,
     set_is_over_station: WriteSignal<bool>,
     set_is_over_edited_station: WriteSignal<bool>,
     set_is_over_track: WriteSignal<bool>,
 ) {
-    let world_x = (x - pan_x) / zoom;
-    let world_y = (y - pan_y) / zoom;
+    let world_x = (x - viewport.pan_offset_x) / viewport.zoom_level;
+    let world_y = (y - viewport.pan_offset_y) / viewport.zoom_level;
 
     let current_graph = graph.get();
     if let Some(hovered_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
@@ -336,6 +335,7 @@ fn setup_render_effect(
     });
 }
 
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn create_event_handlers(
     canvas_ref: leptos::NodeRef<leptos::html::Canvas>,
     edit_mode: ReadSignal<EditMode>,
@@ -416,8 +416,14 @@ fn create_event_handlers(
                 current_graph.set_station_position(station_idx, (world_x, world_y));
                 set_graph.set(current_graph);
             } else {
+                let viewport_state = ViewportState {
+                    zoom_level: zoom_level.get(),
+                    zoom_level_x: 1.0, // Infrastructure view doesn't use horizontal zoom
+                    pan_offset_x: pan_offset_x.get(),
+                    pan_offset_y: pan_offset_y.get(),
+                };
                 handle_mouse_move_hover_detection(
-                    x, y, zoom_level.get(), pan_offset_x.get(), pan_offset_y.get(),
+                    x, y, viewport_state,
                     graph, editing_station, set_is_over_station, set_is_over_edited_station, set_is_over_track
                 );
             }

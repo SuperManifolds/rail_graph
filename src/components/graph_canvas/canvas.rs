@@ -18,6 +18,7 @@ pub const TOP_MARGIN: f64 = 60.0;
 pub const RIGHT_PADDING: f64 = 20.0;
 pub const BOTTOM_PADDING: f64 = 20.0;
 
+#[allow(clippy::too_many_arguments)]
 fn setup_render_effect(
     canvas_ref: leptos::NodeRef<leptos::html::Canvas>,
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
@@ -113,16 +114,14 @@ fn setup_render_effect(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_mouse_move_hover(
     x: f64,
     y: f64,
     canvas: &web_sys::HtmlCanvasElement,
+    viewport: ViewportState,
     conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
     graph: ReadSignal<RailwayGraph>,
-    zoom_level: ReadSignal<f64>,
-    zoom_level_x: ReadSignal<f64>,
-    pan_offset_x: ReadSignal<f64>,
-    pan_offset_y: ReadSignal<f64>,
     show_line_blocks: Signal<bool>,
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     set_hovered_conflict: WriteSignal<Option<(Conflict, f64, f64)>>,
@@ -134,19 +133,13 @@ fn handle_mouse_move_hover(
     let hovered = conflict_indicators::check_conflict_hover(
         x, y, &current_conflicts, &current_stations,
         f64::from(canvas.width()), f64::from(canvas.height()),
-        zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), pan_offset_y.get()
+        viewport.zoom_level, viewport.zoom_level_x, viewport.pan_offset_x, viewport.pan_offset_y
     );
     set_hovered_conflict.set(hovered);
 
     if show_line_blocks.get() {
         let journeys = train_journeys.get();
         let journeys_vec: Vec<_> = journeys.values().collect();
-        let viewport = ViewportState {
-            zoom_level: zoom_level.get(),
-            zoom_level_x: zoom_level_x.get(),
-            pan_offset_x: pan_offset_x.get(),
-            pan_offset_y: pan_offset_y.get(),
-        };
         let hovered_journey = train_journeys::check_journey_hover(
             x, y, &journeys_vec, &current_stations,
             f64::from(canvas.width()), f64::from(canvas.height()),
@@ -267,7 +260,13 @@ pub fn GraphCanvas(
                     update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_visualization_time);
                 }
             } else {
-                handle_mouse_move_hover(x, y, canvas, conflicts_and_crossings, graph, zoom_level, zoom_level_x, pan_offset_x, pan_offset_y, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id);
+                let viewport_state = ViewportState {
+                    zoom_level: zoom_level.get(),
+                    zoom_level_x: zoom_level_x.get(),
+                    pan_offset_x: pan_offset_x.get(),
+                    pan_offset_y: pan_offset_y.get(),
+                };
+                handle_mouse_move_hover(x, y, canvas, viewport_state, conflicts_and_crossings, graph, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id);
             }
         }
     };

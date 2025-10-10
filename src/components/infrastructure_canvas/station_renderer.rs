@@ -9,6 +9,8 @@ const NODE_RADIUS: f64 = 8.0;
 const LABEL_OFFSET: f64 = 12.0;
 const CHAR_WIDTH_ESTIMATE: f64 = 7.5;
 
+type TrackSegment = ((f64, f64), (f64, f64));
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum LabelPosition {
     Right,
@@ -219,7 +221,7 @@ fn count_label_overlaps(
     idx: NodeIndex,
     label_positions: &HashMap<NodeIndex, (LabelBounds, LabelPosition)>,
     node_positions: &[(NodeIndex, (f64, f64), f64)],
-    track_segments: &[((f64, f64), (f64, f64))],
+    track_segments: &[TrackSegment],
 ) -> usize {
     let mut overlaps = 0;
 
