@@ -328,7 +328,7 @@ mod tests {
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
         // Create: A -> B -> C
-        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
         let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
 
         // Route currently starts at B

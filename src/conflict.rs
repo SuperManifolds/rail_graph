@@ -689,3 +689,213 @@ fn check_platform_conflicts(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{RailwayGraph, Stations, Tracks, Track, TrackDirection};
+    use crate::train_journey::JourneySegment;
+
+    const TEST_COLOR: &str = "#FF0000";
+    const TEST_THICKNESS: f64 = 2.0;
+
+    #[test]
+    fn test_conflict_type_name() {
+        let conflict = Conflict {
+            time: BASE_DATE.and_hms_opt(12, 0, 0).expect("valid time"),
+            position: 0.5,
+            station1_idx: 0,
+            station2_idx: 1,
+            journey1_id: "J1".to_string(),
+            journey2_id: "J2".to_string(),
+            conflict_type: ConflictType::HeadOn,
+            segment1_times: None,
+            segment2_times: None,
+            platform_idx: None,
+        };
+
+        assert_eq!(conflict.type_name(), "Head-on Conflict");
+    }
+
+    #[test]
+    fn test_conflict_format_message_head_on() {
+        let conflict = Conflict {
+            time: BASE_DATE.and_hms_opt(12, 0, 0).expect("valid time"),
+            position: 0.5,
+            station1_idx: 0,
+            station2_idx: 1,
+            journey1_id: "Train A".to_string(),
+            journey2_id: "Train B".to_string(),
+            conflict_type: ConflictType::HeadOn,
+            segment1_times: None,
+            segment2_times: None,
+            platform_idx: None,
+        };
+
+        let message = conflict.format_message("Station 1", "Station 2");
+        assert_eq!(message, "Train A conflicts with Train B between Station 1 and Station 2");
+    }
+
+    #[test]
+    fn test_conflict_format_message_platform() {
+        let conflict = Conflict {
+            time: BASE_DATE.and_hms_opt(12, 0, 0).expect("valid time"),
+            position: 0.0,
+            station1_idx: 0,
+            station2_idx: 0,
+            journey1_id: "Train A".to_string(),
+            journey2_id: "Train B".to_string(),
+            conflict_type: ConflictType::PlatformViolation,
+            segment1_times: None,
+            segment2_times: None,
+            platform_idx: Some(1),
+        };
+
+        let message = conflict.format_message("Central Station", "Central Station");
+        assert_eq!(message, "Train A conflicts with Train B at Central Station Platform 2");
+    }
+
+    #[test]
+    fn test_conflict_format_message_overtaking() {
+        let conflict = Conflict {
+            time: BASE_DATE.and_hms_opt(12, 0, 0).expect("valid time"),
+            position: 0.5,
+            station1_idx: 0,
+            station2_idx: 1,
+            journey1_id: "Slow".to_string(),
+            journey2_id: "Fast".to_string(),
+            conflict_type: ConflictType::Overtaking,
+            segment1_times: None,
+            segment2_times: None,
+            platform_idx: None,
+        };
+
+        let message = conflict.format_message("A", "B");
+        assert_eq!(message, "Fast overtakes Slow between A and B");
+    }
+
+    #[test]
+    fn test_detect_line_conflicts_empty() {
+        let graph = RailwayGraph::new();
+        let journeys = vec![];
+
+        let (conflicts, crossings) = detect_line_conflicts(&journeys, &graph);
+
+        assert_eq!(conflicts.len(), 0);
+        assert_eq!(crossings.len(), 0);
+    }
+
+    #[test]
+    fn test_detect_line_conflicts_single_journey() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("A".to_string());
+        let idx2 = graph.add_or_get_station("B".to_string());
+        let edge = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let journey = TrainJourney {
+            id: uuid::Uuid::new_v4(),
+            line_id: "Line 1".to_string(),
+            departure_time: BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"),
+            station_times: vec![
+                ("A".to_string(), BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"), BASE_DATE.and_hms_opt(8, 1, 0).expect("valid time")),
+                ("B".to_string(), BASE_DATE.and_hms_opt(8, 10, 0).expect("valid time"), BASE_DATE.and_hms_opt(8, 11, 0).expect("valid time")),
+            ],
+            segments: vec![JourneySegment {
+                edge_index: edge.index(),
+                track_index: 0,
+                origin_platform: 0,
+                destination_platform: 0,
+            }],
+            color: TEST_COLOR.to_string(),
+            thickness: TEST_THICKNESS,
+        };
+
+        let (conflicts, _) = detect_line_conflicts(&[journey], &graph);
+        assert_eq!(conflicts.len(), 0);
+    }
+
+    #[test]
+    fn test_is_single_track_bidirectional() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("A".to_string());
+        let idx2 = graph.add_or_get_station("B".to_string());
+
+        // Single bidirectional track
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // Double track
+        let edge2 = graph.add_track(idx1, idx2, vec![
+            Track { direction: TrackDirection::Forward },
+            Track { direction: TrackDirection::Backward },
+        ]);
+
+        let ctx = ConflictContext {
+            station_indices: HashMap::new(),
+            graph: &graph,
+            station_margin: chrono::Duration::minutes(1),
+        };
+
+        assert!(is_single_track_bidirectional(&ctx, edge1.index()));
+        assert!(!is_single_track_bidirectional(&ctx, edge2.index()));
+    }
+
+    #[test]
+    fn test_station_crossing_equality() {
+        let crossing1 = StationCrossing {
+            time: BASE_DATE.and_hms_opt(12, 0, 0).expect("valid time"),
+            station_idx: 1,
+            journey1_id: "J1".to_string(),
+            journey2_id: "J2".to_string(),
+        };
+
+        let crossing2 = StationCrossing {
+            time: BASE_DATE.and_hms_opt(12, 0, 0).expect("valid time"),
+            station_idx: 1,
+            journey1_id: "J1".to_string(),
+            journey2_id: "J2".to_string(),
+        };
+
+        assert_eq!(crossing1, crossing2);
+    }
+
+    #[test]
+    fn test_conflict_type_equality() {
+        assert_eq!(ConflictType::HeadOn, ConflictType::HeadOn);
+        assert_eq!(ConflictType::Overtaking, ConflictType::Overtaking);
+        assert_eq!(ConflictType::BlockViolation, ConflictType::BlockViolation);
+        assert_eq!(ConflictType::PlatformViolation, ConflictType::PlatformViolation);
+        assert_ne!(ConflictType::HeadOn, ConflictType::Overtaking);
+    }
+
+    #[test]
+    fn test_calculate_intersection_parallel_lines() {
+        let t1_start = BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time");
+        let t1_end = BASE_DATE.and_hms_opt(8, 10, 0).expect("valid time");
+        let t2_start = BASE_DATE.and_hms_opt(8, 5, 0).expect("valid time");
+        let t2_end = BASE_DATE.and_hms_opt(8, 15, 0).expect("valid time");
+
+        // Both going from station 0 to 1 (parallel)
+        let intersection = calculate_intersection(
+            t1_start, t1_end, 0, 1,
+            t2_start, t2_end, 0, 1,
+        );
+
+        assert!(intersection.is_none());
+    }
+
+    #[test]
+    fn test_calculate_intersection_no_overlap() {
+        let t1_start = BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time");
+        let t1_end = BASE_DATE.and_hms_opt(8, 10, 0).expect("valid time");
+        let t2_start = BASE_DATE.and_hms_opt(8, 20, 0).expect("valid time");
+        let t2_end = BASE_DATE.and_hms_opt(8, 30, 0).expect("valid time");
+
+        // Different times, should not intersect
+        let intersection = calculate_intersection(
+            t1_start, t1_end, 0, 1,
+            t2_start, t2_end, 1, 0,
+        );
+
+        assert!(intersection.is_none());
+    }
+}
