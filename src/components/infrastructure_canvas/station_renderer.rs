@@ -10,7 +10,7 @@ const LABEL_OFFSET: f64 = 12.0;
 const CHAR_WIDTH_ESTIMATE: f64 = 7.5;
 const STATION_COLOR: &str = "#4a9eff";
 const PASSING_LOOP_COLOR: &str = "#888";
-const JUNCTION_SIZE: f64 = 12.0;
+const JUNCTION_SIZE: f64 = 8.4;
 const NODE_FILL_COLOR: &str = "#2a2a2a";
 const LABEL_COLOR: &str = "#fff";
 

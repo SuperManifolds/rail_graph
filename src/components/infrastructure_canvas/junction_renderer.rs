@@ -5,7 +5,7 @@ use petgraph::Direction;
 use petgraph::visit::EdgeRef;
 use std::collections::HashSet;
 
-const JUNCTION_TRACK_DISTANCE: f64 = 20.0; // Match JUNCTION_STOP_DISTANCE from track_renderer
+const JUNCTION_TRACK_DISTANCE: f64 = 14.0; // Match JUNCTION_STOP_DISTANCE from track_renderer
 const TRACK_SPACING: f64 = 3.0; // Match track_renderer
 const TRACK_COLOR: &str = "#444";
 const TRACK_LINE_WIDTH: f64 = 2.0;

@@ -14,7 +14,7 @@ const PROJECTION_MAX: f64 = 0.9; // Maximum projection parameter for station che
 // Track rendering constants
 const TRACK_LINE_WIDTH: f64 = 2.0;
 const TRACK_COLOR: &str = "#444";
-const JUNCTION_STOP_DISTANCE: f64 = 20.0; // Stop drawing tracks this far from junction center
+const JUNCTION_STOP_DISTANCE: f64 = 14.0; // Stop drawing tracks this far from junction center
 
 /// Check if a line segment from pos1 to pos2 passes near any stations (excluding source and target)
 /// Returns a perpendicular offset to shift the track away from the station
