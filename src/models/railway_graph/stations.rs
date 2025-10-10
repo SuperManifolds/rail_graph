@@ -194,3 +194,137 @@ impl Stations for RailwayGraph {
         ordered
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::RailwayGraph;
+    use crate::models::track::{Track, TrackDirection};
+    use super::super::tracks::Tracks;
+
+    #[test]
+    fn test_add_station() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+
+        assert_eq!(graph.graph.node_count(), 2);
+        assert_ne!(idx1, idx2);
+        assert_eq!(graph.get_station_name(idx1), Some("Station A"));
+        assert_eq!(graph.get_station_name(idx2), Some("Station B"));
+    }
+
+    #[test]
+    fn test_add_or_get_station_returns_existing() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station A".to_string());
+
+        assert_eq!(idx1, idx2);
+        assert_eq!(graph.graph.node_count(), 1);
+    }
+
+    #[test]
+    fn test_station_position() {
+        let mut graph = RailwayGraph::new();
+        let idx = graph.add_or_get_station("Station A".to_string());
+
+        assert_eq!(graph.get_station_position(idx), None);
+
+        graph.set_station_position(idx, (100.0, 200.0));
+        assert_eq!(graph.get_station_position(idx), Some((100.0, 200.0)));
+    }
+
+    #[test]
+    fn test_get_station_index() {
+        let mut graph = RailwayGraph::new();
+        let idx = graph.add_or_get_station("Station A".to_string());
+
+        assert_eq!(graph.get_station_index("Station A"), Some(idx));
+        assert_eq!(graph.get_station_index("Nonexistent"), None);
+    }
+
+    #[test]
+    fn test_get_all_stations_ordered() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+        let idx3 = graph.add_or_get_station("Station C".to_string());
+
+        // Create a linear graph A -> B -> C
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let stations = graph.get_all_stations_ordered();
+        assert_eq!(stations.len(), 3);
+        assert_eq!(stations[0].name, "Station A");
+        assert_eq!(stations[1].name, "Station B");
+        assert_eq!(stations[2].name, "Station C");
+    }
+
+    #[test]
+    fn test_get_all_stations_ordered_empty_graph() {
+        let graph = RailwayGraph::new();
+        let stations = graph.get_all_stations_ordered();
+        assert_eq!(stations.len(), 0);
+    }
+
+    #[test]
+    fn test_delete_station_creates_bypass() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+        let idx3 = graph.add_or_get_station("Station C".to_string());
+
+        // Create A -> B -> C
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        assert_eq!(graph.graph.node_count(), 3);
+        assert_eq!(graph.graph.edge_count(), 2);
+
+        // Delete B, should create A -> C bypass
+        let (removed_edges, bypass_mapping) = graph.delete_station(idx2);
+
+        assert_eq!(graph.graph.node_count(), 2);
+        assert_eq!(removed_edges.len(), 2);
+        assert_eq!(bypass_mapping.len(), 1);
+
+        // Should have one edge connecting A -> C
+        assert_eq!(graph.graph.edge_count(), 1);
+        assert_eq!(graph.get_station_index("Station B"), None);
+    }
+
+    #[test]
+    fn test_get_station_edges() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+        let idx3 = graph.add_or_get_station("Station C".to_string());
+
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let edges = graph.get_station_edges(idx2);
+        assert_eq!(edges.len(), 2); // Station B has 2 connected edges
+
+        let edges = graph.get_station_edges(idx1);
+        assert_eq!(edges.len(), 1); // Station A has 1 connected edge
+    }
+
+    #[test]
+    fn test_find_connections_through_station() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+        let idx3 = graph.add_or_get_station("Station C".to_string());
+
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let connections = graph.find_connections_through_station(idx2);
+        assert_eq!(connections.len(), 1);
+        assert_eq!(connections[0].0, idx1); // from A
+        assert_eq!(connections[0].1, idx3); // to C
+    }
+}

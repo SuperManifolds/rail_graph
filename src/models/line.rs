@@ -352,3 +352,245 @@ mod node_index_serde {
         Ok(NodeIndex::new(index as usize))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{RailwayGraph, Stations, Tracks};
+    use crate::models::track::{Track, TrackDirection};
+
+    fn create_test_segment(edge_index: usize) -> RouteSegment {
+        RouteSegment {
+            edge_index,
+            track_index: 0,
+            origin_platform: 0,
+            destination_platform: 0,
+            duration: Duration::minutes(5),
+            wait_time: Duration::seconds(30),
+        }
+    }
+
+    #[test]
+    fn test_default_wait_time() {
+        assert_eq!(default_wait_time(), Duration::seconds(30));
+    }
+
+    #[test]
+    fn test_schedule_mode_default() {
+        let mode = ScheduleMode::default();
+        assert_eq!(mode, ScheduleMode::Auto);
+    }
+
+    #[test]
+    fn test_create_from_ids() {
+        let ids = vec!["Line 1".to_string(), "Line 2".to_string()];
+        let lines = Line::create_from_ids(&ids);
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].id, "Line 1");
+        assert_eq!(lines[1].id, "Line 2");
+        assert_eq!(lines[0].frequency, Duration::hours(1));
+        assert!(lines[0].visible);
+        assert_eq!(lines[0].schedule_mode, ScheduleMode::Auto);
+    }
+
+    #[test]
+    fn test_uses_edge() {
+        let line = Line {
+            id: "Test".to_string(),
+            frequency: Duration::hours(1),
+            color: "#FF0000".to_string(),
+            thickness: 2.0,
+            first_departure: BASE_MIDNIGHT,
+            return_first_departure: BASE_MIDNIGHT,
+            visible: true,
+            schedule_mode: ScheduleMode::Auto,
+            manual_departures: vec![],
+            forward_route: vec![create_test_segment(1), create_test_segment(2)],
+            return_route: vec![create_test_segment(3)],
+        };
+
+        assert!(line.uses_edge(1));
+        assert!(line.uses_edge(2));
+        assert!(line.uses_edge(3));
+        assert!(!line.uses_edge(4));
+    }
+
+    #[test]
+    fn test_uses_any_edge() {
+        let line = Line {
+            id: "Test".to_string(),
+            frequency: Duration::hours(1),
+            color: "#FF0000".to_string(),
+            thickness: 2.0,
+            first_departure: BASE_MIDNIGHT,
+            return_first_departure: BASE_MIDNIGHT,
+            visible: true,
+            schedule_mode: ScheduleMode::Auto,
+            manual_departures: vec![],
+            forward_route: vec![create_test_segment(1), create_test_segment(2)],
+            return_route: vec![],
+        };
+
+        assert!(line.uses_any_edge(&[1, 5, 6]));
+        assert!(line.uses_any_edge(&[2]));
+        assert!(!line.uses_any_edge(&[3, 4, 5]));
+    }
+
+    #[test]
+    fn test_update_route_after_deletion_with_bypass() {
+        let mut line = Line {
+            id: "Test".to_string(),
+            frequency: Duration::hours(1),
+            color: "#FF0000".to_string(),
+            thickness: 2.0,
+            first_departure: BASE_MIDNIGHT,
+            return_first_departure: BASE_MIDNIGHT,
+            visible: true,
+            schedule_mode: ScheduleMode::Auto,
+            manual_departures: vec![],
+            forward_route: vec![
+                create_test_segment(1),
+                create_test_segment(2),
+                create_test_segment(3),
+            ],
+            return_route: vec![],
+        };
+
+        // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
+        let removed_edges = vec![1, 2];
+        let mut bypass_mapping = std::collections::HashMap::new();
+        bypass_mapping.insert((1, 2), 10);
+
+        line.update_route_after_deletion(&removed_edges, &bypass_mapping);
+
+        // Should have bypass edge 10 and edge 3
+        assert_eq!(line.forward_route.len(), 2);
+        assert_eq!(line.forward_route[0].edge_index, 10);
+        assert_eq!(line.forward_route[1].edge_index, 3);
+
+        // Check combined duration
+        let expected_duration = Duration::minutes(5) + Duration::seconds(30) + Duration::minutes(5);
+        assert_eq!(line.forward_route[0].duration, expected_duration);
+    }
+
+    #[test]
+    fn test_update_route_after_deletion_without_bypass() {
+        let mut line = Line {
+            id: "Test".to_string(),
+            frequency: Duration::hours(1),
+            color: "#FF0000".to_string(),
+            thickness: 2.0,
+            first_departure: BASE_MIDNIGHT,
+            return_first_departure: BASE_MIDNIGHT,
+            visible: true,
+            schedule_mode: ScheduleMode::Auto,
+            manual_departures: vec![],
+            forward_route: vec![
+                create_test_segment(1),
+                create_test_segment(2),
+            ],
+            return_route: vec![],
+        };
+
+        // Remove edge 1 but no bypass mapping
+        let removed_edges = vec![1];
+        let bypass_mapping = std::collections::HashMap::new();
+
+        line.update_route_after_deletion(&removed_edges, &bypass_mapping);
+
+        // Edge 1 should be removed, edge 2 should remain
+        assert_eq!(line.forward_route.len(), 1);
+        assert_eq!(line.forward_route[0].edge_index, 2);
+    }
+
+    #[test]
+    fn test_fix_track_indices_after_change() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("A".to_string());
+        let idx2 = graph.add_or_get_station("B".to_string());
+
+        // Create double track edge (Forward and Backward)
+        let edge = graph.add_track(idx1, idx2, vec![
+            Track { direction: TrackDirection::Forward },
+            Track { direction: TrackDirection::Backward },
+        ]);
+
+        let mut line = Line {
+            id: "Test".to_string(),
+            frequency: Duration::hours(1),
+            color: "#FF0000".to_string(),
+            thickness: 2.0,
+            first_departure: BASE_MIDNIGHT,
+            return_first_departure: BASE_MIDNIGHT,
+            visible: true,
+            schedule_mode: ScheduleMode::Auto,
+            manual_departures: vec![],
+            forward_route: vec![RouteSegment {
+                edge_index: edge.index(),
+                track_index: 5, // Out of bounds
+                origin_platform: 0,
+                destination_platform: 0,
+                duration: Duration::minutes(5),
+                wait_time: Duration::seconds(30),
+            }],
+            return_route: vec![],
+        };
+
+        line.fix_track_indices_after_change(edge.index(), 2, &graph);
+
+        // Track index should be fixed to 0 (Forward track)
+        assert_eq!(line.forward_route[0].track_index, 0);
+    }
+
+    #[test]
+    fn test_is_track_incompatible() {
+        let segment = TrackSegment {
+            tracks: vec![
+                Track { direction: TrackDirection::Forward },
+                Track { direction: TrackDirection::Backward },
+            ],
+            distance: None,
+        };
+
+        // Forward route should be compatible with Forward track (index 0)
+        assert!(!Line::is_track_incompatible(Some(&segment), 0, true));
+
+        // Forward route should be incompatible with Backward track (index 1)
+        assert!(Line::is_track_incompatible(Some(&segment), 1, true));
+
+        // Return route should be compatible with Backward track (index 1)
+        assert!(!Line::is_track_incompatible(Some(&segment), 1, false));
+
+        // Return route should be incompatible with Forward track (index 0)
+        assert!(Line::is_track_incompatible(Some(&segment), 0, false));
+    }
+
+    #[test]
+    fn test_find_compatible_track() {
+        let segment = TrackSegment {
+            tracks: vec![
+                Track { direction: TrackDirection::Backward },
+                Track { direction: TrackDirection::Forward },
+                Track { direction: TrackDirection::Bidirectional },
+            ],
+            distance: None,
+        };
+
+        // For forward route, should find first compatible track (index 1 - Forward)
+        assert_eq!(Line::find_compatible_track(Some(&segment), true, 2), 1);
+
+        // For return route, should find first compatible track (index 0 - Backward)
+        assert_eq!(Line::find_compatible_track(Some(&segment), false, 2), 0);
+    }
+
+    #[test]
+    fn test_route_segment_equality() {
+        let seg1 = create_test_segment(1);
+        let seg2 = create_test_segment(1);
+        let seg3 = create_test_segment(2);
+
+        assert_eq!(seg1, seg2);
+        assert_ne!(seg1, seg3);
+    }
+}

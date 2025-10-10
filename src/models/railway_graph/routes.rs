@@ -206,3 +206,169 @@ impl RailwayGraph {
         stations.push((name.to_string(), station_idx));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{RailwayGraph, Stations, Tracks, RouteDirection, RouteSegment};
+    use crate::models::track::{Track, TrackDirection};
+    use chrono::Duration;
+
+    fn create_test_route_segment(edge_index: usize) -> RouteSegment {
+        RouteSegment {
+            edge_index,
+            track_index: 0,
+            origin_platform: 0,
+            destination_platform: 0,
+            duration: Duration::minutes(5),
+            wait_time: Duration::seconds(30),
+        }
+    }
+
+    #[test]
+    fn test_get_route_endpoints_forward() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+        let idx3 = graph.add_or_get_station("Station C".to_string());
+
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let route = vec![
+            create_test_route_segment(edge1.index()),
+            create_test_route_segment(edge2.index()),
+        ];
+
+        let (first, last) = graph.get_route_endpoints(&route, RouteDirection::Forward);
+        assert_eq!(first, Some(idx1));
+        assert_eq!(last, Some(idx3));
+    }
+
+    #[test]
+    fn test_get_route_endpoints_return() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+        let idx3 = graph.add_or_get_station("Station C".to_string());
+
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let route = vec![
+            create_test_route_segment(edge2.index()),
+            create_test_route_segment(edge1.index()),
+        ];
+
+        let (first, last) = graph.get_route_endpoints(&route, RouteDirection::Return);
+        assert_eq!(first, Some(idx3));
+        assert_eq!(last, Some(idx1));
+    }
+
+    #[test]
+    fn test_get_route_endpoints_empty() {
+        let graph = RailwayGraph::new();
+        let route = vec![];
+
+        let (first, last) = graph.get_route_endpoints(&route, RouteDirection::Forward);
+        assert_eq!(first, None);
+        assert_eq!(last, None);
+    }
+
+    #[test]
+    fn test_get_stations_from_route_forward() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+        let idx3 = graph.add_or_get_station("Station C".to_string());
+
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let route = vec![
+            create_test_route_segment(edge1.index()),
+            create_test_route_segment(edge2.index()),
+        ];
+
+        let stations = graph.get_stations_from_route(&route, RouteDirection::Forward);
+        assert_eq!(stations.len(), 3);
+        assert_eq!(stations[0].0, "Station A");
+        assert_eq!(stations[1].0, "Station B");
+        assert_eq!(stations[2].0, "Station C");
+    }
+
+    #[test]
+    fn test_get_stations_from_route_return() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+        let idx3 = graph.add_or_get_station("Station C".to_string());
+
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // Return route: C -> B -> A
+        let route = vec![
+            create_test_route_segment(edge2.index()),
+            create_test_route_segment(edge1.index()),
+        ];
+
+        let stations = graph.get_stations_from_route(&route, RouteDirection::Return);
+        assert_eq!(stations.len(), 3);
+        assert_eq!(stations[0].0, "Station C");
+        assert_eq!(stations[1].0, "Station B");
+        assert_eq!(stations[2].0, "Station A");
+    }
+
+    #[test]
+    fn test_get_available_start_stations() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+        let idx3 = graph.add_or_get_station("Station C".to_string());
+
+        // Create: A -> B -> C
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // Route currently starts at B
+        let route = vec![create_test_route_segment(edge2.index())];
+
+        let available = graph.get_available_start_stations(&route, RouteDirection::Forward);
+        assert_eq!(available.len(), 1);
+        assert!(available.contains(&"Station A".to_string()));
+    }
+
+    #[test]
+    fn test_get_available_end_stations() {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+        let idx3 = graph.add_or_get_station("Station C".to_string());
+
+        // Create: A -> B -> C
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // Route currently ends at B
+        let route = vec![create_test_route_segment(edge1.index())];
+
+        let available = graph.get_available_end_stations(&route, RouteDirection::Forward);
+        assert_eq!(available.len(), 1);
+        assert!(available.contains(&"Station C".to_string()));
+    }
+
+    #[test]
+    fn test_get_available_stations_empty_route() {
+        let mut graph = RailwayGraph::new();
+        graph.add_or_get_station("Station A".to_string());
+
+        let route = vec![];
+
+        let start_stations = graph.get_available_start_stations(&route, RouteDirection::Forward);
+        assert_eq!(start_stations.len(), 0);
+
+        let end_stations = graph.get_available_end_stations(&route, RouteDirection::Forward);
+        assert_eq!(end_stations.len(), 0);
+    }
+}

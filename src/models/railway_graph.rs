@@ -60,3 +60,24 @@ mod graph_serde {
         DiGraph::deserialize(deserializer)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_graph_is_empty() {
+        let graph = RailwayGraph::new();
+        assert_eq!(graph.graph.node_count(), 0);
+        assert_eq!(graph.graph.edge_count(), 0);
+        assert!(graph.station_name_to_index.is_empty());
+        assert!(graph.branch_angles.is_empty());
+    }
+
+    #[test]
+    fn test_default_creates_empty_graph() {
+        let graph = RailwayGraph::default();
+        assert_eq!(graph.graph.node_count(), 0);
+        assert_eq!(graph.graph.edge_count(), 0);
+    }
+}

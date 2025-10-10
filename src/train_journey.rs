@@ -3,7 +3,7 @@ use crate::constants::{BASE_DATE, GENERATION_END_HOUR};
 use chrono::{Duration, NaiveDateTime, Timelike};
 use std::collections::HashMap;
 
-const MAX_JOURNEYS_PER_LINE: i32 = 100; // Limit to prevent performance issues
+const MAX_JOURNEYS_PER_LINE: usize = 100; // Limit to prevent performance issues
 
 #[derive(Debug, Clone)]
 pub struct JourneySegment {
@@ -317,5 +317,254 @@ impl TrainJourney {
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{RouteSegment, RailwayGraph, Line, ScheduleMode, Track, TrackDirection};
+
+    const TEST_COLOR: &str = "#FF0000";
+    const TEST_THICKNESS: f64 = 2.0;
+
+    fn create_test_graph() -> RailwayGraph {
+        let mut graph = RailwayGraph::new();
+        let idx1 = graph.add_or_get_station("Station A".to_string());
+        let idx2 = graph.add_or_get_station("Station B".to_string());
+        let idx3 = graph.add_or_get_station("Station C".to_string());
+
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        graph
+    }
+
+    fn create_test_line(graph: &RailwayGraph) -> Line {
+        let idx1 = graph.get_station_index("Station A").expect("Station A exists");
+        let idx2 = graph.get_station_index("Station B").expect("Station B exists");
+        let idx3 = graph.get_station_index("Station C").expect("Station C exists");
+
+        let edge1 = graph.graph.find_edge(idx1, idx2).expect("edge exists");
+        let edge2 = graph.graph.find_edge(idx2, idx3).expect("edge exists");
+
+        Line {
+            id: "Test Line".to_string(),
+            color: TEST_COLOR.to_string(),
+            thickness: TEST_THICKNESS,
+            visible: true,
+            forward_route: vec![
+                RouteSegment {
+                    edge_index: edge1.index(),
+                    track_index: 0,
+                    origin_platform: 0,
+                    destination_platform: 0,
+                    duration: Duration::minutes(10),
+                    wait_time: Duration::seconds(30),
+                },
+                RouteSegment {
+                    edge_index: edge2.index(),
+                    track_index: 0,
+                    origin_platform: 0,
+                    destination_platform: 0,
+                    duration: Duration::minutes(15),
+                    wait_time: Duration::seconds(30),
+                },
+            ],
+            return_route: vec![],
+            first_departure: BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"),
+            return_first_departure: BASE_DATE.and_hms_opt(8, 30, 0).expect("valid time"),
+            frequency: Duration::hours(1),
+            schedule_mode: ScheduleMode::Auto,
+            manual_departures: vec![],
+        }
+    }
+
+    #[test]
+    fn test_journey_segment_creation() {
+        let segment = JourneySegment {
+            edge_index: 0,
+            track_index: 1,
+            origin_platform: 2,
+            destination_platform: 3,
+        };
+
+        assert_eq!(segment.edge_index, 0);
+        assert_eq!(segment.track_index, 1);
+        assert_eq!(segment.origin_platform, 2);
+        assert_eq!(segment.destination_platform, 3);
+    }
+
+    #[test]
+    fn test_generate_journeys_empty_lines() {
+        let graph = RailwayGraph::new();
+        let lines = vec![];
+
+        let journeys = TrainJourney::generate_journeys(&lines, &graph);
+
+        assert_eq!(journeys.len(), 0);
+    }
+
+    #[test]
+    fn test_generate_journeys_line_with_no_route() {
+        let graph = create_test_graph();
+        let mut line = create_test_line(&graph);
+        line.forward_route = vec![];
+        line.return_route = vec![];
+
+        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+
+        assert_eq!(journeys.len(), 0);
+    }
+
+    #[test]
+    fn test_generate_forward_journeys() {
+        let graph = create_test_graph();
+        let line = create_test_line(&graph);
+
+        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+
+        assert!(!journeys.is_empty());
+
+        let first_journey = journeys.values().next().expect("has journey");
+        assert_eq!(first_journey.line_id, "Test Line");
+        assert_eq!(first_journey.color, TEST_COLOR);
+        assert_eq!(first_journey.thickness, TEST_THICKNESS);
+        assert_eq!(first_journey.station_times.len(), 3);
+        assert_eq!(first_journey.segments.len(), 2);
+        assert_eq!(first_journey.station_times[0].0, "Station A");
+        assert_eq!(first_journey.station_times[1].0, "Station B");
+        assert_eq!(first_journey.station_times[2].0, "Station C");
+    }
+
+    #[test]
+    fn test_generate_journeys_respects_frequency() {
+        let graph = create_test_graph();
+        let mut line = create_test_line(&graph);
+        line.frequency = Duration::hours(2);
+
+        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+
+        let mut departure_times: Vec<_> = journeys.values()
+            .map(|j| j.departure_time)
+            .collect();
+        departure_times.sort();
+
+        // Check that journeys are spaced by 2 hours
+        for i in 1..departure_times.len() {
+            let diff = departure_times[i] - departure_times[i - 1];
+            assert_eq!(diff, Duration::hours(2));
+        }
+    }
+
+    #[test]
+    fn test_generate_journeys_stops_at_end_hour() {
+        let graph = create_test_graph();
+        let mut line = create_test_line(&graph);
+        line.first_departure = BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time");
+        line.frequency = Duration::minutes(30);
+
+        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+
+        // Should only generate journeys up to GENERATION_END_HOUR (22)
+        for journey in journeys.values() {
+            assert!(journey.departure_time.hour() <= GENERATION_END_HOUR);
+        }
+    }
+
+    #[test]
+    fn test_generate_journeys_respects_max_journeys() {
+        let graph = create_test_graph();
+        let mut line = create_test_line(&graph);
+        line.first_departure = BASE_DATE.and_hms_opt(0, 0, 0).expect("valid time");
+        line.frequency = Duration::minutes(1); // Very frequent
+
+        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+
+        assert!(journeys.len() <= MAX_JOURNEYS_PER_LINE);
+    }
+
+    #[test]
+    fn test_generate_return_journeys() {
+        let graph = create_test_graph();
+        let mut line = create_test_line(&graph);
+
+        let idx1 = graph.get_station_index("Station A").expect("Station A exists");
+        let idx2 = graph.get_station_index("Station B").expect("Station B exists");
+        let idx3 = graph.get_station_index("Station C").expect("Station C exists");
+
+        // For return journey, generate_return_journeys looks at:
+        // - Starting station: destination of first edge (line 269)
+        // - Next stations: source of each edge (line 283)
+        // Bidirectional tracks create edges in both directions
+        // Find C→B edge (if it exists) or use B→C and handle accordingly
+        let edge_c_b = graph.graph.find_edge(idx3, idx2);
+        let edge_b_a = graph.graph.find_edge(idx2, idx1);
+
+        // If bidirectional edges exist, use them
+        if let (Some(e1), Some(e2)) = (edge_c_b, edge_b_a) {
+            line.return_route = vec![
+                RouteSegment {
+                    edge_index: e1.index(),
+                    track_index: 0,
+                    origin_platform: 1,
+                    destination_platform: 1,
+                    duration: Duration::minutes(15),
+                    wait_time: Duration::seconds(30),
+                },
+                RouteSegment {
+                    edge_index: e2.index(),
+                    track_index: 0,
+                    origin_platform: 1,
+                    destination_platform: 1,
+                    duration: Duration::minutes(10),
+                    wait_time: Duration::seconds(30),
+                },
+            ];
+
+            let journeys = TrainJourney::generate_journeys(&[line], &graph);
+
+            // Should have both forward and return journeys
+            let return_journeys: Vec<_> = journeys.values()
+                .filter(|j| j.departure_time >= BASE_DATE.and_hms_opt(8, 30, 0).expect("valid time"))
+                .collect();
+
+            assert!(!return_journeys.is_empty());
+
+            let first_return = return_journeys[0];
+            assert_eq!(first_return.station_times[0].0, "Station C");
+            assert_eq!(first_return.station_times.last().expect("has stations").0, "Station A");
+        }
+    }
+
+    #[test]
+    fn test_journey_timing_calculation() {
+        let graph = create_test_graph();
+        let line = create_test_line(&graph);
+
+        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+
+        // Find a forward journey starting at 8:00
+        let journey = journeys.values()
+            .find(|j| j.departure_time == BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"))
+            .expect("has 8:00 journey");
+
+        let start_time = BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time");
+
+        // First station: immediate departure
+        assert_eq!(journey.station_times[0].1, start_time); // arrival
+        assert_eq!(journey.station_times[0].2, start_time); // departure
+
+        // Second station: 10 minutes travel + 30 seconds wait
+        let expected_arrival_b = start_time + Duration::minutes(10);
+        let expected_departure_b = expected_arrival_b + Duration::seconds(30);
+        assert_eq!(journey.station_times[1].1, expected_arrival_b);
+        assert_eq!(journey.station_times[1].2, expected_departure_b);
+
+        // Third station: previous + 15 minutes travel
+        let expected_arrival_c = expected_departure_b + Duration::minutes(15);
+        let expected_departure_c = expected_arrival_c + Duration::seconds(30);
+        assert_eq!(journey.station_times[2].1, expected_arrival_c);
+        assert_eq!(journey.station_times[2].2, expected_departure_c);
     }
 }

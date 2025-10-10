@@ -2,8 +2,6 @@
 
 ## Git Commits
 
-- Do not include "🤖 Generated with [Claude Code]" footer in commit messages
-- Do not include "Co-Authored-By: Claude <noreply@anthropic.com>" in commit messages
 - Write clear, professional commit messages that focus on what changed and why
 - Use conventional commit style when appropriate
 
@@ -22,7 +20,7 @@
 
 ## Rust Code Quality
 
-- Always run `cargo check` and `cargo clippy` after making code changes
+- Always run `cargo check` and `cargo clippy` after making code changes (cargo clippy --all-targets -- -D warnings)
 - Avoid excessive nesting in functions (prefer early returns, extract helper functions)
 - Keep functions small and focused on a single responsibility
 - Follow Rust naming conventions and idiomatic patterns

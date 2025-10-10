@@ -178,3 +178,136 @@ fn build_graph_and_routes_from_csv(
 
     (lines, graph)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_line_ids() {
+        let mut record = csv::StringRecord::new();
+        record.push_field("Station");
+        record.push_field("Line 1");
+        record.push_field("Line 2");
+        record.push_field("");
+        record.push_field("Line 3");
+
+        let line_ids = extract_line_ids(&record);
+        assert_eq!(line_ids.len(), 3);
+        assert_eq!(line_ids[0], "Line 1");
+        assert_eq!(line_ids[1], "Line 2");
+        assert_eq!(line_ids[2], "Line 3");
+    }
+
+    #[test]
+    fn test_extract_line_ids_empty() {
+        let mut record = csv::StringRecord::new();
+        record.push_field("Station");
+
+        let line_ids = extract_line_ids(&record);
+        assert_eq!(line_ids.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_csv_string_empty() {
+        let csv_content = "";
+        let wait_times = HashMap::new();
+
+        let (lines, graph) = parse_csv_string(csv_content, &wait_times);
+
+        assert_eq!(lines.len(), 0);
+        assert_eq!(graph.graph.node_count(), 0);
+        assert_eq!(graph.graph.edge_count(), 0);
+    }
+
+    #[test]
+    fn test_parse_csv_string_simple() {
+        let csv_content = "Station,Line1\nStationA,0:00:00\nStationB,0:10:00\n";
+        let wait_times = HashMap::new();
+
+        let (lines, graph) = parse_csv_string(csv_content, &wait_times);
+
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].id, "Line1");
+        assert_eq!(graph.graph.node_count(), 2);
+        assert_eq!(graph.graph.edge_count(), 1);
+        assert_eq!(lines[0].forward_route.len(), 1);
+        assert_eq!(lines[0].return_route.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_csv_string_with_passing_loop() {
+        let csv_content = "Station,Line1\nStationA,0:00:00\nStationB(P),0:05:00\nStationC,0:10:00\n";
+        let wait_times = HashMap::new();
+
+        let (lines, graph) = parse_csv_string(csv_content, &wait_times);
+
+        assert_eq!(graph.graph.node_count(), 3);
+        let station_b_idx = graph.get_station_index("StationB").expect("StationB should exist");
+        let station_b = graph.graph.node_weight(station_b_idx).expect("node should exist");
+        assert!(station_b.passing_loop);
+
+        // First segment (A->B) arrives at passing loop, should have 0 wait time
+        // Second segment (B->C) departs from passing loop, should have 0 wait time
+        assert_eq!(lines[0].forward_route.len(), 2);
+        assert_eq!(lines[0].forward_route[0].wait_time, Duration::seconds(0));
+        assert_eq!(lines[0].forward_route[1].wait_time, Duration::seconds(30));
+    }
+
+    #[test]
+    fn test_parse_csv_string_with_custom_wait_times() {
+        let csv_content = "Station,Line1\nStationA,0:00:00\nStationB,0:10:00\n";
+        let mut wait_times = HashMap::new();
+        wait_times.insert("Line1".to_string(), Duration::minutes(2));
+
+        let (lines, _) = parse_csv_string(csv_content, &wait_times);
+
+        assert_eq!(lines[0].forward_route[0].wait_time, Duration::minutes(2));
+    }
+
+    #[test]
+    fn test_parse_csv_string_multiple_lines() {
+        let csv_content = "Station,Line1,Line2\nStationA,0:00:00,0:00:00\nStationB,0:10:00,0:15:00\n";
+        let wait_times = HashMap::new();
+
+        let (lines, graph) = parse_csv_string(csv_content, &wait_times);
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(graph.graph.node_count(), 2);
+        assert_eq!(graph.graph.edge_count(), 1);
+        assert_eq!(lines[0].forward_route.len(), 1);
+        assert_eq!(lines[1].forward_route.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_csv_string_sparse_route() {
+        let csv_content = "Station,Line1,Line2\nStationA,0:00:00,\nStationB,0:10:00,0:05:00\nStationC,,0:15:00\n";
+        let wait_times = HashMap::new();
+
+        let (lines, graph) = parse_csv_string(csv_content, &wait_times);
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(graph.graph.node_count(), 3);
+        assert_eq!(lines[0].forward_route.len(), 1); // A -> B only
+        assert_eq!(lines[1].forward_route.len(), 1); // B -> C only
+    }
+
+    #[test]
+    fn test_parse_csv_string_return_route_generation() {
+        let csv_content = "Station,Line1\nStationA,0:00:00\nStationB,0:10:00\nStationC,0:20:00\n";
+        let wait_times = HashMap::new();
+
+        let (lines, _) = parse_csv_string(csv_content, &wait_times);
+
+        assert_eq!(lines[0].forward_route.len(), 2);
+        assert_eq!(lines[0].return_route.len(), 2);
+
+        // Return route should be reversed
+        assert_eq!(lines[0].return_route[0].edge_index, lines[0].forward_route[1].edge_index);
+        assert_eq!(lines[0].return_route[1].edge_index, lines[0].forward_route[0].edge_index);
+
+        // Return route should use platform 1
+        assert_eq!(lines[0].return_route[0].origin_platform, 1);
+        assert_eq!(lines[0].return_route[0].destination_platform, 1);
+    }
+}

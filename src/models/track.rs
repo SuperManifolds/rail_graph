@@ -39,3 +39,49 @@ impl TrackSegment {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_track_direction_equality() {
+        assert_eq!(TrackDirection::Bidirectional, TrackDirection::Bidirectional);
+        assert_eq!(TrackDirection::Forward, TrackDirection::Forward);
+        assert_eq!(TrackDirection::Backward, TrackDirection::Backward);
+        assert_ne!(TrackDirection::Forward, TrackDirection::Backward);
+    }
+
+    #[test]
+    fn test_track_creation() {
+        let track = Track { direction: TrackDirection::Bidirectional };
+        assert_eq!(track.direction, TrackDirection::Bidirectional);
+    }
+
+    #[test]
+    fn test_new_single_track() {
+        let segment = TrackSegment::new_single_track();
+        assert_eq!(segment.tracks.len(), 1);
+        assert_eq!(segment.tracks[0].direction, TrackDirection::Bidirectional);
+        assert_eq!(segment.distance, None);
+    }
+
+    #[test]
+    fn test_new_double_track() {
+        let segment = TrackSegment::new_double_track();
+        assert_eq!(segment.tracks.len(), 2);
+        assert_eq!(segment.tracks[0].direction, TrackDirection::Forward);
+        assert_eq!(segment.tracks[1].direction, TrackDirection::Backward);
+        assert_eq!(segment.distance, None);
+    }
+
+    #[test]
+    fn test_track_segment_with_distance() {
+        let segment = TrackSegment {
+            tracks: vec![Track { direction: TrackDirection::Bidirectional }],
+            distance: Some(100.5),
+        };
+        assert_eq!(segment.tracks.len(), 1);
+        assert_eq!(segment.distance, Some(100.5));
+    }
+}
