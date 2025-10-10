@@ -3,7 +3,7 @@ use crate::constants::{BASE_DATE, GENERATION_END_HOUR};
 use chrono::{Duration, NaiveDateTime, Timelike};
 use std::collections::HashMap;
 
-const MAX_JOURNEYS_PER_LINE: i32 = 100; // Limit to prevent performance issues
+const MAX_JOURNEYS_PER_LINE: usize = 100; // Limit to prevent performance issues
 
 #[derive(Debug, Clone)]
 pub struct JourneySegment {
@@ -481,7 +481,7 @@ mod tests {
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph);
 
-        assert!(journeys.len() as i32 <= MAX_JOURNEYS_PER_LINE);
+        assert!(journeys.len() <= MAX_JOURNEYS_PER_LINE);
     }
 
     #[test]
@@ -533,7 +533,7 @@ mod tests {
 
             let first_return = return_journeys[0];
             assert_eq!(first_return.station_times[0].0, "Station C");
-            assert_eq!(first_return.station_times.last().unwrap().0, "Station A");
+            assert_eq!(first_return.station_times.last().expect("has stations").0, "Station A");
         }
     }
 
