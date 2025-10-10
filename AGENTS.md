@@ -20,7 +20,7 @@
 
 ## Rust Code Quality
 
-- Always run `cargo check` and `cargo clippy` after making code changes
+- Always run `cargo check` and `cargo clippy` after making code changes (cargo clippy --all-targets -- -D warnings)
 - Avoid excessive nesting in functions (prefer early returns, extract helper functions)
 - Keep functions small and focused on a single responsibility
 - Follow Rust naming conventions and idiomatic patterns
