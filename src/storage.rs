@@ -218,3 +218,100 @@ pub async fn clear_project_storage() -> Result<(), String> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_db_constants() {
+        assert_eq!(DB_NAME, "rail_graph_db");
+        assert_eq!(DB_VERSION, 1);
+        assert_eq!(PROJECT_STORE, "projects");
+        assert_eq!(PROJECT_KEY, "current_project");
+        assert_eq!(CURRENT_PROJECT_VERSION, 1.0);
+    }
+
+    #[test]
+    fn test_version_bytes_roundtrip() {
+        let version = CURRENT_PROJECT_VERSION;
+        let bytes = version.to_le_bytes();
+        let restored = f32::from_le_bytes(bytes);
+        assert!((restored - version).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_version_serialization_format() {
+        let project_data = vec![1, 2, 3, 4, 5];
+        let mut bytes = Vec::with_capacity(4 + project_data.len());
+        bytes.extend_from_slice(&CURRENT_PROJECT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&project_data);
+
+        assert_eq!(bytes.len(), 9);
+
+        let version_bytes: [u8; 4] = bytes[0..4].try_into().expect("should have version bytes");
+        let version = f32::from_le_bytes(version_bytes);
+        assert!((version - 1.0).abs() < f32::EPSILON);
+
+        assert_eq!(&bytes[4..], &project_data[..]);
+    }
+}
+
+#[cfg(all(test, target_arch = "wasm32"))]
+mod wasm_tests {
+    use super::*;
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+
+    #[wasm_bindgen_test]
+    async fn test_open_db() {
+        let result = open_db().await;
+        assert!(result.is_ok());
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_save_and_load_project() {
+        // Create a test project
+        let project = Project::empty();
+
+        // Save project
+        let save_result = save_project_to_storage(&project).await;
+        assert!(save_result.is_ok());
+
+        // Load project
+        let load_result = load_project_from_storage().await;
+        assert!(load_result.is_ok());
+
+        let loaded_project = load_result.expect("project should load");
+        assert_eq!(loaded_project.lines.len(), 0);
+        assert_eq!(loaded_project.graph.graph.node_count(), 0);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_clear_storage() {
+        // Save a project first
+        let project = Project::empty();
+        save_project_to_storage(&project).await.expect("save should succeed");
+
+        // Clear storage
+        let clear_result = clear_project_storage().await;
+        assert!(clear_result.is_ok());
+
+        // Try to load - should fail with "No saved project found"
+        let load_result = load_project_from_storage().await;
+        assert!(load_result.is_err());
+        assert!(load_result.expect_err("should be error").contains("No saved project found"));
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_load_nonexistent_project() {
+        // Clear storage first
+        let _ = clear_project_storage().await;
+
+        // Try to load when no project exists
+        let result = load_project_from_storage().await;
+        assert!(result.is_err());
+        assert!(result.expect_err("should be error").contains("No saved project found"));
+    }
+}
