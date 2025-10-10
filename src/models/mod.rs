@@ -6,7 +6,7 @@ mod track;
 
 pub use line::{Line, ScheduleMode, ManualDeparture, RouteSegment};
 pub use project::{Project, Legend};
-pub use railway_graph::RailwayGraph;
+pub use railway_graph::{RailwayGraph, Stations, Tracks, Routes};
 pub use station::{StationNode, Platform};
 pub use track::{TrackSegment, Track, TrackDirection};
 

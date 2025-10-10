@@ -2,7 +2,7 @@ use leptos::*;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
-use crate::models::RailwayGraph;
+use crate::models::{RailwayGraph, Stations, Tracks};
 use crate::conflict::{Conflict, StationCrossing};
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;

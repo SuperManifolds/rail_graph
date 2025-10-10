@@ -1,5 +1,5 @@
 use crate::constants::BASE_DATE;
-use crate::models::{RailwayGraph, TrackDirection};
+use crate::models::{RailwayGraph, TrackDirection, Stations};
 use crate::time::time_to_fraction;
 use crate::train_journey::TrainJourney;
 use chrono::NaiveDateTime;

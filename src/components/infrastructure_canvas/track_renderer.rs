@@ -1,4 +1,4 @@
-use crate::models::RailwayGraph;
+use crate::models::{RailwayGraph, Stations};
 use petgraph::visit::EdgeRef;
 use web_sys::CanvasRenderingContext2d;
 

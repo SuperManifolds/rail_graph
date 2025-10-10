@@ -1,5 +1,5 @@
 use crate::components::time_input::TimeInput;
-use crate::models::{ManualDeparture, RailwayGraph};
+use crate::models::{ManualDeparture, RailwayGraph, Stations};
 use leptos::{component, view, IntoView, create_signal, store_value, Signal, SignalGet, SignalUpdate, SignalGetUntracked, event_target_value};
 
 #[component]

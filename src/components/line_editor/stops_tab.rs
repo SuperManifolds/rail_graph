@@ -1,5 +1,5 @@
 use crate::components::tab_view::TabPanel;
-use crate::models::{Line, RailwayGraph, RouteDirection};
+use crate::models::{Line, RailwayGraph, RouteDirection, Routes};
 use super::{StopRow, TimeDisplayMode, StationSelect, StationPosition};
 use leptos::*;
 

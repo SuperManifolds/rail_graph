@@ -1,5 +1,5 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{StationNode, RailwayGraph};
+use crate::models::{StationNode, RailwayGraph, Stations};
 use super::types::GraphDimensions;
 use petgraph::visit::EdgeRef;
 

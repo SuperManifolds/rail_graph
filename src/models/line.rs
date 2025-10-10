@@ -2,7 +2,7 @@ use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use crate::constants::{BASE_DATE, BASE_MIDNIGHT};
 use petgraph::graph::NodeIndex;
-use super::{RailwayGraph, TrackSegment, TrackDirection};
+use super::{RailwayGraph, TrackSegment, TrackDirection, Tracks};
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 fn generate_random_color(seed: usize) -> String {

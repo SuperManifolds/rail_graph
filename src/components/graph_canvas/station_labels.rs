@@ -1,5 +1,5 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{RailwayGraph, StationNode};
+use crate::models::{RailwayGraph, StationNode, Stations};
 use super::types::GraphDimensions;
 
 // Station label constants

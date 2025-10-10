@@ -3,7 +3,7 @@ use leptos::leptos_dom::helpers::window_event_listener;
 use wasm_bindgen::JsCast;
 use crate::conflict::Conflict;
 use crate::time::time_to_fraction;
-use crate::models::{RailwayGraph, StationNode};
+use crate::models::{RailwayGraph, StationNode, Stations};
 
 #[component]
 fn ErrorListPopover(

@@ -1,4 +1,4 @@
-use crate::models::RailwayGraph;
+use crate::models::{RailwayGraph, Stations};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
