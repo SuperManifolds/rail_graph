@@ -1,8 +1,9 @@
-use leptos::*;
+use leptos::{component, IntoView, ReadSignal, Signal, SignalGet, view};
 use crate::conflict::Conflict;
 use crate::models::StationNode;
 
 #[component]
+#[must_use]
 pub fn ConflictTooltip(
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
     stations: Signal<Vec<StationNode>>,
@@ -14,15 +15,13 @@ pub fn ConflictTooltip(
 
                 // Get station names
                 let station1_name = current_stations.get(conflict.station1_idx)
-                    .map(|s| s.name.as_str())
-                    .unwrap_or("Unknown");
+                    .map_or("Unknown", |s| s.name.as_str());
                 let station2_name = current_stations.get(conflict.station2_idx)
-                    .map(|s| s.name.as_str())
-                    .unwrap_or("Unknown");
+                    .map_or("Unknown", |s| s.name.as_str());
 
                 let message = conflict.format_message(station1_name, station2_name);
                 let timestamp = conflict.time.format("%H:%M:%S");
-                let tooltip_text = format!("{} - {}", timestamp, message);
+                let tooltip_text = format!("{timestamp} - {message}");
 
                 view! {
                     <div

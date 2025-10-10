@@ -33,6 +33,7 @@ const DAY_INDICATOR_FONT: &str = "10px monospace";
 const DAY_INDICATOR_X_OFFSET: f64 = -10.0;
 const DAY_INDICATOR_Y_OFFSET: f64 = 5.0;
 
+#[allow(clippy::cast_possible_truncation)]
 pub fn draw_hour_grid(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -58,7 +59,7 @@ pub fn draw_hour_grid(
     let end_hour = (x_max / dims.hour_width).ceil() as i32 + HOUR_GRID_PADDING;
 
     for i in start_hour..=end_hour {
-        let x = dims.left_margin + (i as f64 * dims.hour_width);
+        let x = dims.left_margin + (f64::from(i) * dims.hour_width);
         draw_vertical_line(ctx, x, dims.top_margin, dims.graph_height);
     }
 
@@ -72,7 +73,7 @@ pub fn draw_hour_grid(
         for i in start_min..=end_min {
             if i % 60 != 0 {
                 // Skip hour marks
-                let x = dims.left_margin + (i as f64 * minute_width);
+                let x = dims.left_margin + (f64::from(i) * minute_width);
 
                 // Make 10-minute marks bolder
                 if i % 10 == 0 {
@@ -97,7 +98,7 @@ pub fn draw_hour_grid(
         for i in start_ten_min..=end_ten_min {
             if i % 6 != 0 {
                 // Skip hour marks
-                let x = dims.left_margin + (i as f64 * ten_min_width);
+                let x = dims.left_margin + (f64::from(i) * ten_min_width);
                 draw_vertical_line(ctx, x, dims.top_margin, dims.graph_height);
             }
         }
@@ -111,6 +112,7 @@ fn draw_vertical_line(ctx: &CanvasRenderingContext2d, x: f64, top: f64, height: 
     ctx.stroke();
 }
 
+#[allow(clippy::cast_possible_truncation)]
 pub fn draw_hour_labels(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -130,7 +132,7 @@ pub fn draw_hour_labels(
     let end_hour = ((-pan_offset_x + dims.graph_width) / effective_hour_width).ceil() as i32 + 1;
 
     for i in start_hour..=end_hour {
-        let base_x = i as f64 * dims.hour_width;
+        let base_x = f64::from(i) * dims.hour_width;
         let adjusted_x = dims.left_margin + (base_x * zoom_level * zoom_level_x) + pan_offset_x;
 
         if adjusted_x >= dims.left_margin
@@ -139,7 +141,7 @@ pub fn draw_hour_labels(
         {
             let day = i / 24;
             let hour_in_day = i % 24;
-            draw_hour_label_with_day(ctx, hour_in_day as usize, day, adjusted_x, dims.top_margin);
+            draw_hour_label_with_day(ctx, hour_in_day, day, adjusted_x, dims.top_margin);
         }
     }
 
@@ -155,7 +157,7 @@ pub fn draw_hour_labels(
         for i in start_min..=end_min {
             if i % 60 != 0 && i >= 0 {
                 // Skip hour marks and negative
-                let base_x = i as f64 * minute_width;
+                let base_x = f64::from(i) * minute_width;
                 let adjusted_x =
                     dims.left_margin + (base_x * zoom_level * zoom_level_x) + pan_offset_x;
 
@@ -178,7 +180,7 @@ pub fn draw_hour_labels(
         for i in start_ten_min..=end_ten_min {
             if i % 6 != 0 && i >= 0 {
                 // Skip hour marks and negative
-                let base_x = i as f64 * ten_min_width;
+                let base_x = f64::from(i) * ten_min_width;
                 let adjusted_x =
                     dims.left_margin + (base_x * zoom_level * zoom_level_x) + pan_offset_x;
 
@@ -195,7 +197,7 @@ pub fn draw_hour_labels(
 
 fn draw_hour_label_with_day(
     ctx: &CanvasRenderingContext2d,
-    hour: usize,
+    hour: i32,
     day: i32,
     x: f64,
     top: f64,
@@ -206,21 +208,21 @@ fn draw_hour_label_with_day(
     if day == 0 {
         // First day, just show time
         let _ = ctx.fill_text(
-            &format!("{:02}:00", hour),
+            &format!("{hour:02}:00"),
             x + HOUR_LABEL_X_OFFSET,
             top + HOUR_LABEL_Y_OFFSET_TOP,
         );
     } else {
         // Past midnight, show day indicator
         let _ = ctx.fill_text(
-            &format!("{:02}:00", hour),
+            &format!("{hour:02}:00"),
             x + HOUR_LABEL_X_OFFSET,
             top + HOUR_LABEL_Y_OFFSET_TOP,
         );
         ctx.set_font(DAY_INDICATOR_FONT);
         ctx.set_fill_style_str(DAY_INDICATOR_COLOR);
         let _ = ctx.fill_text(
-            &format!("+{}", day),
+            &format!("+{day}"),
             x + DAY_INDICATOR_X_OFFSET,
             top + DAY_INDICATOR_Y_OFFSET,
         );
@@ -231,7 +233,7 @@ fn draw_ten_min_label(ctx: &CanvasRenderingContext2d, ten_minutes: i32, x: f64, 
     ctx.set_fill_style_str(TEN_MIN_LABEL_COLOR);
     ctx.set_font(TEN_MIN_LABEL_FONT);
     let _ = ctx.fill_text(
-        &format!(":{:02}", ten_minutes),
+        &format!(":{ten_minutes:02}"),
         x + TEN_MIN_LABEL_X_OFFSET,
         top + HOUR_LABEL_Y_OFFSET_TOP,
     );
@@ -243,7 +245,7 @@ fn draw_minute_label(ctx: &CanvasRenderingContext2d, minute: i32, x: f64, top: f
         ctx.set_fill_style_str(MINUTE_LABEL_BOLD_COLOR);
         ctx.set_font(MINUTE_LABEL_BOLD_FONT);
         let _ = ctx.fill_text(
-            &format!(":{:02}", minute),
+            &format!(":{minute:02}"),
             x + TEN_MIN_LABEL_X_OFFSET,
             top + HOUR_LABEL_Y_OFFSET_TOP,
         );
@@ -251,7 +253,7 @@ fn draw_minute_label(ctx: &CanvasRenderingContext2d, minute: i32, x: f64, top: f
         ctx.set_fill_style_str(MINUTE_LABEL_COLOR);
         ctx.set_font(MINUTE_LABEL_FONT);
         let _ = ctx.fill_text(
-            &format!(":{:02}", minute),
+            &format!(":{minute:02}"),
             x + MINUTE_LABEL_X_OFFSET,
             top + HOUR_LABEL_Y_OFFSET_TOP,
         );

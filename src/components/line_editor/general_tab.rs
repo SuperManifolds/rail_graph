@@ -1,6 +1,6 @@
 use crate::components::tab_view::TabPanel;
 use crate::models::Line;
-use leptos::*;
+use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_value, SignalGetUntracked, SignalSet};
 use std::rc::Rc;
 
 #[component]
@@ -56,7 +56,7 @@ pub fn GeneralTab(
                     <label>"Line Thickness"</label>
                     <div class="thickness-control">
                         {move || {
-                            let current_thickness = edited_line.get().map(|l| l.thickness).unwrap_or(2.0);
+                            let current_thickness = edited_line.get().map_or(2.0, |l| l.thickness);
                             view! {
                                 <input
                                     type="range"
@@ -77,7 +77,7 @@ pub fn GeneralTab(
                                     }
                                 />
                                 <span class="thickness-value">
-                                    {format!("{:.1}", current_thickness)}
+                                    {format!("{current_thickness:.1}")}
                                 </span>
                             }
                         }}

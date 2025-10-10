@@ -1,4 +1,4 @@
-use crate::models::RailwayGraph;
+use crate::models::{RailwayGraph, Stations};
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
@@ -45,9 +45,8 @@ pub fn snap_to_angle(graph: &mut RailwayGraph, station_idx: NodeIndex, target_x:
         }
     }
 
-    let branch_to_move = match branch_to_move {
-        Some(b) => b,
-        None => return,
+    let Some(branch_to_move) = branch_to_move else {
+        return;
     };
 
     // Position the first node of the branch at the snapped angle from junction
@@ -71,8 +70,8 @@ pub fn snap_to_angle(graph: &mut RailwayGraph, station_idx: NodeIndex, target_x:
     realign_branch(graph, branch_to_move, (new_x, new_y), snapped_angle, &mut visited);
 }
 
-/// Find the nearest junction (node with 3+ neighbors) starting from start_node
-/// If no junction found, returns start_node
+/// Find the nearest junction (node with 3+ neighbors) starting from `start_node`
+/// If no junction found, returns `start_node`
 fn find_nearest_junction(graph: &RailwayGraph, start_node: NodeIndex) -> NodeIndex {
     let mut queue = std::collections::VecDeque::new();
     let mut visited = HashSet::new();
@@ -106,7 +105,7 @@ fn find_nearest_junction(graph: &RailwayGraph, start_node: NodeIndex) -> NodeInd
     start_node
 }
 
-/// Check if a branch starting from start_node contains target_node
+/// Check if a branch starting from `start_node` contains `target_node`
 fn contains_node(
     graph: &RailwayGraph,
     start_node: NodeIndex,
@@ -173,16 +172,11 @@ fn realign_branch(
 }
 
 pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
-    let node_count = graph.graph.node_count();
-    if node_count == 0 {
-        return;
-    }
-
     let start_x = 150.0;
     let start_y = height / 2.0;
 
     // Find a starting node - prefer endpoints (nodes with only 1 connection)
-    let start_node = graph
+    let Some(start_node) = graph
         .graph
         .node_indices()
         .min_by_key(|&idx| {
@@ -191,8 +185,9 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
             let total = outgoing + incoming;
             // Prefer endpoints (1 connection), then nodes with fewer connections
             if total == 1 { 0 } else { total }
-        })
-        .expect("Graph has at least one node");
+        }) else {
+            return; // No nodes in graph
+        };
 
     let mut visited = HashSet::new();
     let mut available_directions = vec![

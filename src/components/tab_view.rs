@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::{component, view, RwSignal, Children, IntoView, use_context, WriteSignal, create_effect, SignalGet, SignalUpdate, SignalSet, Signal, store_value, Show};
 
 #[derive(Clone, PartialEq)]
 pub struct Tab {
@@ -7,6 +7,7 @@ pub struct Tab {
 }
 
 #[component]
+#[must_use]
 pub fn TabView(
     tabs: Vec<Tab>,
     #[prop(into)] active_tab: RwSignal<String>,
@@ -51,11 +52,12 @@ pub fn TabView(
 }
 
 #[component]
+#[must_use]
 pub fn TabPanel(when: Signal<bool>, children: Children) -> impl IntoView {
     let children = store_value(children());
     view! {
         <Show when=move || when.get()>
-            {children.with_value(|c| c.clone())}
+            {children.with_value(Clone::clone)}
         </Show>
     }
 }

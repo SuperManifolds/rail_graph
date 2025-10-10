@@ -1,11 +1,13 @@
-use leptos::*;
+use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, SignalGet, SignalUpdate, SignalSet, For, Signal, store_value};
 use crate::models::{Line, RailwayGraph};
 use crate::components::line_editor::LineEditor;
-use crate::components::window::Window;
+use crate::components::confirmation_dialog::ConfirmationDialog;
 use std::collections::HashSet;
+use std::rc::Rc;
 
 
 #[component]
+#[must_use]
 pub fn LineControls(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
@@ -90,41 +92,28 @@ pub fn LineControls(
             }
         />
 
-        <Window
+        <ConfirmationDialog
             is_open=Signal::derive(move || delete_pending.get().is_some())
             title=Signal::derive(|| "Delete Line".to_string())
-            on_close=move || set_delete_pending.set(None)
-        >
-            <div style="padding: 1.5rem; display: flex; flex-direction: column; gap: 1.5rem;">
-                <p style="color: #ccc; margin: 0;">
-                    {move || delete_pending.get().map(|id| format!("Are you sure you want to delete line \"{}\"? This action cannot be undone.", id))}
-                </p>
-                <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
-                    <button
-                        on:click=move |_| set_delete_pending.set(None)
-                        style="padding: 0.5rem 1.5rem; border-radius: 4px; border: 1px solid #444; background-color: #2a2a2a; color: #fff; cursor: pointer;"
-                    >
-                        "Cancel"
-                    </button>
-                    <button
-                        on:click=move |_| {
-                            if let Some(id) = delete_pending.get() {
-                                set_lines.update(|lines_vec| {
-                                    lines_vec.retain(|l| l.id != id);
-                                });
-                                set_open_editors.update(|editors| {
-                                    editors.remove(&id);
-                                });
-                                set_delete_pending.set(None);
-                            }
-                        }
-                        style="padding: 0.5rem 1.5rem; border-radius: 4px; border: 1px solid #d32f2f; background-color: #d32f2f; color: #fff; cursor: pointer;"
-                    >
-                        "Delete"
-                    </button>
-                </div>
-            </div>
-        </Window>
+            message=Signal::derive(move || {
+                delete_pending.get()
+                    .map(|id| format!("Are you sure you want to delete line \"{id}\"? This action cannot be undone."))
+                    .unwrap_or_default()
+            })
+            on_confirm=Rc::new(move || {
+                if let Some(id) = delete_pending.get() {
+                    set_lines.update(|lines_vec| {
+                        lines_vec.retain(|l| l.id != id);
+                    });
+                    set_open_editors.update(|editors| {
+                        editors.remove(&id);
+                    });
+                    set_delete_pending.set(None);
+                }
+            })
+            on_cancel=Rc::new(move || set_delete_pending.set(None))
+            confirm_text="Delete".to_string()
+        />
     }
 }
 

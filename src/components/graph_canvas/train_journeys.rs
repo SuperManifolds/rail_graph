@@ -6,7 +6,11 @@ use super::types::GraphDimensions;
 // Train journey constants
 const MIDNIGHT_WRAP_THRESHOLD: f64 = 0.5;
 const HOVER_DISTANCE_THRESHOLD: f64 = 10.0; // pixels
+const DOT_RADIUS_MULTIPLIER: f64 = 1.5; // Scale dots relative to line thickness
+const MIN_DOT_RADIUS: f64 = 2.0; // Minimum dot radius in pixels
+const TOTAL_HOURS: f64 = 48.0; // Total hours displayed on the graph
 
+#[allow(clippy::cast_precision_loss)]
 pub fn draw_train_journeys(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -51,7 +55,7 @@ pub fn draw_train_journeys(
                 }
 
                 // Draw vertical line for wait time (from arrival to departure)
-                if arrival_x != departure_x {
+                if (arrival_x - departure_x).abs() > f64::EPSILON {
                     ctx.line_to(departure_x, y);
                 }
 
@@ -62,7 +66,7 @@ pub fn draw_train_journeys(
         ctx.stroke();
 
         // Draw small dots at arrival and departure points (scale with line thickness)
-        let dot_radius = (journey.thickness * 1.5).max(2.0); // Scale dots with thickness, minimum 2.0
+        let dot_radius = (journey.thickness * DOT_RADIUS_MULTIPLIER).max(MIN_DOT_RADIUS);
         let mut prev_x = 0.0;
         for (station_name, arrival_time, departure_time) in &journey.station_times {
             if let Some(station_idx) = stations.iter().position(|s| s.name == *station_name) {
@@ -89,7 +93,7 @@ pub fn draw_train_journeys(
                 ctx.fill();
 
                 // Draw dot at departure point (if different from arrival)
-                if arrival_x != departure_x {
+                if (arrival_x - departure_x).abs() > f64::EPSILON {
                     ctx.begin_path();
                     let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
                     ctx.fill();
@@ -101,6 +105,8 @@ pub fn draw_train_journeys(
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
+#[must_use]
 pub fn check_journey_hover(
     mouse_x: f64,
     mouse_y: f64,
@@ -138,6 +144,7 @@ pub fn check_journey_hover(
         })
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn check_single_journey_hover(
     mouse_x: f64,
     mouse_y: f64,
@@ -152,8 +159,7 @@ fn check_single_journey_hover(
 
     let mut prev_departure_point: Option<(f64, f64)> = None;
 
-    let total_hours = 48.0;
-    let hour_width = graph_width / total_hours;
+    let hour_width = graph_width / TOTAL_HOURS;
     let mut first_point = true;
     let mut prev_x = 0.0;
 
@@ -189,7 +195,7 @@ fn check_single_journey_hover(
         }
 
         // Check horizontal segment from arrival to departure at this station
-        if arrival_screen_x != departure_screen_x {
+        if (arrival_screen_x - departure_screen_x).abs() > f64::EPSILON {
             let distance = point_to_line_distance(mouse_x, mouse_y, arrival_screen_x, screen_y, departure_screen_x, screen_y);
             if distance < HOVER_DISTANCE_THRESHOLD {
                 return Some(journey.id);

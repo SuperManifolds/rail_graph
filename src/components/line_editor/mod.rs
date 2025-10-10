@@ -3,16 +3,22 @@ mod stops_tab;
 mod schedule_tab;
 mod manual_departure_editor;
 mod manual_departures_list;
+mod platform_select;
+mod stop_row;
+mod station_select;
 
 pub use general_tab::GeneralTab;
 pub use stops_tab::StopsTab;
 pub use schedule_tab::ScheduleTab;
 pub use manual_departure_editor::ManualDepartureEditor;
 pub use manual_departures_list::ManualDeparturesList;
+pub use platform_select::{PlatformSelect, PlatformField};
+pub use stop_row::{StopRow, TimeDisplayMode};
+pub use station_select::{StationSelect, StationPosition};
 
 use crate::components::{tab_view::{Tab, TabView}, window::Window};
 use crate::models::{Line, RailwayGraph};
-use leptos::*;
+use leptos::{component, view, MaybeSignal, Signal, ReadSignal, IntoView, create_signal, create_rw_signal, create_effect, SignalGet, SignalGetUntracked, SignalSet, store_value};
 use std::rc::Rc;
 
 #[component]
@@ -51,8 +57,7 @@ pub fn LineEditor(
     let window_title = Signal::derive(move || {
         edited_line
             .get()
-            .map(|line| format!("Edit Line: {}", line.id))
-            .unwrap_or_else(|| "Edit Line".to_string())
+            .map_or_else(|| "Edit Line".to_string(), |line| format!("Edit Line: {}", line.id))
     });
 
     let is_window_open = Signal::derive(move || is_open.get() && edited_line.get().is_some());

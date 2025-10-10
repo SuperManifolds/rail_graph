@@ -11,7 +11,7 @@ const CURRENT_TRAIN_OUTLINE_WIDTH: f64 = 2.0;
 const CURRENT_TRAIN_LABEL_COLOR: &str = "#fff";
 const CURRENT_TRAIN_LABEL_FONT_SIZE: f64 = 10.0;
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::cast_precision_loss)]
 pub fn draw_current_train_positions(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,

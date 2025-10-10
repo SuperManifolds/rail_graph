@@ -7,9 +7,10 @@ use crate::components::{
 };
 use crate::models::{Line, RailwayGraph};
 use crate::train_journey::TrainJourney;
-use leptos::*;
+use leptos::{component, view, Signal, IntoView, SignalGet, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect};
 
 #[component]
+#[must_use]
 pub fn TimeGraph(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
@@ -74,7 +75,6 @@ pub fn TimeGraph(
                 <GraphCanvas
                     graph=graph
                     set_graph=set_graph
-                    lines=lines
                     set_lines=set_lines
                     train_journeys=train_journeys
                     visualization_time=visualization_time

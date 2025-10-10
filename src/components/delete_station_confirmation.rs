@@ -1,5 +1,5 @@
 use crate::components::window::Window;
-use leptos::*;
+use leptos::{component, IntoView, ReadSignal, Show, Signal, SignalGet, view};
 use std::rc::Rc;
 
 #[component]

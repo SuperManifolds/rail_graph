@@ -1,16 +1,18 @@
-use crate::models::{Line, RailwayGraph, RouteSegment};
+use crate::models::{Line, RailwayGraph, RouteSegment, Stations, Tracks};
 use chrono::{Duration, Timelike};
 use petgraph::graph::{EdgeIndex, NodeIndex};
 use std::collections::HashMap;
 
 /// Parse CSV data into lines and railway graph
+#[must_use]
 pub fn parse_csv_data() -> (Vec<Line>, RailwayGraph) {
     let csv_content = include_str!("../lines.csv");
-    parse_csv_string(csv_content, HashMap::new())
+    parse_csv_string(csv_content, &HashMap::new())
 }
 
 /// Parse CSV string into lines and railway graph
-pub fn parse_csv_string(csv_content: &str, wait_times: HashMap<String, Duration>) -> (Vec<Line>, RailwayGraph) {
+#[must_use]
+pub fn parse_csv_string(csv_content: &str, wait_times: &HashMap<String, Duration>) -> (Vec<Line>, RailwayGraph) {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(csv_content.as_bytes());
@@ -22,7 +24,7 @@ pub fn parse_csv_string(csv_content: &str, wait_times: HashMap<String, Duration>
     };
 
     let line_ids = extract_line_ids(&header);
-    let (lines, graph) = build_graph_and_routes_from_csv(records, &line_ids, &wait_times);
+    let (lines, graph) = build_graph_and_routes_from_csv(records, &line_ids, wait_times);
 
     (lines, graph)
 }
@@ -31,7 +33,7 @@ fn extract_line_ids(header: &csv::StringRecord) -> Vec<String> {
     header.iter()
         .skip(1)
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect()
 }
 
@@ -64,9 +66,9 @@ fn build_graph_and_routes_from_csv(
                     crate::time::parse_time_hms(s)
                         .ok()
                         .map(|t| {
-                            Duration::hours(t.hour() as i64) +
-                            Duration::minutes(t.minute() as i64) +
-                            Duration::seconds(t.second() as i64)
+                            Duration::hours(i64::from(t.hour())) +
+                            Duration::minutes(i64::from(t.minute())) +
+                            Duration::seconds(i64::from(t.second()))
                         })
                 });
             times.push(time_opt);
@@ -147,7 +149,7 @@ fn build_graph_and_routes_from_csv(
         }
 
         // Assign forward route to line
-        lines[line_idx].forward_route = route.clone();
+        lines[line_idx].forward_route.clone_from(&route);
 
         // Generate return route (reverse direction, using platform 1 and opposite track)
         let mut return_route = Vec::new();
@@ -157,11 +159,7 @@ fn build_graph_and_routes_from_csv(
             // Determine return track: use track 1 if edge has multiple tracks, else track 0 (bidirectional)
             let edge_idx = petgraph::graph::EdgeIndex::new(forward_segment.edge_index);
             let return_track_index = if let Some(track_segment) = graph.get_track(edge_idx) {
-                if track_segment.tracks.len() > 1 {
-                    1 // Multi-track: use track 1 for return
-                } else {
-                    0 // Single track: use same track (bidirectional)
-                }
+                usize::from(track_segment.tracks.len() > 1)
             } else {
                 0 // Default to track 0 if edge not found
             };

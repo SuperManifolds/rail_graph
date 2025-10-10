@@ -1,7 +1,8 @@
 use crate::models::Platform;
-use leptos::*;
+use leptos::{component, view, ReadSignal, WriteSignal, IntoView, SignalUpdate, SignalGet, event_target_value};
 
 #[component]
+#[must_use]
 pub fn PlatformEditor(
     platforms: ReadSignal<Vec<Platform>>,
     set_platforms: WriteSignal<Vec<Platform>>,

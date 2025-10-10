@@ -11,6 +11,7 @@ pub struct GraphDimensions {
 }
 
 impl GraphDimensions {
+    #[must_use]
     pub fn new(canvas_width: f64, canvas_height: f64) -> Self {
         let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
         let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;

@@ -1,5 +1,5 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{StationNode, RailwayGraph};
+use crate::models::{StationNode, RailwayGraph, Stations};
 use super::types::GraphDimensions;
 use petgraph::visit::EdgeRef;
 
@@ -18,6 +18,7 @@ pub fn draw_background(ctx: &CanvasRenderingContext2d, width: f64, height: f64) 
     ctx.fill_rect(0.0, 0.0, width, height);
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[StationNode], zoom_level: f64, pan_offset_x: f64) {
     let station_height = dims.graph_height / stations.len() as f64;
 
@@ -27,10 +28,12 @@ pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions,
     }
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn calculate_station_y(dims: &GraphDimensions, index: usize, station_height: f64) -> f64 {
     dims.top_margin + (index as f64 * station_height) + (station_height / 2.0)
 }
 
+#[allow(clippy::cast_possible_truncation)]
 fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, y: f64, zoom_level: f64, pan_offset_x: f64) {
     ctx.set_stroke_style_str(STATION_GRID_COLOR);
     ctx.set_line_width(1.0 / zoom_level);
@@ -44,14 +47,15 @@ fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, 
     let start_hour = (x_min / dims.hour_width).floor() as i32 - GRID_PADDING_HOURS;
     let end_hour = (x_max / dims.hour_width).ceil() as i32 + GRID_PADDING_HOURS;
 
-    let start_x = dims.left_margin + (start_hour as f64 * dims.hour_width);
-    let end_x = dims.left_margin + (end_hour as f64 * dims.hour_width);
+    let start_x = dims.left_margin + (f64::from(start_hour) * dims.hour_width);
+    let end_x = dims.left_margin + (f64::from(end_hour) * dims.hour_width);
 
     ctx.move_to(start_x, y);
     ctx.line_to(end_x, y);
     ctx.stroke();
 }
 
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 pub fn draw_double_track_indicators(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -68,18 +72,18 @@ pub fn draw_double_track_indicators(
 
     let start_hour = (x_min / dims.hour_width).floor() as i32 - GRID_PADDING_HOURS;
     let end_hour = (x_max / dims.hour_width).ceil() as i32 + GRID_PADDING_HOURS;
-    let start_x = dims.left_margin + (start_hour as f64 * dims.hour_width);
-    let width = (end_hour - start_hour) as f64 * dims.hour_width;
+    let start_x = dims.left_margin + (f64::from(start_hour) * dims.hour_width);
+    let width = f64::from(end_hour - start_hour) * dims.hour_width;
 
     // Draw lighter background for double-tracked segments
     // Check each consecutive pair of stations
     for segment_idx in 1..stations.len() {
-        let station1 = &stations[segment_idx - 1];
-        let station2 = &stations[segment_idx];
+        let prev_station = &stations[segment_idx - 1];
+        let curr_station = &stations[segment_idx];
 
         // Check if there's a multi-tracked edge between these stations
         let has_multiple_tracks = if let (Some(node1), Some(node2)) =
-            (graph.get_station_index(&station1.name), graph.get_station_index(&station2.name)) {
+            (graph.get_station_index(&prev_station.name), graph.get_station_index(&curr_station.name)) {
 
             // Check both directions for an edge
             graph.graph.edges(node1).any(|e| {

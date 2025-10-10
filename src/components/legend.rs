@@ -1,4 +1,4 @@
-use leptos::*;
+use leptos::{component, view, Signal, IntoView, create_signal, SignalUpdate, Show, SignalGet, event_target_checked};
 
 #[component]
 pub fn Legend(

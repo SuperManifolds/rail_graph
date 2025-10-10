@@ -1,5 +1,5 @@
-use leptos::*;
-use leptos_meta::*;
+use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view};
+use leptos_meta::{provide_meta_context, Stylesheet, Title};
 use crate::components::time_graph::TimeGraph;
 use crate::components::infrastructure_view::InfrastructureView;
 use crate::models::{Project, RailwayGraph, Legend};
@@ -12,6 +12,7 @@ enum AppView {
 }
 
 #[component]
+#[must_use]
 pub fn App() -> impl IntoView {
     provide_meta_context();
 
@@ -27,17 +28,14 @@ pub fn App() -> impl IntoView {
     // Auto-load saved project on component mount
     create_effect(move |_| {
         spawn_local(async move {
-            match load_project_from_storage().await {
-                Ok(project) => {
-                    set_lines.set(project.lines);
-                    set_graph.set(project.graph);
-                    set_legend.set(project.legend);
-                }
-                Err(_) => {
-                    set_lines.set(Vec::new());
-                    set_graph.set(RailwayGraph::new());
-                    set_legend.set(Legend::default());
-                }
+            if let Ok(project) = load_project_from_storage().await {
+                set_lines.set(project.lines);
+                set_graph.set(project.graph);
+                set_legend.set(project.legend);
+            } else {
+                set_lines.set(Vec::new());
+                set_graph.set(RailwayGraph::new());
+                set_legend.set(Legend::default());
             }
             set_initial_load_complete.set(true);
         });
@@ -53,7 +51,7 @@ pub fn App() -> impl IntoView {
             let project = Project::new(current_lines, current_graph, current_legend);
             spawn_local(async move {
                 if let Err(e) = save_project_to_storage(&project).await {
-                    web_sys::console::error_1(&format!("Auto-save failed: {}", e).into());
+                    web_sys::console::error_1(&format!("Auto-save failed: {e}").into());
                 }
             });
         }

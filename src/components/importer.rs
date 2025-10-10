@@ -2,13 +2,14 @@ use crate::data::parse_csv_string;
 use crate::models::{Line, RailwayGraph};
 use crate::components::duration_input::DurationInput;
 use crate::components::window::Window;
-use leptos::*;
+use leptos::{wasm_bindgen, component, view, WriteSignal, IntoView, create_node_ref, create_signal, SignalGet, web_sys, spawn_local, SignalSet, Signal, SignalUpdate};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use chrono::Duration;
 use std::collections::HashMap;
 
 #[component]
+#[must_use]
 pub fn Importer(
     set_lines: WriteSignal<Vec<Line>>,
     set_graph: WriteSignal<RailwayGraph>,
@@ -49,7 +50,7 @@ pub fn Importer(
                     let ids: Vec<String> = header.iter()
                         .skip(1)
                         .filter(|s| !s.is_empty())
-                        .map(|s| s.to_string())
+                        .map(ToString::to_string)
                         .collect();
 
                     // Initialize wait times with 30 second default
@@ -73,7 +74,7 @@ pub fn Importer(
     };
 
     let handle_import = move |_| {
-        let (new_lines, new_graph) = parse_csv_string(&csv_content.get(), wait_times.get());
+        let (new_lines, new_graph) = parse_csv_string(&csv_content.get(), &wait_times.get());
         set_lines.set(new_lines);
         set_graph.set(new_graph);
         set_show_dialog.set(false);

@@ -1,33 +1,34 @@
 use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
-use crate::constants::BASE_DATE;
+use crate::constants::{BASE_DATE, BASE_MIDNIGHT};
 use petgraph::graph::NodeIndex;
-use super::{RailwayGraph, TrackSegment, TrackDirection};
+use super::{RailwayGraph, TrackSegment, TrackDirection, Tracks};
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 fn generate_random_color(seed: usize) -> String {
     // Use a simple hash-based color generator for deterministic but varied colors
-    let hue = ((seed * 137) % 360) as f64;
-    let saturation = 65.0 + ((seed * 97) % 20) as f64; // 65-85%
-    let lightness = 55.0 + ((seed * 53) % 15) as f64;  // 55-70%
+    let hue = f64::from(((seed * 137) % 360) as i32);
+    let saturation = 65.0 + f64::from(((seed * 97) % 20) as i32); // 65-85%
+    let lightness = 55.0 + f64::from(((seed * 53) % 15) as i32);  // 55-70%
 
     // Convert HSL to RGB
-    let c = (1.0 - (2.0 * lightness / 100.0 - 1.0).abs()) * saturation / 100.0;
-    let x = c * (1.0 - ((hue / 60.0) % 2.0 - 1.0).abs());
-    let m = lightness / 100.0 - c / 2.0;
+    let chroma = (1.0 - (2.0 * lightness / 100.0 - 1.0).abs()) * saturation / 100.0;
+    let second_component = chroma * (1.0 - ((hue / 60.0) % 2.0 - 1.0).abs());
+    let lightness_match = lightness / 100.0 - chroma / 2.0;
 
-    let (r, g, b) = match hue as u32 {
-        0..=59 => (c, x, 0.0),
-        60..=119 => (x, c, 0.0),
-        120..=179 => (0.0, c, x),
-        180..=239 => (0.0, x, c),
-        240..=299 => (x, 0.0, c),
-        _ => (c, 0.0, x),
+    let (red, green, blue) = match hue as u32 {
+        0..=59 => (chroma, second_component, 0.0),
+        60..=119 => (second_component, chroma, 0.0),
+        120..=179 => (0.0, chroma, second_component),
+        180..=239 => (0.0, second_component, chroma),
+        240..=299 => (second_component, 0.0, chroma),
+        _ => (chroma, 0.0, second_component),
     };
 
     format!("#{:02X}{:02X}{:02X}",
-        ((r + m) * 255.0) as u8,
-        ((g + m) * 255.0) as u8,
-        ((b + m) * 255.0) as u8
+        ((red + lightness_match) * 255.0) as u8,
+        ((green + lightness_match) * 255.0) as u8,
+        ((blue + lightness_match) * 255.0) as u8
     )
 }
 
@@ -103,31 +104,33 @@ fn default_thickness() -> f64 {
 
 impl Line {
     /// Create lines from IDs with default settings
+    #[must_use]
     pub fn create_from_ids(line_ids: &[String]) -> Vec<Line> {
         line_ids
             .iter()
             .enumerate()
-            .map(|(i, id)| Line {
-                id: id.clone(),
-                frequency: Duration::hours(1), // Default, configurable by user
-                color: generate_random_color(i),
-                thickness: 2.0,
-                first_departure: BASE_DATE.and_hms_opt(5, i as u32 * 15, 0)
-                    .unwrap_or_else(|| BASE_DATE.and_hms_opt(5, 0, 0).expect("Valid time")),
-                return_first_departure: BASE_DATE.and_hms_opt(6, i as u32 * 15, 0)
-                    .unwrap_or_else(|| BASE_DATE.and_hms_opt(6, 0, 0).expect("Valid time")),
-                visible: true,
-                schedule_mode: ScheduleMode::Auto,
-                manual_departures: Vec::new(),
-                forward_route: Vec::new(),
-                return_route: Vec::new(),
+            .map(|(i, id)| {
+                let offset_minutes = u32::try_from(i).unwrap_or(0).saturating_mul(15);
+                Line {
+                    id: id.clone(),
+                    frequency: Duration::hours(1), // Default, configurable by user
+                    color: generate_random_color(i),
+                    thickness: 2.0,
+                    first_departure: BASE_DATE.and_hms_opt(5, offset_minutes, 0).unwrap_or(BASE_MIDNIGHT),
+                    return_first_departure: BASE_DATE.and_hms_opt(6, offset_minutes, 0).unwrap_or(BASE_MIDNIGHT),
+                    visible: true,
+                    schedule_mode: ScheduleMode::Auto,
+                    manual_departures: Vec::new(),
+                    forward_route: Vec::new(),
+                    return_route: Vec::new(),
+                }
             })
             .collect()
     }
 
     /// Update route after station deletion with bypass edges
-    /// removed_edges: edges that were removed
-    /// bypass_mapping: maps (old_edge1, old_edge2) -> new_bypass_edge
+    /// `removed_edges`: edges that were removed
+    /// `bypass_mapping`: maps (`old_edge1`, `old_edge2`) -> `new_bypass_edge`
     pub fn update_route_after_deletion(
         &mut self,
         removed_edges: &[usize],
@@ -156,21 +159,15 @@ impl Line {
             }
 
             // Segment uses a removed edge - try to create a bypass
-            let next_segment = match route.get(i + 1) {
-                Some(seg) => seg,
-                None => {
-                    i += 1;
-                    continue;
-                }
+            let Some(next_segment) = route.get(i + 1) else {
+                i += 1;
+                continue;
             };
 
             // Check if we have a bypass edge for this pair
-            let bypass_edge_idx = match bypass_mapping.get(&(segment.edge_index, next_segment.edge_index)) {
-                Some(&idx) => idx,
-                None => {
-                    i += 1;
-                    continue;
-                }
+            let Some(&bypass_edge_idx) = bypass_mapping.get(&(segment.edge_index, next_segment.edge_index)) else {
+                i += 1;
+                continue;
             };
 
             // Combine durations (travel time + wait time at deleted station + next travel time)
@@ -277,6 +274,20 @@ impl Line {
         // Fallback to track 0 if no compatible track found
         0
     }
+
+    /// Check if this line uses a specific edge in either route
+    #[must_use]
+    pub fn uses_edge(&self, edge_index: usize) -> bool {
+        self.forward_route.iter().any(|segment| segment.edge_index == edge_index) ||
+        self.return_route.iter().any(|segment| segment.edge_index == edge_index)
+    }
+
+    /// Check if this line uses any of the given edges in either route
+    #[must_use]
+    pub fn uses_any_edge(&self, edge_indices: &[usize]) -> bool {
+        self.forward_route.iter().any(|segment| edge_indices.contains(&segment.edge_index)) ||
+        self.return_route.iter().any(|segment| edge_indices.contains(&segment.edge_index))
+    }
 }
 
 mod duration_serde {
@@ -324,11 +335,13 @@ mod node_index_serde {
     use petgraph::graph::NodeIndex;
     use serde::{Deserialize, Deserializer, Serializer};
 
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub fn serialize<S>(node: &NodeIndex, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serializer.serialize_u32(node.index() as u32)
+        let index_u32 = u32::try_from(node.index()).unwrap_or(u32::MAX);
+        serializer.serialize_u32(index_u32)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<NodeIndex, D::Error>

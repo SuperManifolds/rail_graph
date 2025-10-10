@@ -1,6 +1,7 @@
 use crate::components::window::Window;
-use crate::models::{RailwayGraph, Track, TrackDirection, Line};
-use leptos::*;
+use crate::components::track_editor::TrackEditor;
+use crate::models::{RailwayGraph, Track, TrackDirection, Line, Stations};
+use leptos::{component, create_effect, create_signal, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalUpdate, view};
 use petgraph::graph::EdgeIndex;
 use std::rc::Rc;
 
@@ -48,10 +49,7 @@ pub fn EditTrack(
             let edge_index = edge_idx.index();
             let affected: Vec<String> = current_lines
                 .iter()
-                .filter(|line| {
-                    line.forward_route.iter().any(|segment| segment.edge_index == edge_index) ||
-                    line.return_route.iter().any(|segment| segment.edge_index == edge_index)
-                })
+                .filter(|line| line.uses_edge(edge_index))
                 .map(|line| line.id.clone())
                 .collect();
             set_affected_lines.set(affected);
@@ -81,7 +79,7 @@ pub fn EditTrack(
         }
     };
 
-    let handle_add_track = move |_| {
+    let handle_add_track = move || {
         set_tracks.update(|t| {
             t.push(Track {
                 direction: TrackDirection::Bidirectional,
@@ -122,7 +120,9 @@ pub fn EditTrack(
 
                 {move || {
                     let affected = affected_lines.get();
-                    if !affected.is_empty() {
+                    if affected.is_empty() {
+                        view! {}.into_view()
+                    } else {
                         view! {
                             <div class="track-warning">
                                 <i class="fa-solid fa-triangle-exclamation"></i>
@@ -136,8 +136,6 @@ pub fn EditTrack(
                                 </div>
                             </div>
                         }.into_view()
-                    } else {
-                        view! {}.into_view()
                     }
                 }}
 
@@ -153,60 +151,14 @@ pub fn EditTrack(
 
                 <div class="form-field">
                     <label>"Tracks"</label>
-                    <div class="tracks-visual">
-                        <div class="station-label station-top">{move || from_station_name.get()}</div>
-                        <div class="tracks-horizontal">
-                            {move || {
-                                tracks.get().iter().enumerate().map(|(i, track)| {
-                                    let direction = track.direction;
-                                    view! {
-                                        <div class="track-column">
-                                            <div class="track-number">{i + 1}</div>
-                                            <button
-                                                class="direction-button"
-                                                on:click=move |_| {
-                                                    let new_dir = match direction {
-                                                        TrackDirection::Bidirectional => TrackDirection::Forward,
-                                                        TrackDirection::Forward => TrackDirection::Backward,
-                                                        TrackDirection::Backward => TrackDirection::Bidirectional,
-                                                    };
-                                                    handle_change_direction(i, new_dir);
-                                                }
-                                                title=move || match direction {
-                                                    TrackDirection::Bidirectional => "Bidirectional".to_string(),
-                                                    TrackDirection::Forward => format!("{} → {}", from_station_name.get(), to_station_name.get()),
-                                                    TrackDirection::Backward => format!("{} → {}", to_station_name.get(), from_station_name.get()),
-                                                }
-                                            >
-                                                <i class=move || match direction {
-                                                    TrackDirection::Bidirectional => "fa-solid fa-arrows-up-down",
-                                                    TrackDirection::Forward => "fa-solid fa-arrow-down",
-                                                    TrackDirection::Backward => "fa-solid fa-arrow-up",
-                                                }></i>
-                                            </button>
-                                            {if tracks.get().len() > 1 {
-                                                view! {
-                                                    <button
-                                                        class="remove-track-button-small"
-                                                        on:click=move |_| handle_remove_track(i)
-                                                        title="Remove track"
-                                                    >
-                                                        <i class="fa-solid fa-xmark"></i>
-                                                    </button>
-                                                }.into_view()
-                                            } else {
-                                                view! { <div class="track-spacer"></div> }.into_view()
-                                            }}
-                                        </div>
-                                    }
-                                }).collect::<Vec<_>>()
-                            }}
-                            <button class="add-track-button-inline" on:click=handle_add_track title="Add Track">
-                                <i class="fa-solid fa-plus"></i>
-                            </button>
-                        </div>
-                        <div class="station-label station-bottom">{move || to_station_name.get()}</div>
-                    </div>
+                    <TrackEditor
+                        tracks=tracks
+                        from_station_name=from_station_name
+                        to_station_name=to_station_name
+                        on_add_track=handle_add_track
+                        on_remove_track=handle_remove_track
+                        on_change_direction=handle_change_direction
+                    />
                 </div>
 
                 <div class="form-buttons">

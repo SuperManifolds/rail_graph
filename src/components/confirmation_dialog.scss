@@ -1,0 +1,55 @@
+// ConfirmationDialog component styles
+.confirmation-dialog-content {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+
+    .confirmation-message {
+        color: #ccc;
+        margin: 0;
+    }
+
+    .confirmation-buttons {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.75rem;
+
+        .cancel-button {
+            padding: 0.5rem 1.5rem;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background-color: #2a2a2a;
+            color: #fff;
+            cursor: pointer;
+
+            &:hover {
+                background-color: #333;
+            }
+        }
+
+        .confirm-button {
+            padding: 0.5rem 1.5rem;
+            border-radius: 4px;
+            color: #fff;
+            cursor: pointer;
+            border: 1px solid #4a9eff;
+            background-color: #4a9eff;
+
+            &:hover {
+                background-color: #3a8eef;
+                border-color: #3a8eef;
+            }
+
+            &.danger {
+                border: 1px solid #d32f2f;
+                background-color: #d32f2f;
+
+                &:hover {
+                    background-color: #b71c1c;
+                    border-color: #b71c1c;
+                }
+            }
+        }
+    }
+}

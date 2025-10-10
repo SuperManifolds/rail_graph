@@ -1,11 +1,12 @@
 use crate::components::time_input::TimeInput;
-use crate::models::{ManualDeparture, RailwayGraph};
-use leptos::*;
+use crate::models::{ManualDeparture, RailwayGraph, Stations};
+use leptos::{component, view, IntoView, create_signal, store_value, Signal, SignalGet, SignalUpdate, SignalGetUntracked, event_target_value};
 
 #[component]
+#[allow(clippy::needless_pass_by_value)]
 pub fn ManualDepartureEditor(
     index: usize,
-    departure: ManualDeparture,
+    #[prop(into)] departure: ManualDeparture,
     station_names: Vec<String>,
     graph: RailwayGraph,
     on_update: impl Fn(usize, ManualDeparture) + 'static,
@@ -52,8 +53,7 @@ pub fn ManualDepartureEditor(
                                 value=name.clone()
                                 selected=move || {
                                     graph_clone.get_station_name(local_departure.get().from_station)
-                                        .map(|n| n == name_clone.as_str())
-                                        .unwrap_or(false)
+                                        .is_some_and(|n| n == name_clone.as_str())
                                 }
                             >
                                 {name.clone()}
@@ -85,8 +85,7 @@ pub fn ManualDepartureEditor(
                                 value=name.clone()
                                 selected=move || {
                                     graph_clone.get_station_name(local_departure.get().to_station)
-                                        .map(|n| n == name_clone.as_str())
-                                        .unwrap_or(false)
+                                        .is_some_and(|n| n == name_clone.as_str())
                                 }
                             >
                                 {name.clone()}

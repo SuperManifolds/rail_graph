@@ -27,6 +27,7 @@ pub struct Project {
 }
 
 impl Project {
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             lines: Vec::new(),
@@ -35,6 +36,7 @@ impl Project {
         }
     }
 
+    #[must_use]
     pub fn new(lines: Vec<Line>, graph: RailwayGraph, legend: Legend) -> Self {
         Self {
             lines,

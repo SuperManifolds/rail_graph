@@ -1,7 +1,7 @@
 use super::ManualDepartureEditor;
 use crate::constants::DEFAULT_DEPARTURE_TIME;
-use crate::models::{Line, ManualDeparture, RailwayGraph};
-use leptos::*;
+use crate::models::{Line, ManualDeparture, RailwayGraph, Stations, Tracks};
+use leptos::{component, view, ReadSignal, WriteSignal, IntoView, SignalGet, SignalGetUntracked, SignalSet};
 use std::rc::Rc;
 
 #[component]

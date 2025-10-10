@@ -1,5 +1,5 @@
 use crate::constants::BASE_DATE;
-use crate::models::{RailwayGraph, TrackDirection};
+use crate::models::{RailwayGraph, TrackDirection, Stations};
 use crate::time::time_to_fraction;
 use crate::train_journey::TrainJourney;
 use chrono::NaiveDateTime;
@@ -36,6 +36,7 @@ pub struct Conflict {
 
 impl Conflict {
     /// Format a human-readable message describing the conflict (without timestamp)
+    #[must_use]
     pub fn format_message(&self, station1_name: &str, station2_name: &str) -> String {
         match self.conflict_type {
             ConflictType::PlatformViolation => {
@@ -67,6 +68,7 @@ impl Conflict {
     }
 
     /// Get a short name for the conflict type
+    #[must_use]
     pub fn type_name(&self) -> &'static str {
         match self.conflict_type {
             ConflictType::HeadOn => "Head-on Conflict",
@@ -110,6 +112,7 @@ struct PlatformOccupancy {
     time_end: NaiveDateTime,
 }
 
+#[must_use]
 pub fn detect_line_conflicts(
     train_journeys: &[TrainJourney],
     graph: &RailwayGraph,
@@ -291,10 +294,26 @@ fn check_segment_pair(
             };
 
             // Calculate progress of leading train at conflict time
-            let duration = (leading_end - leading_start).num_seconds() as f64;
-            let elapsed = (conflict_time - leading_start).num_seconds() as f64;
-            let mut position = if duration > 0.0 {
-                (elapsed / duration).clamp(0.0, 1.0)
+            // Break down durations to avoid precision loss in i64 to f64 conversion
+            let duration = leading_end - leading_start;
+            let elapsed = conflict_time - leading_start;
+
+            let mut position = if duration.num_milliseconds() > 0 {
+                // Use floating point division on Duration to avoid precision loss
+                // Casts truncate for very large durations, but are correct for typical journey segments
+                #[allow(clippy::cast_possible_truncation)]
+                let elapsed_secs = f64::from(elapsed.num_seconds() as i32);
+                #[allow(clippy::cast_possible_truncation)]
+                let elapsed_subsec_ms = f64::from((elapsed.num_milliseconds() % 1000) as i32);
+                #[allow(clippy::cast_possible_truncation)]
+                let duration_secs = f64::from(duration.num_seconds() as i32);
+                #[allow(clippy::cast_possible_truncation)]
+                let duration_subsec_ms = f64::from((duration.num_milliseconds() % 1000) as i32);
+
+                let elapsed_total = elapsed_secs + elapsed_subsec_ms / 1000.0;
+                let duration_total = duration_secs + duration_subsec_ms / 1000.0;
+
+                (elapsed_total / duration_total).clamp(0.0, 1.0)
             } else {
                 0.0
             };
@@ -372,7 +391,7 @@ fn check_segment_pair(
     });
 }
 
-/// Find segment info (edge_index, track_index) for a journey segment
+/// Find segment info (`edge_index`, `track_index`) for a journey segment
 fn find_journey_segment_info<'a>(
     journey: &'a TrainJourney,
     idx_start: usize,
@@ -443,16 +462,14 @@ fn are_reverse_bidirectional_edges(
         .graph
         .edge_weight(edge1_idx)
         .and_then(|ts| ts.tracks.get(track1_index))
-        .map(|t| matches!(t.direction, TrackDirection::Bidirectional))
-        .unwrap_or(false);
+        .is_some_and(|t| matches!(t.direction, TrackDirection::Bidirectional));
 
     let edge2_bidir = ctx
         .graph
         .graph
         .edge_weight(edge2_idx)
         .and_then(|ts| ts.tracks.get(track2_index))
-        .map(|t| matches!(t.direction, TrackDirection::Bidirectional))
-        .unwrap_or(false);
+        .is_some_and(|t| matches!(t.direction, TrackDirection::Bidirectional));
 
     edge1_bidir && edge2_bidir
 }
@@ -508,8 +525,7 @@ fn find_nearest_station(
     times_with_idx
         .iter()
         .min_by_key(|(t, _)| (*t - intersection.time).abs())
-        .map(|(_, idx)| *idx)
-        .unwrap_or(segment1.idx_start)
+        .map_or(segment1.idx_start, |(_, idx)| *idx)
 }
 
 #[derive(Debug)]
@@ -532,12 +548,19 @@ fn calculate_intersection(
     // Convert times to fractions
     let x1_start = time_to_fraction(t1_start);
     let x1_end = time_to_fraction(t1_end);
+
+    // Convert station indices to f64 for geometric calculations
+    // f64 can represent integers up to 2^53 exactly, sufficient for any realistic station count
+    #[allow(clippy::cast_precision_loss)]
     let y1_start = s1_start as f64;
+    #[allow(clippy::cast_precision_loss)]
     let y1_end = s1_end as f64;
 
     let x2_start = time_to_fraction(t2_start);
     let x2_end = time_to_fraction(t2_end);
+    #[allow(clippy::cast_precision_loss)]
     let y2_start = s2_start as f64;
+    #[allow(clippy::cast_precision_loss)]
     let y2_end = s2_end as f64;
 
     // Calculate line intersection using parametric equations
@@ -562,6 +585,7 @@ fn calculate_intersection(
 
         // Convert back to time
         let base_datetime = BASE_DATE.and_hms_opt(0, 0, 0).expect("Valid datetime");
+        #[allow(clippy::cast_possible_truncation)]
         let intersection_time =
             base_datetime + chrono::Duration::seconds((x_intersect * 3600.0) as i64);
 

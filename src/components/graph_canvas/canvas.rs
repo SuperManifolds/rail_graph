@@ -2,10 +2,11 @@ use leptos::*;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
-use crate::models::RailwayGraph;
+use crate::models::{RailwayGraph, Stations, Tracks};
 use crate::conflict::{Conflict, StationCrossing};
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
+use crate::components::canvas_viewport;
 use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
 use super::{station_labels, time_labels, conflict_indicators, train_positions, train_journeys, time_scrubber, graph_content};
@@ -17,66 +18,25 @@ pub const TOP_MARGIN: f64 = 60.0;
 pub const RIGHT_PADDING: f64 = 20.0;
 pub const BOTTOM_PADDING: f64 = 20.0;
 
-#[component]
-pub fn GraphCanvas(
-    graph: ReadSignal<RailwayGraph>,
-    set_graph: WriteSignal<RailwayGraph>,
-    lines: ReadSignal<Vec<crate::models::Line>>,
-    set_lines: WriteSignal<Vec<crate::models::Line>>,
+#[allow(clippy::too_many_arguments)]
+fn setup_render_effect(
+    canvas_ref: leptos::NodeRef<leptos::html::Canvas>,
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     visualization_time: ReadSignal<NaiveDateTime>,
-    set_visualization_time: WriteSignal<NaiveDateTime>,
+    graph: ReadSignal<RailwayGraph>,
+    viewport: &canvas_viewport::ViewportSignals,
+    conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
     show_station_crossings: Signal<bool>,
     show_conflicts: Signal<bool>,
     show_line_blocks: Signal<bool>,
+    hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
     hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
-    set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
-    conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
-    #[prop(optional)] pan_to_conflict_signal: Option<ReadSignal<Option<(f64, f64)>>>,
-) -> impl IntoView {
-    let canvas_ref = create_node_ref::<leptos::html::Canvas>();
-    let (is_dragging, set_is_dragging) = create_signal(false);
-    let (zoom_level, set_zoom_level) = create_signal(1.0);
-    let (zoom_level_x, set_zoom_level_x) = create_signal(1.0); // Horizontal (time) zoom
-    let (pan_offset_x, set_pan_offset_x) = create_signal(0.0);
-    let (pan_offset_y, set_pan_offset_y) = create_signal(0.0);
-    let (is_panning, set_is_panning) = create_signal(false);
-    let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
-    let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
-
-    // Handle pan to conflict requests
-    if let Some(pan_signal) = pan_to_conflict_signal {
-        create_effect(move |_| {
-            if let Some((time_fraction, station_pos)) = pan_signal.get() {
-                if let Some(canvas_elem) = canvas_ref.get() {
-                    let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
-                    let canvas_width = canvas.width() as f64;
-                    let canvas_height = canvas.height() as f64;
-
-                    let dims = GraphDimensions::new(canvas_width, canvas_height);
-
-                    let current_graph = graph.get();
-                    let station_count = current_graph.get_all_stations_ordered().len() as f64;
-
-                    // Set a comfortable zoom level for viewing conflicts
-                    let target_zoom = 4.0;
-                    set_zoom_level.set(target_zoom);
-                    set_zoom_level_x.set(target_zoom);
-
-                    // Center the conflict in the viewport with zoom applied
-                    let target_x = (time_fraction * dims.hour_width * target_zoom * target_zoom) - (canvas_width / 2.0);
-                    let target_y = (station_pos * (dims.graph_height / station_count.max(1.0)) * target_zoom) - (canvas_height / 2.0);
-
-                    set_pan_offset_x.set(-target_x);
-                    set_pan_offset_y.set(-target_y);
-                }
-            }
-        });
-    }
-
-    // Render the graph whenever train journeys or graph change
-    // Use requestAnimationFrame to throttle renders to 60fps max
+) {
     let (render_requested, set_render_requested) = create_signal(false);
+    let zoom_level = viewport.zoom_level;
+    let zoom_level_x = viewport.zoom_level_x.expect("horizontal zoom enabled").0;
+    let pan_offset_x = viewport.pan_offset_x;
+    let pan_offset_y = viewport.pan_offset_y;
 
     create_effect(move |_| {
         // Track all dependencies
@@ -94,7 +54,6 @@ pub fn GraphCanvas(
         let _ = show_line_blocks.get();
         let _ = hovered_journey_id.get();
 
-        // Only request render if one isn't already pending
         if !render_requested.get_untracked() {
             set_render_requested.set(true);
 
@@ -102,24 +61,23 @@ pub fn GraphCanvas(
             let callback = Closure::once(move || {
                 set_render_requested.set(false);
 
-                // Perform actual render
                 let journeys = train_journeys.get_untracked();
                 let current = visualization_time.get_untracked();
                 let current_graph = graph.get_untracked();
                 let stations_for_render = current_graph.get_all_stations_ordered();
 
-                let Some(canvas) = canvas_ref.get_untracked() else {
-                    return;
-                };
+                let Some(canvas) = canvas_ref.get_untracked() else { return };
 
                 let zoom = zoom_level.get_untracked();
                 let zoom_x = zoom_level_x.get_untracked();
                 let pan_x = pan_offset_x.get_untracked();
                 let pan_y = pan_offset_y.get_untracked();
 
-                // Update canvas size to match container
                 let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+                // Browser dimensions are always non-negative
+                #[allow(clippy::cast_sign_loss)]
                 let container_width = canvas_elem.client_width() as u32;
+                #[allow(clippy::cast_sign_loss)]
                 let container_height = canvas_elem.client_height() as u32;
 
                 if container_width > 0 && container_height > 0 {
@@ -134,46 +92,142 @@ pub fn GraphCanvas(
                     pan_offset_y: pan_y,
                 };
                 let (current_conflicts, current_station_crossings) = conflicts_and_crossings.get_untracked();
-                let show_crossings = show_station_crossings.get_untracked();
-                let show_conf = show_conflicts.get_untracked();
                 let conflict_display = ConflictDisplayState {
                     conflicts: &current_conflicts,
                     station_crossings: &current_station_crossings,
-                    show_conflicts: show_conf,
-                    show_station_crossings: show_crossings,
+                    show_conflicts: show_conflicts.get_untracked(),
+                    show_station_crossings: show_station_crossings.get_untracked(),
                 };
                 let hovered = hovered_conflict.get_untracked();
-                let show_blocks = show_line_blocks.get_untracked();
-                let hovered_journey = hovered_journey_id.get_untracked();
+                let hovered_journey_value = hovered_journey_id.get_untracked();
                 let hover_state = HoverState {
                     hovered_conflict: hovered.as_ref().map(|(c, _, _)| c),
-                    show_line_blocks: show_blocks,
-                    hovered_journey_id: hovered_journey.as_ref(),
+                    show_line_blocks: show_line_blocks.get_untracked(),
+                    hovered_journey_id: hovered_journey_value.as_ref(),
                 };
-                render_graph(canvas, &stations_for_render, &journeys, current, viewport, conflict_display, hover_state, &current_graph);
+                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph);
             });
 
             let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
             callback.forget();
         }
     });
+}
 
-    // Handle mouse events for dragging the time indicator and panning
+#[allow(clippy::too_many_arguments)]
+fn handle_mouse_move_hover(
+    x: f64,
+    y: f64,
+    canvas: &web_sys::HtmlCanvasElement,
+    viewport: ViewportState,
+    conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
+    graph: ReadSignal<RailwayGraph>,
+    show_line_blocks: Signal<bool>,
+    train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
+    set_hovered_conflict: WriteSignal<Option<(Conflict, f64, f64)>>,
+    set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
+) {
+    let (current_conflicts, _) = conflicts_and_crossings.get();
+    let current_graph = graph.get();
+    let current_stations = current_graph.get_all_stations_ordered();
+    let hovered = conflict_indicators::check_conflict_hover(
+        x, y, &current_conflicts, &current_stations,
+        f64::from(canvas.width()), f64::from(canvas.height()),
+        viewport.zoom_level, viewport.zoom_level_x, viewport.pan_offset_x, viewport.pan_offset_y
+    );
+    set_hovered_conflict.set(hovered);
+
+    if show_line_blocks.get() {
+        let journeys = train_journeys.get();
+        let journeys_vec: Vec<_> = journeys.values().collect();
+        let hovered_journey = train_journeys::check_journey_hover(
+            x, y, &journeys_vec, &current_stations,
+            f64::from(canvas.width()), f64::from(canvas.height()),
+            &viewport
+        );
+        set_hovered_journey_id.set(hovered_journey);
+    } else {
+        set_hovered_journey_id.set(None);
+    }
+}
+
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[component]
+#[must_use]
+pub fn GraphCanvas(
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    set_lines: WriteSignal<Vec<crate::models::Line>>,
+    train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
+    visualization_time: ReadSignal<NaiveDateTime>,
+    set_visualization_time: WriteSignal<NaiveDateTime>,
+    show_station_crossings: Signal<bool>,
+    show_conflicts: Signal<bool>,
+    show_line_blocks: Signal<bool>,
+    hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
+    set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
+    conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
+    #[prop(optional)] pan_to_conflict_signal: Option<ReadSignal<Option<(f64, f64)>>>,
+) -> impl IntoView {
+    let canvas_ref = create_node_ref::<leptos::html::Canvas>();
+    let (is_dragging, set_is_dragging) = create_signal(false);
+    let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
+
+    let viewport = canvas_viewport::create_viewport_signals(true);
+    let zoom_level = viewport.zoom_level;
+    let set_zoom_level = viewport.set_zoom_level;
+    let (zoom_level_x, set_zoom_level_x) = viewport.zoom_level_x.expect("horizontal zoom enabled");
+    let pan_offset_x = viewport.pan_offset_x;
+    let set_pan_offset_x = viewport.set_pan_offset_x;
+    let pan_offset_y = viewport.pan_offset_y;
+    let set_pan_offset_y = viewport.set_pan_offset_y;
+    let is_panning = viewport.is_panning;
+
+    if let Some(pan_signal) = pan_to_conflict_signal {
+        create_effect(move |_| {
+            if let Some((time_fraction, station_pos)) = pan_signal.get() {
+                if let Some(canvas_elem) = canvas_ref.get() {
+                    let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
+                    let canvas_width = f64::from(canvas.width());
+                    let canvas_height = f64::from(canvas.height());
+
+                    let dims = GraphDimensions::new(canvas_width, canvas_height);
+
+                    let current_graph = graph.get();
+                    let station_count = current_graph.get_all_stations_ordered().len() as f64;
+
+                    let target_zoom = 4.0;
+                    set_zoom_level.set(target_zoom);
+                    set_zoom_level_x.set(target_zoom);
+
+                    let target_x = (time_fraction * dims.hour_width * target_zoom * target_zoom) - (canvas_width / 2.0);
+                    let target_y = (station_pos * (dims.graph_height / station_count.max(1.0)) * target_zoom) - (canvas_height / 2.0);
+
+                    set_pan_offset_x.set(-target_x);
+                    set_pan_offset_y.set(-target_y);
+                }
+            }
+        });
+    }
+
+    setup_render_effect(
+        canvas_ref, train_journeys, visualization_time, graph, &viewport,
+        conflicts_and_crossings, show_station_crossings, show_conflicts, show_line_blocks,
+        hovered_conflict, hovered_journey_id
+    );
+
     let handle_mouse_down = move |ev: MouseEvent| {
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
-            let x = ev.client_x() as f64 - rect.left();
-            let y = ev.client_y() as f64 - rect.top();
+            let x = f64::from(ev.client_x()) - rect.left();
+            let y = f64::from(ev.client_y()) - rect.top();
 
-            // If right click or ctrl+click, start panning
             if ev.button() == 2 || ev.ctrl_key() {
-                set_is_panning.set(true);
-                set_last_mouse_pos.set((x, y));
+                canvas_viewport::handle_pan_start(x, y, &viewport);
             } else {
-                // Check for toggle button clicks first
-                let canvas_width = canvas.width() as f64;
-                let canvas_height = canvas.height() as f64;
+                let canvas_width = f64::from(canvas.width());
+                let canvas_height = f64::from(canvas.height());
                 let current_graph = graph.get();
                 let current_stations = current_graph.get_all_stations_ordered();
 
@@ -181,7 +235,7 @@ pub fn GraphCanvas(
                     x, y, canvas_height, &current_stations,
                     zoom_level.get(), pan_offset_y.get()
                 ) {
-                    toggle_segment_double_track(clicked_segment, &current_stations, graph, set_graph, lines, set_lines);
+                    toggle_segment_double_track(clicked_segment, &current_stations, set_graph, set_lines);
                 } else {
                     handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
                 }
@@ -193,99 +247,39 @@ pub fn GraphCanvas(
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
-            let x = ev.client_x() as f64 - rect.left();
-            let y = ev.client_y() as f64 - rect.top();
+            let x = f64::from(ev.client_x()) - rect.left();
+            let y = f64::from(ev.client_y()) - rect.top();
 
             if is_panning.get() {
-                let (last_x, last_y) = last_mouse_pos.get();
-                let dx = x - last_x;
-                let dy = y - last_y;
-
-                let current_pan_x = pan_offset_x.get();
-                let current_pan_y = pan_offset_y.get();
-
-                // Batch pan updates to trigger only one re-render
-                batch(move || {
-                    set_pan_offset_x.set(current_pan_x + dx);
-                    set_pan_offset_y.set(current_pan_y + dy);
-                    set_last_mouse_pos.set((x, y));
-                });
+                canvas_viewport::handle_pan_move(x, y, &viewport);
             } else if is_dragging.get() {
-                let canvas_width = canvas.width() as f64;
+                let canvas_width = f64::from(canvas.width());
                 let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
 
                 if x >= LEFT_MARGIN && x <= LEFT_MARGIN + graph_width {
                     update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_visualization_time);
                 }
             } else {
-                // Check for conflict hover
-                let (current_conflicts, _) = conflicts_and_crossings.get();
-                let current_graph = graph.get();
-                let current_stations = current_graph.get_all_stations_ordered();
-                let hovered = conflict_indicators::check_conflict_hover(
-                    x, y, &current_conflicts, &current_stations,
-                    canvas.width() as f64, canvas.height() as f64,
-                    zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), pan_offset_y.get()
-                );
-                set_hovered_conflict.set(hovered);
-
-                // Check for journey hover if line blocks are enabled
-                if show_line_blocks.get() {
-                    let journeys = train_journeys.get();
-                    let journeys_vec: Vec<_> = journeys.values().collect();
-                    let viewport = ViewportState {
-                        zoom_level: zoom_level.get(),
-                        zoom_level_x: zoom_level_x.get(),
-                        pan_offset_x: pan_offset_x.get(),
-                        pan_offset_y: pan_offset_y.get(),
-                    };
-                    let hovered_journey = train_journeys::check_journey_hover(
-                        x, y, &journeys_vec, &current_stations,
-                        canvas.width() as f64, canvas.height() as f64,
-                        &viewport
-                    );
-                    set_hovered_journey_id.set(hovered_journey);
-                } else {
-                    set_hovered_journey_id.set(None);
-                }
+                let viewport_state = ViewportState {
+                    zoom_level: zoom_level.get(),
+                    zoom_level_x: zoom_level_x.get(),
+                    pan_offset_x: pan_offset_x.get(),
+                    pan_offset_y: pan_offset_y.get(),
+                };
+                handle_mouse_move_hover(x, y, canvas, viewport_state, conflicts_and_crossings, graph, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id);
             }
         }
     };
 
     let handle_mouse_up = move |_ev: MouseEvent| {
         set_is_dragging.set(false);
-        set_is_panning.set(false);
+        canvas_viewport::handle_pan_end(&viewport);
     };
 
     let handle_mouse_leave = move |_ev: MouseEvent| {
         set_is_dragging.set(false);
-        set_is_panning.set(false);
+        canvas_viewport::handle_pan_end(&viewport);
         set_hovered_conflict.set(None);
-    };
-
-    let apply_horizontal_zoom = move |zoom_factor: f64, graph_mouse_x: f64, pan_x: f64| {
-        let old_zoom_x = zoom_level_x.get();
-        let new_zoom_x = (old_zoom_x * zoom_factor).clamp(0.1, 25.0);
-        let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom_x / old_zoom_x);
-
-        batch(move || {
-            set_zoom_level_x.set(new_zoom_x);
-            set_pan_offset_x.set(new_pan_x);
-        });
-    };
-
-    let apply_normal_zoom = move |zoom_factor: f64, graph_mouse_x: f64, graph_mouse_y: f64, pan_x: f64, pan_y: f64| {
-        let old_zoom = zoom_level.get();
-        let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 25.0);
-
-        let new_pan_x = graph_mouse_x - (graph_mouse_x - pan_x) * (new_zoom / old_zoom);
-        let new_pan_y = graph_mouse_y - (graph_mouse_y - pan_y) * (new_zoom / old_zoom);
-
-        batch(move || {
-            set_zoom_level.set(new_zoom);
-            set_pan_offset_x.set(new_pan_x);
-            set_pan_offset_y.set(new_pan_y);
-        });
     };
 
     let handle_wheel = move |ev: WheelEvent| {
@@ -294,34 +288,21 @@ pub fn GraphCanvas(
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
-            let mouse_x = ev.client_x() as f64 - rect.left();
-            let mouse_y = ev.client_y() as f64 - rect.top();
+            let mouse_x = f64::from(ev.client_x()) - rect.left();
+            let mouse_y = f64::from(ev.client_y()) - rect.top();
 
-            // Only zoom if mouse is within the graph area
-            let canvas_width = canvas.width() as f64;
-            let canvas_height = canvas.height() as f64;
+            let canvas_width = f64::from(canvas.width());
+            let canvas_height = f64::from(canvas.height());
             let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
             let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
 
             if mouse_x >= LEFT_MARGIN && mouse_x <= LEFT_MARGIN + graph_width &&
                mouse_y >= TOP_MARGIN && mouse_y <= TOP_MARGIN + graph_height {
 
-                let delta = ev.delta_y();
-                let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
-                let shift_pressed = ev.shift_key();
-
-                // Calculate zoom point relative to graph area
                 let graph_mouse_x = mouse_x - LEFT_MARGIN;
                 let graph_mouse_y = mouse_y - TOP_MARGIN;
 
-                let pan_x = pan_offset_x.get();
-                let pan_y = pan_offset_y.get();
-
-                if shift_pressed {
-                    apply_horizontal_zoom(zoom_factor, graph_mouse_x, pan_x);
-                } else {
-                    apply_normal_zoom(zoom_factor, graph_mouse_x, graph_mouse_y, pan_x, pan_y);
-                }
+                canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport);
             }
         }
     };
@@ -344,6 +325,7 @@ pub fn GraphCanvas(
     }
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f64, zoom_level_x: f64, pan_offset_x: f64, set_time: WriteSignal<NaiveDateTime>) {
     // Transform mouse coordinates to account for zoom and pan
     // Reverse the transformations applied in render_graph:
@@ -369,7 +351,7 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
     let hours = remaining_minutes / 60;
     let minutes = remaining_minutes % 60;
 
-    let target_date = BASE_DATE + chrono::Duration::days(days as i64);
+    let target_date = BASE_DATE + chrono::Duration::days(i64::from(days));
 
     if let Some(new_time) = chrono::NaiveTime::from_hms_opt(hours, minutes, 0) {
         let new_datetime = target_date.and_time(new_time);
@@ -378,18 +360,18 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
 }
 
 fn render_graph(
-    canvas: leptos::HtmlElement<leptos::html::Canvas>,
+    canvas: &leptos::HtmlElement<leptos::html::Canvas>,
     stations: &[crate::models::StationNode],
     train_journeys: &std::collections::HashMap<uuid::Uuid, TrainJourney>,
     current_time: chrono::NaiveDateTime,
-    viewport: ViewportState,
-    conflict_display: ConflictDisplayState,
-    hover_state: HoverState,
+    viewport: &ViewportState,
+    conflict_display: &ConflictDisplayState,
+    hover_state: &HoverState,
     graph: &RailwayGraph,
 ) {
-    let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
-    let canvas_width = canvas_element.width() as f64;
-    let canvas_height = canvas_element.height() as f64;
+    let canvas_element: &web_sys::HtmlCanvasElement = canvas;
+    let canvas_width = f64::from(canvas_element.width());
+    let canvas_height = f64::from(canvas_element.height());
 
     // Convert HashMap to Vec for drawing functions
     let journeys_vec: Vec<_> = train_journeys.values().cloned().collect();
@@ -441,7 +423,8 @@ fn render_graph(
     graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, graph, viewport.zoom_level, viewport.pan_offset_x);
 
     // Draw train journeys
-    let station_height = zoomed_dimensions.graph_height / stations.len() as f64;
+    #[allow(clippy::cast_precision_loss)]
+    let station_height = zoomed_dimensions.graph_height / (stations.len() as f64);
     train_journeys::draw_train_journeys(
         &ctx,
         &zoomed_dimensions,
@@ -565,9 +548,7 @@ fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
 fn toggle_segment_double_track(
     clicked_segment: usize,
     stations: &[crate::models::StationNode],
-    graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
-    lines: ReadSignal<Vec<crate::models::Line>>,
     set_lines: WriteSignal<Vec<crate::models::Line>>,
 ) {
     // segment index i represents the segment between stations[i-1] and stations[i]
@@ -575,57 +556,22 @@ fn toggle_segment_double_track(
         return;
     }
 
-    let station1 = &stations[clicked_segment - 1];
-    let station2 = &stations[clicked_segment];
-    let station1_name = station1.name.clone();
-    let station2_name = station2.name.clone();
+    let station1_name = stations[clicked_segment - 1].name.clone();
+    let station2_name = stations[clicked_segment].name.clone();
 
-    let mut current_lines = lines.get_untracked();
-    let mut changed_edges = Vec::new();
+    // Toggle track in the graph model
+    set_graph.update(|g| {
+        let changed_edges = g.toggle_segment_double_track(&station1_name, &station2_name);
 
-    set_graph.update(|graph| {
-        // Get node indices for both stations
-        let Some(node1) = graph.get_station_index(&station1_name) else {
-            return;
-        };
-        let Some(node2) = graph.get_station_index(&station2_name) else {
-            return;
-        };
-
-        // Find and toggle edges in both directions
-        for edge in graph.graph.edge_indices() {
-            let Some((from, to)) = graph.graph.edge_endpoints(edge) else {
-                continue;
-            };
-            if (from != node1 || to != node2) && (from != node2 || to != node1) {
-                continue;
+        // Update lines to fix incompatible track assignments
+        set_lines.update(|current_lines| {
+            for (edge_index, new_track_count) in changed_edges {
+                for line in current_lines.iter_mut() {
+                    line.fix_track_indices_after_change(edge_index, new_track_count, g);
+                }
             }
-            let Some(weight) = graph.graph.edge_weight_mut(edge) else {
-                continue;
-            };
-            // Toggle between single and double track
-            let new_weight = if weight.tracks.len() == 1 {
-                use crate::models::TrackSegment;
-                TrackSegment::new_double_track()
-            } else {
-                use crate::models::TrackSegment;
-                TrackSegment::new_single_track()
-            };
-            let new_track_count = new_weight.tracks.len();
-            *weight = new_weight;
-            changed_edges.push((edge.index(), new_track_count));
-        }
+        });
     });
-
-    // Update lines to fix incompatible track assignments
-    let current_graph = graph.get();
-    for (edge_index, new_track_count) in changed_edges {
-        for line in &mut current_lines {
-            line.fix_track_indices_after_change(edge_index, new_track_count, &current_graph);
-        }
-    }
-
-    set_lines.set(current_lines);
 }
 
 fn handle_time_scrubbing(
