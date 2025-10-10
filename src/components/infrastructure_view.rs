@@ -424,7 +424,7 @@ fn create_event_handlers(
         }
     };
 
-    let handle_mouse_up = move |_ev: MouseEvent| {
+    let handle_mouse_up = move |ev: MouseEvent| {
         canvas_viewport::handle_pan_end(&viewport_copy);
 
         if let Some(station_idx) = dragging_station.get() {
@@ -432,8 +432,8 @@ fn create_event_handlers(
                 if let Some(canvas_elem) = canvas_ref.get() {
                     let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
                     let rect = canvas.get_bounding_client_rect();
-                    let x = f64::from(_ev.client_x()) - rect.left();
-                    let y = f64::from(_ev.client_y()) - rect.top();
+                    let x = f64::from(ev.client_x()) - rect.left();
+                    let y = f64::from(ev.client_y()) - rect.top();
 
                     let zoom = zoom_level.get();
                     let pan_x = pan_offset_x.get();
@@ -570,7 +570,7 @@ pub fn InfrastructureView(
         auto_layout_enabled, &viewport
     );
 
-    let handle_mouse_leave = move |_ev: MouseEvent| {
+    let handle_mouse_leave = move |_: MouseEvent| {
         canvas_viewport::handle_pan_end(&viewport);
         set_dragging_station.set(None);
         set_is_over_station.set(false);

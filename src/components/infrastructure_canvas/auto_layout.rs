@@ -172,16 +172,11 @@ fn realign_branch(
 }
 
 pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
-    let node_count = graph.graph.node_count();
-    if node_count == 0 {
-        return;
-    }
-
     let start_x = 150.0;
     let start_y = height / 2.0;
 
     // Find a starting node - prefer endpoints (nodes with only 1 connection)
-    let start_node = graph
+    let Some(start_node) = graph
         .graph
         .node_indices()
         .min_by_key(|&idx| {
@@ -190,8 +185,9 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
             let total = outgoing + incoming;
             // Prefer endpoints (1 connection), then nodes with fewer connections
             if total == 1 { 0 } else { total }
-        })
-        .expect("Graph has at least one node");
+        }) else {
+            return; // No nodes in graph
+        };
 
     let mut visited = HashSet::new();
     let mut available_directions = vec![
