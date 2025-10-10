@@ -1,14 +1,16 @@
 use petgraph::graph::{DiGraph, NodeIndex};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use super::station::StationNode;
+use super::node::Node;
 use super::track::TrackSegment;
 
+pub mod junctions;
 pub mod stations;
 pub mod tracks;
 pub mod routes;
 
 // Re-export extension traits
+pub use junctions::Junctions;
 pub use stations::Stations;
 pub use tracks::Tracks;
 pub use routes::Routes;
@@ -16,7 +18,7 @@ pub use routes::Routes;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RailwayGraph {
     #[serde(with = "graph_serde")]
-    pub graph: DiGraph<StationNode, TrackSegment>,
+    pub graph: DiGraph<Node, TrackSegment>,
     pub station_name_to_index: HashMap<String, NodeIndex>,
     #[serde(default)]
     pub branch_angles: HashMap<(usize, usize), f64>,
@@ -41,11 +43,11 @@ impl Default for RailwayGraph {
 
 // Serialization helpers
 mod graph_serde {
-    use super::{TrackSegment, StationNode};
+    use super::{TrackSegment, Node};
     use petgraph::graph::DiGraph;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S>(graph: &DiGraph<StationNode, TrackSegment>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(graph: &DiGraph<Node, TrackSegment>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -53,7 +55,7 @@ mod graph_serde {
         graph.serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<DiGraph<StationNode, TrackSegment>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<DiGraph<Node, TrackSegment>, D::Error>
     where
         D: Deserializer<'de>,
     {

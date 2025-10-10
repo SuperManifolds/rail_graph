@@ -2,6 +2,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use super::RailwayGraph;
 use crate::models::station::{StationNode, default_platforms};
+use crate::models::node::Node;
 
 /// Extension trait for station-related operations on `RailwayGraph`
 pub trait Stations {
@@ -41,12 +42,12 @@ impl Stations for RailwayGraph {
         if let Some(&index) = self.station_name_to_index.get(&name) {
             index
         } else {
-            let index = self.graph.add_node(StationNode {
+            let index = self.graph.add_node(Node::Station(StationNode {
                 name: name.clone(),
                 position: None,
                 passing_loop: false,
                 platforms: default_platforms(),
-            });
+            }));
             self.station_name_to_index.insert(name, index);
             index
         }
@@ -54,16 +55,18 @@ impl Stations for RailwayGraph {
 
     fn set_station_position(&mut self, index: NodeIndex, position: (f64, f64)) {
         if let Some(node) = self.graph.node_weight_mut(index) {
-            node.position = Some(position);
+            node.set_position(Some(position));
         }
     }
 
     fn get_station_position(&self, index: NodeIndex) -> Option<(f64, f64)> {
-        self.graph.node_weight(index).and_then(|node| node.position)
+        self.graph.node_weight(index).and_then(Node::position)
     }
 
     fn get_station_name(&self, index: NodeIndex) -> Option<&str> {
-        self.graph.node_weight(index).map(|node| node.name.as_str())
+        self.graph.node_weight(index).and_then(|node| {
+            node.as_station().map(|s| s.name.as_str())
+        })
     }
 
     fn get_station_index(&self, name: &str) -> Option<NodeIndex> {
@@ -141,8 +144,10 @@ impl Stations for RailwayGraph {
         let removed_edges = self.get_station_edges(index);
 
         // Remove station from name mapping
-        if let Some(station) = self.graph.node_weight(index) {
-            self.station_name_to_index.remove(&station.name);
+        if let Some(node) = self.graph.node_weight(index) {
+            if let Some(station) = node.as_station() {
+                self.station_name_to_index.remove(&station.name);
+            }
         }
 
         // Remove the station node (this also removes all connected edges)
@@ -170,7 +175,9 @@ impl Stations for RailwayGraph {
 
         while let Some(node_idx) = queue.pop_front() {
             if let Some(node) = self.graph.node_weight(node_idx) {
-                ordered.push(node.clone());
+                if let Some(station) = node.as_station() {
+                    ordered.push(station.clone());
+                }
             }
 
             // Add neighbors
@@ -184,11 +191,12 @@ impl Stations for RailwayGraph {
 
         // Add any remaining disconnected nodes
         for node_idx in self.graph.node_indices() {
-            if seen.insert(node_idx) {
-                if let Some(node) = self.graph.node_weight(node_idx) {
-                    ordered.push(node.clone());
-                }
+            if !seen.insert(node_idx) {
+                continue;
             }
+            let Some(node) = self.graph.node_weight(node_idx) else { continue };
+            let Some(station) = node.as_station() else { continue };
+            ordered.push(station.clone());
         }
 
         ordered

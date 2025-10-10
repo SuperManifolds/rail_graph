@@ -366,7 +366,7 @@ pub fn StopRow(
     };
 
     let platforms = graph.graph.node_weight(station_idx)
-        .map(|node| node.platforms.clone())
+        .and_then(|node| node.as_station().map(|s| s.platforms.clone()))
         .unwrap_or_default();
 
     let column_content = render_time_column(time_mode, index, route, cumulative_seconds, route_direction, edited_line, on_save.clone());

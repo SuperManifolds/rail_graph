@@ -1,5 +1,5 @@
-use crate::models::{RailwayGraph, Stations};
-use crate::components::infrastructure_canvas::track_renderer;
+use crate::models::{RailwayGraph, Stations, Junctions};
+use crate::components::infrastructure_canvas::{track_renderer, junction_renderer};
 use web_sys::CanvasRenderingContext2d;
 use std::collections::HashMap;
 use petgraph::graph::NodeIndex;
@@ -8,6 +8,11 @@ use petgraph::visit::EdgeRef;
 const NODE_RADIUS: f64 = 8.0;
 const LABEL_OFFSET: f64 = 12.0;
 const CHAR_WIDTH_ESTIMATE: f64 = 7.5;
+const STATION_COLOR: &str = "#4a9eff";
+const PASSING_LOOP_COLOR: &str = "#888";
+const JUNCTION_SIZE: f64 = 12.0;
+const NODE_FILL_COLOR: &str = "#2a2a2a";
+const LABEL_COLOR: &str = "#fff";
 
 type TrackSegment = ((f64, f64), (f64, f64));
 
@@ -147,23 +152,30 @@ fn draw_station_nodes(
 
     for idx in graph.graph.node_indices() {
         let Some(pos) = graph.get_station_position(idx) else { continue };
-        let Some(station) = graph.graph.node_weight(idx) else { continue };
+        let Some(node) = graph.graph.node_weight(idx) else { continue };
 
-        let (border_color, radius) = if station.passing_loop {
-            ("#888", NODE_RADIUS * 0.6)
-        } else {
-            ("#4a9eff", NODE_RADIUS)
-        };
+        if let Some(station) = node.as_station() {
+            // Draw stations as circles
+            let (border_color, radius) = if station.passing_loop {
+                (PASSING_LOOP_COLOR, NODE_RADIUS * 0.6)
+            } else {
+                (STATION_COLOR, NODE_RADIUS)
+            };
 
-        ctx.set_fill_style_str("#2a2a2a");
-        ctx.set_stroke_style_str(border_color);
-        ctx.set_line_width(2.0 / zoom);
-        ctx.begin_path();
-        let _ = ctx.arc(pos.0, pos.1, radius, 0.0, std::f64::consts::PI * 2.0);
-        ctx.fill();
-        ctx.stroke();
+            ctx.set_fill_style_str(NODE_FILL_COLOR);
+            ctx.set_stroke_style_str(border_color);
+            ctx.set_line_width(2.0 / zoom);
+            ctx.begin_path();
+            let _ = ctx.arc(pos.0, pos.1, radius, 0.0, std::f64::consts::PI * 2.0);
+            ctx.fill();
+            ctx.stroke();
 
-        node_positions.push((idx, pos, radius));
+            node_positions.push((idx, pos, radius));
+        } else if graph.is_junction(idx) {
+            // Draw junction
+            junction_renderer::draw_junction(ctx, graph, idx, pos, zoom);
+            node_positions.push((idx, pos, JUNCTION_SIZE));
+        }
     }
 
     node_positions
@@ -309,8 +321,9 @@ pub fn draw_stations(
 
     while let Some(idx) = queue.pop_front() {
         let Some((_, pos, _radius)) = node_positions.iter().find(|(i, _, _)| *i == idx) else { continue };
-        let Some(station) = graph.graph.node_weight(idx) else { continue };
-        let text_width = station.name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
+        let Some(node) = graph.graph.node_weight(idx) else { continue };
+        let name = node.display_name();
+        let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
 
         let preferred_position = bfs_parent.get(&idx)
             .and_then(|parent| branch_positions.get(parent))
@@ -361,12 +374,12 @@ pub fn draw_stations(
     }
 
     // Draw all labels
-    ctx.set_fill_style_str("#fff");
+    ctx.set_fill_style_str(LABEL_COLOR);
     ctx.set_font(&format!("{font_size}px sans-serif"));
 
     for (idx, pos, _radius) in &node_positions {
-        let Some(station) = graph.graph.node_weight(*idx) else { continue };
+        let Some(node) = graph.graph.node_weight(*idx) else { continue };
         let Some((bounds, position)) = label_positions.get(idx) else { continue };
-        draw_station_label(ctx, &station.name, *pos, bounds, *position, font_size);
+        draw_station_label(ctx, &node.display_name(), *pos, bounds, *position, font_size);
     }
 }

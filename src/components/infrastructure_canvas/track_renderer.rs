@@ -1,4 +1,4 @@
-use crate::models::{RailwayGraph, Stations};
+use crate::models::{RailwayGraph, Stations, Junctions};
 use petgraph::visit::EdgeRef;
 use web_sys::CanvasRenderingContext2d;
 
@@ -13,8 +13,8 @@ const PROJECTION_MAX: f64 = 0.9; // Maximum projection parameter for station che
 
 // Track rendering constants
 const TRACK_LINE_WIDTH: f64 = 2.0;
-const SINGLE_TRACK_COLOR: &str = "#444";
-const MULTIPLE_TRACK_COLOR: &str = "#555";
+const TRACK_COLOR: &str = "#444";
+const JUNCTION_STOP_DISTANCE: f64 = 20.0; // Stop drawing tracks this far from junction center
 
 /// Check if a line segment from pos1 to pos2 passes near any stations (excluding source and target)
 /// Returns a perpendicular offset to shift the track away from the station
@@ -156,10 +156,31 @@ pub fn draw_tracks(
             continue;
         }
 
-        // Calculate perpendicular offset for parallel tracks
+        // Check if source or target is a junction
+        let source_is_junction = graph.is_junction(source);
+        let target_is_junction = graph.is_junction(target);
+
+        // Calculate actual start and end points, stopping before junctions
+        let mut actual_pos1 = pos1;
+        let mut actual_pos2 = pos2;
+
         let dx = pos2.0 - pos1.0;
         let dy = pos2.1 - pos1.1;
         let len = (dx * dx + dy * dy).sqrt();
+
+        if source_is_junction && len > JUNCTION_STOP_DISTANCE {
+            // Move start point away from junction
+            let t = JUNCTION_STOP_DISTANCE / len;
+            actual_pos1 = (pos1.0 + dx * t, pos1.1 + dy * t);
+        }
+
+        if target_is_junction && len > JUNCTION_STOP_DISTANCE {
+            // Move end point away from junction
+            let t = JUNCTION_STOP_DISTANCE / len;
+            actual_pos2 = (pos2.0 - dx * t, pos2.1 - dy * t);
+        }
+
+        // Calculate perpendicular offset for parallel tracks
         let nx = -dy / len;
         let ny = dx / len;
 
@@ -171,32 +192,32 @@ pub fn draw_tracks(
 
         if track_count == 1 {
             // Single track - draw in center (with avoidance if needed)
-            ctx.set_stroke_style_str(SINGLE_TRACK_COLOR);
+            ctx.set_stroke_style_str(TRACK_COLOR);
             ctx.begin_path();
 
             if needs_avoidance {
                 // Draw segmented path: start -> offset section -> end
-                let segment_length = ((pos2.0 - pos1.0).powi(2) + (pos2.1 - pos1.1).powi(2)).sqrt();
+                let segment_length = ((actual_pos2.0 - actual_pos1.0).powi(2) + (actual_pos2.1 - actual_pos1.1).powi(2)).sqrt();
 
-                ctx.move_to(pos1.0, pos1.1);
+                ctx.move_to(actual_pos1.0, actual_pos1.1);
 
                 // Transition to offset
                 let t1 = TRANSITION_LENGTH / segment_length;
-                let mid1_x = pos1.0 + (pos2.0 - pos1.0) * t1;
-                let mid1_y = pos1.1 + (pos2.1 - pos1.1) * t1;
+                let mid1_x = actual_pos1.0 + (actual_pos2.0 - actual_pos1.0) * t1;
+                let mid1_y = actual_pos1.1 + (actual_pos2.1 - actual_pos1.1) * t1;
                 ctx.line_to(mid1_x + avoid_x, mid1_y + avoid_y);
 
                 // Continue with offset
                 let t2 = (segment_length - TRANSITION_LENGTH) / segment_length;
-                let mid2_x = pos1.0 + (pos2.0 - pos1.0) * t2;
-                let mid2_y = pos1.1 + (pos2.1 - pos1.1) * t2;
+                let mid2_x = actual_pos1.0 + (actual_pos2.0 - actual_pos1.0) * t2;
+                let mid2_y = actual_pos1.1 + (actual_pos2.1 - actual_pos1.1) * t2;
                 ctx.line_to(mid2_x + avoid_x, mid2_y + avoid_y);
 
                 // Transition back
-                ctx.line_to(pos2.0, pos2.1);
+                ctx.line_to(actual_pos2.0, actual_pos2.1);
             } else {
-                ctx.move_to(pos1.0, pos1.1);
-                ctx.line_to(pos2.0, pos2.1);
+                ctx.move_to(actual_pos1.0, actual_pos1.1);
+                ctx.line_to(actual_pos2.0, actual_pos2.1);
             }
 
             ctx.stroke();
@@ -210,29 +231,29 @@ pub fn draw_tracks(
                 let ox = nx * offset;
                 let oy = ny * offset;
 
-                ctx.set_stroke_style_str(MULTIPLE_TRACK_COLOR);
+                ctx.set_stroke_style_str(TRACK_COLOR);
                 ctx.begin_path();
 
                 if needs_avoidance {
                     // Draw segmented path with offset
-                    let segment_length = ((pos2.0 - pos1.0).powi(2) + (pos2.1 - pos1.1).powi(2)).sqrt();
+                    let segment_length = ((actual_pos2.0 - actual_pos1.0).powi(2) + (actual_pos2.1 - actual_pos1.1).powi(2)).sqrt();
 
-                    ctx.move_to(pos1.0 + ox, pos1.1 + oy);
+                    ctx.move_to(actual_pos1.0 + ox, actual_pos1.1 + oy);
 
                     let t1 = TRANSITION_LENGTH / segment_length;
-                    let mid1_x = pos1.0 + (pos2.0 - pos1.0) * t1;
-                    let mid1_y = pos1.1 + (pos2.1 - pos1.1) * t1;
+                    let mid1_x = actual_pos1.0 + (actual_pos2.0 - actual_pos1.0) * t1;
+                    let mid1_y = actual_pos1.1 + (actual_pos2.1 - actual_pos1.1) * t1;
                     ctx.line_to(mid1_x + ox + avoid_x, mid1_y + oy + avoid_y);
 
                     let t2 = (segment_length - TRANSITION_LENGTH) / segment_length;
-                    let mid2_x = pos1.0 + (pos2.0 - pos1.0) * t2;
-                    let mid2_y = pos1.1 + (pos2.1 - pos1.1) * t2;
+                    let mid2_x = actual_pos1.0 + (actual_pos2.0 - actual_pos1.0) * t2;
+                    let mid2_y = actual_pos1.1 + (actual_pos2.1 - actual_pos1.1) * t2;
                     ctx.line_to(mid2_x + ox + avoid_x, mid2_y + oy + avoid_y);
 
-                    ctx.line_to(pos2.0 + ox, pos2.1 + oy);
+                    ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);
                 } else {
-                    ctx.move_to(pos1.0 + ox, pos1.1 + oy);
-                    ctx.line_to(pos2.0 + ox, pos2.1 + oy);
+                    ctx.move_to(actual_pos1.0 + ox, actual_pos1.1 + oy);
+                    ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);
                 }
 
                 ctx.stroke();

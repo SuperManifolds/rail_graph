@@ -92,10 +92,11 @@ impl TrainJourney {
                 let Some((_, to)) = graph.get_track_endpoints(edge_idx) else {
                     continue;
                 };
-                let Some(name) = graph.get_station_name(to) else {
-                    continue;
-                };
-                station_times.push((name.to_string(), arrival_time, departure_from_station));
+
+                // Only add station times for stations, not junctions
+                if let Some(name) = graph.get_station_name(to) {
+                    station_times.push((name.to_string(), arrival_time, departure_from_station));
+                }
 
                 // Add segment info
                 segments.push(JourneySegment {
@@ -217,8 +218,10 @@ impl TrainJourney {
             cumulative_time += route[i].wait_time;
             let departure_from_station = departure_time + cumulative_time;
 
-            let name = graph.get_station_name(route_stations[i + 1])?;
-            station_times.push((name.to_string(), arrival_time, departure_from_station));
+            // Only add station times for stations, not junctions
+            if let Some(name) = graph.get_station_name(route_stations[i + 1]) {
+                station_times.push((name.to_string(), arrival_time, departure_from_station));
+            }
 
             // Add segment info
             segments.push(JourneySegment {
@@ -283,10 +286,11 @@ impl TrainJourney {
                 let Some((from, _)) = graph.get_track_endpoints(edge_idx) else {
                     continue;
                 };
-                let Some(name) = graph.get_station_name(from) else {
-                    continue;
-                };
-                station_times.push((name.to_string(), arrival_time, departure_from_station));
+
+                // Only add station times for stations, not junctions
+                if let Some(name) = graph.get_station_name(from) {
+                    station_times.push((name.to_string(), arrival_time, departure_from_station));
+                }
 
                 // Add segment info
                 segments.push(JourneySegment {
@@ -566,5 +570,82 @@ mod tests {
         let expected_departure_c = expected_arrival_c + Duration::seconds(30);
         assert_eq!(journey.station_times[2].1, expected_arrival_c);
         assert_eq!(journey.station_times[2].2, expected_departure_c);
+    }
+
+    #[test]
+    fn test_journey_skips_junctions() {
+        use crate::models::{Junction, Junctions};
+
+        let mut graph = RailwayGraph::new();
+
+        // Create network: Station A -> Junction -> Station B
+        let idx_a = graph.add_or_get_station("Station A".to_string());
+        let junction = Junction {
+            name: Some("Junction 1".to_string()),
+            position: Some((50.0, 50.0)),
+            routing_rules: vec![],
+        };
+        let idx_junction = graph.add_junction(junction);
+        let idx_b = graph.add_or_get_station("Station B".to_string());
+
+        let edge1 = graph.add_track(idx_a, idx_junction, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge2 = graph.add_track(idx_junction, idx_b, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let line = Line {
+            id: "Test Line with Junction".to_string(),
+            color: TEST_COLOR.to_string(),
+            thickness: TEST_THICKNESS,
+            visible: true,
+            forward_route: vec![
+                RouteSegment {
+                    edge_index: edge1.index(),
+                    track_index: 0,
+                    origin_platform: 0,
+                    destination_platform: 0,
+                    duration: Duration::minutes(5),
+                    wait_time: Duration::seconds(0), // No wait at junction
+                },
+                RouteSegment {
+                    edge_index: edge2.index(),
+                    track_index: 0,
+                    origin_platform: 0,
+                    destination_platform: 0,
+                    duration: Duration::minutes(5),
+                    wait_time: Duration::seconds(30),
+                },
+            ],
+            return_route: vec![],
+            first_departure: BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"),
+            return_first_departure: BASE_DATE.and_hms_opt(8, 30, 0).expect("valid time"),
+            frequency: Duration::hours(1),
+            schedule_mode: ScheduleMode::Auto,
+            manual_departures: vec![],
+        };
+
+        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+
+        assert!(!journeys.is_empty());
+
+        // Find the 8:00 departure specifically
+        let journey = journeys.values()
+            .find(|j| j.departure_time == BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"))
+            .expect("has 8:00 journey");
+
+        // Journey should only have 2 stations (A and B), not the junction
+        assert_eq!(journey.station_times.len(), 2);
+        assert_eq!(journey.station_times[0].0, "Station A");
+        assert_eq!(journey.station_times[1].0, "Station B");
+
+        // But it should still have 2 segments (A->Junction, Junction->B)
+        assert_eq!(journey.segments.len(), 2);
+
+        // Timing should account for travel through junction without stop
+        // Travel: 5 min to junction + 0 wait + 5 min to B = 10 min total
+        // Then 30 sec wait at B
+        let start_time = BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time");
+        let expected_arrival_b = start_time + Duration::minutes(10); // 5 min + 5 min
+        let expected_departure_b = expected_arrival_b + Duration::seconds(30);
+        assert_eq!(journey.station_times[1].1, expected_arrival_b);
+        assert_eq!(journey.station_times[1].2, expected_departure_b);
     }
 }
