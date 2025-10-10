@@ -22,3 +22,38 @@ pub struct StationNode {
     #[serde(default = "default_platforms")]
     pub platforms: Vec<Platform>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_platforms() {
+        let platforms = default_platforms();
+        assert_eq!(platforms.len(), 2);
+        assert_eq!(platforms[0].name, "1");
+        assert_eq!(platforms[1].name, "2");
+    }
+
+    #[test]
+    fn test_station_node_creation() {
+        let station = StationNode {
+            name: "Test Station".to_string(),
+            position: Some((10.0, 20.0)),
+            passing_loop: true,
+            platforms: vec![Platform { name: "A".to_string() }],
+        };
+
+        assert_eq!(station.name, "Test Station");
+        assert_eq!(station.position, Some((10.0, 20.0)));
+        assert!(station.passing_loop);
+        assert_eq!(station.platforms.len(), 1);
+        assert_eq!(station.platforms[0].name, "A");
+    }
+
+    #[test]
+    fn test_platform_creation() {
+        let platform = Platform { name: "Platform 1".to_string() };
+        assert_eq!(platform.name, "Platform 1");
+    }
+}
