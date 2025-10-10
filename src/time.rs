@@ -20,14 +20,24 @@ pub fn time_to_fraction(time: NaiveDateTime) -> f64 {
     let milliseconds = total_ms % 1000;
 
     // Convert to fractional hours with full precision
-    // Safe conversions: hours, minutes, seconds, ms are all small values
-    f64::from(hours as i32)
-        + f64::from(minutes as i32) / 60.0
-        + f64::from(seconds as i32) / 3600.0
-        + f64::from(milliseconds as i32) / 3_600_000.0
+    // These casts truncate for very large values, but are correct for typical timetable ranges
+    #[allow(clippy::cast_possible_truncation)]
+    let hours_f64 = f64::from(hours as i32);
+    #[allow(clippy::cast_possible_truncation)]
+    let minutes_f64 = f64::from(minutes as i32);
+    #[allow(clippy::cast_possible_truncation)]
+    let seconds_f64 = f64::from(seconds as i32);
+    #[allow(clippy::cast_possible_truncation)]
+    let millis_f64 = f64::from(milliseconds as i32);
+
+    hours_f64 + minutes_f64 / 60.0 + seconds_f64 / 3600.0 + millis_f64 / 3_600_000.0
 }
 
 /// Parse a time string in HH:MM:SS format
+///
+/// # Errors
+///
+/// Returns an error if the string cannot be parsed as a valid time in HH:MM:SS format.
 pub fn parse_time_hms(s: &str) -> Result<NaiveTime, chrono::ParseError> {
     NaiveTime::parse_from_str(s, "%H:%M:%S")
 }

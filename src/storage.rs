@@ -101,6 +101,10 @@ async fn open_db() -> Result<IdbDatabase, String> {
     Ok(db)
 }
 
+/// # Errors
+///
+/// Returns an error if the database cannot be opened, the transaction fails,
+/// or the project cannot be serialized or saved to `IndexedDB`.
 pub async fn save_project_to_storage(project: &Project) -> Result<(), String> {
     let db = open_db().await?;
 
@@ -135,6 +139,10 @@ pub async fn save_project_to_storage(project: &Project) -> Result<(), String> {
     Ok(())
 }
 
+/// # Errors
+///
+/// Returns an error if the database cannot be opened, no saved project is found,
+/// the project data is invalid or corrupted, or an unsupported project version is encountered.
 pub async fn load_project_from_storage() -> Result<Project, String> {
     let db = open_db().await?;
 
@@ -186,6 +194,10 @@ pub async fn load_project_from_storage() -> Result<Project, String> {
     }
 }
 
+/// # Errors
+///
+/// Returns an error if the database cannot be opened, the transaction fails,
+/// or the project cannot be deleted from `IndexedDB`.
 pub async fn clear_project_storage() -> Result<(), String> {
     let db = open_db().await?;
 

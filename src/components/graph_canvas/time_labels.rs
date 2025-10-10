@@ -141,7 +141,7 @@ pub fn draw_hour_labels(
         {
             let day = i / 24;
             let hour_in_day = i % 24;
-            draw_hour_label_with_day(ctx, hour_in_day as usize, day, adjusted_x, dims.top_margin);
+            draw_hour_label_with_day(ctx, hour_in_day, day, adjusted_x, dims.top_margin);
         }
     }
 
@@ -197,7 +197,7 @@ pub fn draw_hour_labels(
 
 fn draw_hour_label_with_day(
     ctx: &CanvasRenderingContext2d,
-    hour: usize,
+    hour: i32,
     day: i32,
     x: f64,
     top: f64,

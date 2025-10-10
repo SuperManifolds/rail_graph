@@ -118,7 +118,7 @@ fn edit_station_handler(
 
     if let Some(node) = current_graph.graph.node_weight_mut(station_idx) {
         let old_name = node.name.clone();
-        node.name = new_name.clone();
+        node.name.clone_from(&new_name);
         node.passing_loop = passing_loop;
         node.platforms = platforms;
 
@@ -308,7 +308,10 @@ fn setup_render_effect(
         let Some(canvas) = canvas_ref.get() else { return };
 
         let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+        // Browser dimensions are always non-negative
+        #[allow(clippy::cast_sign_loss)]
         let container_width = canvas_elem.client_width() as u32;
+        #[allow(clippy::cast_sign_loss)]
         let container_height = canvas_elem.client_height() as u32;
 
         if container_width > 0 && container_height > 0 {

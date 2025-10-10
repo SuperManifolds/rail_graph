@@ -24,7 +24,7 @@ pub fn parse_csv_string(csv_content: &str, wait_times: &HashMap<String, Duration
     };
 
     let line_ids = extract_line_ids(&header);
-    let (lines, graph) = build_graph_and_routes_from_csv(records, &line_ids, &wait_times);
+    let (lines, graph) = build_graph_and_routes_from_csv(records, &line_ids, wait_times);
 
     (lines, graph)
 }
@@ -149,7 +149,7 @@ fn build_graph_and_routes_from_csv(
         }
 
         // Assign forward route to line
-        lines[line_idx].forward_route = route.clone();
+        lines[line_idx].forward_route.clone_from(&route);
 
         // Generate return route (reverse direction, using platform 1 and opposite track)
         let mut return_route = Vec::new();

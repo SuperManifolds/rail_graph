@@ -35,7 +35,7 @@ impl LabelPosition {
         ]
     }
 
-    fn calculate_label_pos(&self, node_pos: (f64, f64), text_width: f64, font_size: f64) -> (f64, f64) {
+    fn calculate_label_pos(self, node_pos: (f64, f64), text_width: f64, font_size: f64) -> (f64, f64) {
         let (x, y) = node_pos;
         match self {
             LabelPosition::Right => (x + LABEL_OFFSET, y + font_size / 3.0),

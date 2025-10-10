@@ -45,9 +45,8 @@ pub fn snap_to_angle(graph: &mut RailwayGraph, station_idx: NodeIndex, target_x:
         }
     }
 
-    let branch_to_move = match branch_to_move {
-        Some(b) => b,
-        None => return,
+    let Some(branch_to_move) = branch_to_move else {
+        return;
     };
 
     // Position the first node of the branch at the snapped angle from junction

@@ -45,17 +45,13 @@ pub fn StationSelect(
                                 ) {
                                     // Find edge based on route direction and position
                                     let edge = match (route_direction, position) {
-                                        (RouteDirection::Forward, StationPosition::Start) => {
+                                        (RouteDirection::Forward, StationPosition::Start)
+                                        | (RouteDirection::Return, StationPosition::End) => {
                                             graph.graph.find_edge(new_station_idx, existing_idx)
                                         }
-                                        (RouteDirection::Forward, StationPosition::End) => {
+                                        (RouteDirection::Forward, StationPosition::End)
+                                        | (RouteDirection::Return, StationPosition::Start) => {
                                             graph.graph.find_edge(existing_idx, new_station_idx)
-                                        }
-                                        (RouteDirection::Return, StationPosition::Start) => {
-                                            graph.graph.find_edge(existing_idx, new_station_idx)
-                                        }
-                                        (RouteDirection::Return, StationPosition::End) => {
-                                            graph.graph.find_edge(new_station_idx, existing_idx)
                                         }
                                     };
 

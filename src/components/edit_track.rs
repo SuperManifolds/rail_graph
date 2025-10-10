@@ -120,7 +120,9 @@ pub fn EditTrack(
 
                 {move || {
                     let affected = affected_lines.get();
-                    if !affected.is_empty() {
+                    if affected.is_empty() {
+                        view! {}.into_view()
+                    } else {
                         view! {
                             <div class="track-warning">
                                 <i class="fa-solid fa-triangle-exclamation"></i>
@@ -134,8 +136,6 @@ pub fn EditTrack(
                                 </div>
                             </div>
                         }.into_view()
-                    } else {
-                        view! {}.into_view()
                     }
                 }}
 

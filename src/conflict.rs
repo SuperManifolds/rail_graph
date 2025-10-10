@@ -300,9 +300,14 @@ fn check_segment_pair(
 
             let mut position = if duration.num_milliseconds() > 0 {
                 // Use floating point division on Duration to avoid precision loss
+                // Casts truncate for very large durations, but are correct for typical journey segments
+                #[allow(clippy::cast_possible_truncation)]
                 let elapsed_secs = f64::from(elapsed.num_seconds() as i32);
+                #[allow(clippy::cast_possible_truncation)]
                 let elapsed_subsec_ms = f64::from((elapsed.num_milliseconds() % 1000) as i32);
+                #[allow(clippy::cast_possible_truncation)]
                 let duration_secs = f64::from(duration.num_seconds() as i32);
+                #[allow(clippy::cast_possible_truncation)]
                 let duration_subsec_ms = f64::from((duration.num_milliseconds() % 1000) as i32);
 
                 let elapsed_total = elapsed_secs + elapsed_subsec_ms / 1000.0;

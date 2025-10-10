@@ -73,7 +73,10 @@ fn setup_render_effect(
                 let pan_y = pan_offset_y.get_untracked();
 
                 let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+                // Browser dimensions are always non-negative
+                #[allow(clippy::cast_sign_loss)]
                 let container_width = canvas_elem.client_width() as u32;
+                #[allow(clippy::cast_sign_loss)]
                 let container_height = canvas_elem.client_height() as u32;
 
                 if container_width > 0 && container_height > 0 {
@@ -367,7 +370,7 @@ fn render_graph(
     hover_state: &HoverState,
     graph: &RailwayGraph,
 ) {
-    let canvas_element: &web_sys::HtmlCanvasElement = &canvas;
+    let canvas_element: &web_sys::HtmlCanvasElement = canvas;
     let canvas_width = f64::from(canvas_element.width());
     let canvas_height = f64::from(canvas_element.height());
 

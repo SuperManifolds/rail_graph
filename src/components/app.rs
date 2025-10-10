@@ -28,17 +28,14 @@ pub fn App() -> impl IntoView {
     // Auto-load saved project on component mount
     create_effect(move |_| {
         spawn_local(async move {
-            match load_project_from_storage().await {
-                Ok(project) => {
-                    set_lines.set(project.lines);
-                    set_graph.set(project.graph);
-                    set_legend.set(project.legend);
-                }
-                Err(_) => {
-                    set_lines.set(Vec::new());
-                    set_graph.set(RailwayGraph::new());
-                    set_legend.set(Legend::default());
-                }
+            if let Ok(project) = load_project_from_storage().await {
+                set_lines.set(project.lines);
+                set_graph.set(project.graph);
+                set_legend.set(project.legend);
+            } else {
+                set_lines.set(Vec::new());
+                set_graph.set(RailwayGraph::new());
+                set_legend.set(Legend::default());
             }
             set_initial_load_complete.set(true);
         });
