@@ -1,4 +1,4 @@
-use petgraph::graph::NodeIndex;
+use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use super::RailwayGraph;
 use crate::models::station::{StationNode, default_platforms};

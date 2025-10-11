@@ -1,7 +1,7 @@
 use crate::models::{RailwayGraph, Stations};
 use super::track_renderer;
-use petgraph::graph::{NodeIndex, EdgeIndex};
-use petgraph::visit::EdgeRef;
+use petgraph::stable_graph::{NodeIndex, EdgeIndex};
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::collections::HashMap;
 
 const STATION_CLICK_THRESHOLD: f64 = 15.0;

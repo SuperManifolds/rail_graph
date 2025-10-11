@@ -1,6 +1,6 @@
 use crate::models::{RailwayGraph, Stations};
 use leptos::{component, view, For, IntoView, ReadSignal, SignalGet};
-use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use std::rc::Rc;

@@ -1,8 +1,8 @@
 use crate::models::{RailwayGraph, Junctions, Stations, TrackDirection};
 use web_sys::CanvasRenderingContext2d;
-use petgraph::graph::{NodeIndex, EdgeIndex};
+use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::Direction;
-use petgraph::visit::EdgeRef;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
 const JUNCTION_TRACK_DISTANCE: f64 = 14.0; // Match JUNCTION_STOP_DISTANCE from track_renderer
 const TRACK_SPACING: f64 = 3.0; // Match track_renderer

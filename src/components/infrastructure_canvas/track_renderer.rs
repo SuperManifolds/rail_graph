@@ -1,5 +1,5 @@
 use crate::models::{RailwayGraph, Stations, Junctions};
-use petgraph::visit::EdgeRef;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use web_sys::CanvasRenderingContext2d;
 
 // Track layout constants

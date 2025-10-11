@@ -1,4 +1,4 @@
-use petgraph::graph::NodeIndex;
+use petgraph::stable_graph::NodeIndex;
 use super::RailwayGraph;
 
 /// Extension trait for route-related operations on `RailwayGraph`

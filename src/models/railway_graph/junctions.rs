@@ -1,4 +1,4 @@
-use petgraph::graph::NodeIndex;
+use petgraph::stable_graph::NodeIndex;
 use super::RailwayGraph;
 use super::tracks::Tracks;
 use crate::models::junction::Junction;
@@ -62,32 +62,51 @@ impl Junctions for RailwayGraph {
 
     fn delete_junction(&mut self, index: NodeIndex) -> Vec<usize> {
         use petgraph::visit::EdgeRef;
+        use petgraph::Direction;
 
         // Get all connected edges with their node information
-        let edges: Vec<(usize, NodeIndex, NodeIndex, Vec<crate::models::Track>)> = self.graph.edges(index)
-            .map(|e| (e.id().index(), e.source(), e.target(), e.weight().tracks.clone()))
-            .chain(
-                self.graph.edges_directed(index, petgraph::Direction::Incoming)
-                    .map(|e| (e.id().index(), e.source(), e.target(), e.weight().tracks.clone()))
-            )
-            .collect();
+        let mut edges: Vec<(usize, NodeIndex, NodeIndex, Vec<crate::models::Track>)> = Vec::new();
+
+        // Outgoing edges from the junction
+        for e in self.graph.edges(index) {
+            edges.push((e.id().index(), e.source(), e.target(), e.weight().tracks.clone()));
+        }
+
+        // Incoming edges to the junction
+        for e in self.graph.edges_directed(index, Direction::Incoming) {
+            edges.push((e.id().index(), e.source(), e.target(), e.weight().tracks.clone()));
+        }
 
         let removed_edge_indices: Vec<usize> = edges.iter().map(|(idx, _, _, _)| *idx).collect();
 
         // If this is a "through" junction with exactly 2 connections, restore the direct edge
         if edges.len() == 2 {
-            let (_, from1, to1, tracks1) = &edges[0];
-            let (_, from2, to2, _) = &edges[1];
+            // Collect the two endpoints (nodes that are NOT the junction)
+            let mut connected_nodes = Vec::new();
+            for (_, from, to, _) in &edges {
+                if *from != index {
+                    connected_nodes.push(*from);
+                }
+                if *to != index {
+                    connected_nodes.push(*to);
+                }
+            }
 
-            // Determine the endpoints (the nodes that are NOT the junction)
-            let endpoint1 = if *from1 == index { *to1 } else { *from1 };
-            let endpoint2 = if *from2 == index { *to2 } else { *from2 };
+            // We should have exactly 2 endpoints
+            if connected_nodes.len() == 2 {
+                let node1 = connected_nodes[0];
+                let node2 = connected_nodes[1];
+                let tracks = edges[0].3.clone();
 
-            // Remove the junction node (this also removes all connected edges)
-            self.graph.remove_node(index);
+                // Remove the junction node (this also removes all connected edges)
+                self.graph.remove_node(index);
 
-            // Create a new direct edge between the two endpoints
-            self.add_track(endpoint1, endpoint2, tracks1.clone());
+                // Create a new direct edge between the two endpoints
+                self.add_track(node1, node2, tracks);
+            } else {
+                // Safety fallback: just remove the junction
+                self.graph.remove_node(index);
+            }
         } else {
             // For junctions with != 2 connections, just remove it
             self.graph.remove_node(index);
@@ -97,7 +116,7 @@ impl Junctions for RailwayGraph {
     }
 
     fn validate_route_through_junctions(&self, route: &[crate::models::RouteSegment]) -> Result<(), String> {
-        use petgraph::graph::EdgeIndex;
+        use petgraph::stable_graph::EdgeIndex;
 
         // Check each consecutive pair of segments
         for i in 0..route.len().saturating_sub(1) {
@@ -309,6 +328,9 @@ mod tests {
     fn test_delete_junction() {
         let mut graph = RailwayGraph::new();
 
+        let s1 = graph.add_or_get_station("Station A".to_string());
+        let s2 = graph.add_or_get_station("Station B".to_string());
+
         let junction = Junction {
             name: Some("Test Junction".to_string()),
             position: None,
@@ -316,20 +338,24 @@ mod tests {
         };
         let j_idx = graph.add_junction(junction);
 
-        let s1 = graph.add_or_get_station("Station A".to_string());
-        let s2 = graph.add_or_get_station("Station B".to_string());
-
-        graph.add_track(s1, j_idx, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j_idx, s2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let tracks = vec![Track { direction: TrackDirection::Bidirectional }];
+        graph.add_track(s1, j_idx, tracks.clone());
+        graph.add_track(j_idx, s2, tracks);
 
         assert_eq!(graph.graph.node_count(), 3);
         assert_eq!(graph.graph.edge_count(), 2);
 
         let removed_edges = graph.delete_junction(j_idx);
 
-        assert_eq!(graph.graph.node_count(), 2);
-        assert_eq!(graph.graph.edge_count(), 0);
+        // With StableGraph, junction with 2 connections is a "through" junction
+        // Deleting it restores the direct edge between the two endpoints
+        assert_eq!(graph.graph.node_count(), 2); // Only 2 valid nodes remain
+        assert_eq!(graph.graph.edge_count(), 1); // 1 edge remains (the restored direct edge)
         assert_eq!(removed_edges.len(), 2);
+
+        // Verify a direct edge exists between s1 and s2 (in either direction)
+        let has_edge = graph.graph.find_edge(s1, s2).is_some() || graph.graph.find_edge(s2, s1).is_some();
+        assert!(has_edge, "Expected an edge between s1 and s2 in either direction");
     }
 
     #[test]
@@ -641,7 +667,7 @@ mod tests {
 
     #[test]
     fn test_validate_junction_invalid_edge_reference() {
-        use petgraph::graph::EdgeIndex;
+        use petgraph::stable_graph::EdgeIndex;
 
         let mut graph = RailwayGraph::new();
 

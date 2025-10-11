@@ -2,8 +2,8 @@ use crate::models::{RailwayGraph, Stations, Junctions};
 use crate::components::infrastructure_canvas::{track_renderer, junction_renderer};
 use web_sys::CanvasRenderingContext2d;
 use std::collections::HashMap;
-use petgraph::graph::NodeIndex;
-use petgraph::visit::EdgeRef;
+use petgraph::stable_graph::NodeIndex;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
 const NODE_RADIUS: f64 = 8.0;
 const LABEL_OFFSET: f64 = 12.0;

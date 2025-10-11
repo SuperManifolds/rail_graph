@@ -9,8 +9,8 @@ use crate::components::edit_junction::EditJunction;
 use crate::components::edit_station::EditStation;
 use crate::components::edit_track::EditTrack;
 use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, IntoView, create_node_ref, create_signal, create_effect, SignalGet, SignalSet, SignalGetUntracked};
-use petgraph::graph::{NodeIndex, EdgeIndex};
-use petgraph::visit::EdgeRef;
+use petgraph::stable_graph::{NodeIndex, EdgeIndex};
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, MouseEvent, WheelEvent};
@@ -722,7 +722,8 @@ pub fn InfrastructureView(
 
         if new_state {
             let mut current_graph = graph.get();
-            for idx in current_graph.graph.node_indices() {
+            let node_indices: Vec<_> = current_graph.graph.node_indices().collect();
+            for idx in node_indices {
                 current_graph.set_station_position(idx, (0.0, 0.0));
             }
 

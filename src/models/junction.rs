@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use petgraph::graph::EdgeIndex;
+use petgraph::stable_graph::EdgeIndex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Junction {
@@ -78,7 +78,7 @@ pub struct RoutingRule {
 }
 
 mod edge_index_serde {
-    use petgraph::graph::EdgeIndex;
+    use petgraph::stable_graph::EdgeIndex;
     use serde::{Deserialize, Deserializer, Serializer};
 
     #[allow(clippy::trivially_copy_pass_by_ref)]

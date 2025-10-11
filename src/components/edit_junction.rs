@@ -2,7 +2,7 @@ use crate::components::window::Window;
 use crate::components::routing_rule_editor::RoutingRuleEditor;
 use crate::models::{RailwayGraph, Junctions};
 use leptos::{component, create_effect, create_signal, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, WriteSignal, view};
-use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use std::rc::Rc;
 
 #[component]

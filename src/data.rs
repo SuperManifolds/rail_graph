@@ -1,6 +1,6 @@
 use crate::models::{Line, RailwayGraph, RouteSegment, Stations, Tracks};
 use chrono::{Duration, Timelike};
-use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use std::collections::HashMap;
 
 /// Parse CSV data into lines and railway graph

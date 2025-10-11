@@ -1,5 +1,5 @@
 use crate::models::{RailwayGraph, Stations};
-use petgraph::graph::NodeIndex;
+use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
 use std::collections::HashSet;
@@ -212,13 +212,15 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
         &mut available_directions,
     );
 
-    // Handle any disconnected nodes
+    // Handle any disconnected nodes - collect first to avoid borrow checker issues
+    let disconnected_nodes: Vec<_> = graph.graph.node_indices()
+        .filter(|idx| !visited.contains(idx))
+        .collect();
+
     let mut offset_y = start_y + 100.0;
-    for idx in graph.graph.node_indices() {
-        if !visited.contains(&idx) {
-            graph.set_station_position(idx, (start_x + 200.0, offset_y));
-            offset_y += STATION_SPACING;
-        }
+    for idx in disconnected_nodes {
+        graph.set_station_position(idx, (start_x + 200.0, offset_y));
+        offset_y += STATION_SPACING;
     }
 
     // Interpolate positions for junctions without explicit positions

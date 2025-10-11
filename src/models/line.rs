@@ -1,7 +1,7 @@
 use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use crate::constants::{BASE_DATE, BASE_MIDNIGHT};
-use petgraph::graph::NodeIndex;
+use petgraph::stable_graph::NodeIndex;
 use super::{RailwayGraph, TrackSegment, TrackDirection, Tracks};
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
@@ -347,7 +347,7 @@ impl Line {
         graph: &RailwayGraph,
     ) -> bool {
         use super::Routes;
-        use petgraph::graph::EdgeIndex;
+        use petgraph::stable_graph::EdgeIndex;
 
         // Find all segments using the deleted edge
         let positions: Vec<usize> = route.iter()
@@ -444,7 +444,7 @@ mod naive_datetime_serde {
 }
 
 mod node_index_serde {
-    use petgraph::graph::NodeIndex;
+    use petgraph::stable_graph::NodeIndex;
     use serde::{Deserialize, Deserializer, Serializer};
 
     #[allow(clippy::trivially_copy_pass_by_ref)]
