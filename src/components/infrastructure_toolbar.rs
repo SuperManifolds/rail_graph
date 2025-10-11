@@ -1,4 +1,5 @@
 use leptos::{component, view, IntoView, ReadSignal, WriteSignal, SignalGet, SignalSet};
+use petgraph::stable_graph::NodeIndex;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum EditMode {
@@ -14,7 +15,7 @@ pub fn InfrastructureToolbar(
     set_show_add_station: WriteSignal<bool>,
     edit_mode: ReadSignal<EditMode>,
     set_edit_mode: WriteSignal<EditMode>,
-    set_selected_station: WriteSignal<Option<petgraph::graph::NodeIndex>>,
+    set_selected_station: WriteSignal<Option<NodeIndex>>,
 ) -> impl IntoView {
     view! {
         <div class="infrastructure-toolbar">

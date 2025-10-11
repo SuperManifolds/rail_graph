@@ -192,8 +192,10 @@ impl Line {
     /// Fix track indices after track changes on an edge
     /// Reassigns tracks that are out of bounds or have incompatible directions
     pub fn fix_track_indices_after_change(&mut self, edge_index: usize, new_track_count: usize, graph: &RailwayGraph) {
+        use petgraph::stable_graph::EdgeIndex;
+
         let max_track_index = new_track_count.saturating_sub(1);
-        let edge_idx = petgraph::graph::EdgeIndex::new(edge_index);
+        let edge_idx = EdgeIndex::new(edge_index);
 
         // Get track segment to check directions
         let track_segment = graph.get_track(edge_idx);

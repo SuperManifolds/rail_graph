@@ -1,4 +1,4 @@
-use petgraph::stable_graph::NodeIndex;
+use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use super::RailwayGraph;
 
 /// Extension trait for route-related operations on `RailwayGraph`
@@ -41,7 +41,7 @@ pub trait Routes {
         &self,
         from: NodeIndex,
         to: NodeIndex,
-    ) -> Option<Vec<petgraph::graph::EdgeIndex>>;
+    ) -> Option<Vec<EdgeIndex>>;
 }
 
 impl Routes for RailwayGraph {
@@ -59,7 +59,7 @@ impl Routes for RailwayGraph {
             crate::models::RouteDirection::Forward => {
                 // Forward: extract from -> to for each edge
                 if let Some((from, name)) = route.first().and_then(|segment| {
-                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                    let edge_idx = EdgeIndex::new(segment.edge_index);
                     self.get_track_endpoints(edge_idx).and_then(|(from, _)| {
                         self.get_station_name(from).map(|name| (from, name.to_string()))
                     })
@@ -74,7 +74,7 @@ impl Routes for RailwayGraph {
             crate::models::RouteDirection::Return => {
                 // Return: extract to -> from for each edge (traveling backwards)
                 if let Some((to, name)) = route.first().and_then(|segment| {
-                    let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+                    let edge_idx = EdgeIndex::new(segment.edge_index);
                     self.get_track_endpoints(edge_idx).and_then(|(_, to)| {
                         self.get_station_name(to).map(|name| (to, name.to_string()))
                     })
@@ -102,12 +102,12 @@ impl Routes for RailwayGraph {
             crate::models::RouteDirection::Forward => {
                 let first = route.first()
                     .and_then(|seg| {
-                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                        let edge = EdgeIndex::new(seg.edge_index);
                         self.get_track_endpoints(edge).map(|(from, _)| from)
                     });
                 let last = route.last()
                     .and_then(|seg| {
-                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                        let edge = EdgeIndex::new(seg.edge_index);
                         self.get_track_endpoints(edge).map(|(_, to)| to)
                     });
                 (first, last)
@@ -117,13 +117,13 @@ impl Routes for RailwayGraph {
                 // First segment's 'to' is the starting station
                 let first = route.first()
                     .and_then(|seg| {
-                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                        let edge = EdgeIndex::new(seg.edge_index);
                         self.get_track_endpoints(edge).map(|(_, to)| to)
                     });
                 // Last segment's 'from' is the ending station
                 let last = route.last()
                     .and_then(|seg| {
-                        let edge = petgraph::graph::EdgeIndex::new(seg.edge_index);
+                        let edge = EdgeIndex::new(seg.edge_index);
                         self.get_track_endpoints(edge).map(|(from, _)| from)
                     });
                 (first, last)
@@ -199,7 +199,7 @@ impl Routes for RailwayGraph {
         &self,
         from: NodeIndex,
         to: NodeIndex,
-    ) -> Option<Vec<petgraph::graph::EdgeIndex>> {
+    ) -> Option<Vec<EdgeIndex>> {
         use std::collections::{VecDeque, HashMap};
         use petgraph::visit::EdgeRef;
 
@@ -246,7 +246,7 @@ impl RailwayGraph {
         use super::tracks::Tracks;
         use super::stations::Stations;
 
-        let edge_idx = petgraph::graph::EdgeIndex::new(edge_index);
+        let edge_idx = EdgeIndex::new(edge_index);
         let Some((from, to)) = self.get_track_endpoints(edge_idx) else {
             return;
         };
