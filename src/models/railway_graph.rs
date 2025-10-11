@@ -8,12 +8,14 @@ pub mod junctions;
 pub mod stations;
 pub mod tracks;
 pub mod routes;
+pub mod nodes;
 
 // Re-export extension traits
 pub use junctions::Junctions;
 pub use stations::Stations;
 pub use tracks::Tracks;
 pub use routes::Routes;
+pub use nodes::Nodes;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RailwayGraph {

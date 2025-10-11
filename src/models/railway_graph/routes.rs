@@ -34,6 +34,14 @@ pub trait Routes {
         route: &[crate::models::RouteSegment],
         direction: crate::models::RouteDirection,
     ) -> Vec<String>;
+
+    /// Find a path between two nodes, potentially going through junctions
+    /// Returns a list of edge indices that form the path, or None if no path exists
+    fn find_path_between_nodes(
+        &self,
+        from: NodeIndex,
+        to: NodeIndex,
+    ) -> Option<Vec<petgraph::graph::EdgeIndex>>;
 }
 
 impl Routes for RailwayGraph {
@@ -185,6 +193,49 @@ impl Routes for RailwayGraph {
                 }
             })
             .collect()
+    }
+
+    fn find_path_between_nodes(
+        &self,
+        from: NodeIndex,
+        to: NodeIndex,
+    ) -> Option<Vec<petgraph::graph::EdgeIndex>> {
+        use std::collections::{VecDeque, HashMap};
+        use petgraph::visit::EdgeRef;
+
+        // BFS to find shortest path
+        let mut queue = VecDeque::new();
+        let mut visited = HashMap::new();
+
+        queue.push_back(from);
+        visited.insert(from, None);
+
+        while let Some(current) = queue.pop_front() {
+            if current == to {
+                // Reconstruct path
+                let mut path = Vec::new();
+                let mut node = to;
+
+                while let Some(Some((prev_node, edge))) = visited.get(&node) {
+                    path.push(*edge);
+                    node = *prev_node;
+                }
+
+                path.reverse();
+                return Some(path);
+            }
+
+            // Explore neighbors
+            for edge in self.graph.edges(current) {
+                let neighbor = edge.target();
+                if let std::collections::hash_map::Entry::Vacant(e) = visited.entry(neighbor) {
+                    e.insert(Some((current, edge.id())));
+                    queue.push_back(neighbor);
+                }
+            }
+        }
+
+        None
     }
 }
 

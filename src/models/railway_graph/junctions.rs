@@ -63,19 +63,37 @@ impl Junctions for RailwayGraph {
     fn delete_junction(&mut self, index: NodeIndex) -> Vec<usize> {
         use petgraph::visit::EdgeRef;
 
-        // Get all connected edges
-        let edges: Vec<usize> = self.graph.edges(index)
-            .map(|e| e.id().index())
+        // Get all connected edges with their node information
+        let edges: Vec<(usize, NodeIndex, NodeIndex, Vec<crate::models::Track>)> = self.graph.edges(index)
+            .map(|e| (e.id().index(), e.source(), e.target(), e.weight().tracks.clone()))
             .chain(
                 self.graph.edges_directed(index, petgraph::Direction::Incoming)
-                    .map(|e| e.id().index())
+                    .map(|e| (e.id().index(), e.source(), e.target(), e.weight().tracks.clone()))
             )
             .collect();
 
-        // Remove the junction node (this also removes all connected edges)
-        self.graph.remove_node(index);
+        let removed_edge_indices: Vec<usize> = edges.iter().map(|(idx, _, _, _)| *idx).collect();
 
-        edges
+        // If this is a "through" junction with exactly 2 connections, restore the direct edge
+        if edges.len() == 2 {
+            let (_, from1, to1, tracks1) = &edges[0];
+            let (_, from2, to2, _) = &edges[1];
+
+            // Determine the endpoints (the nodes that are NOT the junction)
+            let endpoint1 = if *from1 == index { *to1 } else { *from1 };
+            let endpoint2 = if *from2 == index { *to2 } else { *from2 };
+
+            // Remove the junction node (this also removes all connected edges)
+            self.graph.remove_node(index);
+
+            // Create a new direct edge between the two endpoints
+            self.add_track(endpoint1, endpoint2, tracks1.clone());
+        } else {
+            // For junctions with != 2 connections, just remove it
+            self.graph.remove_node(index);
+        }
+
+        removed_edge_indices
     }
 
     fn validate_route_through_junctions(&self, route: &[crate::models::RouteSegment]) -> Result<(), String> {

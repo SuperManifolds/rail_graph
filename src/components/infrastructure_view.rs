@@ -10,6 +10,7 @@ use crate::components::edit_station::EditStation;
 use crate::components::edit_track::EditTrack;
 use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, IntoView, create_node_ref, create_signal, create_effect, SignalGet, SignalSet, SignalGetUntracked};
 use petgraph::graph::{NodeIndex, EdgeIndex};
+use petgraph::visit::EdgeRef;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, MouseEvent, WheelEvent};
@@ -68,6 +69,68 @@ fn handle_mouse_move_hover_detection(
 
 fn screen_to_world(screen_x: f64, screen_y: f64, zoom: f64, pan_x: f64, pan_y: f64) -> (f64, f64) {
     ((screen_x - pan_x) / zoom, (screen_y - pan_y) / zoom)
+}
+
+fn handle_adding_junction(
+    world_x: f64,
+    world_y: f64,
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<Line>>,
+    set_lines: WriteSignal<Vec<Line>>,
+    set_editing_junction: WriteSignal<Option<NodeIndex>>,
+) {
+    use crate::models::{Junction, Junctions, Tracks};
+
+    let current_graph = graph.get();
+    let Some(clicked_edge) = hit_detection::find_track_at_position(&current_graph, world_x, world_y) else {
+        return;
+    };
+
+    // Get edge details before we modify the graph
+    let Some(edge_ref) = current_graph.graph.edge_references().find(|e| e.id() == clicked_edge) else {
+        return;
+    };
+    let from_node = edge_ref.source();
+    let to_node = edge_ref.target();
+    let tracks = edge_ref.weight().tracks.clone();
+    let old_edge_index = clicked_edge.index();
+    let track_count = tracks.len();
+
+    let mut updated_graph = current_graph;
+    let mut current_lines = lines.get();
+
+    // Create junction at clicked position
+    let junction = Junction {
+        name: None,
+        position: Some((world_x, world_y)),
+        routing_rules: vec![],
+    };
+    let junction_idx = updated_graph.add_junction(junction);
+
+    // Remove the old edge
+    updated_graph.graph.remove_edge(clicked_edge);
+
+    // Create two new edges: from_node -> junction and junction -> to_node
+    let edge1 = updated_graph.add_track(from_node, junction_idx, tracks.clone());
+    let edge2 = updated_graph.add_track(junction_idx, to_node, tracks);
+
+    // Set default routing rules to allow through traffic
+    if let Some(j) = updated_graph.get_junction_mut(junction_idx) {
+        j.set_routing_rule(edge1, edge2, true);
+        j.set_routing_rule(edge2, edge1, true);
+    }
+
+    // Update all lines that used the old edge to now use the two new edges
+    for line in &mut current_lines {
+        line.replace_split_edge(old_edge_index, edge1.index(), edge2.index(), track_count);
+    }
+
+    set_graph.set(updated_graph);
+    set_lines.set(current_lines);
+
+    // Open the edit dialog for the newly created junction
+    set_editing_junction.set(Some(junction_idx));
 }
 
 fn add_station_handler(
@@ -224,10 +287,17 @@ fn delete_track_handler(
 ) {
     let mut current_graph = graph.get();
     let mut current_lines = lines.get();
+    let edge_index = edge_idx.index();
 
+    // Try to reroute lines before deleting the edge
+    for line in &mut current_lines {
+        line.reroute_deleted_edge(edge_index, &current_graph);
+    }
+
+    // Now delete the edge
     current_graph.graph.remove_edge(edge_idx);
 
-    let edge_index = edge_idx.index();
+    // Clean up any segments that still reference the deleted edge (if rerouting failed)
     for line in &mut current_lines {
         line.forward_route.retain(|segment| segment.edge_index != edge_index);
         line.return_route.retain(|segment| segment.edge_index != edge_index);
@@ -447,6 +517,8 @@ fn create_event_handlers(
     set_selected_station: WriteSignal<Option<NodeIndex>>,
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<Line>>,
+    set_lines: WriteSignal<Vec<Line>>,
     editing_station: ReadSignal<Option<NodeIndex>>,
     set_editing_station: WriteSignal<Option<NodeIndex>>,
     set_editing_junction: WriteSignal<Option<NodeIndex>>,
@@ -478,26 +550,19 @@ fn create_event_handlers(
             let pan_y = pan_offset_y.get();
             let (world_x, world_y) = screen_to_world(screen_x, screen_y, zoom, pan_x, pan_y);
 
+            // ev.detail() returns click count: 1 for single, 2 for double, 3 for triple
+            let is_single_click = ev.detail() == 1;
+
             match current_mode {
-                EditMode::AddingTrack => {
+                EditMode::AddingTrack if is_single_click => {
                     let current_graph = graph.get();
                     let Some(clicked_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) else {
                         return;
                     };
                     handle_mouse_down_adding_track(clicked_station, selected_station, set_selected_station, graph, set_graph);
                 }
-                EditMode::AddingJunction => {
-                    // Place junction at clicked position
-                    use crate::models::{Junction, Junctions};
-
-                    let mut current_graph = graph.get();
-                    let junction = Junction {
-                        name: None,
-                        position: Some((world_x, world_y)),
-                        routing_rules: vec![],
-                    };
-                    current_graph.add_junction(junction);
-                    set_graph.set(current_graph);
+                EditMode::AddingJunction if is_single_click => {
+                    handle_adding_junction(world_x, world_y, graph, set_graph, lines, set_lines, set_editing_junction);
                 }
                 EditMode::None => {
                     let current_graph = graph.get();
@@ -511,6 +576,7 @@ fn create_event_handlers(
                         _ => {}
                     }
                 }
+                _ => {}
             }
         }
     };
@@ -593,8 +659,11 @@ fn create_event_handlers(
                 } else {
                     set_editing_station.set(Some(clicked_node));
                 }
-            } else if let Some(clicked_track) = hit_detection::find_track_at_position(&current_graph, world_x, world_y) {
-                set_editing_track.set(Some(clicked_track));
+            } else if matches!(edit_mode.get(), EditMode::None) {
+                // Only open track editor on double-click when not in a special edit mode
+                if let Some(clicked_track) = hit_detection::find_track_at_position(&current_graph, world_x, world_y) {
+                    set_editing_track.set(Some(clicked_track));
+                }
             }
         }
     };
@@ -673,6 +742,7 @@ pub fn InfrastructureView(
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_wheel) = create_event_handlers(
         canvas_ref, edit_mode, selected_station, set_selected_station, graph, set_graph,
+        lines, set_lines,
         editing_station, set_editing_station, set_editing_junction, set_editing_track,
         dragging_station, set_dragging_station, set_is_over_station, set_is_over_edited_station, set_is_over_track,
         auto_layout_enabled, &viewport

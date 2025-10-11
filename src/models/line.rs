@@ -288,6 +288,118 @@ impl Line {
         self.forward_route.iter().any(|segment| edge_indices.contains(&segment.edge_index)) ||
         self.return_route.iter().any(|segment| edge_indices.contains(&segment.edge_index))
     }
+
+    /// Replace an edge that was split by a junction with two new edges
+    /// This is used when inserting a junction in the middle of an existing edge
+    pub fn replace_split_edge(&mut self, old_edge: usize, new_edge1: usize, new_edge2: usize, track_count: usize) {
+        Self::replace_split_edge_in_route(&mut self.forward_route, old_edge, new_edge1, new_edge2, track_count);
+        Self::replace_split_edge_in_route(&mut self.return_route, old_edge, new_edge2, new_edge1, track_count);
+    }
+
+    fn replace_split_edge_in_route(route: &mut Vec<RouteSegment>, old_edge: usize, first_edge: usize, second_edge: usize, track_count: usize) {
+        let mut new_route = Vec::new();
+
+        for segment in route.iter() {
+            if segment.edge_index == old_edge {
+                // Split this segment into two through the junction
+                new_route.push(RouteSegment {
+                    edge_index: first_edge,
+                    track_index: segment.track_index.min(track_count.saturating_sub(1)),
+                    origin_platform: segment.origin_platform,
+                    destination_platform: 0,
+                    duration: segment.duration / 2,
+                    wait_time: segment.wait_time,
+                });
+                new_route.push(RouteSegment {
+                    edge_index: second_edge,
+                    track_index: segment.track_index.min(track_count.saturating_sub(1)),
+                    origin_platform: 0,
+                    destination_platform: segment.destination_platform,
+                    duration: segment.duration / 2,
+                    wait_time: Duration::zero(),
+                });
+            } else {
+                new_route.push(segment.clone());
+            }
+        }
+
+        *route = new_route;
+    }
+
+    /// Attempt to reroute segments that use a deleted edge
+    /// Returns true if any rerouting was performed
+    pub fn reroute_deleted_edge(&mut self, deleted_edge: usize, graph: &RailwayGraph) -> bool {
+        let mut changed = false;
+
+        // Check forward route
+        changed |= Self::reroute_single_direction(&mut self.forward_route, deleted_edge, graph);
+
+        // Check return route
+        changed |= Self::reroute_single_direction(&mut self.return_route, deleted_edge, graph);
+
+        changed
+    }
+
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+    fn reroute_single_direction(
+        route: &mut Vec<RouteSegment>,
+        deleted_edge: usize,
+        graph: &RailwayGraph,
+    ) -> bool {
+        use super::Routes;
+        use petgraph::graph::EdgeIndex;
+
+        // Find all segments using the deleted edge
+        let positions: Vec<usize> = route.iter()
+            .enumerate()
+            .filter(|(_, seg)| seg.edge_index == deleted_edge)
+            .map(|(i, _)| i)
+            .collect();
+
+        if positions.is_empty() {
+            return false;
+        }
+
+        let mut changed = false;
+
+        for &pos in positions.iter().rev() {
+            let segment = &route[pos];
+            let edge_idx = EdgeIndex::new(segment.edge_index);
+
+            // Get endpoints of deleted edge
+            let Some((from_node, to_node)) = graph.get_track_endpoints(edge_idx) else {
+                continue;
+            };
+
+            // Try to find alternative path
+            let Some(path) = graph.find_path_between_nodes(from_node, to_node) else {
+                continue;
+            };
+
+            // Create new segments for the path
+            let mut new_segments = Vec::new();
+            for (i, &path_edge) in path.iter().enumerate() {
+                let new_segment = RouteSegment {
+                    edge_index: path_edge.index(),
+                    track_index: segment.track_index.min(
+                        graph.graph.edge_weight(path_edge)
+                            .map_or(0, |seg| seg.tracks.len().saturating_sub(1))
+                    ),
+                    origin_platform: if i == 0 { segment.origin_platform } else { 0 },
+                    destination_platform: if i == path.len() - 1 { segment.destination_platform } else { 0 },
+                    duration: segment.duration / path.len().max(1) as i32,
+                    wait_time: if i == 0 { segment.wait_time } else { Duration::zero() },
+                };
+                new_segments.push(new_segment);
+            }
+
+            // Replace the deleted segment with the new path
+            route.splice(pos..=pos, new_segments);
+            changed = true;
+        }
+
+        changed
+    }
 }
 
 mod duration_serde {

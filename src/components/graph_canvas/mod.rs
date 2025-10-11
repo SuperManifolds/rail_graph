@@ -5,6 +5,7 @@ pub mod conflict_indicators;
 pub mod train_positions;
 pub mod train_journeys;
 pub mod time_scrubber;
+pub mod junction_indicators;
 pub mod types;
 mod canvas;
 
