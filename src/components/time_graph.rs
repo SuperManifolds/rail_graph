@@ -3,7 +3,8 @@ use crate::components::{
     graph_canvas::GraphCanvas,
     importer::Importer,
     legend::Legend,
-    line_controls::LineControls
+    line_controls::LineControls,
+    line_editor::LineEditor
 };
 use crate::models::{Line, RailwayGraph};
 use crate::train_journey::TrainJourney;
@@ -69,6 +70,9 @@ pub fn TimeGraph(
     // Signal for panning to conflicts
     let (pan_to_conflict, set_pan_to_conflict) = create_signal(None::<(f64, f64)>);
 
+    let (new_line_dialog_open, set_new_line_dialog_open) = create_signal(false);
+    let (next_line_number, set_next_line_number) = create_signal(1);
+
     view! {
         <div class="time-graph-container">
             <div class="main-content">
@@ -101,6 +105,13 @@ pub fn TimeGraph(
                 </div>
                 <LineControls lines=lines set_lines=set_lines graph=graph />
                 <div class="sidebar-footer">
+                    <button
+                        class="import-button"
+                        on:click=move |_| set_new_line_dialog_open.set(true)
+                        title="Create new line"
+                    >
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
                     <Importer set_lines=set_lines set_graph=set_graph />
                     <Legend
                         show_station_crossings=show_station_crossings
@@ -112,6 +123,51 @@ pub fn TimeGraph(
                     />
                 </div>
             </div>
+
+            <LineEditor
+                initial_line=Signal::derive(move || {
+                    if new_line_dialog_open.get() {
+                        let line_num = next_line_number.get();
+                        let line_id = format!("Line {line_num}");
+
+                        Some(Line::create_from_ids(&[line_id])[0].clone())
+                    } else {
+                        None
+                    }
+                })
+                is_open=Signal::derive(move || new_line_dialog_open.get())
+                set_is_open=move |open: bool| {
+                    if open {
+                        // Find next available line number when opening
+                        let current_lines = lines.get();
+                        let mut num = 1;
+                        loop {
+                            let candidate = format!("Line {num}");
+                            if !current_lines.iter().any(|l| l.id == candidate) {
+                                set_next_line_number.set(num);
+                                break;
+                            }
+                            num += 1;
+                        }
+                        set_new_line_dialog_open.set(true);
+                    } else {
+                        set_new_line_dialog_open.set(false);
+                    }
+                }
+                graph=graph
+                on_save=move |new_line: Line| {
+                    set_lines.update(|lines_vec| {
+                        // Check if this is a new line or an existing one
+                        if let Some(existing) = lines_vec.iter_mut().find(|l| l.id == new_line.id) {
+                            // Update existing line
+                            *existing = new_line;
+                        } else {
+                            // Add new line
+                            lines_vec.push(new_line);
+                        }
+                    });
+                }
+            />
         </div>
     }
 }

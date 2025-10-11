@@ -361,4 +361,76 @@
             }
         }
     }
+
+    .empty-route-setup {
+        padding: 0.5rem;
+        background-color: #1a1a1a;
+        border: 1px dashed #555;
+        border-radius: 3px;
+        margin-bottom: 0.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+
+        .no-stops {
+            color: #888;
+            font-size: 0.85rem;
+            margin: 0;
+            padding: 0;
+        }
+
+        .station-select {
+            width: 100%;
+            padding: 0.5rem;
+            background-color: #222;
+            color: #aaa;
+            border: 1px solid #444;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            cursor: pointer;
+
+            &:focus {
+                outline: none;
+                border-color: #4a9eff;
+            }
+
+            option[value=""] {
+                color: #888;
+            }
+
+            option:not([value=""]) {
+                color: #fff;
+            }
+        }
+
+        .cancel-button {
+            padding: 0.4rem 0.75rem;
+            background-color: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            align-self: flex-start;
+
+            &:hover {
+                background-color: #333;
+                border-color: #555;
+            }
+
+            &:focus {
+                outline: none;
+                border-color: #4a9eff;
+            }
+        }
+    }
+
+    .no-stops {
+        color: #888;
+        font-size: 0.85rem;
+        text-align: center;
+        padding: 1rem;
+        margin: 0;
+    }
 }

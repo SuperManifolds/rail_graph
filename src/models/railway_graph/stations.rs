@@ -35,6 +35,9 @@ pub trait Stations {
     /// Get all stations in order by traversing the graph
     /// Performs a breadth-first traversal starting from the first station
     fn get_all_stations_ordered(&self) -> Vec<StationNode>;
+
+    /// Get all station names in order
+    fn get_all_station_names(&self) -> Vec<String>;
 }
 
 impl Stations for RailwayGraph {
@@ -200,6 +203,13 @@ impl Stations for RailwayGraph {
         }
 
         ordered
+    }
+
+    fn get_all_station_names(&self) -> Vec<String> {
+        self.get_all_stations_ordered()
+            .into_iter()
+            .map(|s| s.name)
+            .collect()
     }
 }
 
