@@ -36,7 +36,7 @@ pub fn draw_infrastructure(
     // Draw tracks first so they're behind nodes
     track_renderer::draw_tracks(ctx, graph, zoom);
 
-    // Draw stations on top
+    // Draw stations and junctions on top
     station_renderer::draw_stations(ctx, graph, zoom);
 
     // Restore context

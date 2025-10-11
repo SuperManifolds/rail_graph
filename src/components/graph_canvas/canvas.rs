@@ -517,6 +517,7 @@ fn render_graph(
         &ctx,
         &dimensions,
         stations,
+        graph,
         viewport.zoom_level,
         viewport.pan_offset_y,
     );

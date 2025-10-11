@@ -1,6 +1,6 @@
 use crate::models::{Line, RailwayGraph, RouteSegment, Stations, Tracks};
 use chrono::{Duration, Timelike};
-use petgraph::graph::{EdgeIndex, NodeIndex};
+use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use std::collections::HashMap;
 
 /// Parse CSV data into lines and railway graph
@@ -108,9 +108,9 @@ fn build_graph_and_routes_from_csv(
 
             // Mark as passing loop if needed
             if is_passing_loop {
-                if let Some(node) = graph.graph.node_weight_mut(station_idx) {
-                    node.passing_loop = true;
-                }
+                let Some(node) = graph.graph.node_weight_mut(station_idx) else { continue };
+                let Some(station) = node.as_station_mut() else { continue };
+                station.passing_loop = true;
             }
 
             // If there was a previous station, create or reuse edge
@@ -244,7 +244,8 @@ mod tests {
 
         assert_eq!(graph.graph.node_count(), 3);
         let station_b_idx = graph.get_station_index("StationB").expect("StationB should exist");
-        let station_b = graph.graph.node_weight(station_b_idx).expect("node should exist");
+        let node = graph.graph.node_weight(station_b_idx).expect("node should exist");
+        let station_b = node.as_station().expect("should be station");
         assert!(station_b.passing_loop);
 
         // First segment (A->B) arrives at passing loop, should have 0 wait time

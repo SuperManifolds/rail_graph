@@ -1,17 +1,17 @@
-use petgraph::graph::NodeIndex;
+use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use super::RailwayGraph;
 use crate::models::track::{Track, TrackSegment};
 
 /// Extension trait for track-related operations on `RailwayGraph`
 pub trait Tracks {
     /// Add a track segment between two stations, returns the `EdgeIndex`
-    fn add_track(&mut self, from: NodeIndex, to: NodeIndex, tracks: Vec<Track>) -> petgraph::graph::EdgeIndex;
+    fn add_track(&mut self, from: NodeIndex, to: NodeIndex, tracks: Vec<Track>) -> EdgeIndex;
 
     /// Get track segment by edge index
-    fn get_track(&self, edge_idx: petgraph::graph::EdgeIndex) -> Option<&TrackSegment>;
+    fn get_track(&self, edge_idx: EdgeIndex) -> Option<&TrackSegment>;
 
     /// Get endpoints of a track segment
-    fn get_track_endpoints(&self, edge_idx: petgraph::graph::EdgeIndex) -> Option<(NodeIndex, NodeIndex)>;
+    fn get_track_endpoints(&self, edge_idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)>;
 
     /// Toggle between single and double track for edges between two stations
     /// Returns a Vec of (`edge_index`, `new_track_count`) for all modified edges
@@ -19,15 +19,15 @@ pub trait Tracks {
 }
 
 impl Tracks for RailwayGraph {
-    fn add_track(&mut self, from: NodeIndex, to: NodeIndex, tracks: Vec<Track>) -> petgraph::graph::EdgeIndex {
+    fn add_track(&mut self, from: NodeIndex, to: NodeIndex, tracks: Vec<Track>) -> EdgeIndex {
         self.graph.add_edge(from, to, TrackSegment { tracks, distance: None })
     }
 
-    fn get_track(&self, edge_idx: petgraph::graph::EdgeIndex) -> Option<&TrackSegment> {
+    fn get_track(&self, edge_idx: EdgeIndex) -> Option<&TrackSegment> {
         self.graph.edge_weight(edge_idx)
     }
 
-    fn get_track_endpoints(&self, edge_idx: petgraph::graph::EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
+    fn get_track_endpoints(&self, edge_idx: EdgeIndex) -> Option<(NodeIndex, NodeIndex)> {
         self.graph.edge_endpoints(edge_idx)
     }
 
@@ -44,14 +44,19 @@ impl Tracks for RailwayGraph {
             return changed_edges;
         };
 
-        // Find and toggle edges in both directions
-        for edge in self.graph.edge_indices() {
-            let Some((from, to)) = self.graph.edge_endpoints(edge) else {
-                continue;
-            };
-            if (from != node1 || to != node2) && (from != node2 || to != node1) {
-                continue;
-            }
+        // Collect matching edges first to avoid borrow checker issues
+        let matching_edges: Vec<EdgeIndex> = self.graph.edge_indices()
+            .filter(|&edge| {
+                if let Some((from, to)) = self.graph.edge_endpoints(edge) {
+                    (from == node1 && to == node2) || (from == node2 && to == node1)
+                } else {
+                    false
+                }
+            })
+            .collect();
+
+        // Toggle edges
+        for edge in matching_edges {
             let Some(weight) = self.graph.edge_weight_mut(edge) else {
                 continue;
             };

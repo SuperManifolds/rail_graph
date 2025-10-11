@@ -1,22 +1,19 @@
-use crate::models::{RailwayGraph, Line, Track, Stations, Tracks};
+use crate::models::{RailwayGraph, Line, Track, Stations, Tracks, Junctions};
 use crate::components::infrastructure_canvas::{auto_layout, renderer, hit_detection};
+use crate::components::infrastructure_toolbar::{InfrastructureToolbar, EditMode};
 use crate::components::canvas_viewport;
 use crate::components::graph_canvas::types::ViewportState;
 use crate::components::add_station::AddStation;
 use crate::components::delete_station_confirmation::DeleteStationConfirmation;
+use crate::components::edit_junction::EditJunction;
 use crate::components::edit_station::EditStation;
 use crate::components::edit_track::EditTrack;
 use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, IntoView, create_node_ref, create_signal, create_effect, SignalGet, SignalSet, SignalGetUntracked};
-use petgraph::graph::{NodeIndex, EdgeIndex};
+use petgraph::stable_graph::{NodeIndex, EdgeIndex};
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, MouseEvent, WheelEvent};
-
-#[derive(Clone, Copy, PartialEq)]
-enum EditMode {
-    None,
-    AddingTrack,
-}
 
 fn handle_mouse_down_adding_track(
     clicked_station: NodeIndex,
@@ -74,6 +71,68 @@ fn screen_to_world(screen_x: f64, screen_y: f64, zoom: f64, pan_x: f64, pan_y: f
     ((screen_x - pan_x) / zoom, (screen_y - pan_y) / zoom)
 }
 
+fn handle_adding_junction(
+    world_x: f64,
+    world_y: f64,
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<Line>>,
+    set_lines: WriteSignal<Vec<Line>>,
+    set_editing_junction: WriteSignal<Option<NodeIndex>>,
+) {
+    use crate::models::{Junction, Junctions, Tracks};
+
+    let current_graph = graph.get();
+    let Some(clicked_edge) = hit_detection::find_track_at_position(&current_graph, world_x, world_y) else {
+        return;
+    };
+
+    // Get edge details before we modify the graph
+    let Some(edge_ref) = current_graph.graph.edge_references().find(|e| e.id() == clicked_edge) else {
+        return;
+    };
+    let from_node = edge_ref.source();
+    let to_node = edge_ref.target();
+    let tracks = edge_ref.weight().tracks.clone();
+    let old_edge_index = clicked_edge.index();
+    let track_count = tracks.len();
+
+    let mut updated_graph = current_graph;
+    let mut current_lines = lines.get();
+
+    // Create junction at clicked position
+    let junction = Junction {
+        name: None,
+        position: Some((world_x, world_y)),
+        routing_rules: vec![],
+    };
+    let junction_idx = updated_graph.add_junction(junction);
+
+    // Remove the old edge
+    updated_graph.graph.remove_edge(clicked_edge);
+
+    // Create two new edges: from_node -> junction and junction -> to_node
+    let edge1 = updated_graph.add_track(from_node, junction_idx, tracks.clone());
+    let edge2 = updated_graph.add_track(junction_idx, to_node, tracks);
+
+    // Set default routing rules to allow through traffic
+    if let Some(j) = updated_graph.get_junction_mut(junction_idx) {
+        j.set_routing_rule(edge1, edge2, true);
+        j.set_routing_rule(edge2, edge1, true);
+    }
+
+    // Update all lines that used the old edge to now use the two new edges
+    for line in &mut current_lines {
+        line.replace_split_edge(old_edge_index, edge1.index(), edge2.index(), track_count);
+    }
+
+    set_graph.set(updated_graph);
+    set_lines.set(current_lines);
+
+    // Open the edit dialog for the newly created junction
+    set_editing_junction.set(Some(junction_idx));
+}
+
 fn add_station_handler(
     name: String,
     passing_loop: bool,
@@ -89,8 +148,10 @@ fn add_station_handler(
     let node_idx = current_graph.add_or_get_station(name.clone());
 
     if let Some(node) = current_graph.graph.node_weight_mut(node_idx) {
-        node.passing_loop = passing_loop;
-        node.platforms = platforms;
+        if let Some(station) = node.as_station_mut() {
+            station.passing_loop = passing_loop;
+            station.platforms = platforms;
+        }
     }
 
     if let Some(connect_idx) = connect_to {
@@ -116,13 +177,15 @@ fn edit_station_handler(
     let mut current_graph = graph.get();
 
     if let Some(node) = current_graph.graph.node_weight_mut(station_idx) {
-        let old_name = node.name.clone();
-        node.name.clone_from(&new_name);
-        node.passing_loop = passing_loop;
-        node.platforms = platforms;
+        if let Some(station) = node.as_station_mut() {
+            let old_name = station.name.clone();
+            station.name.clone_from(&new_name);
+            station.passing_loop = passing_loop;
+            station.platforms = platforms;
 
-        current_graph.station_name_to_index.remove(&old_name);
-        current_graph.station_name_to_index.insert(new_name, station_idx);
+            current_graph.station_name_to_index.remove(&old_name);
+            current_graph.station_name_to_index.insert(new_name, station_idx);
+        }
     }
 
     set_graph.set(current_graph);
@@ -224,10 +287,22 @@ fn delete_track_handler(
 ) {
     let mut current_graph = graph.get();
     let mut current_lines = lines.get();
+    let edge_index = edge_idx.index();
 
+    // Get endpoints before deleting the edge
+    let endpoints = current_graph.get_track_endpoints(edge_idx);
+
+    // Try to reroute lines before deleting the edge
+    if let Some((from_node, to_node)) = endpoints {
+        for line in &mut current_lines {
+            line.reroute_deleted_edge(edge_index, from_node, to_node, &current_graph);
+        }
+    }
+
+    // Now delete the edge
     current_graph.graph.remove_edge(edge_idx);
 
-    let edge_index = edge_idx.index();
+    // Clean up any segments that still reference the deleted edge (if rerouting failed)
     for line in &mut current_lines {
         line.forward_route.retain(|segment| segment.edge_index != edge_index);
         line.return_route.retain(|segment| segment.edge_index != edge_index);
@@ -236,6 +311,110 @@ fn delete_track_handler(
     set_graph.set(current_graph);
     set_lines.set(current_lines);
     set_editing_track.set(None);
+}
+
+fn edit_junction_handler(
+    junction_idx: NodeIndex,
+    new_name: Option<String>,
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    set_editing_junction: WriteSignal<Option<NodeIndex>>,
+) {
+    let mut current_graph = graph.get();
+
+    if let Some(node) = current_graph.graph.node_weight_mut(junction_idx) {
+        if let Some(junction) = node.as_junction_mut() {
+            junction.name = new_name;
+        }
+    }
+
+    set_graph.set(current_graph);
+    set_editing_junction.set(None);
+}
+
+fn delete_junction_handler(
+    junction_idx: NodeIndex,
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<Line>>,
+    set_lines: WriteSignal<Vec<Line>>,
+    set_editing_junction: WriteSignal<Option<NodeIndex>>,
+) {
+    let mut current_graph = graph.get();
+    let mut current_lines = lines.get();
+
+    let removed_edges = current_graph.delete_junction(junction_idx);
+
+    for line in &mut current_lines {
+        for edge_index in &removed_edges {
+            line.forward_route.retain(|segment| segment.edge_index != *edge_index);
+            line.return_route.retain(|segment| segment.edge_index != *edge_index);
+        }
+    }
+
+    set_graph.set(current_graph);
+    set_lines.set(current_lines);
+    set_editing_junction.set(None);
+}
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn create_handler_callbacks(
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<Line>>,
+    set_lines: WriteSignal<Vec<Line>>,
+    set_show_add_station: WriteSignal<bool>,
+    set_editing_station: WriteSignal<Option<NodeIndex>>,
+    set_editing_junction: WriteSignal<Option<NodeIndex>>,
+    set_editing_track: WriteSignal<Option<EdgeIndex>>,
+    set_delete_affected_lines: WriteSignal<Vec<String>>,
+    set_station_to_delete: WriteSignal<Option<NodeIndex>>,
+    set_delete_station_name: WriteSignal<String>,
+    set_show_delete_confirmation: WriteSignal<bool>,
+    station_to_delete: ReadSignal<Option<NodeIndex>>,
+) -> (
+    Rc<dyn Fn(String, bool, Option<NodeIndex>, Vec<crate::models::Platform>)>,
+    Rc<dyn Fn(NodeIndex, String, bool, Vec<crate::models::Platform>)>,
+    Rc<dyn Fn(NodeIndex)>,
+    Rc<dyn Fn()>,
+    Rc<dyn Fn(EdgeIndex, Vec<Track>, Option<f64>)>,
+    Rc<dyn Fn(EdgeIndex)>,
+    Rc<dyn Fn(NodeIndex, Option<String>)>,
+    Rc<dyn Fn(NodeIndex)>,
+) {
+    let handle_add_station = Rc::new(move |name: String, passing_loop: bool, connect_to: Option<NodeIndex>, platforms: Vec<crate::models::Platform>| {
+        add_station_handler(name, passing_loop, connect_to, platforms, graph, set_graph, set_show_add_station);
+    });
+
+    let handle_edit_station = Rc::new(move |station_idx: NodeIndex, new_name: String, passing_loop: bool, platforms: Vec<crate::models::Platform>| {
+        edit_station_handler(station_idx, new_name, passing_loop, platforms, graph, set_graph, set_editing_station);
+    });
+
+    let handle_delete_station = Rc::new(move |station_idx: NodeIndex| {
+        delete_station_handler(station_idx, graph, lines, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, set_editing_station);
+    });
+
+    let confirm_delete_station = Rc::new(move || {
+        confirm_delete_station_handler(station_to_delete, graph, set_graph, lines, set_lines, set_show_delete_confirmation, set_station_to_delete);
+    });
+
+    let handle_edit_track = Rc::new(move |edge_idx: EdgeIndex, new_tracks: Vec<Track>, new_distance: Option<f64>| {
+        edit_track_handler(edge_idx, new_tracks, new_distance, graph, set_graph, lines, set_lines, set_editing_track);
+    });
+
+    let handle_delete_track = Rc::new(move |edge_idx: EdgeIndex| {
+        delete_track_handler(edge_idx, graph, set_graph, lines, set_lines, set_editing_track);
+    });
+
+    let handle_edit_junction = Rc::new(move |junction_idx: NodeIndex, new_name: Option<String>| {
+        edit_junction_handler(junction_idx, new_name, graph, set_graph, set_editing_junction);
+    });
+
+    let handle_delete_junction = Rc::new(move |junction_idx: NodeIndex| {
+        delete_junction_handler(junction_idx, graph, set_graph, lines, set_lines, set_editing_junction);
+    });
+
+    (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction)
 }
 
 fn get_canvas_cursor_style(
@@ -249,7 +428,7 @@ fn get_canvas_cursor_style(
         "cursor: grabbing;"
     } else {
         match edit_mode.get() {
-            EditMode::AddingTrack => "cursor: pointer;",
+            EditMode::AddingTrack | EditMode::AddingJunction => "cursor: pointer;",
             EditMode::None => {
                 if is_over_edited_station.get() {
                     "cursor: grab;"
@@ -343,8 +522,11 @@ fn create_event_handlers(
     set_selected_station: WriteSignal<Option<NodeIndex>>,
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<Line>>,
+    set_lines: WriteSignal<Vec<Line>>,
     editing_station: ReadSignal<Option<NodeIndex>>,
     set_editing_station: WriteSignal<Option<NodeIndex>>,
+    set_editing_junction: WriteSignal<Option<NodeIndex>>,
     set_editing_track: WriteSignal<Option<EdgeIndex>>,
     dragging_station: ReadSignal<Option<NodeIndex>>,
     set_dragging_station: WriteSignal<Option<NodeIndex>>,
@@ -373,13 +555,19 @@ fn create_event_handlers(
             let pan_y = pan_offset_y.get();
             let (world_x, world_y) = screen_to_world(screen_x, screen_y, zoom, pan_x, pan_y);
 
+            // ev.detail() returns click count: 1 for single, 2 for double, 3 for triple
+            let is_single_click = ev.detail() == 1;
+
             match current_mode {
-                EditMode::AddingTrack => {
+                EditMode::AddingTrack if is_single_click => {
                     let current_graph = graph.get();
                     let Some(clicked_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) else {
                         return;
                     };
                     handle_mouse_down_adding_track(clicked_station, selected_station, set_selected_station, graph, set_graph);
+                }
+                EditMode::AddingJunction if is_single_click => {
+                    handle_adding_junction(world_x, world_y, graph, set_graph, lines, set_lines, set_editing_junction);
                 }
                 EditMode::None => {
                     let current_graph = graph.get();
@@ -393,6 +581,7 @@ fn create_event_handlers(
                         _ => {}
                     }
                 }
+                _ => {}
             }
         }
     };
@@ -469,10 +658,17 @@ fn create_event_handlers(
 
             let current_graph = graph.get();
 
-            if let Some(clicked_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
-                set_editing_station.set(Some(clicked_station));
-            } else if let Some(clicked_track) = hit_detection::find_track_at_position(&current_graph, world_x, world_y) {
-                set_editing_track.set(Some(clicked_track));
+            if let Some(clicked_node) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
+                if current_graph.is_junction(clicked_node) {
+                    set_editing_junction.set(Some(clicked_node));
+                } else {
+                    set_editing_station.set(Some(clicked_node));
+                }
+            } else if matches!(edit_mode.get(), EditMode::None) {
+                // Only open track editor on double-click when not in a special edit mode
+                if let Some(clicked_track) = hit_detection::find_track_at_position(&current_graph, world_x, world_y) {
+                    set_editing_track.set(Some(clicked_track));
+                }
             }
         }
     };
@@ -507,6 +703,7 @@ pub fn InfrastructureView(
     let (selected_station, set_selected_station) = create_signal(None::<NodeIndex>);
     let (show_add_station, set_show_add_station) = create_signal(false);
     let (editing_station, set_editing_station) = create_signal(None::<NodeIndex>);
+    let (editing_junction, set_editing_junction) = create_signal(None::<NodeIndex>);
     let (editing_track, set_editing_track) = create_signal(None::<EdgeIndex>);
     let (show_delete_confirmation, set_show_delete_confirmation) = create_signal(false);
     let (station_to_delete, set_station_to_delete) = create_signal(None::<NodeIndex>);
@@ -524,13 +721,14 @@ pub fn InfrastructureView(
 
     setup_auto_layout_effect(auto_layout_enabled, graph, set_graph, canvas_ref);
 
-    let toggle_auto_layout = move |_| {
+    let toggle_auto_layout = move |()| {
         let new_state = !auto_layout_enabled.get();
         set_auto_layout_enabled.set(new_state);
 
         if new_state {
             let mut current_graph = graph.get();
-            for idx in current_graph.graph.node_indices() {
+            let node_indices: Vec<_> = current_graph.graph.node_indices().collect();
+            for idx in node_indices {
                 current_graph.set_station_position(idx, (0.0, 0.0));
             }
 
@@ -543,35 +741,15 @@ pub fn InfrastructureView(
         }
     };
 
-    let handle_add_station = Rc::new(move |name: String, passing_loop: bool, connect_to: Option<NodeIndex>, platforms: Vec<crate::models::Platform>| {
-        add_station_handler(name, passing_loop, connect_to, platforms, graph, set_graph, set_show_add_station);
-    });
-
-    let handle_edit_station = Rc::new(move |station_idx: NodeIndex, new_name: String, passing_loop: bool, platforms: Vec<crate::models::Platform>| {
-        edit_station_handler(station_idx, new_name, passing_loop, platforms, graph, set_graph, set_editing_station);
-    });
-
-    let handle_delete_station = Rc::new(move |station_idx: NodeIndex| {
-        delete_station_handler(station_idx, graph, lines, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, set_editing_station);
-    });
-
-    let confirm_delete_station = Rc::new(move || {
-        confirm_delete_station_handler(station_to_delete, graph, set_graph, lines, set_lines, set_show_delete_confirmation, set_station_to_delete);
-    });
-
-    let handle_edit_track = Rc::new(move |edge_idx: EdgeIndex, new_tracks: Vec<Track>, new_distance: Option<f64>| {
-        edit_track_handler(edge_idx, new_tracks, new_distance, graph, set_graph, lines, set_lines, set_editing_track);
-    });
-
-    let handle_delete_track = Rc::new(move |edge_idx: EdgeIndex| {
-        delete_track_handler(edge_idx, graph, set_graph, lines, set_lines, set_editing_track);
-    });
+    let (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
+        create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, station_to_delete);
 
     setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref);
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_wheel) = create_event_handlers(
         canvas_ref, edit_mode, selected_station, set_selected_station, graph, set_graph,
-        editing_station, set_editing_station, set_editing_track,
+        lines, set_lines,
+        editing_station, set_editing_station, set_editing_junction, set_editing_track,
         dragging_station, set_dragging_station, set_is_over_station, set_is_over_edited_station, set_is_over_track,
         auto_layout_enabled, &viewport
     );
@@ -586,37 +764,14 @@ pub fn InfrastructureView(
 
     view! {
         <div class="infrastructure-view">
-            <div class="infrastructure-toolbar">
-                <button
-                    class=move || if auto_layout_enabled.get() { "toolbar-button active" } else { "toolbar-button" }
-                    on:click=toggle_auto_layout
-                >
-                    <i class="fa-solid fa-diagram-project"></i>
-                    {move || if auto_layout_enabled.get() { " Auto Layout: On" } else { " Auto Layout: Off" }}
-                </button>
-                <button
-                    class="toolbar-button"
-                    on:click=move |_| set_show_add_station.set(true)
-                >
-                    <i class="fa-solid fa-circle-plus"></i>
-                    " Add Station"
-                </button>
-                <button
-                    class=move || if edit_mode.get() == EditMode::AddingTrack { "toolbar-button active" } else { "toolbar-button" }
-                    on:click=move |_| {
-                        if edit_mode.get() == EditMode::AddingTrack {
-                            set_edit_mode.set(EditMode::None);
-                            set_selected_station.set(None);
-                        } else {
-                            set_edit_mode.set(EditMode::AddingTrack);
-                            set_selected_station.set(None);
-                        }
-                    }
-                >
-                    <i class="fa-solid fa-link"></i>
-                    " Add Track"
-                </button>
-            </div>
+            <InfrastructureToolbar
+                auto_layout_enabled=auto_layout_enabled
+                toggle_auto_layout=toggle_auto_layout
+                set_show_add_station=set_show_add_station
+                edit_mode=edit_mode
+                set_edit_mode=set_edit_mode
+                set_selected_station=set_selected_station
+            />
             <div class="infrastructure-canvas-container">
                 <canvas
                     node_ref=canvas_ref
@@ -645,6 +800,15 @@ pub fn InfrastructureView(
                 on_save=handle_edit_station
                 on_delete=handle_delete_station
                 graph=graph
+            />
+
+            <EditJunction
+                editing_junction=editing_junction
+                on_close=Rc::new(move || set_editing_junction.set(None))
+                on_save=handle_edit_junction
+                on_delete=handle_delete_junction
+                graph=graph
+                set_graph=set_graph
             />
 
             <EditTrack
