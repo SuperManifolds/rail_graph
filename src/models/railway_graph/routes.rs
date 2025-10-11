@@ -422,4 +422,84 @@ mod tests {
         let end_stations = graph.get_available_end_stations(&route, RouteDirection::Forward);
         assert_eq!(end_stations.len(), 0);
     }
+
+    #[test]
+    fn test_find_path_between_nodes_direct() {
+        let mut graph = RailwayGraph::new();
+        let a = graph.add_or_get_station("A".to_string());
+        let b = graph.add_or_get_station("B".to_string());
+
+        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // Direct path exists
+        let path = graph.find_path_between_nodes(a, b);
+        assert!(path.is_some());
+        if let Some(path) = path {
+            assert_eq!(path.len(), 1);
+            assert_eq!(path[0].index(), e1.index());
+        }
+    }
+
+    #[test]
+    fn test_find_path_between_nodes_indirect() {
+        let mut graph = RailwayGraph::new();
+        let a = graph.add_or_get_station("A".to_string());
+        let b = graph.add_or_get_station("B".to_string());
+        let c = graph.add_or_get_station("C".to_string());
+
+        // Create A -> B -> C
+        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e2 = graph.add_track(b, c, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // Find path from A to C (should go through B)
+        let path = graph.find_path_between_nodes(a, c);
+        assert!(path.is_some());
+        if let Some(path) = path {
+            assert_eq!(path.len(), 2);
+            assert_eq!(path[0].index(), e1.index());
+            assert_eq!(path[1].index(), e2.index());
+        }
+    }
+
+    #[test]
+    fn test_find_path_between_nodes_no_path() {
+        let mut graph = RailwayGraph::new();
+        let a = graph.add_or_get_station("A".to_string());
+        let b = graph.add_or_get_station("B".to_string());
+        let c = graph.add_or_get_station("C".to_string());
+
+        // Create A -> B, but C is disconnected
+        graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // No path from A to C
+        let path = graph.find_path_between_nodes(a, c);
+        assert!(path.is_none());
+    }
+
+    #[test]
+    fn test_find_path_between_nodes_through_junction() {
+        use crate::models::{Junctions, Junction};
+
+        let mut graph = RailwayGraph::new();
+        let a = graph.add_or_get_station("A".to_string());
+        let b = graph.add_or_get_station("B".to_string());
+        let j = graph.add_junction(Junction {
+            name: Some("J".to_string()),
+            position: None,
+            routing_rules: vec![],
+        });
+
+        // Create A -> J -> B
+        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // Find path from A to B through junction
+        let path = graph.find_path_between_nodes(a, b);
+        assert!(path.is_some());
+        if let Some(path) = path {
+            assert_eq!(path.len(), 2);
+            assert_eq!(path[0].index(), e1.index());
+            assert_eq!(path[1].index(), e2.index());
+        }
+    }
 }

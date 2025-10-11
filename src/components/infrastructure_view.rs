@@ -289,9 +289,14 @@ fn delete_track_handler(
     let mut current_lines = lines.get();
     let edge_index = edge_idx.index();
 
+    // Get endpoints before deleting the edge
+    let endpoints = current_graph.get_track_endpoints(edge_idx);
+
     // Try to reroute lines before deleting the edge
-    for line in &mut current_lines {
-        line.reroute_deleted_edge(edge_index, &current_graph);
+    if let Some((from_node, to_node)) = endpoints {
+        for line in &mut current_lines {
+            line.reroute_deleted_edge(edge_index, from_node, to_node, &current_graph);
+        }
     }
 
     // Now delete the edge

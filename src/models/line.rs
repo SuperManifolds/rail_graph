@@ -327,15 +327,18 @@ impl Line {
     }
 
     /// Attempt to reroute segments that use a deleted edge
+    /// `deleted_edge`: The edge index that was deleted
+    /// `from_node`: The source node of the deleted edge
+    /// `to_node`: The target node of the deleted edge
     /// Returns true if any rerouting was performed
-    pub fn reroute_deleted_edge(&mut self, deleted_edge: usize, graph: &RailwayGraph) -> bool {
+    pub fn reroute_deleted_edge(&mut self, deleted_edge: usize, from_node: NodeIndex, to_node: NodeIndex, graph: &RailwayGraph) -> bool {
         let mut changed = false;
 
         // Check forward route
-        changed |= Self::reroute_single_direction(&mut self.forward_route, deleted_edge, graph);
+        changed |= Self::reroute_single_direction(&mut self.forward_route, deleted_edge, from_node, to_node, graph);
 
         // Check return route
-        changed |= Self::reroute_single_direction(&mut self.return_route, deleted_edge, graph);
+        changed |= Self::reroute_single_direction(&mut self.return_route, deleted_edge, from_node, to_node, graph);
 
         changed
     }
@@ -344,10 +347,11 @@ impl Line {
     fn reroute_single_direction(
         route: &mut Vec<RouteSegment>,
         deleted_edge: usize,
+        from_node: NodeIndex,
+        to_node: NodeIndex,
         graph: &RailwayGraph,
     ) -> bool {
         use super::Routes;
-        use petgraph::stable_graph::EdgeIndex;
 
         // Find all segments using the deleted edge
         let positions: Vec<usize> = route.iter()
@@ -364,14 +368,8 @@ impl Line {
 
         for &pos in positions.iter().rev() {
             let segment = &route[pos];
-            let edge_idx = EdgeIndex::new(segment.edge_index);
 
-            // Get endpoints of deleted edge
-            let Some((from_node, to_node)) = graph.get_track_endpoints(edge_idx) else {
-                continue;
-            };
-
-            // Try to find alternative path
+            // Try to find alternative path between the endpoints
             let Some(path) = graph.find_path_between_nodes(from_node, to_node) else {
                 continue;
             };
@@ -704,5 +702,142 @@ mod tests {
 
         assert_eq!(seg1, seg2);
         assert_ne!(seg1, seg3);
+    }
+
+    #[test]
+    fn test_replace_split_edge() {
+        let mut line = Line {
+            id: "Test".to_string(),
+            frequency: Duration::hours(1),
+            color: "#FF0000".to_string(),
+            thickness: 2.0,
+            first_departure: BASE_MIDNIGHT,
+            return_first_departure: BASE_MIDNIGHT,
+            visible: true,
+            schedule_mode: ScheduleMode::Auto,
+            manual_departures: vec![],
+            forward_route: vec![
+                create_test_segment(5),
+                create_test_segment(10),
+                create_test_segment(15),
+            ],
+            return_route: vec![
+                create_test_segment(15),
+                create_test_segment(10),
+                create_test_segment(5),
+            ],
+        };
+
+        // Split edge 10 into edges 20 and 21
+        line.replace_split_edge(10, 20, 21, 1);
+
+        // Forward route should have: 5, 20, 21, 15
+        assert_eq!(line.forward_route.len(), 4);
+        assert_eq!(line.forward_route[0].edge_index, 5);
+        assert_eq!(line.forward_route[1].edge_index, 20);
+        assert_eq!(line.forward_route[2].edge_index, 21);
+        assert_eq!(line.forward_route[3].edge_index, 15);
+
+        // Return route should have: 15, 21, 20, 5 (reversed order for split edges)
+        assert_eq!(line.return_route.len(), 4);
+        assert_eq!(line.return_route[0].edge_index, 15);
+        assert_eq!(line.return_route[1].edge_index, 21);
+        assert_eq!(line.return_route[2].edge_index, 20);
+        assert_eq!(line.return_route[3].edge_index, 5);
+
+        // Check duration is split in half
+        assert_eq!(line.forward_route[1].duration, Duration::minutes(5) / 2);
+        assert_eq!(line.forward_route[2].duration, Duration::minutes(5) / 2);
+    }
+
+    #[test]
+    fn test_reroute_deleted_edge() {
+        use crate::models::{Junctions, Junction};
+
+        let mut graph = RailwayGraph::new();
+
+        // Create: A -> B -> C with a junction creating an alternative path
+        let a = graph.add_or_get_station("A".to_string());
+        let b = graph.add_or_get_station("B".to_string());
+        let c = graph.add_or_get_station("C".to_string());
+        let j = graph.add_junction(Junction {
+            name: Some("Junction".to_string()),
+            position: None,
+            routing_rules: vec![],
+        });
+
+        // Direct path: A -> B -> C
+        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e2 = graph.add_track(b, c, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // Alternative path through junction: B -> J -> C
+        let _e3 = graph.add_track(b, j, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let _e4 = graph.add_track(j, c, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let mut line = Line {
+            id: "Test".to_string(),
+            frequency: Duration::hours(1),
+            color: "#FF0000".to_string(),
+            thickness: 2.0,
+            first_departure: BASE_MIDNIGHT,
+            return_first_departure: BASE_MIDNIGHT,
+            visible: true,
+            schedule_mode: ScheduleMode::Auto,
+            manual_departures: vec![],
+            forward_route: vec![
+                create_test_segment(e1.index()),
+                create_test_segment(e2.index()),
+            ],
+            return_route: vec![],
+        };
+
+        // Delete the direct edge B -> C
+        graph.graph.remove_edge(e2);
+
+        // Try to reroute - pass the endpoints we know (b and c)
+        let changed = line.reroute_deleted_edge(e2.index(), b, c, &graph);
+
+        // Should have found the alternative path through the junction
+        assert!(changed);
+        assert_eq!(line.forward_route.len(), 3);
+        assert_eq!(line.forward_route[0].edge_index, e1.index());
+        // The last two segments should be the alternative path (b->j->c)
+        // We don't check exact indices since they could be e3/e4 in any order
+    }
+
+    #[test]
+    fn test_reroute_deleted_edge_no_alternative() {
+        let mut graph = RailwayGraph::new();
+
+        // Create: A -> B with no alternative path
+        let a = graph.add_or_get_station("A".to_string());
+        let b = graph.add_or_get_station("B".to_string());
+
+        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let mut line = Line {
+            id: "Test".to_string(),
+            frequency: Duration::hours(1),
+            color: "#FF0000".to_string(),
+            thickness: 2.0,
+            first_departure: BASE_MIDNIGHT,
+            return_first_departure: BASE_MIDNIGHT,
+            visible: true,
+            schedule_mode: ScheduleMode::Auto,
+            manual_departures: vec![],
+            forward_route: vec![create_test_segment(e1.index())],
+            return_route: vec![],
+        };
+
+        // Delete the edge
+        graph.graph.remove_edge(e1);
+
+        // Try to reroute - should fail because no alternative exists
+        let changed = line.reroute_deleted_edge(e1.index(), a, b, &graph);
+
+        // Should not have changed (no alternative path found)
+        assert!(!changed);
+        assert_eq!(line.forward_route.len(), 1);
+        assert_eq!(line.forward_route[0].edge_index, e1.index());
     }
 }
