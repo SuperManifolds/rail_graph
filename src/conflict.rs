@@ -117,6 +117,9 @@ pub fn detect_line_conflicts(
     train_journeys: &[TrainJourney],
     graph: &RailwayGraph,
 ) -> (Vec<Conflict>, Vec<StationCrossing>) {
+    let window = web_sys::window().expect("should have a window");
+    let performance = window.performance().expect("should have performance");
+    let start = performance.now();
     let mut results = ConflictResults {
         conflicts: Vec::new(),
         station_crossings: Vec::new(),
@@ -138,19 +141,107 @@ pub fn detect_line_conflicts(
         station_margin: chrono::Duration::minutes(STATION_MARGIN_MINUTES),
     };
 
-    // Compare each pair of journeys
-    for (i, journey1) in train_journeys.iter().enumerate() {
-        if results.conflicts.len() >= MAX_CONFLICTS {
-            break;
-        }
-        for journey2 in train_journeys.iter().skip(i + 1) {
-            check_journey_pair(journey1, journey2, &ctx, &mut results);
+    // For small datasets, use simple approach with early filtering
+    // Spatial partitioning only helps with larger datasets
+    if train_journeys.len() < 200 {
+        // Simple O(n²) with early time filtering
+        for (i, journey1) in train_journeys.iter().enumerate() {
             if results.conflicts.len() >= MAX_CONFLICTS {
                 break;
             }
+
+            let j1_start = journey1.station_times.first().map(|(_, arr, _)| *arr);
+            let j1_end = journey1.station_times.last().map(|(_, _, dep)| *dep);
+
+            for journey2 in train_journeys.iter().skip(i + 1) {
+                // Early time-based filtering - skip if no overlap in time
+                let Some((start1, end1)) = j1_start.zip(j1_end) else {
+                    continue;
+                };
+
+                let Some((_, start2, _)) = journey2.station_times.first() else {
+                    continue;
+                };
+                let Some((_, _, end2)) = journey2.station_times.last() else {
+                    continue;
+                };
+
+                if end1 < *start2 || *end2 < start1 {
+                    continue; // No time overlap
+                }
+
+                check_journey_pair(journey1, journey2, &ctx, &mut results);
+                if results.conflicts.len() >= MAX_CONFLICTS {
+                    break;
+                }
+            }
         }
+    } else {
+        // Sweep-line algorithm: sort journeys by start time, only compare overlapping ones
+        // This gives us O(n * m) where m is the average number of overlapping journeys (much smaller than n)
+
+        // Create sorted index array with (start_time, end_time, index)
+        let mut journey_times: Vec<(NaiveDateTime, NaiveDateTime, usize)> = train_journeys
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, journey)| {
+                if let (Some((_, start, _)), Some((_, _, end))) =
+                    (journey.station_times.first(), journey.station_times.last()) {
+                    Some((*start, *end, idx))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Sort by start time
+        journey_times.sort_by_key(|(start, _, _)| *start);
+
+        web_sys::console::log_1(&format!("Using sweep-line algorithm for {} journeys", journey_times.len()).into());
+
+        let mut comparisons = 0;
+
+        // For each journey, only compare with journeys that could overlap in time
+        for i in 0..journey_times.len() {
+            if results.conflicts.len() >= MAX_CONFLICTS {
+                break;
+            }
+
+            let (start_i, end_i, idx_i) = journey_times[i];
+            let journey_i = &train_journeys[idx_i];
+
+            // Only check journeys that start before journey_i ends
+            // Once we find a journey that starts after journey_i ends, we can stop
+            for (start_j, end_j, idx_j) in journey_times.iter().skip(i + 1) {
+
+                // If journey j starts after journey i ends, no more overlaps possible
+                if *start_j >= end_i {
+                    break;
+                }
+
+                // Additional check: if journey i starts after journey j ends, skip
+                if start_i >= *end_j {
+                    continue;
+                }
+
+                comparisons += 1;
+
+                let journey_j = &train_journeys[*idx_j];
+                check_journey_pair(journey_i, journey_j, &ctx, &mut results);
+
+                if results.conflicts.len() >= MAX_CONFLICTS {
+                    break;
+                }
+            }
+        }
+
+        web_sys::console::log_1(&format!("Sweep-line made {} comparisons (vs {} for naive O(n²))",
+            comparisons, train_journeys.len() * (train_journeys.len() - 1) / 2).into());
     }
 
+    let duration = performance.now() - start;
+    web_sys::console::log_1(&format!("Conflict detection took: {:.2}ms ({} conflicts, {} crossings from {} journeys)",
+        duration, results.conflicts.len(), results.station_crossings.len(), train_journeys.len()).into());
     (results.conflicts, results.station_crossings)
 }
 
@@ -162,6 +253,10 @@ fn check_journey_pair(
 ) {
     // Check for platform conflicts first
     check_platform_conflicts(journey1, journey2, ctx, results);
+
+    // Pre-build segment lookup maps for both journeys to avoid O(n) lookups in inner loops
+    let seg1_map = build_segment_lookup_map(journey1, ctx);
+    let seg2_map = build_segment_lookup_map(journey2, ctx);
 
     let mut prev1: Option<(NaiveDateTime, usize)> = None;
 
@@ -177,10 +272,34 @@ fn check_journey_pair(
                 idx_start: prev_idx1,
                 idx_end: station1_idx,
             };
-            check_segment_against_journey(&segment1, journey1, journey2, ctx, results);
+            check_segment_against_journey(&segment1, journey1, journey2, ctx, results, &seg1_map, &seg2_map);
         }
         prev1 = Some((*departure_time1, station1_idx));
     }
+}
+
+/// Build a lookup map from (`start_idx`, `end_idx`) -> segment info for fast lookups
+fn build_segment_lookup_map<'a>(
+    journey: &'a TrainJourney,
+    ctx: &ConflictContext,
+) -> HashMap<(usize, usize), &'a crate::train_journey::JourneySegment> {
+    let mut map = HashMap::new();
+
+    for (i, _) in journey.station_times.iter().enumerate().skip(1) {
+        if i - 1 < journey.segments.len() {
+            let station1_name = &journey.station_times[i - 1].0;
+            let station2_name = &journey.station_times[i].0;
+
+            if let (Some(&s1_idx), Some(&s2_idx)) = (
+                ctx.station_indices.get(station1_name.as_str()),
+                ctx.station_indices.get(station2_name.as_str()),
+            ) {
+                map.insert((s1_idx, s2_idx), &journey.segments[i - 1]);
+            }
+        }
+    }
+
+    map
 }
 
 fn check_segment_against_journey(
@@ -189,11 +308,27 @@ fn check_segment_against_journey(
     journey2: &TrainJourney,
     ctx: &ConflictContext,
     results: &mut ConflictResults,
+    seg1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
+    seg2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
 ) {
     let seg1_min = segment1.idx_start.min(segment1.idx_end);
     let seg1_max = segment1.idx_start.max(segment1.idx_end);
 
     let mut prev2: Option<(NaiveDateTime, usize)> = None;
+
+    // Early exit: if segment1 ends before journey2 starts, no conflicts possible
+    if let Some((_, j2_start, _)) = journey2.station_times.first() {
+        if segment1.time_end < *j2_start {
+            return;
+        }
+    }
+
+    // Early exit: if segment1 starts after journey2 ends, no conflicts possible
+    if let Some((_, _, j2_end)) = journey2.station_times.last() {
+        if segment1.time_start > *j2_end {
+            return;
+        }
+    }
 
     for (station2, arrival_time2, departure_time2) in &journey2.station_times {
         let Some(&station2_idx) = ctx.station_indices.get(station2.as_str()) else {
@@ -208,17 +343,21 @@ fn check_segment_against_journey(
                 idx_end: station2_idx,
             };
 
-            check_segment_pair(
-                segment1, &segment2, seg1_min, seg1_max, journey1, journey2, ctx, results,
-            );
-            if results.conflicts.len() >= MAX_CONFLICTS {
-                return;
+            // Skip if segments don't overlap in time
+            if !(segment1.time_end < segment2.time_start || segment2.time_end < segment1.time_start) {
+                check_segment_pair(
+                    segment1, &segment2, seg1_min, seg1_max, journey1, journey2, ctx, results, seg1_map, seg2_map,
+                );
+                if results.conflicts.len() >= MAX_CONFLICTS {
+                    return;
+                }
             }
         }
         prev2 = Some((*departure_time2, station2_idx));
     }
 }
 
+#[allow(clippy::too_many_arguments, clippy::similar_names)]
 fn check_segment_pair(
     segment1: &JourneySegment,
     segment2: &JourneySegment,
@@ -228,6 +367,8 @@ fn check_segment_pair(
     journey2: &TrainJourney,
     ctx: &ConflictContext,
     results: &mut ConflictResults,
+    segment1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
+    segment2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
 ) {
     // Check if the segments overlap in space
     let seg2_min = segment2.idx_start.min(segment2.idx_end);
@@ -237,10 +378,9 @@ fn check_segment_pair(
         return;
     }
 
-    // Get segment info from journeys for track-level checking
-    // Find which segment indices these correspond to
-    let seg1_info = find_journey_segment_info(journey1, segment1.idx_start, segment1.idx_end, ctx);
-    let seg2_info = find_journey_segment_info(journey2, segment2.idx_start, segment2.idx_end, ctx);
+    // Get segment info from pre-built lookup maps - O(1) instead of O(n)
+    let seg1_info = segment1_map.get(&(segment1.idx_start, segment1.idx_end));
+    let seg2_info = segment2_map.get(&(segment2.idx_start, segment2.idx_end));
 
     // Both segments must have track info to check for conflicts
     let (Some(info1), Some(info2)) = (seg1_info, seg2_info) else {
@@ -391,37 +531,6 @@ fn check_segment_pair(
     });
 }
 
-/// Find segment info (`edge_index`, `track_index`) for a journey segment
-fn find_journey_segment_info<'a>(
-    journey: &'a TrainJourney,
-    idx_start: usize,
-    idx_end: usize,
-    ctx: &ConflictContext,
-) -> Option<&'a crate::train_journey::JourneySegment> {
-    // idx_start and idx_end are global station indices from station_indices HashMap
-    // We need to find which segment in this journey connects those two stations
-
-    for (i, _) in journey.station_times.iter().enumerate().skip(1) {
-        if i - 1 < journey.segments.len() {
-            // Get the station names at positions i-1 and i in this journey
-            let station1_name = &journey.station_times[i - 1].0;
-            let station2_name = &journey.station_times[i].0;
-
-            // Look up their global indices
-            if let (Some(&s1_idx), Some(&s2_idx)) = (
-                ctx.station_indices.get(station1_name.as_str()),
-                ctx.station_indices.get(station2_name.as_str()),
-            ) {
-                // Check if this segment matches (must match exact direction)
-                if idx_start == s1_idx && idx_end == s2_idx {
-                    return Some(&journey.segments[i - 1]);
-                }
-            }
-        }
-    }
-
-    None
-}
 
 /// Check if two edges are reverse edges connecting the same stations with bidirectional tracks
 fn are_reverse_bidirectional_edges(
