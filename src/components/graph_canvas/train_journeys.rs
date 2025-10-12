@@ -19,109 +19,93 @@ pub fn draw_train_journeys(
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
-    use std::collections::HashMap;
-
     let station_height = dims.graph_height / stations.len() as f64;
 
-    // Group journeys by color and thickness for batching
-    let mut journeys_by_style: HashMap<(String, u32), Vec<&TrainJourney>> = HashMap::new();
+    // Draw lines for each journey
     for journey in train_journeys {
-        if !journey.station_indices.is_empty() {
-            // Convert thickness to integer microns to use as key
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let thickness_key = (journey.thickness * 1000.0) as u32;
-            journeys_by_style
-                .entry((journey.color.clone(), thickness_key))
-                .or_default()
-                .push(journey);
-        }
-    }
-
-    // Draw all journeys grouped by style
-    for ((color, thickness_key), journeys) in &journeys_by_style {
-        let thickness = f64::from(*thickness_key) / 1000.0;
-
-        // Set style once for all journeys of this color/thickness
-        ctx.set_stroke_style_str(color);
-        ctx.set_line_width(thickness / zoom_level);
-
-        // Draw each journey as a separate path to avoid z-fighting
-        for journey in journeys {
-            ctx.begin_path();
-            let mut first_point = true;
-            let mut prev_x = 0.0;
-
-            for (i, (_station_name, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
-                let station_idx = journey.station_indices[i];
-                let arrival_fraction = time_to_fraction(*arrival_time);
-                let departure_fraction = time_to_fraction(*departure_time);
-                let mut arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
-                let mut departure_x = dims.left_margin + (departure_fraction * dims.hour_width);
-
-                if !first_point && arrival_x < prev_x - dims.graph_width * MIDNIGHT_WRAP_THRESHOLD {
-                    arrival_x += dims.graph_width;
-                    departure_x += dims.graph_width;
-                }
-                let y = dims.top_margin
-                    + (station_idx as f64 * station_height)
-                    + (station_height / 2.0);
-
-                if first_point {
-                    ctx.move_to(arrival_x, y);
-                    first_point = false;
-                } else {
-                    ctx.line_to(arrival_x, y);
-                }
-
-                if (arrival_x - departure_x).abs() > f64::EPSILON {
-                    ctx.line_to(departure_x, y);
-                }
-
-                prev_x = departure_x;
-            }
-
-            // Stroke each journey individually
-            ctx.stroke();
+        if journey.station_indices.is_empty() {
+            continue;
         }
 
-        // Draw all dots in a single path for this style
-        ctx.set_fill_style_str(color);
-        let dot_radius = (thickness * DOT_RADIUS_MULTIPLIER).max(MIN_DOT_RADIUS);
+        ctx.set_stroke_style_str(&journey.color);
+        ctx.set_line_width(journey.thickness / zoom_level);
         ctx.begin_path();
 
-        for journey in journeys {
-            let mut prev_x = 0.0;
-            for (i, (_station_name, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
-                let station_idx = journey.station_indices[i];
-                let arrival_fraction = time_to_fraction(*arrival_time);
-                let departure_fraction = time_to_fraction(*departure_time);
-                let mut arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
-                let mut departure_x = dims.left_margin + (departure_fraction * dims.hour_width);
+        let mut first_point = true;
+        let mut prev_x = 0.0;
 
-                if prev_x > 0.0 && arrival_x < prev_x - dims.graph_width * MIDNIGHT_WRAP_THRESHOLD {
-                    arrival_x += dims.graph_width;
-                    departure_x += dims.graph_width;
-                }
+        for (i, (_station_name, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
+            let station_idx = journey.station_indices[i];
+            let arrival_fraction = time_to_fraction(*arrival_time);
+            let departure_fraction = time_to_fraction(*departure_time);
+            let mut arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
+            let mut departure_x = dims.left_margin + (departure_fraction * dims.hour_width);
 
-                let y = dims.top_margin
-                    + (station_idx as f64 * station_height)
-                    + (station_height / 2.0);
-
-                // Add arrival dot to path (move_to starts a new subpath)
-                ctx.move_to(arrival_x + dot_radius / zoom_level, y);
-                let _ = ctx.arc(arrival_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
-
-                // Add departure dot if different from arrival
-                if (arrival_x - departure_x).abs() > f64::EPSILON {
-                    ctx.move_to(departure_x + dot_radius / zoom_level, y);
-                    let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
-                }
-
-                prev_x = departure_x;
+            if !first_point && arrival_x < prev_x - dims.graph_width * MIDNIGHT_WRAP_THRESHOLD {
+                arrival_x += dims.graph_width;
+                departure_x += dims.graph_width;
             }
+            let y = dims.top_margin
+                + (station_idx as f64 * station_height)
+                + (station_height / 2.0);
+
+            if first_point {
+                ctx.move_to(arrival_x, y);
+                first_point = false;
+            } else {
+                ctx.line_to(arrival_x, y);
+            }
+
+            if (arrival_x - departure_x).abs() > f64::EPSILON {
+                ctx.line_to(departure_x, y);
+            }
+
+            prev_x = departure_x;
         }
 
-        // Fill all dots at once
+        ctx.stroke();
+    }
+
+    // Draw dots for each journey
+    for journey in train_journeys {
+        if journey.station_indices.is_empty() {
+            continue;
+        }
+
+        ctx.set_fill_style_str(&journey.color);
+        let dot_radius = (journey.thickness * DOT_RADIUS_MULTIPLIER).max(MIN_DOT_RADIUS);
+        ctx.begin_path();
+
+        let mut prev_x = 0.0;
+        for (i, (_station_name, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
+            let station_idx = journey.station_indices[i];
+            let arrival_fraction = time_to_fraction(*arrival_time);
+            let departure_fraction = time_to_fraction(*departure_time);
+            let mut arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
+            let mut departure_x = dims.left_margin + (departure_fraction * dims.hour_width);
+
+            if prev_x > 0.0 && arrival_x < prev_x - dims.graph_width * MIDNIGHT_WRAP_THRESHOLD {
+                arrival_x += dims.graph_width;
+                departure_x += dims.graph_width;
+            }
+
+            let y = dims.top_margin
+                + (station_idx as f64 * station_height)
+                + (station_height / 2.0);
+
+            // Add arrival dot to path (move_to starts a new subpath)
+            ctx.move_to(arrival_x + dot_radius / zoom_level, y);
+            let _ = ctx.arc(arrival_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+
+            // Add departure dot if different from arrival
+            if (arrival_x - departure_x).abs() > f64::EPSILON {
+                ctx.move_to(departure_x + dot_radius / zoom_level, y);
+                let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+            }
+
+            prev_x = departure_x;
+        }
+
         ctx.fill();
     }
 }
