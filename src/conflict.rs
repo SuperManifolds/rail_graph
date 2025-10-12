@@ -516,7 +516,8 @@ fn check_segment_against_journey(
             };
 
             // Skip if segments don't overlap in time
-            if !(segment1.time_end < segment2.time_start || segment2.time_end < segment1.time_start) {
+            let segments_overlap_in_time = segment1.time_end >= segment2.time_start && segment2.time_end >= segment1.time_start;
+            if segments_overlap_in_time {
                 check_segment_pair(
                     segment1, &segment2, seg1_min, seg1_max, journey1, journey2, ctx, results, segment1_map, segment2_map,
                 );
