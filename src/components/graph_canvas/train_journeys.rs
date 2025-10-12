@@ -41,12 +41,13 @@ pub fn draw_train_journeys(
     for ((color, thickness_key), journeys) in &journeys_by_style {
         let thickness = f64::from(*thickness_key) / 1000.0;
 
+        // Set style once for all journeys of this color/thickness
         ctx.set_stroke_style_str(color);
         ctx.set_line_width(thickness / zoom_level);
-        ctx.begin_path();
 
-        // Draw all line paths for this style
+        // Draw each journey as a separate path to avoid z-fighting
         for journey in journeys {
+            ctx.begin_path();
             let mut first_point = true;
             let mut prev_x = 0.0;
 
@@ -78,14 +79,15 @@ pub fn draw_train_journeys(
 
                 prev_x = departure_x;
             }
+
+            // Stroke each journey individually
+            ctx.stroke();
         }
 
-        // Stroke all lines for this style at once
-        ctx.stroke();
-
-        // Draw dots in batches
+        // Draw all dots in a single path for this style
         ctx.set_fill_style_str(color);
         let dot_radius = (thickness * DOT_RADIUS_MULTIPLIER).max(MIN_DOT_RADIUS);
+        ctx.begin_path();
 
         for journey in journeys {
             let mut prev_x = 0.0;
@@ -105,19 +107,22 @@ pub fn draw_train_journeys(
                     + (station_idx as f64 * station_height)
                     + (station_height / 2.0);
 
-                ctx.begin_path();
+                // Add arrival dot to path (move_to starts a new subpath)
+                ctx.move_to(arrival_x + dot_radius / zoom_level, y);
                 let _ = ctx.arc(arrival_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
-                ctx.fill();
 
+                // Add departure dot if different from arrival
                 if (arrival_x - departure_x).abs() > f64::EPSILON {
-                    ctx.begin_path();
+                    ctx.move_to(departure_x + dot_radius / zoom_level, y);
                     let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
-                    ctx.fill();
                 }
 
                 prev_x = departure_x;
             }
         }
+
+        // Fill all dots at once
+        ctx.fill();
     }
 }
 
@@ -152,7 +157,6 @@ pub fn check_journey_hover(
                 mouse_x,
                 mouse_y,
                 journey,
-                stations,
                 graph_width,
                 station_height,
                 viewport,
@@ -165,7 +169,6 @@ fn check_single_journey_hover(
     mouse_x: f64,
     mouse_y: f64,
     journey: &TrainJourney,
-    stations: &[StationNode],
     graph_width: f64,
     station_height: f64,
     viewport: &super::types::ViewportState,
@@ -179,10 +182,8 @@ fn check_single_journey_hover(
     let mut first_point = true;
     let mut prev_x = 0.0;
 
-    for (station_name, arrival_time, departure_time) in &journey.station_times {
-        let Some(station_idx) = stations.iter().position(|s| s.name == *station_name) else {
-            continue;
-        };
+    for (i, (_station_name, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
+        let station_idx = journey.station_indices[i];
 
         let arrival_fraction = time_to_fraction(*arrival_time);
         let departure_fraction = time_to_fraction(*departure_time);

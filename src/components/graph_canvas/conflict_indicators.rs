@@ -33,12 +33,17 @@ const BLOCK_BORDER_WIDTH: f64 = 1.0;
 pub fn draw_conflict_highlights(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    conflicts: &[Conflict],
+    conflicts: &[&Conflict],
     station_height: f64,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
-    // Limit to first 1000 conflicts to prevent performance issues
+    let size = CONFLICT_TRIANGLE_SIZE / zoom_level;
+
+    // Batch all triangle fills
+    ctx.set_fill_style_str(CONFLICT_FILL_COLOR);
+    ctx.begin_path();
+
     for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
         let time_fraction = time_to_fraction(conflict.time);
         let x = dims.left_margin + (time_fraction * dims.hour_width);
@@ -51,39 +56,83 @@ pub fn draw_conflict_highlights(
                 * station_height
                 * (conflict.station2_idx - conflict.station1_idx) as f64);
 
-        // Draw a warning triangle at the conflict point
-        let size = CONFLICT_TRIANGLE_SIZE / zoom_level;
-        ctx.set_line_width(CONFLICT_LINE_WIDTH / zoom_level);
-
-        // Draw filled triangle
-        ctx.begin_path();
-        ctx.move_to(x, y - size); // Top point
-        ctx.line_to(x - size * 0.866, y + size * 0.5); // Bottom left
-        ctx.line_to(x + size * 0.866, y + size * 0.5); // Bottom right
+        // Add triangle to batch
+        ctx.move_to(x, y - size);
+        ctx.line_to(x - size * 0.866, y + size * 0.5);
+        ctx.line_to(x + size * 0.866, y + size * 0.5);
         ctx.close_path();
+    }
 
-        // Fill with warning color
-        ctx.set_fill_style_str(CONFLICT_FILL_COLOR);
-        ctx.fill();
+    // Fill all triangles at once
+    ctx.fill();
 
-        // Stroke with thick black border
-        ctx.set_stroke_style_str(CONFLICT_STROKE_COLOR);
-        ctx.stroke();
+    // Batch all triangle strokes
+    ctx.set_stroke_style_str(CONFLICT_STROKE_COLOR);
+    ctx.set_line_width(CONFLICT_LINE_WIDTH / zoom_level);
+    ctx.begin_path();
 
-        // Draw exclamation mark inside triangle
-        ctx.set_fill_style_str(CONFLICT_ICON_COLOR);
-        ctx.set_font(&format!(
-            "bold {}px sans-serif",
-            CONFLICT_ICON_FONT_SIZE / zoom_level
-        ));
+    for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
+        let time_fraction = time_to_fraction(conflict.time);
+        let x = dims.left_margin + (time_fraction * dims.hour_width);
+
+        let y = dims.top_margin
+            + (conflict.station1_idx as f64 * station_height)
+            + (station_height / 2.0)
+            + (conflict.position
+                * station_height
+                * (conflict.station2_idx - conflict.station1_idx) as f64);
+
+        // Add triangle to batch
+        ctx.move_to(x, y - size);
+        ctx.line_to(x - size * 0.866, y + size * 0.5);
+        ctx.line_to(x + size * 0.866, y + size * 0.5);
+        ctx.close_path();
+    }
+
+    // Stroke all triangles at once
+    ctx.stroke();
+
+    // Set font and color for exclamation marks once
+    ctx.set_fill_style_str(CONFLICT_ICON_COLOR);
+    ctx.set_font(&format!(
+        "bold {}px sans-serif",
+        CONFLICT_ICON_FONT_SIZE / zoom_level
+    ));
+
+    // Draw all exclamation marks
+    for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
+        let time_fraction = time_to_fraction(conflict.time);
+        let x = dims.left_margin + (time_fraction * dims.hour_width);
+
+        let y = dims.top_margin
+            + (conflict.station1_idx as f64 * station_height)
+            + (station_height / 2.0)
+            + (conflict.position
+                * station_height
+                * (conflict.station2_idx - conflict.station1_idx) as f64);
+
         let _ = ctx.fill_text("!", x - CONFLICT_ICON_OFFSET_X / zoom_level, y + CONFLICT_ICON_OFFSET_Y / zoom_level);
+    }
 
-        // Draw conflict details (simplified - just show line IDs)
-        ctx.set_fill_style_str(CONFLICT_LABEL_COLOR);
-        ctx.set_font(&format!(
-            "{}px monospace",
-            CONFLICT_LABEL_FONT_SIZE / zoom_level
-        ));
+    // Set font and color for labels once
+    ctx.set_fill_style_str(CONFLICT_LABEL_COLOR);
+    ctx.set_font(&format!(
+        "{}px monospace",
+        CONFLICT_LABEL_FONT_SIZE / zoom_level
+    ));
+
+    // Draw all labels
+    for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
+        let time_fraction = time_to_fraction(conflict.time);
+        let x = dims.left_margin + (time_fraction * dims.hour_width);
+
+        let y = dims.top_margin
+            + (conflict.station1_idx as f64 * station_height)
+            + (station_height / 2.0)
+            + (conflict.position
+                * station_height
+                * (conflict.station2_idx - conflict.station1_idx) as f64);
+
         let label = format!("{} × {}", conflict.journey1_id, conflict.journey2_id);
         let _ = ctx.fill_text(&label, x + size + CONFLICT_LABEL_OFFSET / zoom_level, y);
     }

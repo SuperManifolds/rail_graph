@@ -359,6 +359,7 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn render_graph(
     canvas: &leptos::HtmlElement<leptos::html::Canvas>,
     stations: &[crate::models::StationNode],
@@ -373,7 +374,14 @@ fn render_graph(
     let canvas_width = f64::from(canvas_element.width());
     let canvas_height = f64::from(canvas_element.height());
 
+    // Create dimensions once for the entire render
+    let dimensions = GraphDimensions::new(canvas_width, canvas_height);
+
     // Filter journeys to only those visible in viewport (avoid cloning off-screen journeys)
+    let visible_hour_width = viewport.zoom_level * viewport.zoom_level_x * dimensions.hour_width;
+    let visible_start = -viewport.pan_offset_x / visible_hour_width;
+    let visible_end = visible_start + (dimensions.graph_width / visible_hour_width);
+
     let journeys_vec: Vec<&TrainJourney> = train_journeys.values()
         .filter(|journey| {
             // Quick time-based culling: check if journey overlaps visible time range
@@ -381,11 +389,6 @@ fn render_graph(
                 (journey.station_times.first(), journey.station_times.last()) {
                 let start_frac = time_to_fraction(*start);
                 let end_frac = time_to_fraction(*end);
-
-                // Calculate visible time range accounting for zoom and pan
-                let dimensions = GraphDimensions::new(canvas_width, canvas_height);
-                let visible_start = -viewport.pan_offset_x / (viewport.zoom_level * viewport.zoom_level_x * dimensions.hour_width);
-                let visible_end = visible_start + (dimensions.graph_width / (viewport.zoom_level * viewport.zoom_level_x * dimensions.hour_width));
 
                 // Journey is visible if it overlaps with visible range
                 end_frac >= visible_start && start_frac <= visible_end
@@ -404,9 +407,6 @@ fn render_graph(
         leptos::logging::warn!("Failed to cast to 2D rendering context");
         return;
     };
-
-    // Create dimensions that scale with canvas size
-    let dimensions = GraphDimensions::new(canvas_width, canvas_height);
 
     clear_canvas(&ctx, canvas_width, canvas_height);
     graph_content::draw_background(&ctx, canvas_width, canvas_height);
@@ -455,10 +455,19 @@ fn render_graph(
 
     // Draw conflicts if enabled
     if conflict_display.show_conflicts {
+        // Filter conflicts to only visible ones
+        let visible_conflicts: Vec<&Conflict> = conflict_display.conflicts
+            .iter()
+            .filter(|conflict| {
+                let time_frac = time_to_fraction(conflict.time);
+                time_frac >= visible_start && time_frac <= visible_end
+            })
+            .collect();
+
         conflict_indicators::draw_conflict_highlights(
             &ctx,
             &zoomed_dimensions,
-            conflict_display.conflicts,
+            &visible_conflicts,
             station_height,
             viewport.zoom_level,
             time_to_fraction,
