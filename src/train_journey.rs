@@ -23,7 +23,7 @@ fn time_on_date(datetime: NaiveDateTime, date: chrono::NaiveDate) -> Option<Naiv
     date.and_hms_opt(datetime.hour(), datetime.minute(), datetime.second())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct JourneySegment {
     pub edge_index: usize,
     pub track_index: usize,
@@ -31,12 +31,13 @@ pub struct JourneySegment {
     pub destination_platform: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrainJourney {
     pub id: uuid::Uuid,
     pub line_id: String,
     pub departure_time: NaiveDateTime,
     pub station_times: Vec<(String, NaiveDateTime, NaiveDateTime)>, // (station_name, arrival_time, departure_time)
+    pub station_indices: Vec<usize>, // Pre-computed station indices for rendering
     pub segments: Vec<JourneySegment>, // Track and platform info for each segment
     pub color: String,
     pub thickness: f64,
@@ -51,6 +52,22 @@ impl TrainJourney {
     /// * `selected_day` - Optional day of week filter. If provided, only generates journeys for lines operating on that day
     #[must_use]
     pub fn generate_journeys(lines: &[Line], graph: &RailwayGraph, selected_day: Option<Weekday>) -> HashMap<uuid::Uuid, TrainJourney> {
+        #[cfg(target_arch = "wasm32")]
+        let (performance, start) = {
+            let window = web_sys::window().expect("should have a window");
+            let performance = window.performance().expect("should have performance");
+            let start = performance.now();
+            (performance, start)
+        };
+
+        // Build station name → index map for fast lookups
+        let stations = graph.get_all_stations_ordered();
+        let station_map: HashMap<&str, usize> = stations
+            .iter()
+            .enumerate()
+            .map(|(idx, station)| (station.name.as_str(), idx))
+            .collect();
+
         let mut journeys = HashMap::new();
 
         // Determine which days to simulate
@@ -91,17 +108,23 @@ impl TrainJourney {
                 match line.schedule_mode {
                     ScheduleMode::Auto => {
                         // Generate forward journeys
-                        Self::generate_forward_journeys(&mut journeys, line, graph, current_date, day_end);
+                        Self::generate_forward_journeys(&mut journeys, line, graph, current_date, day_end, &station_map);
 
                         // Generate return journeys
-                        Self::generate_return_journeys(&mut journeys, line, graph, current_date, day_end);
+                        Self::generate_return_journeys(&mut journeys, line, graph, current_date, day_end, &station_map);
                     }
                     ScheduleMode::Manual => {
                         // Generate journeys from manual departures
-                        Self::generate_manual_journeys(&mut journeys, line, graph, current_date, day_filter);
+                        Self::generate_manual_journeys(&mut journeys, line, graph, current_date, day_filter, &station_map);
                     }
                 }
             }
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            let duration = performance.now() - start;
+            web_sys::console::log_1(&format!("Journey generation took: {:.2}ms ({} journeys)", duration, journeys.len()).into());
         }
 
         journeys
@@ -113,28 +136,59 @@ impl TrainJourney {
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
         day_end: NaiveDateTime,
+        station_map: &HashMap<&str, usize>,
     ) {
+        if line.forward_route.is_empty() {
+            return;
+        }
+
         // Convert the line's first_departure time to the current date
         let Some(mut departure_time) = time_on_date(line.first_departure, current_date) else {
             return;
         };
+
+        // Pre-compute route station names to avoid repeated lookups
+        let mut route_stations: Vec<Option<String>> = Vec::with_capacity(line.forward_route.len() + 1);
+
+        // Add first station
+        if let Some(segment) = line.forward_route.first() {
+            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+            route_stations.push(
+                graph.get_track_endpoints(edge_idx)
+                    .and_then(|(from, _)| graph.get_station_name(from))
+                    .map(std::string::ToString::to_string)
+            );
+        }
+
+        // Add remaining stations
+        for segment in &line.forward_route {
+            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+            route_stations.push(
+                graph.get_track_endpoints(edge_idx)
+                    .and_then(|(_, to)| graph.get_station_name(to))
+                    .map(std::string::ToString::to_string)
+            );
+        }
+
         let mut journey_count = 0;
+        let line_id = line.id.clone();
+        let color = line.color.clone();
+        let thickness = line.thickness;
 
         while departure_time <= day_end && journey_count < MAX_JOURNEYS_PER_LINE {
-            let mut station_times = Vec::new();
-            let mut segments = Vec::new();
+            let mut station_times = Vec::with_capacity(route_stations.len());
+            let mut station_indices = Vec::with_capacity(route_stations.len());
+            let mut segments = Vec::with_capacity(line.forward_route.len());
             let mut cumulative_time = Duration::zero();
 
-            // Add first station (source of first edge)
-            if let Some(segment) = line.forward_route.first() {
-                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                let _ = graph.get_track_endpoints(edge_idx)
-                    .and_then(|(from, _)| graph.get_station_name(from))
-                    .map(|name| station_times.push((name.to_string(), departure_time, departure_time)));
+            // Add first station
+            if let Some(name) = &route_stations[0] {
+                station_times.push((name.clone(), departure_time, departure_time));
+                station_map.get(name.as_str()).copied().into_iter().for_each(|idx| station_indices.push(idx));
             }
 
             // Walk the route, accumulating travel times and wait times
-            for segment in &line.forward_route {
+            for (i, segment) in line.forward_route.iter().enumerate() {
                 cumulative_time += segment.duration;
                 let arrival_time = departure_time + cumulative_time;
 
@@ -142,14 +196,10 @@ impl TrainJourney {
                 cumulative_time += segment.wait_time;
                 let departure_from_station = departure_time + cumulative_time;
 
-                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                let Some((_, to)) = graph.get_track_endpoints(edge_idx) else {
-                    continue;
-                };
-
                 // Only add station times for stations, not junctions
-                if let Some(name) = graph.get_station_name(to) {
-                    station_times.push((name.to_string(), arrival_time, departure_from_station));
+                if let Some(name) = &route_stations[i + 1] {
+                    station_times.push((name.clone(), arrival_time, departure_from_station));
+                    station_map.get(name.as_str()).copied().into_iter().for_each(|idx| station_indices.push(idx));
                 }
 
                 // Add segment info
@@ -165,12 +215,13 @@ impl TrainJourney {
                 let id = uuid::Uuid::new_v4();
                 journeys.insert(id, TrainJourney {
                     id,
-                    line_id: line.id.clone(),
+                    line_id: line_id.clone(),
                     departure_time,
                     station_times,
+                    station_indices,
                     segments,
-                    color: line.color.clone(),
-                    thickness: line.thickness,
+                    color: color.clone(),
+                    thickness,
                 });
                 journey_count += 1;
             }
@@ -189,6 +240,7 @@ impl TrainJourney {
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
         day_filter: DaysOfWeek,
+        station_map: &HashMap<&str, usize>,
     ) {
         for manual_dep in &line.manual_departures {
             // Filter by day of week
@@ -212,6 +264,7 @@ impl TrainJourney {
                 departure_time,
                 from_idx,
                 to_idx,
+                station_map,
             ) {
                 journeys.insert(journey.id, journey);
                 continue;
@@ -225,6 +278,7 @@ impl TrainJourney {
                 departure_time,
                 from_idx,
                 to_idx,
+                station_map,
             ) {
                 journeys.insert(journey.id, journey);
             }
@@ -238,6 +292,7 @@ impl TrainJourney {
         departure_time: NaiveDateTime,
         from_idx: petgraph::graph::NodeIndex,
         to_idx: petgraph::graph::NodeIndex,
+        station_map: &HashMap<&str, usize>,
     ) -> Option<TrainJourney> {
         // Build list of stations along this route
         let mut route_stations = Vec::new();
@@ -269,11 +324,13 @@ impl TrainJourney {
 
         // Build station times for this journey segment
         let mut station_times = Vec::new();
+        let mut station_indices = Vec::new();
         let mut segments = Vec::new();
 
         // Get from station name for display
         let from_name = graph.get_station_name(from_idx)?;
         station_times.push((from_name.to_string(), departure_time, departure_time));
+        station_map.get(from_name).copied().into_iter().for_each(|idx| station_indices.push(idx));
 
         let mut cumulative_time = Duration::zero();
         for i in from_pos..to_pos {
@@ -287,6 +344,7 @@ impl TrainJourney {
             // Only add station times for stations, not junctions
             if let Some(name) = graph.get_station_name(route_stations[i + 1]) {
                 station_times.push((name.to_string(), arrival_time, departure_from_station));
+                station_map.get(name).copied().into_iter().for_each(|idx| station_indices.push(idx));
             }
 
             // Add segment info
@@ -304,6 +362,7 @@ impl TrainJourney {
                 line_id: line.id.clone(),
                 departure_time,
                 station_times,
+                station_indices,
                 segments,
                 color: line.color.clone(),
                 thickness: line.thickness,
@@ -319,6 +378,7 @@ impl TrainJourney {
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
         day_end: NaiveDateTime,
+        station_map: &HashMap<&str, usize>,
     ) {
         if line.return_route.is_empty() {
             return;
@@ -328,23 +388,49 @@ impl TrainJourney {
         let Some(mut return_departure_time) = time_on_date(line.return_first_departure, current_date) else {
             return;
         };
+
+        // Pre-compute route station names to avoid repeated lookups
+        let mut route_stations: Vec<Option<String>> = Vec::with_capacity(line.return_route.len() + 1);
+
+        // Add first station (destination of first edge)
+        if let Some(segment) = line.return_route.first() {
+            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+            route_stations.push(
+                graph.get_track_endpoints(edge_idx)
+                    .and_then(|(_, to)| graph.get_station_name(to))
+                    .map(std::string::ToString::to_string)
+            );
+        }
+
+        // Add remaining stations (sources of edges)
+        for segment in &line.return_route {
+            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+            route_stations.push(
+                graph.get_track_endpoints(edge_idx)
+                    .and_then(|(from, _)| graph.get_station_name(from))
+                    .map(std::string::ToString::to_string)
+            );
+        }
+
         let mut return_journey_count = 0;
+        let line_id = line.id.clone();
+        let color = line.color.clone();
+        let thickness = line.thickness;
 
         while return_departure_time <= day_end && return_journey_count < MAX_JOURNEYS_PER_LINE {
-            let mut station_times = Vec::new();
-            let mut segments = Vec::new();
+            let mut station_times = Vec::with_capacity(route_stations.len());
+            let mut station_indices = Vec::with_capacity(route_stations.len());
+            let mut segments = Vec::with_capacity(line.return_route.len());
             let mut cumulative_time = Duration::zero();
 
-            // Add first station (destination of first edge in return route, since we travel backwards)
-            if let Some(segment) = line.return_route.first() {
-                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                let _ = graph.get_track_endpoints(edge_idx)
-                    .and_then(|(_, to)| graph.get_station_name(to))
-                    .map(|name| station_times.push((name.to_string(), return_departure_time, return_departure_time)));
+            // Add first station
+            if let Some(name) = &route_stations[0] {
+                station_times.push((name.clone(), return_departure_time, return_departure_time));
+                station_map.get(name.as_str()).copied().into_iter().for_each(|idx| station_indices.push(idx));
             }
 
             // Walk the return route
-            for segment in &line.return_route {
+            for (i, segment) in line.return_route.iter().enumerate() {
                 cumulative_time += segment.duration;
                 let arrival_time = return_departure_time + cumulative_time;
 
@@ -352,14 +438,10 @@ impl TrainJourney {
                 cumulative_time += segment.wait_time;
                 let departure_from_station = return_departure_time + cumulative_time;
 
-                let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-                let Some((from, _)) = graph.get_track_endpoints(edge_idx) else {
-                    continue;
-                };
-
                 // Only add station times for stations, not junctions
-                if let Some(name) = graph.get_station_name(from) {
-                    station_times.push((name.to_string(), arrival_time, departure_from_station));
+                if let Some(name) = &route_stations[i + 1] {
+                    station_times.push((name.clone(), arrival_time, departure_from_station));
+                    station_map.get(name.as_str()).copied().into_iter().for_each(|idx| station_indices.push(idx));
                 }
 
                 // Add segment info
@@ -375,12 +457,13 @@ impl TrainJourney {
                 let id = uuid::Uuid::new_v4();
                 journeys.insert(id, TrainJourney {
                     id,
-                    line_id: line.id.clone(),
+                    line_id: line_id.clone(),
                     departure_time: return_departure_time,
                     station_times,
+                    station_indices,
                     segments,
-                    color: line.color.clone(),
-                    thickness: line.thickness,
+                    color: color.clone(),
+                    thickness,
                 });
                 return_journey_count += 1;
             }

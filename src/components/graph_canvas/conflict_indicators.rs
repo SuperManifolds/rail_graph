@@ -1,17 +1,10 @@
 use super::types::GraphDimensions;
 use crate::models::StationNode;
 use crate::conflict::{Conflict, StationCrossing};
-use web_sys::CanvasRenderingContext2d;
+use web_sys::{CanvasRenderingContext2d, Path2d};
 
 // Conflict highlight constants
 const CONFLICT_TRIANGLE_SIZE: f64 = 15.0;
-const CONFLICT_LINE_WIDTH: f64 = 1.5;
-const CONFLICT_FILL_COLOR: &str = "rgba(255, 200, 0, 0.9)";
-const CONFLICT_STROKE_COLOR: &str = "rgba(0, 0, 0, 0.8)";
-const CONFLICT_ICON_COLOR: &str = "#000";
-const CONFLICT_ICON_FONT_SIZE: f64 = 12.0;
-const CONFLICT_ICON_OFFSET_X: f64 = 2.0;
-const CONFLICT_ICON_OFFSET_Y: f64 = 4.0;
 const CONFLICT_LABEL_COLOR: &str = "rgba(255, 255, 255, 0.9)";
 const CONFLICT_LABEL_FONT_SIZE: f64 = 9.0;
 const CONFLICT_LABEL_OFFSET: f64 = 5.0;
@@ -29,21 +22,42 @@ const BLOCK_FILL_OPACITY: &str = "33"; // ~20% opacity in hex
 const BLOCK_STROKE_OPACITY: &str = "99"; // ~60% opacity in hex
 const BLOCK_BORDER_WIDTH: f64 = 1.0;
 
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 pub fn draw_conflict_highlights(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    conflicts: &[Conflict],
+    conflicts: &[&Conflict],
     station_height: f64,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
-    // Limit to first 1000 conflicts to prevent performance issues
+    let size = CONFLICT_TRIANGLE_SIZE / zoom_level;
+    let bar_width = 1.5 / zoom_level;
+    let bar_height = 6.0 / zoom_level;
+    let dot_radius = 1.0 / zoom_level;
+
+    // Create reusable Path2D objects for the triangle shape centered at origin
+    let triangle_path = Path2d::new().ok();
+    if let Some(ref path) = triangle_path {
+        path.move_to(0.0, -size);
+        path.line_to(-size * 0.866, size * 0.5);
+        path.line_to(size * 0.866, size * 0.5);
+        path.close_path();
+    }
+
+    // Create reusable Path2D for the exclamation dot
+    let dot_path = Path2d::new().ok();
+    if let Some(ref path) = dot_path {
+        let _ = path.arc(0.0, 4.0 / zoom_level, dot_radius, 0.0, std::f64::consts::PI * 2.0);
+    }
+
+    // Set styles once
+    ctx.set_line_width(1.5 / zoom_level);
+
+    // Draw each marker by translating and stamping the paths
     for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
         let time_fraction = time_to_fraction(conflict.time);
         let x = dims.left_margin + (time_fraction * dims.hour_width);
-
-        // Calculate y position based on the conflict position between stations
         let y = dims.top_margin
             + (conflict.station1_idx as f64 * station_height)
             + (station_height / 2.0)
@@ -51,41 +65,52 @@ pub fn draw_conflict_highlights(
                 * station_height
                 * (conflict.station2_idx - conflict.station1_idx) as f64);
 
-        // Draw a warning triangle at the conflict point
-        let size = CONFLICT_TRIANGLE_SIZE / zoom_level;
-        ctx.set_line_width(CONFLICT_LINE_WIDTH / zoom_level);
+        ctx.save();
+        ctx.translate(x, y).ok();
 
-        // Draw filled triangle
-        ctx.begin_path();
-        ctx.move_to(x, y - size); // Top point
-        ctx.line_to(x - size * 0.866, y + size * 0.5); // Bottom left
-        ctx.line_to(x + size * 0.866, y + size * 0.5); // Bottom right
-        ctx.close_path();
+        // Draw triangle using Path2D
+        if let Some(ref path) = triangle_path {
+            ctx.set_fill_style_str("rgba(255, 200, 0, 0.9)");
+            ctx.set_stroke_style_str("rgba(0, 0, 0, 0.8)");
+            ctx.fill_with_path_2d(path);
+            ctx.stroke_with_path(path);
+        }
 
-        // Fill with warning color
-        ctx.set_fill_style_str(CONFLICT_FILL_COLOR);
-        ctx.fill();
+        // Draw exclamation bar
+        ctx.set_fill_style_str("#000");
+        ctx.fill_rect(-bar_width / 2.0, -bar_height / 2.0 - 1.0 / zoom_level, bar_width, bar_height);
 
-        // Stroke with thick black border
-        ctx.set_stroke_style_str(CONFLICT_STROKE_COLOR);
-        ctx.stroke();
+        // Draw exclamation dot using Path2D
+        if let Some(ref path) = dot_path {
+            ctx.fill_with_path_2d(path);
+        }
 
-        // Draw exclamation mark inside triangle
-        ctx.set_fill_style_str(CONFLICT_ICON_COLOR);
-        ctx.set_font(&format!(
-            "bold {}px sans-serif",
-            CONFLICT_ICON_FONT_SIZE / zoom_level
-        ));
-        let _ = ctx.fill_text("!", x - CONFLICT_ICON_OFFSET_X / zoom_level, y + CONFLICT_ICON_OFFSET_Y / zoom_level);
+        ctx.restore();
+    }
 
-        // Draw conflict details (simplified - just show line IDs)
+    // Only draw labels when zoomed in enough (zoom level > 2.0)
+    if zoom_level > 2.0 {
+        // Set font and color for labels once
         ctx.set_fill_style_str(CONFLICT_LABEL_COLOR);
         ctx.set_font(&format!(
             "{}px monospace",
             CONFLICT_LABEL_FONT_SIZE / zoom_level
         ));
-        let label = format!("{} × {}", conflict.journey1_id, conflict.journey2_id);
-        let _ = ctx.fill_text(&label, x + size + CONFLICT_LABEL_OFFSET / zoom_level, y);
+
+        // Draw all labels
+        for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
+            let time_fraction = time_to_fraction(conflict.time);
+            let x = dims.left_margin + (time_fraction * dims.hour_width);
+            let y = dims.top_margin
+                + (conflict.station1_idx as f64 * station_height)
+                + (station_height / 2.0)
+                + (conflict.position
+                    * station_height
+                    * (conflict.station2_idx - conflict.station1_idx) as f64);
+
+            let label = format!("{} × {}", conflict.journey1_id, conflict.journey2_id);
+            let _ = ctx.fill_text(&label, x + size + CONFLICT_LABEL_OFFSET / zoom_level, y);
+        }
     }
 
     // If there are more conflicts than displayed, show a count
@@ -208,7 +233,7 @@ pub fn draw_block_violation_visualization(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     conflict: &Conflict,
-    train_journeys: &[crate::train_journey::TrainJourney],
+    train_journeys: &[&crate::train_journey::TrainJourney],
     station_height: f64,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,

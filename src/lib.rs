@@ -9,4 +9,9 @@ pub mod time;
 pub mod conflict;
 pub mod train_journey;
 
+#[cfg(target_arch = "wasm32")]
+pub mod conflict_worker;
+#[cfg(target_arch = "wasm32")]
+pub mod worker_bridge;
+
 pub use components::app::App;

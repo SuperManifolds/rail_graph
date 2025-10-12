@@ -302,7 +302,21 @@ pub fn GraphCanvas(
                 let graph_mouse_x = mouse_x - LEFT_MARGIN;
                 let graph_mouse_y = mouse_y - TOP_MARGIN;
 
-                canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport);
+                // Calculate minimum zoom to fit all stations in Y axis
+                // The graph content height at zoom=1.0 is graph_height
+                // We want min zoom where (graph_height * zoom) >= (station_count * min_station_spacing)
+                // With reasonable min_station_spacing of ~20 pixels per station
+                let current_graph = graph.get();
+                let station_count = current_graph.get_all_stations_ordered().len() as f64;
+                let min_zoom = if station_count > 1.0 {
+                    let min_station_spacing = 20.0; // Minimum pixels between stations
+                    let required_height = station_count * min_station_spacing;
+                    Some((required_height / graph_height).max(0.1))
+                } else {
+                    Some(0.1)
+                };
+
+                canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport, min_zoom);
             }
         }
     };
@@ -359,6 +373,7 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn render_graph(
     canvas: &leptos::HtmlElement<leptos::html::Canvas>,
     stations: &[crate::models::StationNode],
@@ -373,8 +388,29 @@ fn render_graph(
     let canvas_width = f64::from(canvas_element.width());
     let canvas_height = f64::from(canvas_element.height());
 
-    // Convert HashMap to Vec for drawing functions
-    let journeys_vec: Vec<_> = train_journeys.values().cloned().collect();
+    // Create dimensions once for the entire render
+    let dimensions = GraphDimensions::new(canvas_width, canvas_height);
+
+    // Filter journeys to only those visible in viewport (avoid cloning off-screen journeys)
+    let visible_hour_width = viewport.zoom_level * viewport.zoom_level_x * dimensions.hour_width;
+    let visible_start = -viewport.pan_offset_x / visible_hour_width;
+    let visible_end = visible_start + (dimensions.graph_width / visible_hour_width);
+
+    let journeys_vec: Vec<&TrainJourney> = train_journeys.values()
+        .filter(|journey| {
+            // Quick time-based culling: check if journey overlaps visible time range
+            if let (Some((_, start, _)), Some((_, _, end))) =
+                (journey.station_times.first(), journey.station_times.last()) {
+                let start_frac = time_to_fraction(*start);
+                let end_frac = time_to_fraction(*end);
+
+                // Journey is visible if it overlaps with visible range
+                end_frac >= visible_start && start_frac <= visible_end
+            } else {
+                false
+            }
+        })
+        .collect();
 
     let Ok(Some(context)) = canvas_element.get_context("2d") else {
         leptos::logging::warn!("Failed to get 2D context");
@@ -385,9 +421,6 @@ fn render_graph(
         leptos::logging::warn!("Failed to cast to 2D rendering context");
         return;
     };
-
-    // Create dimensions that scale with canvas size
-    let dimensions = GraphDimensions::new(canvas_width, canvas_height);
 
     clear_canvas(&ctx, canvas_width, canvas_height);
     graph_content::draw_background(&ctx, canvas_width, canvas_height);
@@ -436,10 +469,19 @@ fn render_graph(
 
     // Draw conflicts if enabled
     if conflict_display.show_conflicts {
+        // Filter conflicts to only visible ones
+        let visible_conflicts: Vec<&Conflict> = conflict_display.conflicts
+            .iter()
+            .filter(|conflict| {
+                let time_frac = time_to_fraction(conflict.time);
+                time_frac >= visible_start && time_frac <= visible_end
+            })
+            .collect();
+
         conflict_indicators::draw_conflict_highlights(
             &ctx,
             &zoomed_dimensions,
-            conflict_display.conflicts,
+            &visible_conflicts,
             station_height,
             viewport.zoom_level,
             time_to_fraction,
