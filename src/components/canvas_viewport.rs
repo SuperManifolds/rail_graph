@@ -87,16 +87,28 @@ pub fn handle_zoom(
     mouse_x: f64,
     mouse_y: f64,
     viewport: &ViewportSignals,
+    min_zoom: Option<f64>,
 ) {
     let delta = ev.delta_y();
-    let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
     let shift_pressed = ev.shift_key();
+    let alt_pressed = ev.alt_key();
 
-    // If shift is pressed and horizontal zoom is enabled, do horizontal zoom only
-    if shift_pressed && viewport.zoom_level_x.is_some() {
+    // No modifier = normal zoom
+    // Shift = horizontal pan
+    // Alt = horizontal zoom
+    if shift_pressed && !alt_pressed {
+        // Horizontal pan
+        let pan_amount = -delta * 0.5; // Invert and scale for smoother panning
+        let current_pan_x = viewport.pan_offset_x.get();
+        viewport.set_pan_offset_x.set(current_pan_x + pan_amount);
+    } else if alt_pressed && !shift_pressed && viewport.zoom_level_x.is_some() {
+        // Horizontal zoom
+        let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
         apply_horizontal_zoom(zoom_factor, mouse_x, viewport);
-    } else {
-        apply_normal_zoom(zoom_factor, mouse_x, mouse_y, viewport);
+    } else if !shift_pressed && !alt_pressed {
+        // Normal zoom
+        let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
+        apply_normal_zoom(zoom_factor, mouse_x, mouse_y, viewport, min_zoom);
     }
 }
 
@@ -126,9 +138,11 @@ fn apply_normal_zoom(
     mouse_x: f64,
     mouse_y: f64,
     viewport: &ViewportSignals,
+    min_zoom: Option<f64>,
 ) {
     let old_zoom = viewport.zoom_level.get();
-    let new_zoom = (old_zoom * zoom_factor).clamp(0.1, 25.0);
+    let min = min_zoom.unwrap_or(0.1);
+    let new_zoom = (old_zoom * zoom_factor).clamp(min, 25.0);
 
     let pan_x = viewport.pan_offset_x.get();
     let pan_y = viewport.pan_offset_y.get();
