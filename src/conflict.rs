@@ -112,20 +112,43 @@ struct PlatformOccupancy {
     time_end: NaiveDateTime,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+mod timing {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Duration;
+
+    pub static PLATFORM_TIME: AtomicU64 = AtomicU64::new(0);
+    pub static PLATFORM_EXTRACT_TIME: AtomicU64 = AtomicU64::new(0);
+    pub static PLATFORM_COMPARE_TIME: AtomicU64 = AtomicU64::new(0);
+    pub static SEGMENT_TIME: AtomicU64 = AtomicU64::new(0);
+    pub static SEGMENT_PAIR_CALLS: AtomicU64 = AtomicU64::new(0);
+    pub static LOOKUP_TIME: AtomicU64 = AtomicU64::new(0);
+    pub static INTERSECTION_TIME: AtomicU64 = AtomicU64::new(0);
+
+    #[inline]
+    #[allow(clippy::cast_possible_truncation)]
+    pub fn add_duration(counter: &AtomicU64, duration: Duration) {
+        counter.fetch_add(duration.as_nanos() as u64, Ordering::Relaxed);
+    }
+}
+
 #[must_use]
 pub fn detect_line_conflicts(
     train_journeys: &[TrainJourney],
     graph: &RailwayGraph,
 ) -> (Vec<Conflict>, Vec<StationCrossing>) {
-    let window = web_sys::window().expect("should have a window");
-    let performance = window.performance().expect("should have performance");
-    let start = performance.now();
+    #[cfg(not(target_arch = "wasm32"))]
+    let total_start = std::time::Instant::now();
+
     let mut results = ConflictResults {
         conflicts: Vec::new(),
         station_crossings: Vec::new(),
     };
 
     // Get ordered list of stations from the graph
+    #[cfg(not(target_arch = "wasm32"))]
+    let setup_start = std::time::Instant::now();
+
     let stations = graph.get_all_stations_ordered();
 
     // Pre-compute station name to index mapping for O(1) lookups
@@ -140,6 +163,12 @@ pub fn detect_line_conflicts(
         graph,
         station_margin: chrono::Duration::minutes(STATION_MARGIN_MINUTES),
     };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let setup_time = setup_start.elapsed();
+        eprintln!("Setup time: {setup_time:?}");
+    }
 
     // For small datasets, use simple approach with early filtering
     // Spatial partitioning only helps with larger datasets
@@ -177,72 +206,157 @@ pub fn detect_line_conflicts(
             }
         }
     } else {
-        // Sweep-line algorithm: sort journeys by start time, only compare overlapping ones
-        // This gives us O(n * m) where m is the average number of overlapping journeys (much smaller than n)
+        detect_conflicts_sweep_line(train_journeys, &ctx, &mut results);
+    }
 
-        // Create sorted index array with (start_time, end_time, index)
-        let mut journey_times: Vec<(NaiveDateTime, NaiveDateTime, usize)> = train_journeys
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, journey)| {
-                if let (Some((_, start, _)), Some((_, _, end))) =
-                    (journey.station_times.first(), journey.station_times.last()) {
-                    Some((*start, *end, idx))
-                } else {
-                    None
-                }
-            })
-            .collect();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use std::sync::atomic::Ordering;
 
-        // Sort by start time
-        journey_times.sort_by_key(|(start, _, _)| *start);
+        let total_time = total_start.elapsed();
+        eprintln!("Total detection time: {total_time:?}");
+        eprintln!("Found {} conflicts, {} crossings from {} journeys", results.conflicts.len(), results.station_crossings.len(), train_journeys.len());
 
-        web_sys::console::log_1(&format!("Using sweep-line algorithm for {} journeys", journey_times.len()).into());
+        // Print detailed timing breakdown
+        eprintln!("\n=== Detailed Timing Breakdown ===");
 
-        let mut comparisons = 0;
+        let platform_ns = timing::PLATFORM_TIME.load(Ordering::Relaxed);
+        let segment_ns = timing::SEGMENT_TIME.load(Ordering::Relaxed);
+        let segment_pair_calls = timing::SEGMENT_PAIR_CALLS.load(Ordering::Relaxed);
+        let lookup_ns = timing::LOOKUP_TIME.load(Ordering::Relaxed);
+        let intersection_ns = timing::INTERSECTION_TIME.load(Ordering::Relaxed);
 
-        // For each journey, only compare with journeys that could overlap in time
-        for i in 0..journey_times.len() {
-            if results.conflicts.len() >= MAX_CONFLICTS {
+        let platform_extract_ns = timing::PLATFORM_EXTRACT_TIME.load(Ordering::Relaxed);
+        let platform_compare_ns = timing::PLATFORM_COMPARE_TIME.load(Ordering::Relaxed);
+
+        #[allow(clippy::cast_precision_loss)]
+        {
+            eprintln!("Platform checks:     {:>10.3}ms", platform_ns as f64 / 1_000_000.0);
+            eprintln!("  Extract occupancy: {:>10.3}ms", platform_extract_ns as f64 / 1_000_000.0);
+            eprintln!("  Compare occupancy: {:>10.3}ms", platform_compare_ns as f64 / 1_000_000.0);
+            eprintln!("Segment checks:      {:>10.3}ms", segment_ns as f64 / 1_000_000.0);
+            eprintln!("  Segment pairs:     {segment_pair_calls:>10} calls");
+            eprintln!("  HashMap lookups:   {:>10.3}ms", lookup_ns as f64 / 1_000_000.0);
+            eprintln!("  Intersections:     {:>10.3}ms", intersection_ns as f64 / 1_000_000.0);
+        }
+        eprintln!("=================================");
+    }
+
+    (results.conflicts, results.station_crossings)
+}
+
+/// Sweep-line algorithm for detecting conflicts in large datasets
+#[inline]
+fn detect_conflicts_sweep_line(
+    train_journeys: &[TrainJourney],
+    ctx: &ConflictContext,
+    results: &mut ConflictResults,
+) {
+    // Sweep-line algorithm: sort journeys by start time, only compare overlapping ones
+    // This gives us O(n * m) where m is the average number of overlapping journeys (much smaller than n)
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let sort_start = std::time::Instant::now();
+
+    // Create sorted index array with (start_time, end_time, index)
+    let mut journey_times: Vec<(NaiveDateTime, NaiveDateTime, usize)> = train_journeys
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, journey)| {
+            if let (Some((_, start, _)), Some((_, _, end))) =
+                (journey.station_times.first(), journey.station_times.last()) {
+                Some((*start, *end, idx))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Sort by start time
+    journey_times.sort_by_key(|(start, _, _)| *start);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let sort_time = sort_start.elapsed();
+        eprintln!("Sort time: {sort_time:?}");
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::log_1(&format!("Using sweep-line algorithm for {} journeys", journey_times.len()).into());
+
+    let mut comparisons = 0;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let comparison_start = std::time::Instant::now();
+
+    // Pre-build all segment lookup maps and platform occupancies once
+    #[cfg(not(target_arch = "wasm32"))]
+    let cache_start = std::time::Instant::now();
+
+    let segment_maps: Vec<_> = train_journeys
+        .iter()
+        .map(|journey| build_segment_lookup_map(journey, ctx))
+        .collect();
+
+    let platform_occupancies: Vec<_> = train_journeys
+        .iter()
+        .map(|journey| extract_platform_occupancies(journey, ctx))
+        .collect();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let cache_time = cache_start.elapsed();
+        eprintln!("Segment map & platform cache build time: {cache_time:?}");
+    }
+
+    // For each journey, only compare with journeys that could overlap in time
+    for i in 0..journey_times.len() {
+        if results.conflicts.len() >= MAX_CONFLICTS {
+            break;
+        }
+
+        let (start_i, end_i, idx_i) = journey_times[i];
+        let journey_i = &train_journeys[idx_i];
+        let seg_map_i = &segment_maps[idx_i];
+        let plat_occ_i = &platform_occupancies[idx_i];
+
+        // Only check journeys that start before journey_i ends
+        // Once we find a journey that starts after journey_i ends, we can stop
+        for (start_j, end_j, idx_j) in journey_times.iter().skip(i + 1) {
+
+            // If journey j starts after journey i ends, no more overlaps possible
+            if *start_j >= end_i {
                 break;
             }
 
-            let (start_i, end_i, idx_i) = journey_times[i];
-            let journey_i = &train_journeys[idx_i];
+            // Additional check: if journey i starts after journey j ends, skip
+            if start_i >= *end_j {
+                continue;
+            }
 
-            // Only check journeys that start before journey_i ends
-            // Once we find a journey that starts after journey_i ends, we can stop
-            for (start_j, end_j, idx_j) in journey_times.iter().skip(i + 1) {
+            comparisons += 1;
 
-                // If journey j starts after journey i ends, no more overlaps possible
-                if *start_j >= end_i {
-                    break;
-                }
+            let journey_j = &train_journeys[*idx_j];
+            let seg_map_j = &segment_maps[*idx_j];
+            let plat_occ_j = &platform_occupancies[*idx_j];
+            check_journey_pair_with_all_cached(journey_i, journey_j, ctx, results, seg_map_i, seg_map_j, plat_occ_i, plat_occ_j);
 
-                // Additional check: if journey i starts after journey j ends, skip
-                if start_i >= *end_j {
-                    continue;
-                }
-
-                comparisons += 1;
-
-                let journey_j = &train_journeys[*idx_j];
-                check_journey_pair(journey_i, journey_j, &ctx, &mut results);
-
-                if results.conflicts.len() >= MAX_CONFLICTS {
-                    break;
-                }
+            if results.conflicts.len() >= MAX_CONFLICTS {
+                break;
             }
         }
-
-        web_sys::console::log_1(&format!("Sweep-line made {} comparisons (vs {} for naive O(n²))",
-            comparisons, train_journeys.len() * (train_journeys.len() - 1) / 2).into());
     }
 
-    let duration = performance.now() - start;
-    web_sys::console::log_1(&format!("Conflict detection took: {:.2}ms ({} conflicts, {} crossings from {} journeys)",
-        duration, results.conflicts.len(), results.station_crossings.len(), train_journeys.len()).into());
-    (results.conflicts, results.station_crossings)
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let comparison_time = comparison_start.elapsed();
+        eprintln!("Comparison loop time: {comparison_time:?}");
+        eprintln!("Made {comparisons} comparisons (vs {} for naive O(n²))", train_journeys.len() * (train_journeys.len() - 1) / 2);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::log_1(&format!("Sweep-line made {comparisons} comparisons (vs {} for naive O(n²))",
+        train_journeys.len() * (train_journeys.len() - 1) / 2).into());
 }
 
 fn check_journey_pair(
@@ -251,12 +365,63 @@ fn check_journey_pair(
     ctx: &ConflictContext,
     results: &mut ConflictResults,
 ) {
-    // Check for platform conflicts first
-    check_platform_conflicts(journey1, journey2, ctx, results);
-
     // Pre-build segment lookup maps for both journeys to avoid O(n) lookups in inner loops
     let seg1_map = build_segment_lookup_map(journey1, ctx);
     let seg2_map = build_segment_lookup_map(journey2, ctx);
+
+    check_journey_pair_with_maps(journey1, journey2, ctx, results, &seg1_map, &seg2_map);
+}
+
+fn check_journey_pair_with_maps(
+    journey1: &TrainJourney,
+    journey2: &TrainJourney,
+    ctx: &ConflictContext,
+    results: &mut ConflictResults,
+    seg1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
+    seg2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
+) {
+    // Check for platform conflicts first
+    #[cfg(not(target_arch = "wasm32"))]
+    let platform_start = std::time::Instant::now();
+
+    check_platform_conflicts(journey1, journey2, ctx, results);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    timing::add_duration(&timing::PLATFORM_TIME, platform_start.elapsed());
+
+    check_segments_for_pair(journey1, journey2, ctx, results, seg1_map, seg2_map);
+}
+
+fn check_journey_pair_with_all_cached(
+    journey1: &TrainJourney,
+    journey2: &TrainJourney,
+    ctx: &ConflictContext,
+    results: &mut ConflictResults,
+    seg1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
+    seg2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
+    plat_occ1: &[PlatformOccupancy],
+    plat_occ2: &[PlatformOccupancy],
+) {
+    // Check for platform conflicts first using pre-cached occupancies
+    #[cfg(not(target_arch = "wasm32"))]
+    let platform_start = std::time::Instant::now();
+
+    check_platform_conflicts_cached(journey1, journey2, results, plat_occ1, plat_occ2);
+
+    #[cfg(not(target_arch = "wasm32"))]
+    timing::add_duration(&timing::PLATFORM_TIME, platform_start.elapsed());
+
+    check_segments_for_pair(journey1, journey2, ctx, results, seg1_map, seg2_map);
+}
+
+fn check_segments_for_pair(
+    journey1: &TrainJourney,
+    journey2: &TrainJourney,
+    ctx: &ConflictContext,
+    results: &mut ConflictResults,
+    seg1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
+    seg2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
+) {
 
     let mut prev1: Option<(NaiveDateTime, usize)> = None;
 
@@ -272,7 +437,14 @@ fn check_journey_pair(
                 idx_start: prev_idx1,
                 idx_end: station1_idx,
             };
-            check_segment_against_journey(&segment1, journey1, journey2, ctx, results, &seg1_map, &seg2_map);
+
+            #[cfg(not(target_arch = "wasm32"))]
+            let segment_start = std::time::Instant::now();
+
+            check_segment_against_journey(&segment1, journey1, journey2, ctx, results, seg1_map, seg2_map);
+
+            #[cfg(not(target_arch = "wasm32"))]
+            timing::add_duration(&timing::SEGMENT_TIME, segment_start.elapsed());
         }
         prev1 = Some((*departure_time1, station1_idx));
     }
@@ -308,8 +480,8 @@ fn check_segment_against_journey(
     journey2: &TrainJourney,
     ctx: &ConflictContext,
     results: &mut ConflictResults,
-    seg1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
-    seg2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
+    segment1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
+    segment2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
 ) {
     let seg1_min = segment1.idx_start.min(segment1.idx_end);
     let seg1_max = segment1.idx_start.max(segment1.idx_end);
@@ -346,7 +518,7 @@ fn check_segment_against_journey(
             // Skip if segments don't overlap in time
             if !(segment1.time_end < segment2.time_start || segment2.time_end < segment1.time_start) {
                 check_segment_pair(
-                    segment1, &segment2, seg1_min, seg1_max, journey1, journey2, ctx, results, seg1_map, seg2_map,
+                    segment1, &segment2, seg1_min, seg1_max, journey1, journey2, ctx, results, segment1_map, segment2_map,
                 );
                 if results.conflicts.len() >= MAX_CONFLICTS {
                     return;
@@ -370,6 +542,12 @@ fn check_segment_pair(
     segment1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
     segment2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
 ) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use std::sync::atomic::Ordering;
+        timing::SEGMENT_PAIR_CALLS.fetch_add(1, Ordering::Relaxed);
+    }
+
     // Check if the segments overlap in space
     let seg2_min = segment2.idx_start.min(segment2.idx_end);
     let seg2_max = segment2.idx_start.max(segment2.idx_end);
@@ -379,8 +557,14 @@ fn check_segment_pair(
     }
 
     // Get segment info from pre-built lookup maps - O(1) instead of O(n)
+    #[cfg(not(target_arch = "wasm32"))]
+    let lookup_start = std::time::Instant::now();
+
     let seg1_info = segment1_map.get(&(segment1.idx_start, segment1.idx_end));
     let seg2_info = segment2_map.get(&(segment2.idx_start, segment2.idx_end));
+
+    #[cfg(not(target_arch = "wasm32"))]
+    timing::add_duration(&timing::LOOKUP_TIME, lookup_start.elapsed());
 
     // Both segments must have track info to check for conflicts
     let (Some(info1), Some(info2)) = (seg1_info, seg2_info) else {
@@ -482,6 +666,9 @@ fn check_segment_pair(
     }
 
     // For all other cases, calculate geometric intersection
+    #[cfg(not(target_arch = "wasm32"))]
+    let intersection_start = std::time::Instant::now();
+
     let Some(intersection) = calculate_intersection(
         segment1.time_start,
         segment1.time_end,
@@ -494,6 +681,9 @@ fn check_segment_pair(
     ) else {
         return;
     };
+
+    #[cfg(not(target_arch = "wasm32"))]
+    timing::add_duration(&timing::INTERSECTION_TIME, intersection_start.elapsed());
 
     // Check if crossing happens very close to a station
     if is_near_station(&intersection, segment1, segment2, ctx.station_margin) {
@@ -763,11 +953,31 @@ fn check_platform_conflicts(
     ctx: &ConflictContext,
     results: &mut ConflictResults,
 ) {
+    #[cfg(not(target_arch = "wasm32"))]
+    let extract_start = std::time::Instant::now();
+
     let occupancies1 = extract_platform_occupancies(journey1, ctx);
     let occupancies2 = extract_platform_occupancies(journey2, ctx);
 
-    for occ1 in &occupancies1 {
-        for occ2 in &occupancies2 {
+    #[cfg(not(target_arch = "wasm32"))]
+    timing::add_duration(&timing::PLATFORM_EXTRACT_TIME, extract_start.elapsed());
+
+    check_platform_conflicts_cached(journey1, journey2, results, &occupancies1, &occupancies2);
+}
+
+/// Check for platform conflicts using pre-cached occupancies
+fn check_platform_conflicts_cached(
+    journey1: &TrainJourney,
+    journey2: &TrainJourney,
+    results: &mut ConflictResults,
+    occupancies1: &[PlatformOccupancy],
+    occupancies2: &[PlatformOccupancy],
+) {
+    #[cfg(not(target_arch = "wasm32"))]
+    let compare_start = std::time::Instant::now();
+
+    for occ1 in occupancies1 {
+        for occ2 in occupancies2 {
             // Check if same station and same platform
             if occ1.station_idx != occ2.station_idx || occ1.platform_idx != occ2.platform_idx {
                 continue;
@@ -797,6 +1007,9 @@ fn check_platform_conflicts(
             }
         }
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    timing::add_duration(&timing::PLATFORM_COMPARE_TIME, compare_start.elapsed());
 }
 
 #[cfg(test)]
