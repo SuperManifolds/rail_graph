@@ -1,4 +1,5 @@
 use crate::components::{
+    day_selector::DaySelector,
     error_list::ErrorList,
     graph_canvas::GraphCanvas,
     importer::Importer,
@@ -23,6 +24,7 @@ pub fn TimeGraph(
     let (visualization_time, set_visualization_time) =
         create_signal(chrono::Local::now().naive_local());
     let (train_journeys, set_train_journeys) = create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
+    let (selected_day, set_selected_day) = create_signal(None::<chrono::Weekday>);
 
     // Extract legend signals
     let show_station_crossings = Signal::derive(move || legend.get().show_station_crossings);
@@ -42,10 +44,11 @@ pub fn TimeGraph(
     // Track hovered journey for block visualization
     let (hovered_journey_id, set_hovered_journey_id) = create_signal(None::<uuid::Uuid>);
 
-    // Update train journeys only when lines configuration changes
+    // Update train journeys when lines configuration or selected day changes
     create_effect(move |_| {
         let current_lines = lines.get();
         let current_graph = graph.get();
+        let day_filter = selected_day.get();
 
         // Filter to only visible lines
         let visible_lines: Vec<_> = current_lines.into_iter()
@@ -53,7 +56,7 @@ pub fn TimeGraph(
             .collect();
 
         // Generate journeys for the full day starting from midnight
-        let new_journeys = TrainJourney::generate_journeys(&visible_lines, &current_graph);
+        let new_journeys = TrainJourney::generate_journeys(&visible_lines, &current_graph, day_filter);
         set_train_journeys.set(new_journeys);
     });
 
@@ -95,6 +98,10 @@ pub fn TimeGraph(
             <div class="sidebar">
                 <div class="sidebar-header">
                     <h2>"Railway Time Graph"</h2>
+                    <DaySelector
+                        selected_day=selected_day
+                        set_selected_day=set_selected_day
+                    />
                     <ErrorList
                         conflicts=conflicts_only
                         on_conflict_click=move |time_fraction, station_pos| {

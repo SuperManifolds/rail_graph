@@ -116,12 +116,19 @@
 
         .manual-departure-item {
             display: flex;
-            align-items: center;
+            flex-direction: column;
             gap: 0.5rem;
             padding: 0.5rem;
             background-color: #222;
             border: 1px solid #444;
             border-radius: 4px;
+
+            .departure-time-row {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+            }
 
             .station-input {
                 background-color: #2a2a2a;
@@ -165,6 +172,11 @@
                 &:hover {
                     color: #f66;
                 }
+            }
+
+            .days-of-week-selector {
+                flex-basis: 100%;
+                margin-top: 0.25rem;
             }
         }
     }

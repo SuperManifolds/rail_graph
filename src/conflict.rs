@@ -8,7 +8,7 @@ use std::collections::HashMap;
 // Conflict detection constants
 const STATION_MARGIN_MINUTES: i64 = 1;
 const PLATFORM_BUFFER_MINUTES: i64 = 1;
-const MAX_CONFLICTS: usize = 1000;
+const MAX_CONFLICTS: usize = 9999;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConflictType {

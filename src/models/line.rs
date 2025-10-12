@@ -2,7 +2,7 @@ use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use crate::constants::{BASE_DATE, BASE_MIDNIGHT};
 use petgraph::stable_graph::NodeIndex;
-use super::{RailwayGraph, TrackSegment, TrackDirection, Tracks};
+use super::{RailwayGraph, TrackSegment, TrackDirection, Tracks, DaysOfWeek};
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 fn generate_random_color(seed: usize) -> String {
@@ -68,6 +68,8 @@ pub struct ManualDeparture {
     pub from_station: NodeIndex,
     #[serde(with = "node_index_serde")]
     pub to_station: NodeIndex,
+    #[serde(default)]
+    pub days_of_week: DaysOfWeek,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -86,6 +88,8 @@ pub struct Line {
     pub visible: bool,
     #[serde(default)]
     pub schedule_mode: ScheduleMode,
+    #[serde(default)]
+    pub days_of_week: DaysOfWeek,
     #[serde(default)]
     pub manual_departures: Vec<ManualDeparture>,
     #[serde(default)]
@@ -120,6 +124,7 @@ impl Line {
                     return_first_departure: BASE_DATE.and_hms_opt(6, offset_minutes, 0).unwrap_or(BASE_MIDNIGHT),
                     visible: true,
                     schedule_mode: ScheduleMode::Auto,
+                    days_of_week: DaysOfWeek::ALL_DAYS,
                     manual_departures: Vec::new(),
                     forward_route: Vec::new(),
                     return_route: Vec::new(),
@@ -517,6 +522,7 @@ mod tests {
             return_first_departure: BASE_MIDNIGHT,
             visible: true,
             schedule_mode: ScheduleMode::Auto,
+            days_of_week: DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             forward_route: vec![create_test_segment(1), create_test_segment(2)],
             return_route: vec![create_test_segment(3)],
@@ -539,6 +545,7 @@ mod tests {
             return_first_departure: BASE_MIDNIGHT,
             visible: true,
             schedule_mode: ScheduleMode::Auto,
+            days_of_week: DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             forward_route: vec![create_test_segment(1), create_test_segment(2)],
             return_route: vec![],
@@ -560,6 +567,7 @@ mod tests {
             return_first_departure: BASE_MIDNIGHT,
             visible: true,
             schedule_mode: ScheduleMode::Auto,
+            days_of_week: DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             forward_route: vec![
                 create_test_segment(1),
@@ -597,6 +605,7 @@ mod tests {
             return_first_departure: BASE_MIDNIGHT,
             visible: true,
             schedule_mode: ScheduleMode::Auto,
+            days_of_week: DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             forward_route: vec![
                 create_test_segment(1),
@@ -637,6 +646,7 @@ mod tests {
             return_first_departure: BASE_MIDNIGHT,
             visible: true,
             schedule_mode: ScheduleMode::Auto,
+            days_of_week: DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             forward_route: vec![RouteSegment {
                 edge_index: edge.index(),
@@ -717,6 +727,7 @@ mod tests {
             return_first_departure: BASE_MIDNIGHT,
             visible: true,
             schedule_mode: ScheduleMode::Auto,
+            days_of_week: DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             forward_route: vec![
                 create_test_segment(5),
@@ -785,6 +796,7 @@ mod tests {
             return_first_departure: BASE_MIDNIGHT,
             visible: true,
             schedule_mode: ScheduleMode::Auto,
+            days_of_week: DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             forward_route: vec![
                 create_test_segment(e1.index()),
@@ -826,6 +838,7 @@ mod tests {
             return_first_departure: BASE_MIDNIGHT,
             visible: true,
             schedule_mode: ScheduleMode::Auto,
+            days_of_week: DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             forward_route: vec![create_test_segment(e1.index())],
             return_route: vec![],

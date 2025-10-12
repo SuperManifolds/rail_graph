@@ -1,0 +1,55 @@
+.day-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid #2a2a2a;
+
+  label {
+    font-size: 13px;
+    font-weight: 500;
+    color: #aaa;
+  }
+
+  .day-buttons {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+
+    .day-button {
+      flex: 1;
+      min-width: 45px;
+      padding: 6px 8px;
+      border: 1px solid #333;
+      border-radius: 4px;
+      background: #1a1a1a;
+      color: #999;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+
+      &:hover {
+        background: #2a2a2a;
+        border-color: #444;
+        color: #ccc;
+      }
+
+      &.active {
+        background: #2a2a2a;
+        color: #fff;
+        border-color: #555;
+
+        &:hover {
+          background: #333;
+          border-color: #666;
+        }
+      }
+
+      &:focus {
+        outline: none;
+        border-color: #555;
+      }
+    }
+  }
+}

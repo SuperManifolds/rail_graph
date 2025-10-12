@@ -1,9 +1,22 @@
-use crate::models::{Line, RailwayGraph, ScheduleMode, Stations, Tracks};
+use crate::models::{Line, RailwayGraph, ScheduleMode, Stations, Tracks, DaysOfWeek};
 use crate::constants::{BASE_DATE, GENERATION_END_HOUR};
-use chrono::{Duration, NaiveDateTime, Timelike};
+use chrono::{Duration, NaiveDateTime, Timelike, Weekday};
 use std::collections::HashMap;
 
 const MAX_JOURNEYS_PER_LINE: usize = 100; // Limit to prevent performance issues
+
+/// Convert `chrono::Weekday` to our `DaysOfWeek` bitflag
+fn weekday_to_days_of_week(weekday: Weekday) -> DaysOfWeek {
+    match weekday {
+        Weekday::Mon => DaysOfWeek::MONDAY,
+        Weekday::Tue => DaysOfWeek::TUESDAY,
+        Weekday::Wed => DaysOfWeek::WEDNESDAY,
+        Weekday::Thu => DaysOfWeek::THURSDAY,
+        Weekday::Fri => DaysOfWeek::FRIDAY,
+        Weekday::Sat => DaysOfWeek::SATURDAY,
+        Weekday::Sun => DaysOfWeek::SUNDAY,
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct JourneySegment {
@@ -26,30 +39,62 @@ pub struct TrainJourney {
 
 impl TrainJourney {
     /// Generate train journeys for all lines throughout the day
+    ///
+    /// # Arguments
+    /// * `lines` - The lines to generate journeys for
+    /// * `graph` - The railway graph
+    /// * `selected_day` - Optional day of week filter. If provided, only generates journeys for lines operating on that day
     #[must_use]
-    pub fn generate_journeys(lines: &[Line], graph: &RailwayGraph) -> HashMap<uuid::Uuid, TrainJourney> {
-        let Some(day_end) = BASE_DATE.and_hms_opt(23, 59, 59) else {
-            return HashMap::new();
-        };
-
+    pub fn generate_journeys(lines: &[Line], graph: &RailwayGraph, selected_day: Option<Weekday>) -> HashMap<uuid::Uuid, TrainJourney> {
         let mut journeys = HashMap::new();
 
-        for line in lines {
-            if line.forward_route.is_empty() && line.return_route.is_empty() {
+        // Determine which days to simulate
+        let days_to_simulate: Vec<(Weekday, i64)> = if let Some(day) = selected_day {
+            // Only simulate the selected day
+            vec![(day, 0)]
+        } else {
+            // Simulate all 7 days of the week
+            vec![
+                (Weekday::Mon, 0),
+                (Weekday::Tue, 1),
+                (Weekday::Wed, 2),
+                (Weekday::Thu, 3),
+                (Weekday::Fri, 4),
+                (Weekday::Sat, 5),
+                (Weekday::Sun, 6),
+            ]
+        };
+
+        for (weekday, day_offset) in days_to_simulate {
+            let day_filter = weekday_to_days_of_week(weekday);
+            let current_date = BASE_DATE + Duration::days(day_offset);
+
+            let Some(day_end) = current_date.and_hms_opt(23, 59, 59) else {
                 continue;
-            }
+            };
 
-            match line.schedule_mode {
-                ScheduleMode::Auto => {
-                    // Generate forward journeys
-                    Self::generate_forward_journeys(&mut journeys, line, graph, day_end);
-
-                    // Generate return journeys
-                    Self::generate_return_journeys(&mut journeys, line, graph, day_end);
+            for line in lines {
+                if line.forward_route.is_empty() && line.return_route.is_empty() {
+                    continue;
                 }
-                ScheduleMode::Manual => {
-                    // Generate journeys from manual departures
-                    Self::generate_manual_journeys(&mut journeys, line, graph);
+
+                // Filter by day of week
+                if !line.days_of_week.contains(day_filter) {
+                    continue;
+                }
+
+                match line.schedule_mode {
+                    ScheduleMode::Auto => {
+                        // Generate forward journeys
+                        Self::generate_forward_journeys(&mut journeys, line, graph, current_date, day_end);
+
+                        // Generate return journeys
+                        Self::generate_return_journeys(&mut journeys, line, graph, current_date, day_end);
+                    }
+                    ScheduleMode::Manual => {
+                        // Generate journeys from manual departures
+                        Self::generate_manual_journeys(&mut journeys, line, graph, current_date, day_filter);
+                    }
                 }
             }
         }
@@ -61,9 +106,17 @@ impl TrainJourney {
         journeys: &mut HashMap<uuid::Uuid, TrainJourney>,
         line: &Line,
         graph: &RailwayGraph,
+        current_date: chrono::NaiveDate,
         day_end: NaiveDateTime,
     ) {
-        let mut departure_time = line.first_departure;
+        // Convert the line's first_departure time to the current date
+        let departure_hour = line.first_departure.hour();
+        let departure_minute = line.first_departure.minute();
+        let departure_second = line.first_departure.second();
+
+        let Some(mut departure_time) = current_date.and_hms_opt(departure_hour, departure_minute, departure_second) else {
+            return;
+        };
         let mut journey_count = 0;
 
         while departure_time <= day_end && journey_count < MAX_JOURNEYS_PER_LINE {
@@ -133,8 +186,24 @@ impl TrainJourney {
         journeys: &mut HashMap<uuid::Uuid, TrainJourney>,
         line: &Line,
         graph: &RailwayGraph,
+        current_date: chrono::NaiveDate,
+        day_filter: DaysOfWeek,
     ) {
         for manual_dep in &line.manual_departures {
+            // Filter by day of week
+            if !manual_dep.days_of_week.contains(day_filter) {
+                continue;
+            }
+
+            // Convert the manual departure time to the current date
+            let departure_hour = manual_dep.time.hour();
+            let departure_minute = manual_dep.time.minute();
+            let departure_second = manual_dep.time.second();
+
+            let Some(departure_time) = current_date.and_hms_opt(departure_hour, departure_minute, departure_second) else {
+                continue;
+            };
+
             let from_idx = manual_dep.from_station;
             let to_idx = manual_dep.to_station;
 
@@ -143,7 +212,7 @@ impl TrainJourney {
                 &line.forward_route,
                 line,
                 graph,
-                manual_dep.time,
+                departure_time,
                 from_idx,
                 to_idx,
             ) {
@@ -156,7 +225,7 @@ impl TrainJourney {
                 &line.return_route,
                 line,
                 graph,
-                manual_dep.time,
+                departure_time,
                 from_idx,
                 to_idx,
             ) {
@@ -251,13 +320,21 @@ impl TrainJourney {
         journeys: &mut HashMap<uuid::Uuid, TrainJourney>,
         line: &Line,
         graph: &RailwayGraph,
+        current_date: chrono::NaiveDate,
         day_end: NaiveDateTime,
     ) {
         if line.return_route.is_empty() {
             return;
         }
 
-        let mut return_departure_time = line.return_first_departure;
+        // Convert the line's return_first_departure time to the current date
+        let departure_hour = line.return_first_departure.hour();
+        let departure_minute = line.return_first_departure.minute();
+        let departure_second = line.return_first_departure.second();
+
+        let Some(mut return_departure_time) = current_date.and_hms_opt(departure_hour, departure_minute, departure_second) else {
+            return;
+        };
         let mut return_journey_count = 0;
 
         while return_departure_time <= day_end && return_journey_count < MAX_JOURNEYS_PER_LINE {
@@ -380,6 +457,7 @@ mod tests {
             return_first_departure: BASE_DATE.and_hms_opt(8, 30, 0).expect("valid time"),
             frequency: Duration::hours(1),
             schedule_mode: ScheduleMode::Auto,
+            days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
         }
     }
@@ -404,7 +482,7 @@ mod tests {
         let graph = RailwayGraph::new();
         let lines = vec![];
 
-        let journeys = TrainJourney::generate_journeys(&lines, &graph);
+        let journeys = TrainJourney::generate_journeys(&lines, &graph, None);
 
         assert_eq!(journeys.len(), 0);
     }
@@ -416,7 +494,7 @@ mod tests {
         line.forward_route = vec![];
         line.return_route = vec![];
 
-        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+        let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
 
         assert_eq!(journeys.len(), 0);
     }
@@ -426,7 +504,7 @@ mod tests {
         let graph = create_test_graph();
         let line = create_test_line(&graph);
 
-        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+        let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
 
         assert!(!journeys.is_empty());
 
@@ -447,14 +525,15 @@ mod tests {
         let mut line = create_test_line(&graph);
         line.frequency = Duration::hours(2);
 
-        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+        // Test with a single day filter to check frequency within one day
+        let journeys = TrainJourney::generate_journeys(&[line], &graph, Some(Weekday::Mon));
 
         let mut departure_times: Vec<_> = journeys.values()
             .map(|j| j.departure_time)
             .collect();
         departure_times.sort();
 
-        // Check that journeys are spaced by 2 hours
+        // Check that journeys are spaced by 2 hours within the same day
         for i in 1..departure_times.len() {
             let diff = departure_times[i] - departure_times[i - 1];
             assert_eq!(diff, Duration::hours(2));
@@ -468,7 +547,7 @@ mod tests {
         line.first_departure = BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time");
         line.frequency = Duration::minutes(30);
 
-        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+        let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
 
         // Should only generate journeys up to GENERATION_END_HOUR (22)
         for journey in journeys.values() {
@@ -483,9 +562,10 @@ mod tests {
         line.first_departure = BASE_DATE.and_hms_opt(0, 0, 0).expect("valid time");
         line.frequency = Duration::minutes(1); // Very frequent
 
-        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+        let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
 
-        assert!(journeys.len() <= MAX_JOURNEYS_PER_LINE);
+        // With 7 days, we should have at most MAX_JOURNEYS_PER_LINE per day
+        assert!(journeys.len() <= MAX_JOURNEYS_PER_LINE * 7);
     }
 
     #[test]
@@ -526,7 +606,7 @@ mod tests {
                 },
             ];
 
-            let journeys = TrainJourney::generate_journeys(&[line], &graph);
+            let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
 
             // Should have both forward and return journeys
             let return_journeys: Vec<_> = journeys.values()
@@ -546,7 +626,7 @@ mod tests {
         let graph = create_test_graph();
         let line = create_test_line(&graph);
 
-        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+        let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
 
         // Find a forward journey starting at 8:00
         let journey = journeys.values()
@@ -570,6 +650,78 @@ mod tests {
         let expected_departure_c = expected_arrival_c + Duration::seconds(30);
         assert_eq!(journey.station_times[2].1, expected_arrival_c);
         assert_eq!(journey.station_times[2].2, expected_departure_c);
+    }
+
+    #[test]
+    fn test_weekday_to_days_of_week_conversion() {
+        assert_eq!(weekday_to_days_of_week(Weekday::Mon), DaysOfWeek::MONDAY);
+        assert_eq!(weekday_to_days_of_week(Weekday::Tue), DaysOfWeek::TUESDAY);
+        assert_eq!(weekday_to_days_of_week(Weekday::Wed), DaysOfWeek::WEDNESDAY);
+        assert_eq!(weekday_to_days_of_week(Weekday::Thu), DaysOfWeek::THURSDAY);
+        assert_eq!(weekday_to_days_of_week(Weekday::Fri), DaysOfWeek::FRIDAY);
+        assert_eq!(weekday_to_days_of_week(Weekday::Sat), DaysOfWeek::SATURDAY);
+        assert_eq!(weekday_to_days_of_week(Weekday::Sun), DaysOfWeek::SUNDAY);
+    }
+
+    #[test]
+    fn test_generate_journeys_filters_by_day() {
+        let graph = create_test_graph();
+        let mut line = create_test_line(&graph);
+
+        // Line only operates on weekdays
+        line.days_of_week = DaysOfWeek::WEEKDAYS;
+
+        // Generate for Monday - should have journeys
+        let monday_journeys = TrainJourney::generate_journeys(std::slice::from_ref(&line), &graph, Some(Weekday::Mon));
+        assert!(!monday_journeys.is_empty());
+
+        // Generate for Saturday - should have no journeys
+        let saturday_journeys = TrainJourney::generate_journeys(std::slice::from_ref(&line), &graph, Some(Weekday::Sat));
+        assert!(saturday_journeys.is_empty());
+    }
+
+    #[test]
+    fn test_generate_journeys_seven_days() {
+        let graph = create_test_graph();
+        let line = create_test_line(&graph);
+
+        // Generate for all 7 days
+        let all_journeys = TrainJourney::generate_journeys(std::slice::from_ref(&line), &graph, None);
+
+        // Generate for a single day
+        let single_day_journeys = TrainJourney::generate_journeys(std::slice::from_ref(&line), &graph, Some(Weekday::Mon));
+
+        // Should have approximately 7x more journeys when generating for all days
+        // (approximately because of daily cutoff times)
+        assert!(all_journeys.len() >= single_day_journeys.len() * 6);
+        assert!(all_journeys.len() <= single_day_journeys.len() * 8);
+    }
+
+    #[test]
+    fn test_manual_departure_respects_days_of_week() {
+        let graph = create_test_graph();
+        let mut line = create_test_line(&graph);
+
+        let idx1 = graph.get_station_index("Station A").expect("Station A exists");
+        let idx2 = graph.get_station_index("Station B").expect("Station B exists");
+
+        line.schedule_mode = ScheduleMode::Manual;
+        line.manual_departures = vec![
+            crate::models::ManualDeparture {
+                time: BASE_DATE.and_hms_opt(10, 0, 0).expect("valid time"),
+                from_station: idx1,
+                to_station: idx2,
+                days_of_week: DaysOfWeek::MONDAY | DaysOfWeek::WEDNESDAY | DaysOfWeek::FRIDAY,
+            },
+        ];
+
+        // Generate for Monday - should have the departure
+        let monday_journeys = TrainJourney::generate_journeys(std::slice::from_ref(&line), &graph, Some(Weekday::Mon));
+        assert_eq!(monday_journeys.len(), 1);
+
+        // Generate for Tuesday - should not have the departure
+        let tuesday_journeys = TrainJourney::generate_journeys(std::slice::from_ref(&line), &graph, Some(Weekday::Tue));
+        assert_eq!(tuesday_journeys.len(), 0);
     }
 
     #[test]
@@ -619,10 +771,11 @@ mod tests {
             return_first_departure: BASE_DATE.and_hms_opt(8, 30, 0).expect("valid time"),
             frequency: Duration::hours(1),
             schedule_mode: ScheduleMode::Auto,
+            days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
         };
 
-        let journeys = TrainJourney::generate_journeys(&[line], &graph);
+        let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
 
         assert!(!journeys.is_empty());
 

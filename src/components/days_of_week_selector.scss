@@ -1,0 +1,93 @@
+.days-of-week-selector {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+
+  > label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #aaa;
+  }
+
+  .preset-buttons {
+    display: flex;
+    gap: 4px;
+
+    .preset-button {
+      padding: 3px 8px;
+      border: 1px solid #333;
+      border-radius: 4px;
+      background: #1a1a1a;
+      color: #999;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+
+      &:hover {
+        background: #2a2a2a;
+        border-color: #444;
+        color: #ccc;
+      }
+
+      &:active {
+        background: #333;
+      }
+    }
+  }
+
+  .day-checkboxes {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+
+    .day-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 6px;
+      border: 1px solid #2a2a2a;
+      border-radius: 4px;
+      background: #0a0a0a;
+      cursor: pointer;
+      transition: all 0.15s ease;
+
+      &:hover {
+        background: #1a1a1a;
+        border-color: #333;
+      }
+
+      input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        cursor: pointer;
+        margin: 0;
+      }
+
+      .day-short {
+        font-weight: 500;
+        color: #ccc;
+        font-size: 11px;
+      }
+
+      .day-full {
+        display: none;
+      }
+
+      &:has(input:checked) {
+        background: #1a1a1a;
+        border-color: #555;
+
+        .day-short {
+          color: #fff;
+        }
+      }
+    }
+  }
+}
+
+// Hide label when inside manual departure row or form-group (parent label is used)
+.manual-departure-item .days-of-week-selector > label,
+.form-group .days-of-week-selector > label {
+  display: none;
+}
