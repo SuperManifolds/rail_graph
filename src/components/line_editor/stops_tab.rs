@@ -134,6 +134,8 @@ pub fn StopsTab(
                                                                                     origin_platform: 0,
                                                                                     destination_platform: 0,
                                                                                     duration: Duration::minutes(5),
+                                                                                    // Only the first segment gets the wait time, representing the dwell time at the origin station.
+                                                                                    // Subsequent segments have zero wait time, as trains do not stop at intermediate segments.
                                                                                     wait_time: if i == 0 { default_wait } else { Duration::zero() },
                                                                                 };
 

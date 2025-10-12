@@ -26,12 +26,6 @@ impl Default for DaysOfWeek {
 }
 
 impl DaysOfWeek {
-    /// Check if a specific day is enabled
-    #[must_use]
-    pub const fn contains_day(self, day: DaysOfWeek) -> bool {
-        self.bits() & day.bits() != 0
-    }
-
     /// Check if all days are enabled
     #[must_use]
     pub const fn is_all_days(self) -> bool {
@@ -142,11 +136,11 @@ mod tests {
     }
 
     #[test]
-    fn test_contains_day() {
+    fn test_contains() {
         let days = DaysOfWeek::MONDAY | DaysOfWeek::FRIDAY;
-        assert!(days.contains_day(DaysOfWeek::MONDAY));
-        assert!(days.contains_day(DaysOfWeek::FRIDAY));
-        assert!(!days.contains_day(DaysOfWeek::TUESDAY));
+        assert!(days.contains(DaysOfWeek::MONDAY));
+        assert!(days.contains(DaysOfWeek::FRIDAY));
+        assert!(!days.contains(DaysOfWeek::TUESDAY));
     }
 
     #[test]

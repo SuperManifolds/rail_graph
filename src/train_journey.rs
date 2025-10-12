@@ -18,6 +18,11 @@ fn weekday_to_days_of_week(weekday: Weekday) -> DaysOfWeek {
     }
 }
 
+/// Convert a `NaiveDateTime` to a specific date while preserving time components
+fn time_on_date(datetime: NaiveDateTime, date: chrono::NaiveDate) -> Option<NaiveDateTime> {
+    date.and_hms_opt(datetime.hour(), datetime.minute(), datetime.second())
+}
+
 #[derive(Debug, Clone)]
 pub struct JourneySegment {
     pub edge_index: usize,
@@ -110,11 +115,7 @@ impl TrainJourney {
         day_end: NaiveDateTime,
     ) {
         // Convert the line's first_departure time to the current date
-        let departure_hour = line.first_departure.hour();
-        let departure_minute = line.first_departure.minute();
-        let departure_second = line.first_departure.second();
-
-        let Some(mut departure_time) = current_date.and_hms_opt(departure_hour, departure_minute, departure_second) else {
+        let Some(mut departure_time) = time_on_date(line.first_departure, current_date) else {
             return;
         };
         let mut journey_count = 0;
@@ -196,11 +197,7 @@ impl TrainJourney {
             }
 
             // Convert the manual departure time to the current date
-            let departure_hour = manual_dep.time.hour();
-            let departure_minute = manual_dep.time.minute();
-            let departure_second = manual_dep.time.second();
-
-            let Some(departure_time) = current_date.and_hms_opt(departure_hour, departure_minute, departure_second) else {
+            let Some(departure_time) = time_on_date(manual_dep.time, current_date) else {
                 continue;
             };
 
@@ -328,11 +325,7 @@ impl TrainJourney {
         }
 
         // Convert the line's return_first_departure time to the current date
-        let departure_hour = line.return_first_departure.hour();
-        let departure_minute = line.return_first_departure.minute();
-        let departure_second = line.return_first_departure.second();
-
-        let Some(mut return_departure_time) = current_date.and_hms_opt(departure_hour, departure_minute, departure_second) else {
+        let Some(mut return_departure_time) = time_on_date(line.return_first_departure, current_date) else {
             return;
         };
         let mut return_journey_count = 0;
