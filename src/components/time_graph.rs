@@ -9,7 +9,57 @@ use crate::components::{
 };
 use crate::models::{Line, RailwayGraph};
 use crate::train_journey::TrainJourney;
+use crate::conflict::{Conflict, StationCrossing};
 use leptos::{component, view, Signal, IntoView, SignalGet, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect};
+
+#[cfg(target_arch = "wasm32")]
+#[inline]
+fn setup_worker_conflict_detection(
+    train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
+    graph: ReadSignal<RailwayGraph>,
+) -> (ReadSignal<Vec<Conflict>>, ReadSignal<Vec<StationCrossing>>) {
+    use crate::worker_bridge::ConflictDetector;
+    use leptos::store_value;
+
+    let (conflicts, set_conflicts) = create_signal(Vec::new());
+    let (crossings, set_crossings) = create_signal(Vec::new());
+
+    let detector = store_value(ConflictDetector::new(
+        set_conflicts,
+        set_crossings,
+    ));
+
+    create_effect(move |_| {
+        let journeys = train_journeys.get();
+        let journeys_vec: Vec<_> = journeys.values().cloned().collect();
+        let current_graph = graph.get();
+
+        detector.update_value(|d| {
+            d.detect(journeys_vec, current_graph);
+        });
+    });
+
+    (conflicts, crossings)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[inline]
+fn setup_sync_conflict_detection(
+    train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
+    graph: ReadSignal<RailwayGraph>,
+) -> (Signal<Vec<Conflict>>, Signal<Vec<StationCrossing>>) {
+    let conflicts_and_crossings = create_memo(move |_| {
+        let journeys = train_journeys.get();
+        let journeys_vec: Vec<_> = journeys.values().cloned().collect();
+        let current_graph = graph.get();
+        crate::conflict::detect_line_conflicts(&journeys_vec, &current_graph)
+    });
+
+    let conflicts = Signal::derive(move || conflicts_and_crossings.get().0);
+    let crossings = Signal::derive(move || conflicts_and_crossings.get().1);
+
+    (conflicts, crossings)
+}
 
 #[component]
 #[must_use]
@@ -61,14 +111,14 @@ pub fn TimeGraph(
     });
 
     // Compute conflicts and station crossings
-    let conflicts_and_crossings = create_memo(move |_| {
-        let journeys = train_journeys.get();
-        let journeys_vec: Vec<_> = journeys.values().cloned().collect();
-        let current_graph = graph.get();
-        crate::conflict::detect_line_conflicts(&journeys_vec, &current_graph)
-    });
+    #[cfg(target_arch = "wasm32")]
+    let (conflicts, crossings) = setup_worker_conflict_detection(train_journeys, graph);
 
-    let conflicts_only = Signal::derive(move || conflicts_and_crossings.get().0);
+    #[cfg(not(target_arch = "wasm32"))]
+    let (conflicts, crossings) = setup_sync_conflict_detection(train_journeys, graph);
+
+    let conflicts_and_crossings = create_memo(move |_| (conflicts.get(), crossings.get()));
+    let conflicts_only = Signal::derive(move || conflicts.get());
 
     // Signal for panning to conflicts
     let (pan_to_conflict, set_pan_to_conflict) = create_signal(None::<(f64, f64)>);

@@ -10,7 +10,7 @@ const STATION_MARGIN_MINUTES: i64 = 1;
 const PLATFORM_BUFFER_MINUTES: i64 = 1;
 const MAX_CONFLICTS: usize = 9999;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConflictType {
     HeadOn,            // Trains meeting on same track, opposite directions
     Overtaking,        // Train catching up on same track, same direction
@@ -18,7 +18,7 @@ pub enum ConflictType {
     PlatformViolation, // Two trains using same platform at same time
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Conflict {
     pub time: NaiveDateTime,
     pub position: f64, // Position between stations (0.0 to 1.0)
@@ -79,7 +79,7 @@ impl Conflict {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct StationCrossing {
     pub time: NaiveDateTime,
     pub station_idx: usize,

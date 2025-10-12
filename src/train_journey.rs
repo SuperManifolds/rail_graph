@@ -23,7 +23,7 @@ fn time_on_date(datetime: NaiveDateTime, date: chrono::NaiveDate) -> Option<Naiv
     date.and_hms_opt(datetime.hour(), datetime.minute(), datetime.second())
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct JourneySegment {
     pub edge_index: usize,
     pub track_index: usize,
@@ -31,7 +31,7 @@ pub struct JourneySegment {
     pub destination_platform: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrainJourney {
     pub id: uuid::Uuid,
     pub line_id: String,
@@ -52,11 +52,11 @@ impl TrainJourney {
     #[must_use]
     pub fn generate_journeys(lines: &[Line], graph: &RailwayGraph, selected_day: Option<Weekday>) -> HashMap<uuid::Uuid, TrainJourney> {
         #[cfg(target_arch = "wasm32")]
-        let (window, performance, start) = {
+        let (performance, start) = {
             let window = web_sys::window().expect("should have a window");
             let performance = window.performance().expect("should have performance");
             let start = performance.now();
-            (window, performance, start)
+            (performance, start)
         };
 
         let mut journeys = HashMap::new();
