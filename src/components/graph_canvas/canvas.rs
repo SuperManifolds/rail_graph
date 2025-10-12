@@ -373,8 +373,27 @@ fn render_graph(
     let canvas_width = f64::from(canvas_element.width());
     let canvas_height = f64::from(canvas_element.height());
 
-    // Convert HashMap to Vec for drawing functions
-    let journeys_vec: Vec<_> = train_journeys.values().cloned().collect();
+    // Filter journeys to only those visible in viewport (avoid cloning off-screen journeys)
+    let journeys_vec: Vec<&TrainJourney> = train_journeys.values()
+        .filter(|journey| {
+            // Quick time-based culling: check if journey overlaps visible time range
+            if let (Some((_, start, _)), Some((_, _, end))) =
+                (journey.station_times.first(), journey.station_times.last()) {
+                let start_frac = time_to_fraction(*start);
+                let end_frac = time_to_fraction(*end);
+
+                // Calculate visible time range accounting for zoom and pan
+                let dimensions = GraphDimensions::new(canvas_width, canvas_height);
+                let visible_start = -viewport.pan_offset_x / (viewport.zoom_level * viewport.zoom_level_x * dimensions.hour_width);
+                let visible_end = visible_start + (dimensions.graph_width / (viewport.zoom_level * viewport.zoom_level_x * dimensions.hour_width));
+
+                // Journey is visible if it overlaps with visible range
+                end_frac >= visible_start && start_frac <= visible_end
+            } else {
+                false
+            }
+        })
+        .collect();
 
     let Ok(Some(context)) = canvas_element.get_context("2d") else {
         leptos::logging::warn!("Failed to get 2D context");

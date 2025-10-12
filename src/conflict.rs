@@ -1122,6 +1122,7 @@ mod tests {
                 ("A".to_string(), BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"), BASE_DATE.and_hms_opt(8, 1, 0).expect("valid time")),
                 ("B".to_string(), BASE_DATE.and_hms_opt(8, 10, 0).expect("valid time"), BASE_DATE.and_hms_opt(8, 11, 0).expect("valid time")),
             ],
+            station_indices: vec![0, 1],
             segments: vec![JourneySegment {
                 edge_index: edge.index(),
                 track_index: 0,

@@ -16,11 +16,11 @@ pub fn draw_current_train_positions(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     stations: &[StationNode],
-    train_journeys: &[TrainJourney],
+    train_journeys: &[&TrainJourney],
     station_height: f64,
     visualization_time: NaiveDateTime,
     zoom_level: f64,
-    time_to_fraction: fn(NaiveDateTime) -> f64,
+    time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
     for journey in train_journeys {
         // Find which segment the train is currently on (or if it's waiting at a station)

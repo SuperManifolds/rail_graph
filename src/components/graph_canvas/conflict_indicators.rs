@@ -208,7 +208,7 @@ pub fn draw_block_violation_visualization(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     conflict: &Conflict,
-    train_journeys: &[crate::train_journey::TrainJourney],
+    train_journeys: &[&crate::train_journey::TrainJourney],
     station_height: f64,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,

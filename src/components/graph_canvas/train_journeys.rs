@@ -15,29 +15,48 @@ pub fn draw_train_journeys(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     stations: &[StationNode],
-    train_journeys: &[TrainJourney],
+    train_journeys: &[&TrainJourney],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
+    use std::collections::HashMap;
+
     let station_height = dims.graph_height / stations.len() as f64;
 
+    // Group journeys by color and thickness for batching
+    let mut journeys_by_style: HashMap<(String, u32), Vec<&TrainJourney>> = HashMap::new();
     for journey in train_journeys {
-        ctx.set_stroke_style_str(&journey.color);
-        ctx.set_line_width(journey.thickness / zoom_level);
+        if !journey.station_indices.is_empty() {
+            // Convert thickness to integer microns to use as key
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let thickness_key = (journey.thickness * 1000.0) as u32;
+            journeys_by_style
+                .entry((journey.color.clone(), thickness_key))
+                .or_default()
+                .push(journey);
+        }
+    }
+
+    // Draw all journeys grouped by style
+    for ((color, thickness_key), journeys) in &journeys_by_style {
+        let thickness = f64::from(*thickness_key) / 1000.0;
+
+        ctx.set_stroke_style_str(color);
+        ctx.set_line_width(thickness / zoom_level);
         ctx.begin_path();
 
-        let mut first_point = true;
-        let mut prev_x = 0.0;
+        // Draw all line paths for this style
+        for journey in journeys {
+            let mut first_point = true;
+            let mut prev_x = 0.0;
 
-        for (station_name, arrival_time, departure_time) in &journey.station_times {
-            if let Some(station_idx) = stations.iter().position(|s| s.name == *station_name) {
+            for (i, (_station_name, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
+                let station_idx = journey.station_indices[i];
                 let arrival_fraction = time_to_fraction(*arrival_time);
                 let departure_fraction = time_to_fraction(*departure_time);
                 let mut arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
                 let mut departure_x = dims.left_margin + (departure_fraction * dims.hour_width);
 
-                // If this x position is much less than the previous x (indicating midnight wrap),
-                // add the width of one full day to continue the line
                 if !first_point && arrival_x < prev_x - dims.graph_width * MIDNIGHT_WRAP_THRESHOLD {
                     arrival_x += dims.graph_width;
                     departure_x += dims.graph_width;
@@ -50,11 +69,9 @@ pub fn draw_train_journeys(
                     ctx.move_to(arrival_x, y);
                     first_point = false;
                 } else {
-                    // Draw diagonal line to arrival point
                     ctx.line_to(arrival_x, y);
                 }
 
-                // Draw vertical line for wait time (from arrival to departure)
                 if (arrival_x - departure_x).abs() > f64::EPSILON {
                     ctx.line_to(departure_x, y);
                 }
@@ -63,19 +80,22 @@ pub fn draw_train_journeys(
             }
         }
 
+        // Stroke all lines for this style at once
         ctx.stroke();
 
-        // Draw small dots at arrival and departure points (scale with line thickness)
-        let dot_radius = (journey.thickness * DOT_RADIUS_MULTIPLIER).max(MIN_DOT_RADIUS);
-        let mut prev_x = 0.0;
-        for (station_name, arrival_time, departure_time) in &journey.station_times {
-            if let Some(station_idx) = stations.iter().position(|s| s.name == *station_name) {
+        // Draw dots in batches
+        ctx.set_fill_style_str(color);
+        let dot_radius = (thickness * DOT_RADIUS_MULTIPLIER).max(MIN_DOT_RADIUS);
+
+        for journey in journeys {
+            let mut prev_x = 0.0;
+            for (i, (_station_name, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
+                let station_idx = journey.station_indices[i];
                 let arrival_fraction = time_to_fraction(*arrival_time);
                 let departure_fraction = time_to_fraction(*departure_time);
                 let mut arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
                 let mut departure_x = dims.left_margin + (departure_fraction * dims.hour_width);
 
-                // Handle midnight wrap-around for station dots
                 if prev_x > 0.0 && arrival_x < prev_x - dims.graph_width * MIDNIGHT_WRAP_THRESHOLD {
                     arrival_x += dims.graph_width;
                     departure_x += dims.graph_width;
@@ -85,14 +105,10 @@ pub fn draw_train_journeys(
                     + (station_idx as f64 * station_height)
                     + (station_height / 2.0);
 
-                ctx.set_fill_style_str(&journey.color);
-
-                // Draw dot at arrival point
                 ctx.begin_path();
                 let _ = ctx.arc(arrival_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
                 ctx.fill();
 
-                // Draw dot at departure point (if different from arrival)
                 if (arrival_x - departure_x).abs() > f64::EPSILON {
                     ctx.begin_path();
                     let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
