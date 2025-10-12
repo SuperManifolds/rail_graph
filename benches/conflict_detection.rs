@@ -6,13 +6,13 @@ use nimby_graph::data::parse_csv_data;
 fn benchmark_conflict_detection(c: &mut Criterion) {
     // Load real data from lines.csv
     let (lines, graph) = parse_csv_data();
-    let journeys = TrainJourney::generate_journeys(&lines, &graph);
+    let journeys = TrainJourney::generate_journeys(&lines, &graph, None);
     let journeys_vec: Vec<_> = journeys.values().cloned().collect();
 
     // Benchmark journey generation
     c.bench_function("generate_journeys", |b| {
         b.iter(|| {
-            TrainJourney::generate_journeys(black_box(&lines), black_box(&graph))
+            TrainJourney::generate_journeys(black_box(&lines), black_box(&graph), None)
         });
     });
 
@@ -29,7 +29,7 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
     // Benchmark the full pipeline (what happens on every change)
     c.bench_function("full_pipeline", |b| {
         b.iter(|| {
-            let journeys = TrainJourney::generate_journeys(black_box(&lines), black_box(&graph));
+            let journeys = TrainJourney::generate_journeys(black_box(&lines), black_box(&graph), None);
             let journeys_vec: Vec<_> = journeys.values().cloned().collect();
             detect_line_conflicts(
                 black_box(&journeys_vec),

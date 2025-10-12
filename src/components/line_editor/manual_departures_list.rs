@@ -107,6 +107,7 @@ pub fn ManualDeparturesList(
                                 time: DEFAULT_DEPARTURE_TIME,
                                 from_station,
                                 to_station,
+                                days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
                             };
                             updated_line.manual_departures.push(new_departure);
                             set_edited_line.set(Some(updated_line.clone()));

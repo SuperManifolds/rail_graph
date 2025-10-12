@@ -1,3 +1,4 @@
+mod days_of_week;
 mod junction;
 mod line;
 mod node;
@@ -6,6 +7,7 @@ mod railway_graph;
 mod station;
 mod track;
 
+pub use days_of_week::DaysOfWeek;
 pub use junction::{Junction, RoutingRule};
 pub use line::{Line, ScheduleMode, ManualDeparture, RouteSegment};
 pub use node::Node;

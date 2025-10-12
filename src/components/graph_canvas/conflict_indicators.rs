@@ -17,7 +17,7 @@ const CONFLICT_LABEL_FONT_SIZE: f64 = 9.0;
 const CONFLICT_LABEL_OFFSET: f64 = 5.0;
 const CONFLICT_WARNING_COLOR: &str = "rgba(255, 0, 0, 0.8)";
 const CONFLICT_WARNING_FONT_SIZE: f64 = 14.0;
-const MAX_CONFLICTS_DISPLAYED: usize = 1000;
+const MAX_CONFLICTS_DISPLAYED: usize = 9999;
 
 // Station crossing constants
 const CROSSING_FILL_COLOR: &str = "rgba(0, 200, 100, 0.3)";

@@ -1,5 +1,5 @@
-use crate::components::time_input::TimeInput;
-use crate::models::{ManualDeparture, RailwayGraph, Stations};
+use crate::components::{days_of_week_selector::DaysOfWeekSelector, time_input::TimeInput};
+use crate::models::{ManualDeparture, RailwayGraph, Stations, DaysOfWeek};
 use leptos::{component, view, IntoView, create_signal, store_value, Signal, SignalGet, SignalUpdate, SignalGetUntracked, event_target_value};
 
 #[component]
@@ -19,17 +19,18 @@ pub fn ManualDepartureEditor(
 
     view! {
         <div class="manual-departure-item">
-            <TimeInput
-                label=""
-                value=Signal::derive(move || local_departure.get().time)
-                default_time="08:00"
-                on_change={
-                    Box::new(move |time| {
-                        set_local_departure.update(|dep| dep.time = time);
-                        on_update.with_value(|f| f(index, local_departure.get_untracked()));
-                    })
-                }
-            />
+            <div class="departure-time-row">
+                <TimeInput
+                    label=""
+                    value=Signal::derive(move || local_departure.get().time)
+                    default_time="08:00"
+                    on_change={
+                        Box::new(move |time| {
+                            set_local_departure.update(|dep| dep.time = time);
+                            on_update.with_value(|f| f(index, local_departure.get_untracked()));
+                        })
+                    }
+                />
             <select
                 class="station-input"
                 on:change={
@@ -100,6 +101,14 @@ pub fn ManualDepartureEditor(
             >
                 "×"
             </button>
+            <DaysOfWeekSelector
+                days_of_week=Signal::derive(move || local_departure.get().days_of_week)
+                set_days_of_week=move |days: DaysOfWeek| {
+                    set_local_departure.update(|dep| dep.days_of_week = days);
+                    on_update.with_value(|f| f(index, local_departure.get_untracked()));
+                }
+            />
+            </div>
         </div>
     }
 }

@@ -1,10 +1,11 @@
 use super::ManualDeparturesList;
 use crate::components::{
+    days_of_week_selector::DaysOfWeekSelector,
     duration_input::DurationInput,
     tab_view::TabPanel,
     time_input::TimeInput,
 };
-use crate::models::{Line, ScheduleMode, RailwayGraph};
+use crate::models::{Line, ScheduleMode, RailwayGraph, DaysOfWeek};
 use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_checked, SignalGetUntracked, SignalSet, Show};
 use std::rc::Rc;
 
@@ -47,6 +48,23 @@ pub fn ScheduleTab(
                         let on_save = on_save.get_value();
                         move || {
                             view! {
+                                <div class="form-group">
+                                    <label>"Operating days"</label>
+                                    <DaysOfWeekSelector
+                                        days_of_week=Signal::derive(move || edited_line.get().map(|l| l.days_of_week).unwrap_or_default())
+                                        set_days_of_week={
+                                            let on_save = on_save.clone();
+                                            move |days: DaysOfWeek| {
+                                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                                    updated_line.days_of_week = days;
+                                                    set_edited_line.set(Some(updated_line.clone()));
+                                                    on_save(updated_line);
+                                                }
+                                            }
+                                        }
+                                    />
+                                </div>
+
                                 <div class="form-group">
                                     <label>"Frequency"</label>
                                     <DurationInput

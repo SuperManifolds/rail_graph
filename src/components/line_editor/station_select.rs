@@ -39,8 +39,18 @@ pub fn StationSelect(
                         if !station_name.is_empty() {
                             if let Some(mut updated_line) = edited_line.get_untracked() {
                                 let graph = graph.get();
+                                let new_station_idx = graph.get_station_index(&station_name);
+
+                                // Handle empty route case (first station)
+                                if station_idx.is_none() && new_station_idx.is_some() {
+                                    // For an empty route, just mark this as the starting point
+                                    // The actual segments will be added when the second station is selected
+                                    on_save(updated_line);
+                                    return;
+                                }
+
                                 if let (Some(new_station_idx), Some(existing_idx)) = (
-                                    graph.get_station_index(&station_name),
+                                    new_station_idx,
                                     station_idx
                                 ) {
                                     // Find edge based on route direction and position

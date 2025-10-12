@@ -10,6 +10,8 @@ pub mod edit_track;
 pub mod track_editor;
 pub mod app;
 pub mod conflict_tooltip;
+pub mod day_selector;
+pub mod days_of_week_selector;
 pub mod duration_input;
 pub mod error_list;
 pub mod graph_canvas;
