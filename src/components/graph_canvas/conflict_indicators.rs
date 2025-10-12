@@ -1,7 +1,7 @@
 use super::types::GraphDimensions;
 use crate::models::StationNode;
 use crate::conflict::{Conflict, StationCrossing};
-use web_sys::CanvasRenderingContext2d;
+use web_sys::{CanvasRenderingContext2d, Path2d};
 
 // Conflict highlight constants
 const CONFLICT_TRIANGLE_SIZE: f64 = 15.0;
@@ -32,15 +32,32 @@ pub fn draw_conflict_highlights(
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
     let size = CONFLICT_TRIANGLE_SIZE / zoom_level;
+    let bar_width = 1.5 / zoom_level;
+    let bar_height = 6.0 / zoom_level;
+    let dot_radius = 1.0 / zoom_level;
+
+    // Create reusable Path2D objects for the triangle shape centered at origin
+    let triangle_path = Path2d::new().ok();
+    if let Some(ref path) = triangle_path {
+        path.move_to(0.0, -size);
+        path.line_to(-size * 0.866, size * 0.5);
+        path.line_to(size * 0.866, size * 0.5);
+        path.close_path();
+    }
+
+    // Create reusable Path2D for the exclamation dot
+    let dot_path = Path2d::new().ok();
+    if let Some(ref path) = dot_path {
+        let _ = path.arc(0.0, 4.0 / zoom_level, dot_radius, 0.0, std::f64::consts::PI * 2.0);
+    }
 
     // Set styles once
     ctx.set_line_width(1.5 / zoom_level);
 
-    // Draw each marker completely to maintain z-order
+    // Draw each marker by translating and stamping the paths
     for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
         let time_fraction = time_to_fraction(conflict.time);
         let x = dims.left_margin + (time_fraction * dims.hour_width);
-
         let y = dims.top_margin
             + (conflict.station1_idx as f64 * station_height)
             + (station_height / 2.0)
@@ -48,27 +65,27 @@ pub fn draw_conflict_highlights(
                 * station_height
                 * (conflict.station2_idx - conflict.station1_idx) as f64);
 
-        // Draw triangle
-        ctx.set_fill_style_str("rgba(255, 200, 0, 0.9)");
-        ctx.set_stroke_style_str("rgba(0, 0, 0, 0.8)");
-        ctx.begin_path();
-        ctx.move_to(x, y - size);
-        ctx.line_to(x - size * 0.866, y + size * 0.5);
-        ctx.line_to(x + size * 0.866, y + size * 0.5);
-        ctx.close_path();
-        ctx.fill();
-        ctx.stroke();
+        ctx.save();
+        ctx.translate(x, y).ok();
 
-        // Draw exclamation mark as geometry
+        // Draw triangle using Path2D
+        if let Some(ref path) = triangle_path {
+            ctx.set_fill_style_str("rgba(255, 200, 0, 0.9)");
+            ctx.set_stroke_style_str("rgba(0, 0, 0, 0.8)");
+            ctx.fill_with_path_2d(path);
+            ctx.stroke_with_path(path);
+        }
+
+        // Draw exclamation bar
         ctx.set_fill_style_str("#000");
-        let bar_width = 1.5 / zoom_level;
-        let bar_height = 6.0 / zoom_level;
-        ctx.fill_rect(x - bar_width / 2.0, y - bar_height / 2.0 - 1.0 / zoom_level, bar_width, bar_height);
+        ctx.fill_rect(-bar_width / 2.0, -bar_height / 2.0 - 1.0 / zoom_level, bar_width, bar_height);
 
-        let dot_radius = 1.0 / zoom_level;
-        ctx.begin_path();
-        let _ = ctx.arc(x, y + 4.0 / zoom_level, dot_radius, 0.0, std::f64::consts::PI * 2.0);
-        ctx.fill();
+        // Draw exclamation dot using Path2D
+        if let Some(ref path) = dot_path {
+            ctx.fill_with_path_2d(path);
+        }
+
+        ctx.restore();
     }
 
     // Only draw labels when zoomed in enough (zoom level > 2.0)
@@ -84,7 +101,6 @@ pub fn draw_conflict_highlights(
         for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
             let time_fraction = time_to_fraction(conflict.time);
             let x = dims.left_margin + (time_fraction * dims.hour_width);
-
             let y = dims.top_margin
                 + (conflict.station1_idx as f64 * station_height)
                 + (station_height / 2.0)
