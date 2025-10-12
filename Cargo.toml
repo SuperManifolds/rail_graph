@@ -54,8 +54,3 @@ criterion = "0.5"
 [[bench]]
 name = "conflict_detection"
 harness = false
-
-[[bin]]
-name = "conflict_worker"
-path = "src/bin/conflict_worker.rs"
-required-features = []
