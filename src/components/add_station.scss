@@ -1,34 +1,14 @@
 .add-station-form {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
-    padding: 1rem;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-lg);
 
     .form-field {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-
-        label {
-            font-size: 0.9rem;
-            color: #ccc;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
+        @include form-field;
 
         input[type="text"] {
-            padding: 0.5rem;
-            background-color: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 4px;
-            color: #e0e0e0;
-            font-size: 0.9rem;
-
-            &:focus {
-                outline: none;
-                border-color: #4a9eff;
-            }
+            @include input-text;
         }
 
         input[type="checkbox"] {
@@ -36,57 +16,25 @@
         }
 
         select {
-            padding: 0.5rem;
-            background-color: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 4px;
-            color: #e0e0e0;
-            font-size: 0.9rem;
-
-            &:focus {
-                outline: none;
-                border-color: #4a9eff;
-            }
+            @include input-select;
         }
     }
 
     .form-buttons {
         display: flex;
-        gap: 0.5rem;
+        gap: var(--spacing-sm);
         justify-content: flex-end;
-        margin-top: 1rem;
+        margin-top: var(--spacing-lg);
 
         button {
-            padding: 0.5rem 1rem;
-            border-radius: 4px;
-            border: 1px solid #444;
-            background-color: #2a2a2a;
-            color: #e0e0e0;
-            cursor: pointer;
-            font-size: 0.9rem;
-
-            &:hover {
-                background-color: #333;
-            }
+            @include button-default;
 
             &.primary {
-                background-color: #4a9eff;
-                border-color: #4a9eff;
-                color: #fff;
-
-                &:hover {
-                    background-color: #3a8eef;
-                }
+                @include button-primary;
             }
 
             &.danger {
-                background-color: #dc3545;
-                border-color: #dc3545;
-                color: #fff;
-
-                &:hover {
-                    background-color: #c82333;
-                }
+                @include button-danger;
             }
         }
     }

@@ -3,26 +3,26 @@
     flex-direction: column;
     gap: 20px;
     padding: 20px;
-    color: #e0e0e0;
+    color: var(--color-text-secondary);
 
     .warning-message {
         font-size: 16px;
         margin: 0;
 
         strong {
-            color: #4a9eff;
+            color: var(--color-accent);
         }
     }
 
     .info-message {
         font-size: 14px;
-        color: #b0b0b0;
+        color: var(--color-text-tertiary);
         margin: 0;
     }
 
     .affected-lines {
-        background-color: #2a2a2a;
-        border: 1px solid #444;
+        background-color: var(--color-bg-tertiary);
+        border: 1px solid var(--color-border-medium);
         border-radius: 4px;
         padding: 15px;
         display: flex;
@@ -36,7 +36,7 @@
 
             li {
                 margin: 5px 0;
-                color: #e0e0e0;
+                color: var(--color-text-secondary);
             }
         }
     }
@@ -49,24 +49,24 @@
 
         button {
             padding: 8px 16px;
-            border: 1px solid #444;
-            background-color: #2a2a2a;
-            color: #e0e0e0;
+            border: 1px solid var(--color-border-medium);
+            background-color: var(--color-bg-tertiary);
+            color: var(--color-text-secondary);
             border-radius: 4px;
             cursor: pointer;
             font-size: 14px;
 
             &:hover {
-                background-color: #333;
+                background-color: var(--color-bg-hover);
             }
 
             &.danger {
-                background-color: #dc3545;
-                border-color: #dc3545;
-                color: #fff;
+                background-color: var(--color-danger);
+                border-color: var(--color-danger);
+                color: var(--color-text-primary);
 
                 &:hover {
-                    background-color: #c82333;
+                    background-color: var(--color-danger-hover);
                 }
             }
         }

@@ -7,34 +7,34 @@
     .main-content {
         flex: 1;
         overflow: auto;
-        background-color: #0a0a0a;
+        background-color: var(--color-bg-primary);
     }
 
     .sidebar {
         width: 320px;
-        background-color: #111;
-        border-left: 1px solid #2a2a2a;
+        background-color: var(--color-bg-secondary);
+        border-left: 1px solid var(--color-bg-tertiary);
         display: flex;
         flex-direction: column;
         overflow: hidden;
 
         .sidebar-header {
             padding: 1.5rem;
-            border-bottom: 1px solid #2a2a2a;
+            border-bottom: 1px solid var(--color-bg-tertiary);
 
             h2 {
                 font-size: 1.2rem;
                 font-weight: 600;
                 margin-bottom: 1rem;
-                color: #fff;
+                color: var(--color-text-primary);
             }
 
             .current-time {
                 font-size: 0.9rem;
-                color: #aaa;
+                color: var(--color-text-subtle);
 
                 .time-display {
-                    color: #FF3333;
+                    color: var(--color-danger);
                     font-weight: 600;
                     font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
                 }
@@ -50,13 +50,13 @@
                 font-size: 1rem;
                 font-weight: 500;
                 margin-bottom: 1rem;
-                color: #ccc;
+                color: var(--color-text-tertiary);
             }
         }
 
         .sidebar-footer {
             padding: 1.5rem;
-            border-top: 1px solid #2a2a2a;
+            border-top: 1px solid var(--color-bg-tertiary);
             display: flex;
             gap: 0.5rem;
         }

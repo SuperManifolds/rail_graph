@@ -4,9 +4,9 @@
     margin-top: 0.5rem;
 
     .error-list-button {
-        background-color: #2a2a2a;
-        color: #999;
-        border: 1px solid #444;
+        background-color: var(--color-bg-tertiary);
+        color: var(--color-text-muted);
+        border: 1px solid var(--color-border-medium);
         border-radius: 4px;
         padding: 0.5rem 1rem;
         cursor: pointer;
@@ -28,12 +28,12 @@
         }
 
         &:hover {
-            background-color: #333;
+            background-color: var(--color-bg-hover);
         }
 
         &:focus {
             outline: none;
-            border-color: #555;
+            border-color: var(--color-border-light);
         }
 
         .error-count {
@@ -52,8 +52,8 @@
         top: 4rem;
         right: 1rem;
         width: 350px;
-        background-color: #1a1a1a;
-        border: 1px solid #444;
+        background-color: var(--color-bg-secondary);
+        border: 1px solid var(--color-border-medium);
         border-radius: 6px;
         padding: 1rem;
         z-index: 3000;
@@ -68,7 +68,7 @@
             flex: 1;
 
             .no-errors {
-                color: #999;
+                color: var(--color-text-muted);
                 text-align: center;
                 padding: 1rem;
                 font-size: 0.9rem;
@@ -118,7 +118,7 @@
 
                         .error-detail {
                             .value {
-                                color: #fff;
+                                color: var(--color-text-primary);
                                 font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
                             }
                         }
