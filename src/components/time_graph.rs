@@ -7,7 +7,7 @@ use crate::components::{
     line_controls::LineControls,
     line_editor::LineEditor
 };
-use crate::models::{Line, RailwayGraph};
+use crate::models::{Line, RailwayGraph, GraphView, Stations};
 use crate::train_journey::TrainJourney;
 use crate::conflict::{Conflict, StationCrossing};
 use leptos::{component, view, Signal, IntoView, SignalGet, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect};
@@ -61,7 +61,23 @@ fn setup_sync_conflict_detection(
     (conflicts, crossings)
 }
 
+#[inline]
+fn compute_display_stations(
+    view: Option<GraphView>,
+    graph: ReadSignal<RailwayGraph>,
+) -> Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::StationNode)>> {
+    Signal::derive(move || {
+        let current_graph = graph.get();
+        if let Some(ref graph_view) = view {
+            graph_view.get_stations_for_display(&current_graph)
+        } else {
+            current_graph.get_all_stations_ordered()
+        }
+    })
+}
+
 #[component]
+#[allow(clippy::too_many_lines)]
 #[must_use]
 pub fn TimeGraph(
     lines: ReadSignal<Vec<Line>>,
@@ -70,6 +86,9 @@ pub fn TimeGraph(
     set_graph: WriteSignal<RailwayGraph>,
     legend: ReadSignal<crate::models::Legend>,
     set_legend: WriteSignal<crate::models::Legend>,
+    #[prop(optional)]
+    view: Option<GraphView>,
+    on_create_view: leptos::Callback<GraphView>,
 ) -> impl IntoView {
     let (visualization_time, set_visualization_time) =
         create_signal(chrono::Local::now().naive_local());
@@ -95,27 +114,51 @@ pub fn TimeGraph(
     let (hovered_journey_id, set_hovered_journey_id) = create_signal(None::<uuid::Uuid>);
 
     // Update train journeys when lines configuration or selected day changes
-    create_effect(move |_| {
-        let current_lines = lines.get();
-        let current_graph = graph.get();
-        let day_filter = selected_day.get();
+    create_effect({
+        let view = view.clone();
+        move |_| {
+            let current_lines = lines.get();
+            let current_graph = graph.get();
+            let day_filter = selected_day.get();
 
-        // Filter to only visible lines
-        let visible_lines: Vec<_> = current_lines.into_iter()
-            .filter(|line| line.visible)
-            .collect();
+            // Filter to only visible lines
+            let visible_lines: Vec<_> = current_lines.into_iter()
+                .filter(|line| line.visible)
+                .collect();
 
-        // Generate journeys for the full day starting from midnight
-        let new_journeys = TrainJourney::generate_journeys(&visible_lines, &current_graph, day_filter);
-        set_train_journeys.set(new_journeys);
+            // Generate journeys for the full day starting from midnight
+            let mut new_journeys = TrainJourney::generate_journeys(&visible_lines, &current_graph, day_filter);
+
+            // If a view is active, filter journeys to only those traversing the view's path
+            if let Some(ref graph_view) = view {
+                let journeys_vec: Vec<_> = new_journeys.values().cloned().collect();
+                let filtered = graph_view.filter_journeys(&journeys_vec, &current_graph);
+                new_journeys = filtered.into_iter().map(|j| (j.id, j)).collect();
+            }
+
+            set_train_journeys.set(new_journeys);
+        }
     });
 
     // Compute conflicts and station crossings
     #[cfg(target_arch = "wasm32")]
-    let (conflicts, crossings) = setup_worker_conflict_detection(train_journeys, graph);
+    let (raw_conflicts, crossings) = setup_worker_conflict_detection(train_journeys, graph);
 
     #[cfg(not(target_arch = "wasm32"))]
-    let (conflicts, crossings) = setup_sync_conflict_detection(train_journeys, graph);
+    let (raw_conflicts, crossings) = setup_sync_conflict_detection(train_journeys, graph);
+
+    // Filter conflicts if a view is active
+    let conflicts = {
+        let view = view.clone();
+        Signal::derive(move || {
+            let all_conflicts = raw_conflicts.get();
+            if let Some(ref graph_view) = view {
+                graph_view.filter_conflicts(&all_conflicts)
+            } else {
+                all_conflicts
+            }
+        })
+    };
 
     let conflicts_and_crossings = create_memo(move |_| (conflicts.get(), crossings.get()));
     let conflicts_only = Signal::derive(move || conflicts.get());
@@ -125,6 +168,9 @@ pub fn TimeGraph(
 
     let (new_line_dialog_open, set_new_line_dialog_open) = create_signal(false);
     let (next_line_number, set_next_line_number) = create_signal(1);
+
+    // Get stations to display based on view
+    let display_stations = compute_display_stations(view.clone(), graph);
 
     view! {
         <div class="time-graph-container">
@@ -143,6 +189,7 @@ pub fn TimeGraph(
                     set_hovered_journey_id=set_hovered_journey_id
                     conflicts_and_crossings=conflicts_and_crossings
                     pan_to_conflict_signal=pan_to_conflict
+                    display_stations=display_stations
                 />
             </div>
             <div class="sidebar">
@@ -160,7 +207,7 @@ pub fn TimeGraph(
                         graph=graph
                     />
                 </div>
-                <LineControls lines=lines set_lines=set_lines graph=graph />
+                <LineControls lines=lines set_lines=set_lines graph=graph on_create_view=on_create_view />
                 <div class="sidebar-footer">
                     <button
                         class="import-button"

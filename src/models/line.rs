@@ -289,6 +289,38 @@ impl Line {
         self.return_route.iter().any(|segment| segment.edge_index == edge_index)
     }
 
+    /// Extract the ordered list of station nodes from this line's forward route
+    #[must_use]
+    pub fn get_station_path(&self, graph: &RailwayGraph) -> Vec<NodeIndex> {
+        use std::collections::HashSet;
+        use crate::models::Node;
+
+        let mut path = Vec::new();
+        let mut seen = HashSet::new();
+
+        // Helper to check if a node is a station and add it if not seen
+        let try_add_station = |node_idx: NodeIndex, seen: &mut HashSet<NodeIndex>, path: &mut Vec<NodeIndex>| {
+            // First check if it's a station
+            if let Some(Node::Station(_)) = graph.graph.node_weight(node_idx) {
+                // Then check if we haven't seen it yet
+                if !seen.contains(&node_idx) {
+                    path.push(node_idx);
+                    seen.insert(node_idx);
+                }
+            }
+        };
+
+        // Get stations from forward route edges
+        for segment in &self.forward_route {
+            if let Some((from, to)) = graph.graph.edge_endpoints(petgraph::graph::EdgeIndex::new(segment.edge_index)) {
+                try_add_station(from, &mut seen, &mut path);
+                try_add_station(to, &mut seen, &mut path);
+            }
+        }
+
+        path
+    }
+
     /// Check if this line uses any of the given edges in either route
     #[must_use]
     pub fn uses_any_edge(&self, edge_indices: &[usize]) -> bool {

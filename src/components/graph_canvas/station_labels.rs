@@ -1,6 +1,7 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{RailwayGraph, StationNode, Stations, Nodes, Node};
+use crate::models::{RailwayGraph, StationNode, Nodes, Node};
 use super::types::GraphDimensions;
+use petgraph::stable_graph::NodeIndex;
 
 // Station label constants
 const STATION_LABEL_COLOR: &str = "#aaa";
@@ -31,7 +32,7 @@ const TOGGLE_SINGLE_TRACK_ICON: &str = "─";
 pub fn draw_station_labels(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[StationNode],
+    stations: &[(NodeIndex, StationNode)],
     graph: &RailwayGraph,
     zoom_level: f64,
     pan_offset_y: f64,
@@ -47,7 +48,7 @@ pub fn draw_station_labels(
     for node in &all_nodes {
         match node {
             Node::Station(station) => {
-                let station_index = stations.iter().position(|s| s.name == station.name);
+                let station_index = stations.iter().position(|(_, s)| s.name == station.name);
                 if let Some(idx) = station_index {
                     let base_y = (idx as f64 * station_height) + (station_height / 2.0);
                     let adjusted_y = dims.top_margin + (base_y * zoom_level) + pan_offset_y;
@@ -124,7 +125,7 @@ fn draw_junction_label(ctx: &CanvasRenderingContext2d, junction_name: Option<&st
 pub fn draw_segment_toggles(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[StationNode],
+    stations: &[(NodeIndex, StationNode)],
     graph: &RailwayGraph,
     zoom_level: f64,
     pan_offset_y: f64,
@@ -134,21 +135,17 @@ pub fn draw_segment_toggles(
     let station_height = dims.graph_height / stations.len() as f64;
 
     for i in 1..stations.len() {
-        let prev_station = &stations[i - 1];
-        let curr_station = &stations[i];
+        let (node1, _) = &stations[i - 1];
+        let (node2, _) = &stations[i];
 
         // Check if there's a multi-tracked edge between these stations
-        let has_multiple_tracks = if let (Some(node1), Some(node2)) =
-            (graph.get_station_index(&prev_station.name), graph.get_station_index(&curr_station.name)) {
-
+        let has_multiple_tracks = {
             // Check both directions for an edge
-            graph.graph.edges(node1).any(|e| {
-                e.target() == node2 && e.weight().tracks.len() >= 2
-            }) || graph.graph.edges(node2).any(|e| {
-                e.target() == node1 && e.weight().tracks.len() >= 2
+            graph.graph.edges(*node1).any(|e| {
+                e.target() == *node2 && e.weight().tracks.len() >= 2
+            }) || graph.graph.edges(*node2).any(|e| {
+                e.target() == *node1 && e.weight().tracks.len() >= 2
             })
-        } else {
-            false
         };
 
         // Calculate position between the two stations
@@ -207,7 +204,7 @@ pub fn check_toggle_click(
     mouse_x: f64,
     mouse_y: f64,
     canvas_height: f64,
-    stations: &[StationNode],
+    stations: &[(NodeIndex, StationNode)],
     zoom_level: f64,
     pan_offset_y: f64,
 ) -> Option<usize> {

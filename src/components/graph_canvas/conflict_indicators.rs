@@ -134,7 +134,7 @@ pub fn check_conflict_hover(
     mouse_x: f64,
     mouse_y: f64,
     conflicts: &[Conflict],
-    stations: &[StationNode],
+    stations: &[(petgraph::stable_graph::NodeIndex, StationNode)],
     canvas_width: f64,
     canvas_height: f64,
     zoom_level: f64,
@@ -288,7 +288,7 @@ pub fn draw_journey_blocks(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     journey: &crate::train_journey::TrainJourney,
-    stations: &[crate::models::StationNode],
+    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::StationNode)],
     station_height: f64,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
@@ -299,23 +299,23 @@ pub fn draw_journey_blocks(
     let fill_color = format!("{color}{BLOCK_FILL_OPACITY}");
     let stroke_color = format!("{color}{BLOCK_STROKE_OPACITY}");
 
-    // Create station name to index mapping
-    let station_map: std::collections::HashMap<&str, usize> = stations
+    // Create NodeIndex to display index mapping
+    let station_map: std::collections::HashMap<petgraph::stable_graph::NodeIndex, usize> = stations
         .iter()
         .enumerate()
-        .map(|(idx, station)| (station.name.as_str(), idx))
+        .map(|(idx, (node_idx, _))| (*node_idx, idx))
         .collect();
 
     // Draw a block for each segment
     for i in 1..journey.station_times.len() {
-        let (station_from, _arrival_from, departure_from) = &journey.station_times[i - 1];
-        let (station_to, arrival_to, _departure_to) = &journey.station_times[i];
+        let (node_from, _arrival_from, departure_from) = &journey.station_times[i - 1];
+        let (node_to, arrival_to, _departure_to) = &journey.station_times[i];
 
         // Look up station indices
-        let Some(&start_idx) = station_map.get(station_from.as_str()) else {
+        let Some(&start_idx) = station_map.get(node_from) else {
             continue;
         };
-        let Some(&end_idx) = station_map.get(station_to.as_str()) else {
+        let Some(&end_idx) = station_map.get(node_to) else {
             continue;
         };
 

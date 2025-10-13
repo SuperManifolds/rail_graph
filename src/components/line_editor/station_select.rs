@@ -1,4 +1,4 @@
-use crate::models::{Line, RailwayGraph, RouteSegment, RouteDirection, Stations};
+use crate::models::{Line, RailwayGraph, RouteSegment, RouteDirection, Stations, Routes};
 use leptos::*;
 use chrono::Duration;
 use std::rc::Rc;
@@ -53,50 +53,60 @@ pub fn StationSelect(
                                     new_station_idx,
                                     station_idx
                                 ) {
-                                    // Find edge based on route direction and position
-                                    let edge = match (route_direction, position) {
+                                    // Find path based on route direction and position
+                                    let path = match (route_direction, position) {
                                         (RouteDirection::Forward, StationPosition::Start)
                                         | (RouteDirection::Return, StationPosition::End) => {
-                                            graph.graph.find_edge(new_station_idx, existing_idx)
+                                            graph.find_path_between_nodes(new_station_idx, existing_idx)
                                         }
                                         (RouteDirection::Forward, StationPosition::End)
                                         | (RouteDirection::Return, StationPosition::Start) => {
-                                            graph.graph.find_edge(existing_idx, new_station_idx)
+                                            graph.find_path_between_nodes(existing_idx, new_station_idx)
                                         }
                                     };
 
-                                    if let Some(edge) = edge {
-                                        // Check if station is a passing loop
-                                        let is_passing_loop = graph.graph.node_weight(new_station_idx)
-                                            .and_then(|node| node.as_station())
-                                            .is_some_and(|s| s.passing_loop);
-                                        let default_wait = if is_passing_loop {
-                                            Duration::seconds(0)
-                                        } else {
-                                            Duration::seconds(30)
-                                        };
+                                    if let Some(path) = path {
+                                        // Convert path edges into route segments
+                                        for (i, edge) in path.iter().enumerate() {
+                                            // Get the source node of this edge
+                                            let Some((source, _)) = graph.graph.edge_endpoints(*edge) else {
+                                                continue;
+                                            };
 
-                                        let segment = RouteSegment {
-                                            edge_index: edge.index(),
-                                            track_index: 0,
-                                            origin_platform: 0,
-                                            destination_platform: 0,
-                                            duration: Duration::minutes(5),
-                                            wait_time: default_wait,
-                                        };
+                                            // Check if station is a passing loop
+                                            let is_passing_loop = graph.graph.node_weight(source)
+                                                .and_then(|node| node.as_station())
+                                                .is_some_and(|s| s.passing_loop);
+                                            let default_wait = if is_passing_loop {
+                                                Duration::seconds(0)
+                                            } else {
+                                                Duration::seconds(30)
+                                            };
 
-                                        match (route_direction, position) {
-                                            (RouteDirection::Forward, StationPosition::Start) => {
-                                                updated_line.forward_route.insert(0, segment);
-                                            }
-                                            (RouteDirection::Forward, StationPosition::End) => {
-                                                updated_line.forward_route.push(segment);
-                                            }
-                                            (RouteDirection::Return, StationPosition::Start) => {
-                                                updated_line.return_route.insert(0, segment);
-                                            }
-                                            (RouteDirection::Return, StationPosition::End) => {
-                                                updated_line.return_route.push(segment);
+                                            let segment = RouteSegment {
+                                                edge_index: edge.index(),
+                                                track_index: 0,
+                                                origin_platform: 0,
+                                                destination_platform: 0,
+                                                duration: Duration::minutes(5),
+                                                // Only the first segment gets the wait time
+                                                // Subsequent segments have zero wait time (no stops at intermediate junctions)
+                                                wait_time: if i == 0 { default_wait } else { Duration::zero() },
+                                            };
+
+                                            match (route_direction, position) {
+                                                (RouteDirection::Forward, StationPosition::Start) => {
+                                                    updated_line.forward_route.insert(i, segment);
+                                                }
+                                                (RouteDirection::Forward, StationPosition::End) => {
+                                                    updated_line.forward_route.push(segment);
+                                                }
+                                                (RouteDirection::Return, StationPosition::Start) => {
+                                                    updated_line.return_route.insert(i, segment);
+                                                }
+                                                (RouteDirection::Return, StationPosition::End) => {
+                                                    updated_line.return_route.push(segment);
+                                                }
                                             }
                                         }
                                         on_save(updated_line);

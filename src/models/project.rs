@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use super::{Line, RailwayGraph};
+use super::{Line, RailwayGraph, GraphView};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Legend {
@@ -24,6 +24,10 @@ pub struct Project {
     pub graph: RailwayGraph,
     #[serde(default)]
     pub legend: Legend,
+    #[serde(default)]
+    pub views: Vec<GraphView>,
+    #[serde(default)]
+    pub active_tab_id: Option<String>,
 }
 
 impl Project {
@@ -33,6 +37,8 @@ impl Project {
             lines: Vec::new(),
             graph: RailwayGraph::new(),
             legend: Legend::default(),
+            views: Vec::new(),
+            active_tab_id: None,
         }
     }
 
@@ -42,6 +48,8 @@ impl Project {
             lines,
             graph,
             legend,
+            views: Vec::new(),
+            active_tab_id: None,
         }
     }
 }

@@ -6,6 +6,7 @@ mod project;
 mod railway_graph;
 mod station;
 mod track;
+mod view;
 
 pub use days_of_week::DaysOfWeek;
 pub use junction::{Junction, RoutingRule};
@@ -15,6 +16,7 @@ pub use project::{Project, Legend};
 pub use railway_graph::{RailwayGraph, Stations, Tracks, Routes, Junctions, Nodes};
 pub use station::{StationNode, Platform};
 pub use track::{TrackSegment, Track, TrackDirection};
+pub use view::{GraphView, ViewportState};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum RouteDirection {

@@ -9,7 +9,7 @@ use crate::models::{RailwayGraph, StationNode, Stations};
 fn ErrorListPopover(
     conflicts: Signal<Vec<Conflict>>,
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
-    stations: Signal<Vec<StationNode>>,
+    stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, StationNode)>>,
 ) -> impl IntoView {
     view! {
         <div class="error-list-popover">
@@ -30,9 +30,9 @@ fn ErrorListPopover(
 
                                         // Get station names
                                         let station1_name = current_stations.get(conflict.station1_idx)
-                                            .map_or("Unknown", |s| s.name.as_str());
+                                            .map_or("Unknown", |(_, s)| s.name.as_str());
                                         let station2_name = current_stations.get(conflict.station2_idx)
-                                            .map_or("Unknown", |s| s.name.as_str());
+                                            .map_or("Unknown", |(_, s)| s.name.as_str());
 
                                         let conflict_message = conflict.format_message(station1_name, station2_name);
 

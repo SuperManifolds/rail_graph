@@ -1,12 +1,13 @@
 use leptos::{component, IntoView, ReadSignal, Signal, SignalGet, view};
 use crate::conflict::Conflict;
 use crate::models::StationNode;
+use petgraph::stable_graph::NodeIndex;
 
 #[component]
 #[must_use]
 pub fn ConflictTooltip(
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
-    stations: Signal<Vec<StationNode>>,
+    stations: Signal<Vec<(NodeIndex, StationNode)>>,
 ) -> impl IntoView {
     view! {
         {move || {
@@ -15,9 +16,9 @@ pub fn ConflictTooltip(
 
                 // Get station names
                 let station1_name = current_stations.get(conflict.station1_idx)
-                    .map_or("Unknown", |s| s.name.as_str());
+                    .map_or("Unknown", |(_, s)| s.name.as_str());
                 let station2_name = current_stations.get(conflict.station2_idx)
-                    .map_or("Unknown", |s| s.name.as_str());
+                    .map_or("Unknown", |(_, s)| s.name.as_str());
 
                 let message = conflict.format_message(station1_name, station2_name);
                 let timestamp = conflict.time.format("%H:%M:%S");

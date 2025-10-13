@@ -2,6 +2,8 @@ use web_sys::CanvasRenderingContext2d;
 use crate::models::StationNode;
 use crate::train_journey::TrainJourney;
 use super::types::GraphDimensions;
+use std::collections::HashMap;
+use petgraph::stable_graph::NodeIndex;
 
 // Train journey constants
 const MIDNIGHT_WRAP_THRESHOLD: f64 = 0.5;
@@ -10,20 +12,29 @@ const DOT_RADIUS_MULTIPLIER: f64 = 1.5; // Scale dots relative to line thickness
 const MIN_DOT_RADIUS: f64 = 2.0; // Minimum dot radius in pixels
 const TOTAL_HOURS: f64 = 48.0; // Total hours displayed on the graph
 
+/// Build a map from `NodeIndex` to display position (0, 1, 2, ...)
+fn build_station_position_map(stations: &[(NodeIndex, StationNode)]) -> HashMap<NodeIndex, usize> {
+    stations.iter()
+        .enumerate()
+        .map(|(idx, (node_idx, _))| (*node_idx, idx))
+        .collect()
+}
+
 #[allow(clippy::cast_precision_loss)]
 pub fn draw_train_journeys(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[StationNode],
+    stations: &[(NodeIndex, StationNode)],
     train_journeys: &[&TrainJourney],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
     let station_height = dims.graph_height / stations.len() as f64;
+    let station_positions = build_station_position_map(stations);
 
     // Draw lines for each journey
     for journey in train_journeys {
-        if journey.station_indices.is_empty() {
+        if journey.station_times.is_empty() {
             continue;
         }
 
@@ -34,8 +45,12 @@ pub fn draw_train_journeys(
         let mut first_point = true;
         let mut prev_x = 0.0;
 
-        for (i, (_station_name, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
-            let station_idx = journey.station_indices[i];
+        for (node_idx, arrival_time, departure_time) in &journey.station_times {
+            // Look up the display position for this station
+            let Some(&station_idx) = station_positions.get(node_idx) else {
+                continue; // Skip if station not in display list
+            };
+
             let arrival_fraction = time_to_fraction(*arrival_time);
             let departure_fraction = time_to_fraction(*departure_time);
             let mut arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
@@ -68,7 +83,7 @@ pub fn draw_train_journeys(
 
     // Draw dots for each journey
     for journey in train_journeys {
-        if journey.station_indices.is_empty() {
+        if journey.station_times.is_empty() {
             continue;
         }
 
@@ -77,8 +92,12 @@ pub fn draw_train_journeys(
         ctx.begin_path();
 
         let mut prev_x = 0.0;
-        for (i, (_station_name, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
-            let station_idx = journey.station_indices[i];
+        for (node_idx, arrival_time, departure_time) in &journey.station_times {
+            // Look up the display position for this station
+            let Some(&station_idx) = station_positions.get(node_idx) else {
+                continue; // Skip if station not in display list
+            };
+
             let arrival_fraction = time_to_fraction(*arrival_time);
             let departure_fraction = time_to_fraction(*departure_time);
             let mut arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
@@ -116,7 +135,7 @@ pub fn check_journey_hover(
     mouse_x: f64,
     mouse_y: f64,
     train_journeys: &[&TrainJourney],
-    stations: &[StationNode],
+    stations: &[(NodeIndex, StationNode)],
     canvas_width: f64,
     canvas_height: f64,
     viewport: &super::types::ViewportState,
@@ -133,6 +152,7 @@ pub fn check_journey_hover(
     }
 
     let station_height = graph_height / stations.len() as f64;
+    let station_positions = build_station_position_map(stations);
 
     train_journeys
         .iter()
@@ -144,6 +164,7 @@ pub fn check_journey_hover(
                 graph_width,
                 station_height,
                 viewport,
+                &station_positions,
             )
         })
 }
@@ -156,6 +177,7 @@ fn check_single_journey_hover(
     graph_width: f64,
     station_height: f64,
     viewport: &super::types::ViewportState,
+    station_positions: &HashMap<NodeIndex, usize>,
 ) -> Option<uuid::Uuid> {
     use super::canvas::{LEFT_MARGIN, TOP_MARGIN};
     use crate::time::time_to_fraction;
@@ -166,8 +188,11 @@ fn check_single_journey_hover(
     let mut first_point = true;
     let mut prev_x = 0.0;
 
-    for (i, (_station_name, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
-        let station_idx = journey.station_indices[i];
+    for (node_idx, arrival_time, departure_time) in &journey.station_times {
+        // Look up the display position for this station
+        let Some(&station_idx) = station_positions.get(node_idx) else {
+            continue; // Skip if station not in display list
+        };
 
         let arrival_fraction = time_to_fraction(*arrival_time);
         let departure_fraction = time_to_fraction(*departure_time);

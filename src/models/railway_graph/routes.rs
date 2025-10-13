@@ -146,15 +146,14 @@ impl Routes for RailwayGraph {
 
         self.get_all_stations_ordered()
             .iter()
-            .filter_map(|station| {
-                let station_idx = self.get_station_index(&station.name)?;
-                // For forward: find edge from station_idx to first_idx
-                // For return: find edge from first_idx to station_idx (traveling backwards)
-                let has_edge = match direction {
-                    crate::models::RouteDirection::Forward => self.graph.find_edge(station_idx, first_idx).is_some(),
-                    crate::models::RouteDirection::Return => self.graph.find_edge(first_idx, station_idx).is_some(),
+            .filter_map(|(node_idx, station)| {
+                // For forward: find path from node_idx to first_idx
+                // For return: find path from first_idx to node_idx (traveling backwards)
+                let has_path = match direction {
+                    crate::models::RouteDirection::Forward => self.find_path_between_nodes(*node_idx, first_idx).is_some(),
+                    crate::models::RouteDirection::Return => self.find_path_between_nodes(first_idx, *node_idx).is_some(),
                 };
-                if has_edge {
+                if has_path && *node_idx != first_idx {
                     Some(station.name.clone())
                 } else {
                     None
@@ -178,15 +177,14 @@ impl Routes for RailwayGraph {
 
         self.get_all_stations_ordered()
             .iter()
-            .filter_map(|station| {
-                let station_idx = self.get_station_index(&station.name)?;
-                // For forward: find edge from last_idx to station_idx
-                // For return: find edge from station_idx to last_idx (traveling backwards)
-                let has_edge = match direction {
-                    crate::models::RouteDirection::Forward => self.graph.find_edge(last_idx, station_idx).is_some(),
-                    crate::models::RouteDirection::Return => self.graph.find_edge(station_idx, last_idx).is_some(),
+            .filter_map(|(node_idx, station)| {
+                // For forward: find path from last_idx to node_idx
+                // For return: find path from node_idx to last_idx (traveling backwards)
+                let has_path = match direction {
+                    crate::models::RouteDirection::Forward => self.find_path_between_nodes(last_idx, *node_idx).is_some(),
+                    crate::models::RouteDirection::Return => self.find_path_between_nodes(*node_idx, last_idx).is_some(),
                 };
-                if has_edge {
+                if has_path && *node_idx != last_idx {
                     Some(station.name.clone())
                 } else {
                     None
@@ -202,8 +200,9 @@ impl Routes for RailwayGraph {
     ) -> Option<Vec<EdgeIndex>> {
         use std::collections::{VecDeque, HashMap};
         use petgraph::visit::EdgeRef;
+        use crate::models::track::TrackDirection;
 
-        // BFS to find shortest path
+        // BFS to find shortest path, respecting track directions
         let mut queue = VecDeque::new();
         let mut visited = HashMap::new();
 
@@ -225,11 +224,37 @@ impl Routes for RailwayGraph {
                 return Some(path);
             }
 
-            // Explore neighbors
+            // Explore all edges connected to current node (both incoming and outgoing)
+            // Check each edge's TrackDirection to see if we can use it
+
+            // Check outgoing edges (current -> neighbor)
             for edge in self.graph.edges(current) {
                 let neighbor = edge.target();
-                if let std::collections::hash_map::Entry::Vacant(e) = visited.entry(neighbor) {
-                    e.insert(Some((current, edge.id())));
+                let track_segment = edge.weight();
+
+                // Can always use Forward or Bidirectional edges in their natural direction
+                let can_use = track_segment.tracks.iter().any(|t|
+                    matches!(t.direction, TrackDirection::Forward | TrackDirection::Bidirectional)
+                );
+
+                if can_use && matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
+                    visited.insert(neighbor, Some((current, edge.id())));
+                    queue.push_back(neighbor);
+                }
+            }
+
+            // Check incoming edges (neighbor -> current, but we want to go current -> neighbor)
+            for edge in self.graph.edges_directed(current, petgraph::Direction::Incoming) {
+                let neighbor = edge.source();
+                let track_segment = edge.weight();
+
+                // Can use Backward or Bidirectional edges in reverse direction
+                let can_use = track_segment.tracks.iter().any(|t|
+                    matches!(t.direction, TrackDirection::Backward | TrackDirection::Bidirectional)
+                );
+
+                if can_use && matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
+                    visited.insert(neighbor, Some((current, edge.id())));
                     queue.push_back(neighbor);
                 }
             }

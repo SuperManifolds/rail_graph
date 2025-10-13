@@ -34,7 +34,8 @@ pub trait Stations {
 
     /// Get all stations in order by traversing the graph
     /// Performs a breadth-first traversal starting from the first station
-    fn get_all_stations_ordered(&self) -> Vec<StationNode>;
+    /// Returns Vec<(`NodeIndex`, `StationNode`)>
+    fn get_all_stations_ordered(&self) -> Vec<(NodeIndex, StationNode)>;
 
     /// Get all station names in order
     fn get_all_station_names(&self) -> Vec<String>;
@@ -159,7 +160,7 @@ impl Stations for RailwayGraph {
         (removed_edges, bypass_mapping)
     }
 
-    fn get_all_stations_ordered(&self) -> Vec<StationNode> {
+    fn get_all_stations_ordered(&self) -> Vec<(NodeIndex, StationNode)> {
         if self.graph.node_count() == 0 {
             return Vec::new();
         }
@@ -179,7 +180,7 @@ impl Stations for RailwayGraph {
         while let Some(node_idx) = queue.pop_front() {
             if let Some(node) = self.graph.node_weight(node_idx) {
                 if let Some(station) = node.as_station() {
-                    ordered.push(station.clone());
+                    ordered.push((node_idx, station.clone()));
                 }
             }
 
@@ -199,7 +200,7 @@ impl Stations for RailwayGraph {
             }
             let Some(node) = self.graph.node_weight(node_idx) else { continue };
             let Some(station) = node.as_station() else { continue };
-            ordered.push(station.clone());
+            ordered.push((node_idx, station.clone()));
         }
 
         ordered
@@ -208,7 +209,7 @@ impl Stations for RailwayGraph {
     fn get_all_station_names(&self) -> Vec<String> {
         self.get_all_stations_ordered()
             .into_iter()
-            .map(|s| s.name)
+            .map(|(_, s)| s.name)
             .collect()
     }
 }
@@ -275,9 +276,9 @@ mod tests {
 
         let stations = graph.get_all_stations_ordered();
         assert_eq!(stations.len(), 3);
-        assert_eq!(stations[0].name, "Station A");
-        assert_eq!(stations[1].name, "Station B");
-        assert_eq!(stations[2].name, "Station C");
+        assert_eq!(stations[0].1.name, "Station A");
+        assert_eq!(stations[1].1.name, "Station B");
+        assert_eq!(stations[2].1.name, "Station C");
     }
 
     #[test]
