@@ -75,7 +75,7 @@ body {
     transition: all var(--transition-base) var(--transition-ease);
 
     &:hover {
-        background-color: #222;
+        background-color: var(--color-bg-tertiary);
         color: var(--color-text-tertiary);
     }
 

@@ -1,7 +1,7 @@
 .import-button {
-    background-color: #2a2a2a;
-    color: #fff;
-    border: 1px solid #444;
+    background-color: var(--color-bg-tertiary);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border-medium);
     border-radius: 4px;
     padding: 0.5rem 1rem;
     cursor: pointer;
@@ -9,19 +9,19 @@
     transition: background-color 0.2s;
 
     &:hover {
-        background-color: #333;
+        background-color: var(--color-bg-hover);
     }
 
     &:focus {
         outline: none;
-        border-color: #555;
+        border-color: var(--color-border-light);
     }
 }
 
 .window-content {
     p {
         margin: 0 0 1rem 0;
-        color: #aaa;
+        color: var(--color-text-subtle);
         font-size: 0.9rem;
         padding: 0 1.5rem;
         padding-top: 1rem;
@@ -42,13 +42,13 @@
             gap: 1rem;
             align-items: center;
             padding: 0.75rem;
-            background-color: #222;
-            border: 1px solid #444;
+            background-color: var(--color-bg-tertiary);
+            border: 1px solid var(--color-border-medium);
             border-radius: 4px;
 
             label {
                 font-size: 0.9rem;
-                color: #fff;
+                color: var(--color-text-primary);
                 font-weight: 500;
             }
         }
@@ -59,7 +59,7 @@
         justify-content: flex-end;
         gap: 0.75rem;
         padding: 1.5rem;
-        border-top: 1px solid #333;
+        border-top: 1px solid var(--color-bg-hover);
         margin-top: auto;
 
         button {
@@ -68,26 +68,26 @@
             font-size: 0.9rem;
             cursor: pointer;
             transition: background-color 0.2s;
-            border: 1px solid #444;
-            background-color: #2a2a2a;
-            color: #fff;
+            border: 1px solid var(--color-border-medium);
+            background-color: var(--color-bg-tertiary);
+            color: var(--color-text-primary);
 
             &:hover {
-                background-color: #333;
+                background-color: var(--color-bg-hover);
             }
 
             &.primary {
-                background-color: #4a9eff;
-                border-color: #4a9eff;
+                background-color: var(--color-accent);
+                border-color: var(--color-accent);
 
                 &:hover {
-                    background-color: #3a8eef;
+                    background-color: var(--color-accent-hover);
                 }
             }
 
             &:focus {
                 outline: none;
-                border-color: #555;
+                border-color: var(--color-border-light);
             }
         }
     }

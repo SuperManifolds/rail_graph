@@ -3,9 +3,9 @@
     position: relative;
 
     .legend-button {
-        background-color: #2a2a2a;
-        color: #fff;
-        border: 1px solid #444;
+        background-color: var(--color-bg-tertiary);
+        color: var(--color-text-primary);
+        border: 1px solid var(--color-border-medium);
         border-radius: 4px;
         padding: 0.5rem 1rem;
         cursor: pointer;
@@ -13,12 +13,12 @@
         transition: background-color 0.2s;
 
         &:hover {
-            background-color: #333;
+            background-color: var(--color-bg-hover);
         }
 
         &:focus {
             outline: none;
-            border-color: #555;
+            border-color: var(--color-border-light);
         }
     }
 
@@ -26,8 +26,8 @@
         position: fixed;
         bottom: 4rem;
         right: 1rem;
-        background-color: #1a1a1a;
-        border: 1px solid #444;
+        background-color: var(--color-bg-secondary);
+        border: 1px solid var(--color-border-medium);
         border-radius: 6px;
         padding: 1rem;
         z-index: 3000;
@@ -41,19 +41,19 @@
             align-items: center;
             margin-bottom: 1rem;
             padding-bottom: 0.75rem;
-            border-bottom: 1px solid #333;
+            border-bottom: 1px solid var(--color-bg-hover);
 
             h3 {
                 font-size: 1rem;
                 font-weight: 600;
-                color: #fff;
+                color: var(--color-text-primary);
                 margin: 0;
             }
 
             .close-button {
                 background: none;
                 border: none;
-                color: #999;
+                color: var(--color-text-muted);
                 font-size: 1.5rem;
                 cursor: pointer;
                 padding: 0;
@@ -65,7 +65,7 @@
                 justify-content: center;
 
                 &:hover {
-                    color: #fff;
+                    color: var(--color-text-primary);
                 }
             }
         }
@@ -81,7 +81,7 @@
                     align-items: center;
                     gap: 0.5rem;
                     cursor: pointer;
-                    color: #fff;
+                    color: var(--color-text-primary);
                     font-size: 0.9rem;
 
                     input[type="checkbox"] {
@@ -114,7 +114,7 @@
                     margin-top: 0.25rem;
                     margin-left: 2rem;
                     font-size: 0.8rem;
-                    color: #999;
+                    color: var(--color-text-muted);
                 }
             }
         }

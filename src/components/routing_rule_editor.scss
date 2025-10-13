@@ -5,17 +5,17 @@
     margin-top: 0;
     margin-bottom: 0.5rem;
     font-size: 1rem;
-    color: #ddd;
+    color: var(--color-text-tertiary);
   }
 
   .help-text {
     margin: 0 0 1rem 0;
     font-size: 0.85rem;
-    color: #999;
+    color: var(--color-text-muted);
   }
 
   .no-edges {
-    color: #888;
+    color: var(--color-text-disabled);
     font-style: italic;
     padding: 1rem;
     text-align: center;
@@ -46,7 +46,7 @@
   display: flex;
   align-items: center;
   min-width: 180px;
-  color: #aaa;
+  color: var(--color-text-subtle);
   font-weight: 500;
 
   .direction-label {
@@ -56,7 +56,7 @@
 
 .arrow-connector {
   font-size: 1.5rem;
-  color: #888;
+  color: var(--color-text-disabled);
   flex-shrink: 0;
   margin: 0 0.5rem;
 }
@@ -80,7 +80,7 @@
 
   &.allowed {
     background: rgba(76, 175, 80, 0.2);
-    color: #81c784;
+    color: var(--color-success);
     border: 1px solid rgba(76, 175, 80, 0.4);
 
     &:hover {
@@ -96,7 +96,7 @@
 
   &.forbidden {
     background: rgba(244, 67, 54, 0.2);
-    color: #e57373;
+    color: var(--color-danger);
     border: 1px solid rgba(244, 67, 54, 0.4);
 
     &:hover {

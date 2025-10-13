@@ -6,8 +6,8 @@
 
   > label {
     font-size: 12px;
-    font-weight: 500;
-    color: #aaa;
+    font-weight: var(--font-weight-medium);
+    color: var(--color-text-subtle);
   }
 
   .preset-buttons {
@@ -16,22 +16,22 @@
 
     .preset-button {
       padding: 3px 8px;
-      border: 1px solid #333;
-      border-radius: 4px;
-      background: #1a1a1a;
-      color: #999;
+      border: 1px solid var(--color-border-dark);
+      border-radius: var(--radius-md);
+      background: var(--color-bg-secondary);
+      color: var(--color-text-muted);
       font-size: 11px;
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: all var(--transition-fast) var(--transition-ease);
 
       &:hover {
-        background: #2a2a2a;
-        border-color: #444;
-        color: #ccc;
+        background: var(--color-bg-tertiary);
+        border-color: var(--color-border-medium);
+        color: var(--color-text-tertiary);
       }
 
       &:active {
-        background: #333;
+        background: var(--color-bg-hover);
       }
     }
   }
@@ -46,15 +46,15 @@
       align-items: center;
       gap: 4px;
       padding: 3px 6px;
-      border: 1px solid #2a2a2a;
-      border-radius: 4px;
-      background: #0a0a0a;
+      border: 1px solid var(--color-border-darker);
+      border-radius: var(--radius-md);
+      background: var(--color-bg-primary);
       cursor: pointer;
-      transition: all 0.15s ease;
+      transition: all var(--transition-fast) var(--transition-ease);
 
       &:hover {
-        background: #1a1a1a;
-        border-color: #333;
+        background: var(--color-bg-secondary);
+        border-color: var(--color-border-dark);
       }
 
       input[type="checkbox"] {
@@ -65,8 +65,8 @@
       }
 
       .day-short {
-        font-weight: 500;
-        color: #ccc;
+        font-weight: var(--font-weight-medium);
+        color: var(--color-text-tertiary);
         font-size: 11px;
       }
 
@@ -75,11 +75,11 @@
       }
 
       &:has(input:checked) {
-        background: #1a1a1a;
-        border-color: #555;
+        background: var(--color-bg-secondary);
+        border-color: var(--color-border-light);
 
         .day-short {
-          color: #fff;
+          color: var(--color-text-primary);
         }
       }
     }

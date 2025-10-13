@@ -6,13 +6,13 @@
     .tab-header {
         display: flex;
         gap: 0;
-        border-bottom: 1px solid #333;
-        background-color: #1a1a1a;
+        border-bottom: 1px solid var(--color-bg-hover);
+        background-color: var(--color-bg-secondary);
 
         .tab-button {
             background: none;
             border: none;
-            color: #999;
+            color: var(--color-text-muted);
             padding: 0.5rem 1rem;
             cursor: pointer;
             font-size: 0.85rem;
@@ -20,12 +20,12 @@
             transition: color 0.2s, border-color 0.2s;
 
             &:hover {
-                color: #ccc;
+                color: var(--color-text-tertiary);
             }
 
             &.active {
-                color: #fff;
-                border-bottom-color: #4a9eff;
+                color: var(--color-text-primary);
+                border-bottom-color: var(--color-accent);
             }
         }
     }
