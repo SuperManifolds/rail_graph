@@ -1,86 +1,86 @@
 .track-stations {
-    padding: 0.75rem;
-    background-color: #1a1a1a;
-    border-radius: 4px;
+    padding: var(--spacing-md);
+    background-color: var(--color-bg-secondary);
+    border-radius: var(--radius-md);
     text-align: center;
-    font-size: 1rem;
-    color: #e0e0e0;
-    margin-bottom: 0.5rem;
+    font-size: var(--font-size-lg);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-sm);
 }
 
 .track-warning {
     display: flex;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    background-color: rgba(255, 193, 7, 0.1);
-    border: 1px solid rgba(255, 193, 7, 0.3);
-    border-radius: 4px;
-    margin-bottom: 0.75rem;
-    color: #ffc107;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    background-color: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+    color: var(--color-warning);
 
     i {
-        font-size: 1.2rem;
+        font-size: var(--font-size-xl);
         flex-shrink: 0;
         margin-top: 0.1rem;
     }
 
     .warning-content {
         flex: 1;
-        font-size: 0.85rem;
-        line-height: 1.5;
+        font-size: var(--font-size-sm);
+        line-height: var(--line-height-normal);
 
         strong {
             display: block;
-            margin-bottom: 0.25rem;
+            margin-bottom: var(--spacing-xs);
         }
 
         .affected-lines {
-            color: #fff;
-            font-weight: 500;
+            color: var(--color-text-primary);
+            font-weight: var(--font-weight-medium);
         }
 
         .warning-note {
-            margin-top: 0.5rem;
-            font-size: 0.8rem;
-            color: #ffdb7a;
+            margin-top: var(--spacing-sm);
+            font-size: var(--font-size-xs);
+            color: var(--color-warning-text);
             font-style: italic;
         }
     }
 }
 
 .tracks-visual {
-    padding: 1rem;
-    background-color: #1a1a1a;
-    border-radius: 4px;
+    padding: var(--spacing-lg);
+    background-color: var(--color-bg-secondary);
+    border-radius: var(--radius-md);
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--spacing-md);
 }
 
 .station-label {
     text-align: center;
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: #e0e0e0;
-    padding: 0.5rem;
-    background-color: #2a2a2a;
-    border-radius: 4px;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-secondary);
+    padding: var(--spacing-sm);
+    background-color: var(--color-bg-tertiary);
+    border-radius: var(--radius-md);
 
     &.station-top {
-        border-bottom: 2px solid #4a9eff;
+        border-bottom: 2px solid var(--color-accent);
     }
 
     &.station-bottom {
-        border-top: 2px solid #4a9eff;
+        border-top: 2px solid var(--color-accent);
     }
 }
 
 .tracks-horizontal {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
     align-items: center;
     justify-content: center;
-    padding: 0.5rem;
+    padding: var(--spacing-sm);
 }
 
 .track-column {
@@ -88,16 +88,16 @@
     flex-direction: column;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.5rem;
-    background-color: #2a2a2a;
-    border: 1px solid #444;
-    border-radius: 6px;
+    padding: var(--spacing-sm);
+    background-color: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-lg);
     min-width: 50px;
 
     .track-number {
-        font-size: 0.75rem;
-        color: #aaa;
-        font-weight: 600;
+        font-size: var(--font-size-xs);
+        color: var(--color-text-subtle);
+        font-weight: var(--font-weight-semibold);
         text-align: center;
     }
 
@@ -105,44 +105,37 @@
         width: 100%;
         max-width: 50px;
         padding: 0.2rem 0.3rem;
-        font-size: 0.75rem;
-        font-weight: 600;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
         text-align: center;
-        background-color: #1a1a1a;
-        border: 1px solid #444;
-        border-radius: 3px;
-        color: #e0e0e0;
+        background-color: var(--color-bg-secondary);
+        border: 1px solid var(--color-border-medium);
+        border-radius: var(--radius-sm);
+        color: var(--color-text-secondary);
 
         &:focus {
             outline: none;
-            border-color: #4a9eff;
-            background-color: #2a2a2a;
+            border-color: var(--color-accent);
+            background-color: var(--color-bg-tertiary);
         }
     }
 
     .direction-button {
+        @include flex-center;
+        @include hover-scale;
         width: 36px;
         height: 36px;
         padding: 0;
-        background-color: #1a1a1a;
-        border: 2px solid #4a9eff;
-        border-radius: 6px;
-        color: #4a9eff;
+        background-color: var(--color-bg-secondary);
+        border: 2px solid var(--color-accent);
+        border-radius: var(--radius-lg);
+        color: var(--color-accent);
         cursor: pointer;
-        font-size: 1.2rem;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        font-size: var(--font-size-xl);
 
         &:hover {
-            background-color: #4a9eff;
-            color: #fff;
-            transform: scale(1.05);
-        }
-
-        &:active {
-            transform: scale(0.95);
+            background-color: var(--color-accent);
+            color: var(--color-text-primary);
         }
 
         i {
@@ -151,23 +144,21 @@
     }
 
     .remove-track-button-small {
+        @include flex-center;
         width: 20px;
         height: 20px;
         padding: 0;
         background-color: transparent;
-        border: 1px solid #dc3545;
-        border-radius: 3px;
-        color: #dc3545;
+        border: 1px solid var(--color-danger);
+        border-radius: var(--radius-sm);
+        color: var(--color-danger);
         cursor: pointer;
         font-size: 0.65rem;
-        transition: all 0.2s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        transition: all var(--transition-base);
 
         &:hover {
-            background-color: #dc3545;
-            color: #fff;
+            background-color: var(--color-danger);
+            color: var(--color-text-primary);
         }
 
         i {
@@ -181,28 +172,21 @@
 }
 
 .add-track-button-inline {
+    @include flex-center;
+    @include hover-scale;
     width: 36px;
     height: 36px;
     padding: 0;
-    background-color: #1a1a1a;
-    border: 2px dashed #4a9eff;
-    border-radius: 6px;
-    color: #4a9eff;
+    background-color: var(--color-bg-secondary);
+    border: 2px dashed var(--color-accent);
+    border-radius: var(--radius-lg);
+    color: var(--color-accent);
     cursor: pointer;
-    font-size: 1rem;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    font-size: var(--font-size-lg);
 
     &:hover {
-        background-color: #2a2a2a;
+        background-color: var(--color-bg-tertiary);
         border-style: solid;
-        transform: scale(1.05);
-    }
-
-    &:active {
-        transform: scale(0.95);
     }
 
     i {

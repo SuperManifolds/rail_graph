@@ -1,0 +1,185 @@
+// Reusable SCSS Mixins
+
+// ===== Button Mixins =====
+
+@mixin button-base {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border-medium);
+    font-size: var(--font-size-base);
+    cursor: pointer;
+    transition: all var(--transition-base) var(--transition-ease);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-sm);
+
+    &:focus {
+        outline: none;
+    }
+
+    i {
+        pointer-events: none;
+    }
+}
+
+@mixin button-default {
+    @include button-base;
+    background-color: var(--color-bg-tertiary);
+    color: var(--color-text-secondary);
+    border-color: var(--color-border-medium);
+
+    &:hover {
+        background-color: var(--color-bg-hover);
+        border-color: var(--color-border-light);
+    }
+}
+
+@mixin button-primary {
+    @include button-base;
+    background-color: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-text-primary);
+
+    &:hover {
+        background-color: var(--color-accent-hover);
+        border-color: var(--color-accent-hover);
+    }
+
+    &:active {
+        background-color: var(--color-accent-active);
+    }
+}
+
+@mixin button-danger {
+    @include button-base;
+    background-color: var(--color-danger);
+    border-color: var(--color-danger);
+    color: var(--color-text-primary);
+
+    &:hover {
+        background-color: var(--color-danger-hover);
+        border-color: var(--color-danger-hover);
+    }
+}
+
+@mixin button-icon {
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: var(--spacing-xs);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color var(--transition-base);
+
+    &:hover {
+        color: var(--color-text-primary);
+    }
+
+    &:focus {
+        outline: none;
+    }
+
+    i {
+        pointer-events: none;
+    }
+}
+
+// ===== Input Mixins =====
+
+@mixin input-base {
+    padding: var(--spacing-sm);
+    background-color: var(--color-bg-tertiary);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-base);
+    transition: all var(--transition-base);
+
+    &:focus {
+        outline: none;
+        border-color: var(--color-accent);
+        background-color: var(--color-bg-hover);
+    }
+
+    &::placeholder {
+        color: var(--color-text-disabled);
+    }
+}
+
+@mixin input-text {
+    @include input-base;
+}
+
+@mixin input-select {
+    @include input-base;
+}
+
+// ===== Container Mixins =====
+
+@mixin card {
+    background-color: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-dark);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-md);
+}
+
+@mixin panel {
+    background-color: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-medium);
+    border-radius: var(--radius-md);
+}
+
+@mixin form-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+
+    label {
+        font-size: var(--font-size-base);
+        color: var(--color-text-tertiary);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+    }
+}
+
+// ===== Utility Mixins =====
+
+@mixin flex-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+@mixin flex-between {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+@mixin hover-lift {
+    transition: transform var(--transition-base) var(--transition-ease);
+
+    &:hover {
+        transform: translateY(-2px);
+    }
+
+    &:active {
+        transform: translateY(0);
+    }
+}
+
+@mixin hover-scale {
+    transition: transform var(--transition-base) var(--transition-ease);
+
+    &:hover {
+        transform: scale(1.05);
+    }
+
+    &:active {
+        transform: scale(0.95);
+    }
+}

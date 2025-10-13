@@ -1,0 +1,102 @@
+// CSS Custom Properties for Theming
+// These variables can be overridden for light mode or other themes
+
+:root {
+    // ===== Color Palette =====
+
+    // Background colors
+    --color-bg-primary: #0a0a0a;
+    --color-bg-secondary: #1a1a1a;
+    --color-bg-tertiary: #2a2a2a;
+    --color-bg-hover: #333;
+
+    // Border colors
+    --color-border-light: #555;
+    --color-border-medium: #444;
+    --color-border-dark: #333;
+    --color-border-darker: #2a2a2a;
+
+    // Text colors
+    --color-text-primary: #fff;
+    --color-text-secondary: #e0e0e0;
+    --color-text-tertiary: #ccc;
+    --color-text-muted: #999;
+    --color-text-disabled: #666;
+    --color-text-subtle: #aaa;
+
+    // Accent colors
+    --color-accent: #4a9eff;
+    --color-accent-hover: #3a8eef;
+    --color-accent-active: #2a7edf;
+    --color-accent-muted: #1a3a5a;
+
+    // Semantic colors
+    --color-danger: #dc3545;
+    --color-danger-hover: #c82333;
+    --color-danger-dark: #d32f2f;
+    --color-danger-darker: #b71c1c;
+
+    --color-warning: #ffc107;
+    --color-warning-bg: rgba(255, 193, 7, 0.1);
+    --color-warning-border: rgba(255, 193, 7, 0.3);
+    --color-warning-text: #ffdb7a;
+
+    --color-success: #28a745;
+    --color-success-hover: #218838;
+
+    // ===== Spacing =====
+    --spacing-xs: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 0.75rem;
+    --spacing-lg: 1rem;
+    --spacing-xl: 1.5rem;
+    --spacing-2xl: 2rem;
+
+    // ===== Border Radius =====
+    --radius-sm: 3px;
+    --radius-md: 4px;
+    --radius-lg: 6px;
+    --radius-xl: 8px;
+    --radius-full: 50%;
+
+    // ===== Typography =====
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.85rem;
+    --font-size-base: 0.9rem;
+    --font-size-md: 0.95rem;
+    --font-size-lg: 1rem;
+    --font-size-xl: 1.2rem;
+    --font-size-2xl: 1.25rem;
+
+    --font-weight-normal: 400;
+    --font-weight-medium: 500;
+    --font-weight-semibold: 600;
+    --font-weight-bold: 700;
+
+    --line-height-tight: 1;
+    --line-height-normal: 1.5;
+    --line-height-relaxed: 1.6;
+
+    // ===== Transitions =====
+    --transition-fast: 0.15s;
+    --transition-base: 0.2s;
+    --transition-slow: 0.3s;
+    --transition-ease: ease;
+    --transition-ease-in-out: ease-in-out;
+
+    // ===== Shadows =====
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+
+    // ===== Z-Index =====
+    --z-base: 1;
+    --z-dropdown: 1000;
+    --z-modal: 2000;
+    --z-tooltip: 3000;
+
+    // ===== Component Specific =====
+    --header-height: 57px;
+    --input-height: 38px;
+    --button-height: 38px;
+}

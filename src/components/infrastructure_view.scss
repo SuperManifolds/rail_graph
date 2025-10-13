@@ -1,44 +1,29 @@
 .infrastructure-view {
     display: flex;
     flex-direction: column;
-    height: calc(100vh - 57px); // Subtract app header height
-    background-color: #0a0a0a;
+    height: calc(100vh - var(--header-height));
+    background-color: var(--color-bg-primary);
 }
 
 .infrastructure-toolbar {
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid #333;
-    background-color: #1a1a1a;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid var(--color-border-dark);
+    background-color: var(--color-bg-secondary);
     display: flex;
-    gap: 0.5rem;
+    gap: var(--spacing-sm);
 }
 
 .toolbar-button {
-    background-color: #2a2a2a;
-    border: 1px solid #444;
-    border-radius: 4px;
-    color: #e0e0e0;
-    padding: 0.5rem 1rem;
-    font-size: 0.9rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    transition: all 0.2s ease;
-
-    &:hover {
-        background-color: #333;
-        border-color: #555;
-    }
+    @include button-default;
 
     &.active {
-        background-color: #1a3a5a;
-        border-color: #4a9eff;
-        color: #4a9eff;
+        background-color: var(--color-accent-muted);
+        border-color: var(--color-accent);
+        color: var(--color-accent);
     }
 
     i {
-        font-size: 0.9rem;
+        font-size: var(--font-size-base);
     }
 }
 
@@ -50,7 +35,7 @@
 
 .infrastructure-canvas {
     display: block;
-    background-color: #0a0a0a;
+    background-color: var(--color-bg-primary);
     width: 100%;
     height: 100%;
 }
