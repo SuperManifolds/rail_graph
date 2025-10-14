@@ -1,4 +1,4 @@
-use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate};
+use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value};
 use leptos_meta::{provide_meta_context, Stylesheet, Title};
 use uuid::Uuid;
 use crate::components::time_graph::TimeGraph;
@@ -144,6 +144,22 @@ pub fn App() -> impl IntoView {
         }
     };
 
+    // State for renaming views
+    let (editing_view_id, set_editing_view_id) = create_signal(None::<Uuid>);
+    let (edit_name_value, set_edit_name_value) = create_signal(String::new());
+
+    // Callback for renaming a view
+    let on_rename_view = move |view_id: Uuid, new_name: String| {
+        if !new_name.trim().is_empty() {
+            set_views.update(|v| {
+                if let Some(view) = v.iter_mut().find(|view| view.id == view_id) {
+                    view.set_name(new_name.trim().to_string());
+                }
+            });
+        }
+        set_editing_view_id.set(None);
+    };
+
     view! {
         <Stylesheet id="leptos" href="/pkg/nimby_graph.css"/>
         <Title text="Railway Time Graph"/>
@@ -158,27 +174,64 @@ pub fn App() -> impl IntoView {
                         "Infrastructure"
                     </button>
                     {move || {
-                        views.get().iter().map(|view| {
+                        let current_views = views.get();
+                        current_views.iter().map(|view| {
                             let view_id = view.id;
-                            let view_name = view.name.clone();
                             view! {
                                 <div class="tab-button-container">
-                                    <button
-                                        class=move || if active_tab.get() == AppTab::GraphView(view_id) { "tab-button active" } else { "tab-button" }
-                                        on:click=move |_| set_active_tab.set(AppTab::GraphView(view_id))
-                                    >
-                                        {view_name.clone()}
-                                    </button>
-                                    <button
-                                        class="tab-close-button"
-                                        on:click=move |e| {
-                                            e.stop_propagation();
-                                            on_close_view(view_id);
+                                    {move || {
+                                        if editing_view_id.get() == Some(view_id) {
+                                            view! {
+                                                <input
+                                                    type="text"
+                                                    class="tab-rename-input"
+                                                    value=edit_name_value
+                                                    on:input=move |ev| set_edit_name_value.set(event_target_value(&ev))
+                                                    on:keydown=move |ev| {
+                                                        if ev.key() == "Enter" {
+                                                            on_rename_view(view_id, edit_name_value.get());
+                                                        } else if ev.key() == "Escape" {
+                                                            set_editing_view_id.set(None);
+                                                        }
+                                                    }
+                                                    on:blur=move |_| on_rename_view(view_id, edit_name_value.get())
+                                                    prop:autofocus=true
+                                                />
+                                            }.into_view()
+                                        } else {
+                                            let current_name = views.get().iter()
+                                                .find(|v| v.id == view_id)
+                                                .map(|v| v.name.clone())
+                                                .unwrap_or_default();
+                                            view! {
+                                                <button
+                                                    class=move || if active_tab.get() == AppTab::GraphView(view_id) { "tab-button active" } else { "tab-button" }
+                                                    on:click=move |_| set_active_tab.set(AppTab::GraphView(view_id))
+                                                    on:dblclick=move |e| {
+                                                        e.stop_propagation();
+                                                        let name = views.get().iter()
+                                                            .find(|v| v.id == view_id)
+                                                            .map(|v| v.name.clone())
+                                                            .unwrap_or_default();
+                                                        set_edit_name_value.set(name);
+                                                        set_editing_view_id.set(Some(view_id));
+                                                    }
+                                                >
+                                                    {current_name}
+                                                </button>
+                                                <button
+                                                    class="tab-close-button"
+                                                    on:click=move |e| {
+                                                        e.stop_propagation();
+                                                        on_close_view(view_id);
+                                                    }
+                                                    title="Close view"
+                                                >
+                                                    <i class="fa-solid fa-times"></i>
+                                                </button>
+                                            }.into_view()
                                         }
-                                        title="Close view"
-                                    >
-                                        <i class="fa-solid fa-times"></i>
-                                    </button>
+                                    }}
                                 </div>
                             }
                         }).collect::<Vec<_>>()

@@ -176,6 +176,11 @@ impl GraphView {
         }
     }
 
+    /// Rename this view
+    pub fn set_name(&mut self, new_name: String) {
+        self.name = new_name;
+    }
+
     /// Get the set of stations visible in this view
     #[must_use]
     pub fn visible_stations(&self) -> HashSet<NodeIndex> {

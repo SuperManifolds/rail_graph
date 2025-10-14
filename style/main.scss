@@ -131,6 +131,16 @@ body {
     }
 }
 
+.tab-rename-input {
+    @include input-base;
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    padding: var(--spacing-lg) var(--spacing-2xl);
+    font-size: var(--font-size-md);
+    border-bottom: 2px solid var(--color-accent);
+    min-width: 150px;
+}
+
 // Shared input styles
 label {
     input[type="time"],
