@@ -92,16 +92,18 @@ fn dfs_longest_path(
 
 impl GraphView {
     /// Create a default view showing the longest path in the graph (the "main line")
-    /// Returns a view even if the graph is empty (station_range will be None until data is imported)
+    /// Returns a view even if the graph is empty (`station_range` will be None until data is imported)
     #[must_use]
     pub fn default_main_line(graph: &RailwayGraph) -> Self {
         let path = find_longest_path(graph);
 
-        let station_range = if path.len() >= 2 {
-            // Store the first and last stations of the longest path as the range
-            Some((*path.first().unwrap(), *path.last().unwrap()))
+        let station_range = if let (Some(&from), Some(&to)) = (path.first(), path.last()) {
+            if path.len() >= 2 {
+                Some((from, to))
+            } else {
+                None
+            }
         } else {
-            // Empty graph - no station range yet
             None
         };
 
@@ -305,7 +307,7 @@ mod tests {
 
         assert_eq!(view.name, "Main Line");
         assert!(view.station_range.is_some());
-        let (from, to) = view.station_range.unwrap();
+        let (from, to) = view.station_range.expect("station range should exist");
         assert!(from == s1 || from == s2);
         assert!(to == s1 || to == s2);
         assert_ne!(from, to);
@@ -329,7 +331,7 @@ mod tests {
 
         let path = view.calculate_path(&graph);
         assert!(path.is_some());
-        let path = path.unwrap();
+        let path = path.expect("path should be calculable");
         assert_eq!(path.len(), 3);
         assert_eq!(path[0], s1);
         assert_eq!(path[1], s2);
