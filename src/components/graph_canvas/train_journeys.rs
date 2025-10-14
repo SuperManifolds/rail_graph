@@ -114,40 +114,53 @@ pub fn draw_train_journeys(
         let dot_radius = (journey.thickness * DOT_RADIUS_MULTIPLIER).max(MIN_DOT_RADIUS);
         ctx.begin_path();
 
-        let mut last_visible_idx: Option<usize> = None;
+        // Collect visible node info first so we can look ahead
+        let visible_nodes: Vec<_> = journey.station_times.iter()
+            .filter_map(|(node_idx, arrival_time, departure_time)| {
+                let idx = *node_positions.get(node_idx)?;
+
+                let arrival_fraction = time_to_fraction(*arrival_time);
+                let departure_fraction = time_to_fraction(*departure_time);
+                let arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
+                let departure_x = dims.left_margin + (departure_fraction * dims.hour_width);
+
+                Some((idx, arrival_x, departure_x))
+            })
+            .collect();
+
+        // Apply midnight wrapping
+        let mut wrapped_nodes = Vec::with_capacity(visible_nodes.len());
         let mut prev_x = 0.0;
-
-        for (node_idx, arrival_time, departure_time) in &journey.station_times {
-            // Look up the display position for this station
-            let station_idx = node_positions.get(node_idx);
-
-            let arrival_fraction = time_to_fraction(*arrival_time);
-            let departure_fraction = time_to_fraction(*departure_time);
-            let mut arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
-            let mut departure_x = dims.left_margin + (departure_fraction * dims.hour_width);
-
+        for (idx, mut arrival_x, mut departure_x) in visible_nodes {
             if prev_x > 0.0 && arrival_x < prev_x - dims.graph_width * MIDNIGHT_WRAP_THRESHOLD {
                 arrival_x += dims.graph_width;
                 departure_x += dims.graph_width;
             }
+            wrapped_nodes.push((idx, arrival_x, departure_x));
+            prev_x = departure_x;
+        }
 
-            // Only draw dots for visible nodes that have visible segments
-            let Some(&idx) = station_idx else {
-                last_visible_idx = None;
-                prev_x = departure_x;
-                continue;
-            };
-
+        for (i, &(idx, arrival_x, departure_x)) in wrapped_nodes.iter().enumerate() {
             let y = dims.top_margin
                 + (idx as f64 * node_height)
                 + (node_height / 2.0);
 
             // Check if this node has a segment connecting to previous or next visible node
-            let has_segment = if let Some(last_idx) = last_visible_idx {
-                idx == last_idx + 1 || idx + 1 == last_idx
+            let has_prev_segment = if i > 0 {
+                let prev_idx = wrapped_nodes[i - 1].0;
+                idx == prev_idx + 1 || idx + 1 == prev_idx
             } else {
                 false
             };
+
+            let has_next_segment = if i + 1 < wrapped_nodes.len() {
+                let next_idx = wrapped_nodes[i + 1].0;
+                idx == next_idx + 1 || idx + 1 == next_idx
+            } else {
+                false
+            };
+
+            let has_segment = has_prev_segment || has_next_segment;
 
             // Only draw dots if this node has at least one connecting segment
             // or if it's a station (not junction) with wait time (horizontal segment)
@@ -165,9 +178,6 @@ pub fn draw_train_journeys(
                     let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
                 }
             }
-
-            last_visible_idx = Some(idx);
-            prev_x = departure_x;
         }
 
         ctx.fill();

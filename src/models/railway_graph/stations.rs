@@ -32,7 +32,7 @@ pub trait Stations {
     /// Returns (`removed_edges`, `bypass_mapping`) where `bypass_mapping` maps (`old_edge1`, `old_edge2`) -> `new_edge`
     fn delete_station(&mut self, index: NodeIndex) -> (Vec<usize>, std::collections::HashMap<(usize, usize), usize>);
 
-    /// Get all stations in order by traversing the graph (deprecated, use get_all_nodes_ordered)
+    /// Get all stations in order by traversing the graph (deprecated, use `get_all_nodes_ordered`)
     /// Performs a breadth-first traversal starting from the first station
     /// Returns Vec<(`NodeIndex`, `StationNode`)>
     fn get_all_stations_ordered(&self) -> Vec<(NodeIndex, StationNode)>;
