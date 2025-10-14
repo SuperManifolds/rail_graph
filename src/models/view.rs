@@ -181,37 +181,39 @@ impl GraphView {
         self.path.iter().copied().collect()
     }
 
-    /// Get the ordered list of stations for rendering this view
-    /// Returns Vec<(`NodeIndex`, `StationNode`)>
+    /// Get the ordered list of nodes (stations and junctions) for rendering this view
+    /// Returns Vec<(`NodeIndex`, `Node`)>
     #[must_use]
-    pub fn get_stations_for_display(&self, graph: &RailwayGraph) -> Vec<(NodeIndex, crate::models::StationNode)> {
+    pub fn get_nodes_for_display(&self, graph: &RailwayGraph) -> Vec<(NodeIndex, crate::models::Node)> {
         self.path.iter()
             .filter_map(|&node_idx| {
-                graph.graph.node_weight(node_idx).and_then(|node| {
-                    if let crate::models::Node::Station(station) = node {
-                        Some((node_idx, station.clone()))
-                    } else {
-                        None
-                    }
-                })
+                graph.graph.node_weight(node_idx).map(|node| (node_idx, node.clone()))
             })
             .collect()
     }
 
-    /// Filter journeys to only those that traverse this path
+    /// Filter journeys to only show the section visible in this view
+    /// Journeys simply start/end at the view boundaries (which may be junctions)
     #[must_use]
     pub fn filter_journeys(&self, journeys: &[TrainJourney], _graph: &RailwayGraph) -> Vec<TrainJourney> {
-        // Create a set of visible station node indices
         let visible_stations: HashSet<NodeIndex> = self.path.iter().copied().collect();
 
         journeys.iter()
-            .filter(|journey| {
-                // Include journey if it visits any station in the path
-                journey.station_times.iter().any(|(node_idx, _, _)| {
-                    visible_stations.contains(node_idx)
-                })
+            .filter_map(|journey| {
+                // Simply filter to only visible nodes, keeping original times
+                let filtered_times: Vec<_> = journey.station_times.iter()
+                    .filter(|(node_idx, _, _)| visible_stations.contains(node_idx))
+                    .copied()
+                    .collect();
+
+                if filtered_times.is_empty() {
+                    None
+                } else {
+                    let mut filtered_journey = journey.clone();
+                    filtered_journey.station_times = filtered_times;
+                    Some(filtered_journey)
+                }
             })
-            .cloned()
             .collect()
     }
 

@@ -1,5 +1,5 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{StationNode, RailwayGraph};
+use crate::models::{Node, RailwayGraph};
 use super::types::GraphDimensions;
 use petgraph::visit::EdgeRef;
 use petgraph::stable_graph::NodeIndex;
@@ -20,7 +20,7 @@ pub fn draw_background(ctx: &CanvasRenderingContext2d, width: f64, height: f64) 
 }
 
 #[allow(clippy::cast_precision_loss)]
-pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[(NodeIndex, StationNode)], zoom_level: f64, pan_offset_x: f64) {
+pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[(NodeIndex, Node)], zoom_level: f64, pan_offset_x: f64) {
     let station_height = dims.graph_height / stations.len() as f64;
 
     for (i, _) in stations.iter().enumerate() {
@@ -60,7 +60,7 @@ fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, 
 pub fn draw_double_track_indicators(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[(NodeIndex, StationNode)],
+    stations: &[(NodeIndex, Node)],
     graph: &RailwayGraph,
     zoom_level: f64,
     pan_offset_x: f64,

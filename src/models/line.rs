@@ -96,6 +96,8 @@ pub struct Line {
     pub forward_route: Vec<RouteSegment>,
     #[serde(default)]
     pub return_route: Vec<RouteSegment>,
+    #[serde(default = "default_sync_routes")]
+    pub sync_routes: bool,
 }
 
 fn default_visible() -> bool {
@@ -104,6 +106,10 @@ fn default_visible() -> bool {
 
 fn default_thickness() -> f64 {
     2.0
+}
+
+fn default_sync_routes() -> bool {
+    true
 }
 
 impl Line {
@@ -128,6 +134,7 @@ impl Line {
                     manual_departures: Vec::new(),
                     forward_route: Vec::new(),
                     return_route: Vec::new(),
+                    sync_routes: true,
                 }
             })
             .collect()
@@ -289,32 +296,28 @@ impl Line {
         self.return_route.iter().any(|segment| segment.edge_index == edge_index)
     }
 
-    /// Extract the ordered list of station nodes from this line's forward route
+    /// Extract the ordered list of all nodes (stations and junctions) from this line's forward route
     #[must_use]
     pub fn get_station_path(&self, graph: &RailwayGraph) -> Vec<NodeIndex> {
         use std::collections::HashSet;
-        use crate::models::Node;
 
         let mut path = Vec::new();
         let mut seen = HashSet::new();
 
-        // Helper to check if a node is a station and add it if not seen
-        let try_add_station = |node_idx: NodeIndex, seen: &mut HashSet<NodeIndex>, path: &mut Vec<NodeIndex>| {
-            // First check if it's a station
-            if let Some(Node::Station(_)) = graph.graph.node_weight(node_idx) {
-                // Then check if we haven't seen it yet
-                if !seen.contains(&node_idx) {
-                    path.push(node_idx);
-                    seen.insert(node_idx);
-                }
+        // Helper to add any node if not seen
+        let try_add_node = |node_idx: NodeIndex, seen: &mut HashSet<NodeIndex>, path: &mut Vec<NodeIndex>| {
+            // Check if the node exists and we haven't seen it yet
+            if graph.graph.node_weight(node_idx).is_some() && !seen.contains(&node_idx) {
+                path.push(node_idx);
+                seen.insert(node_idx);
             }
         };
 
-        // Get stations from forward route edges
+        // Get all nodes from forward route edges
         for segment in &self.forward_route {
             if let Some((from, to)) = graph.graph.edge_endpoints(petgraph::graph::EdgeIndex::new(segment.edge_index)) {
-                try_add_station(from, &mut seen, &mut path);
-                try_add_station(to, &mut seen, &mut path);
+                try_add_node(from, &mut seen, &mut path);
+                try_add_node(to, &mut seen, &mut path);
             }
         }
 
@@ -380,6 +383,59 @@ impl Line {
         changed |= Self::reroute_single_direction(&mut self.return_route, deleted_edge, from_node, to_node, graph);
 
         changed
+    }
+
+    /// Sync return route from forward route if `sync_routes` is enabled
+    /// Preserves user-configured wait times, track indices, and platform assignments
+    /// from existing return segments while syncing the route structure and durations
+    pub fn apply_route_sync_if_enabled(&mut self) {
+        use std::collections::HashMap;
+
+        if !self.sync_routes {
+            return;
+        }
+
+        // Build a map of edge_index -> (wait_time, track_index, origin_platform, destination_platform)
+        // This preserves all user-configured settings from the existing return route
+        let existing_settings: HashMap<usize, (Duration, usize, usize, usize)> = self.return_route
+            .iter()
+            .map(|seg| (
+                seg.edge_index,
+                (seg.wait_time, seg.track_index, seg.origin_platform, seg.destination_platform)
+            ))
+            .collect();
+
+        // Create new return route by reversing forward route
+        let mut new_return_route = Vec::new();
+
+        for forward_seg in self.forward_route.iter().rev() {
+            // If we have existing settings for this edge in return route, preserve them
+            if let Some((wait_time, track_index, origin_platform, destination_platform)) =
+                existing_settings.get(&forward_seg.edge_index) {
+                // Preserve all user settings
+                new_return_route.push(RouteSegment {
+                    edge_index: forward_seg.edge_index,
+                    track_index: *track_index,
+                    origin_platform: *origin_platform,
+                    destination_platform: *destination_platform,
+                    duration: forward_seg.duration,
+                    wait_time: *wait_time,
+                });
+            } else {
+                // This is a new edge not in the return route, use defaults from forward route
+                // but swap platforms for the reverse direction
+                new_return_route.push(RouteSegment {
+                    edge_index: forward_seg.edge_index,
+                    track_index: forward_seg.track_index,
+                    origin_platform: forward_seg.destination_platform,
+                    destination_platform: forward_seg.origin_platform,
+                    duration: forward_seg.duration,
+                    wait_time: forward_seg.wait_time,
+                });
+            }
+        }
+
+        self.return_route = new_return_route;
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
@@ -558,6 +614,7 @@ mod tests {
             manual_departures: vec![],
             forward_route: vec![create_test_segment(1), create_test_segment(2)],
             return_route: vec![create_test_segment(3)],
+            sync_routes: true,
         };
 
         assert!(line.uses_edge(1));
@@ -581,6 +638,7 @@ mod tests {
             manual_departures: vec![],
             forward_route: vec![create_test_segment(1), create_test_segment(2)],
             return_route: vec![],
+            sync_routes: true,
         };
 
         assert!(line.uses_any_edge(&[1, 5, 6]));
@@ -607,6 +665,7 @@ mod tests {
                 create_test_segment(3),
             ],
             return_route: vec![],
+            sync_routes: true,
         };
 
         // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
@@ -644,6 +703,7 @@ mod tests {
                 create_test_segment(2),
             ],
             return_route: vec![],
+            sync_routes: true,
         };
 
         // Remove edge 1 but no bypass mapping
@@ -689,6 +749,7 @@ mod tests {
                 wait_time: Duration::seconds(30),
             }],
             return_route: vec![],
+            sync_routes: true,
         };
 
         line.fix_track_indices_after_change(edge.index(), 2, &graph);
@@ -771,6 +832,7 @@ mod tests {
                 create_test_segment(10),
                 create_test_segment(5),
             ],
+            sync_routes: true,
         };
 
         // Split edge 10 into edges 20 and 21
@@ -835,6 +897,7 @@ mod tests {
                 create_test_segment(e2.index()),
             ],
             return_route: vec![],
+            sync_routes: true,
         };
 
         // Delete the direct edge B -> C
@@ -874,6 +937,7 @@ mod tests {
             manual_departures: vec![],
             forward_route: vec![create_test_segment(e1.index())],
             return_route: vec![],
+            sync_routes: true,
         };
 
         // Delete the edge

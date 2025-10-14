@@ -50,40 +50,75 @@ impl Routes for RailwayGraph {
         route: &[crate::models::RouteSegment],
         direction: crate::models::RouteDirection,
     ) -> Vec<(String, NodeIndex)> {
-        use super::stations::Stations;
         use super::tracks::Tracks;
+        use std::collections::HashSet;
 
         let mut stations = Vec::new();
+        let mut seen = HashSet::new();
 
         match direction {
             crate::models::RouteDirection::Forward => {
-                // Forward: extract from -> to for each edge
-                if let Some((from, name)) = route.first().and_then(|segment| {
-                    let edge_idx = EdgeIndex::new(segment.edge_index);
-                    self.get_track_endpoints(edge_idx).and_then(|(from, _)| {
-                        self.get_station_name(from).map(|name| (from, name.to_string()))
-                    })
-                }) {
-                    stations.push((name, from));
-                }
+                let mut current_node: Option<NodeIndex> = None;
 
-                for segment in route {
-                    self.add_station_if_exists(segment.edge_index, false, &mut stations);
+                for (idx, segment) in route.iter().enumerate() {
+                    let edge_idx = EdgeIndex::new(segment.edge_index);
+                    let Some((edge_from, edge_to)) = self.get_track_endpoints(edge_idx) else {
+                        continue;
+                    };
+
+                    // Determine which direction we're traveling on this edge
+                    let (travel_from, travel_to) = self.determine_travel_direction(
+                        edge_from,
+                        edge_to,
+                        current_node,
+                        route.get(idx + 1),
+                    );
+
+                    // Skip if discontinuous
+                    if current_node.is_some_and(|prev| prev != travel_from) {
+                        continue;
+                    }
+
+                    // Add the origin node if this is the first segment
+                    if idx == 0 {
+                        self.add_station_if_not_seen(travel_from, &mut stations, &mut seen);
+                    }
+
+                    // Add the destination node
+                    self.add_station_if_not_seen(travel_to, &mut stations, &mut seen);
+                    current_node = Some(travel_to);
                 }
             }
             crate::models::RouteDirection::Return => {
-                // Return: extract to -> from for each edge (traveling backwards)
-                if let Some((to, name)) = route.first().and_then(|segment| {
-                    let edge_idx = EdgeIndex::new(segment.edge_index);
-                    self.get_track_endpoints(edge_idx).and_then(|(_, to)| {
-                        self.get_station_name(to).map(|name| (to, name.to_string()))
-                    })
-                }) {
-                    stations.push((name, to));
-                }
+                let mut current_node: Option<NodeIndex> = None;
 
-                for segment in route {
-                    self.add_station_if_exists(segment.edge_index, true, &mut stations);
+                for (idx, segment) in route.iter().enumerate() {
+                    let edge_idx = EdgeIndex::new(segment.edge_index);
+                    let Some((edge_from, edge_to)) = self.get_track_endpoints(edge_idx) else {
+                        continue;
+                    };
+
+                    // Determine which direction we're traveling on this edge
+                    let (travel_from, travel_to) = self.determine_travel_direction(
+                        edge_from,
+                        edge_to,
+                        current_node,
+                        route.get(idx + 1),
+                    );
+
+                    // Skip if discontinuous
+                    if current_node.is_some_and(|prev| prev != travel_from) {
+                        continue;
+                    }
+
+                    // Add the origin node if this is the first segment
+                    if idx == 0 {
+                        self.add_station_if_not_seen(travel_from, &mut stations, &mut seen);
+                    }
+
+                    // Add the destination node
+                    self.add_station_if_not_seen(travel_to, &mut stations, &mut seen);
+                    current_node = Some(travel_to);
                 }
             }
         }
@@ -96,39 +131,11 @@ impl Routes for RailwayGraph {
         route: &[crate::models::RouteSegment],
         direction: crate::models::RouteDirection,
     ) -> (Option<NodeIndex>, Option<NodeIndex>) {
-        use super::tracks::Tracks;
-
-        match direction {
-            crate::models::RouteDirection::Forward => {
-                let first = route.first()
-                    .and_then(|seg| {
-                        let edge = EdgeIndex::new(seg.edge_index);
-                        self.get_track_endpoints(edge).map(|(from, _)| from)
-                    });
-                let last = route.last()
-                    .and_then(|seg| {
-                        let edge = EdgeIndex::new(seg.edge_index);
-                        self.get_track_endpoints(edge).map(|(_, to)| to)
-                    });
-                (first, last)
-            }
-            crate::models::RouteDirection::Return => {
-                // Return route segments travel backwards on edges
-                // First segment's 'to' is the starting station
-                let first = route.first()
-                    .and_then(|seg| {
-                        let edge = EdgeIndex::new(seg.edge_index);
-                        self.get_track_endpoints(edge).map(|(_, to)| to)
-                    });
-                // Last segment's 'from' is the ending station
-                let last = route.last()
-                    .and_then(|seg| {
-                        let edge = EdgeIndex::new(seg.edge_index);
-                        self.get_track_endpoints(edge).map(|(from, _)| from)
-                    });
-                (first, last)
-            }
-        }
+        // Use get_stations_from_route to get all stations, then return first and last
+        let stations = self.get_stations_from_route(route, direction);
+        let first = stations.first().map(|(_, idx)| *idx);
+        let last = stations.last().map(|(_, idx)| *idx);
+        (first, last)
     }
 
     fn get_available_start_stations(
@@ -137,6 +144,7 @@ impl Routes for RailwayGraph {
         direction: crate::models::RouteDirection,
     ) -> Vec<String> {
         use super::stations::Stations;
+        use std::collections::HashSet;
 
         let (first_idx, _) = self.get_route_endpoints(route, direction);
 
@@ -144,9 +152,20 @@ impl Routes for RailwayGraph {
             return Vec::new();
         };
 
+        // Get all nodes already in the route
+        let nodes_in_route: HashSet<NodeIndex> = self.get_stations_from_route(route, direction)
+            .iter()
+            .map(|(_, idx)| *idx)
+            .collect();
+
         self.get_all_stations_ordered()
             .iter()
             .filter_map(|(node_idx, station)| {
+                // Skip if already in route
+                if nodes_in_route.contains(node_idx) {
+                    return None;
+                }
+
                 // For forward: find path from node_idx to first_idx
                 // For return: find path from first_idx to node_idx (traveling backwards)
                 let has_path = match direction {
@@ -168,6 +187,7 @@ impl Routes for RailwayGraph {
         direction: crate::models::RouteDirection,
     ) -> Vec<String> {
         use super::stations::Stations;
+        use std::collections::HashSet;
 
         let (_, last_idx) = self.get_route_endpoints(route, direction);
 
@@ -175,9 +195,20 @@ impl Routes for RailwayGraph {
             return Vec::new();
         };
 
+        // Get all nodes already in the route
+        let nodes_in_route: HashSet<NodeIndex> = self.get_stations_from_route(route, direction)
+            .iter()
+            .map(|(_, idx)| *idx)
+            .collect();
+
         self.get_all_stations_ordered()
             .iter()
             .filter_map(|(node_idx, station)| {
+                // Skip if already in route
+                if nodes_in_route.contains(node_idx) {
+                    return None;
+                }
+
                 // For forward: find path from last_idx to node_idx
                 // For return: find path from node_idx to last_idx (traveling backwards)
                 let has_path = match direction {
@@ -265,22 +296,83 @@ impl Routes for RailwayGraph {
 }
 
 impl RailwayGraph {
-    /// Helper to add a station to the list if it exists
-    /// If `use_from` is true, adds the 'from' station, otherwise adds the 'to' station
-    fn add_station_if_exists(&self, edge_index: usize, use_from: bool, stations: &mut Vec<(String, NodeIndex)>) {
-        use super::tracks::Tracks;
-        use super::stations::Stations;
+    /// Add a node to the stations list if not already seen
+    fn add_station_if_not_seen(
+        &self,
+        node_idx: NodeIndex,
+        stations: &mut Vec<(String, NodeIndex)>,
+        seen: &mut std::collections::HashSet<NodeIndex>,
+    ) {
+        if seen.contains(&node_idx) {
+            return;
+        }
 
-        let edge_idx = EdgeIndex::new(edge_index);
-        let Some((from, to)) = self.get_track_endpoints(edge_idx) else {
+        let Some(name) = self.get_node_name(node_idx) else {
             return;
         };
-        let station_idx = if use_from { from } else { to };
-        let Some(name) = self.get_station_name(station_idx) else {
-            return;
-        };
-        stations.push((name.to_string(), station_idx));
+
+        stations.push((name, node_idx));
+        seen.insert(node_idx);
     }
+
+    /// Determine travel direction for an edge based on previous node and next segment
+    /// Returns (`from_node`, `to_node`) for the direction of travel
+    fn determine_travel_direction(
+        &self,
+        edge_from: NodeIndex,
+        edge_to: NodeIndex,
+        prev_node: Option<NodeIndex>,
+        next_segment: Option<&crate::models::RouteSegment>,
+    ) -> (NodeIndex, NodeIndex) {
+        use super::tracks::Tracks;
+
+        if let Some(prev) = prev_node {
+            // We know where we're coming from
+            if prev == edge_from {
+                (edge_from, edge_to)
+            } else if prev == edge_to {
+                (edge_to, edge_from)
+            } else {
+                // Shouldn't happen, default to forward
+                (edge_from, edge_to)
+            }
+        } else if let Some(next_seg) = next_segment {
+            // First segment - check next segment to determine direction
+            let next_edge_idx = EdgeIndex::new(next_seg.edge_index);
+            if let Some((next_from, next_to)) = self.get_track_endpoints(next_edge_idx) {
+                if edge_to == next_from || edge_to == next_to {
+                    (edge_from, edge_to)
+                } else if edge_from == next_from || edge_from == next_to {
+                    (edge_to, edge_from)
+                } else {
+                    (edge_from, edge_to)
+                }
+            } else {
+                (edge_from, edge_to)
+            }
+        } else {
+            // Single segment, default to forward
+            (edge_from, edge_to)
+        }
+    }
+
+    /// Get the name of a node (station or junction)
+    fn get_node_name(&self, node_idx: NodeIndex) -> Option<String> {
+        use super::stations::Stations;
+        use crate::models::Node;
+
+        if let Some(station_name) = self.get_station_name(node_idx) {
+            Some(station_name.to_string())
+        } else if let Some(node) = self.graph.node_weight(node_idx) {
+            match node {
+                Node::Junction(junction) => Some(junction.name.clone().unwrap_or_else(|| "Junction".to_string())),
+                Node::Station(_) => None, // Already handled above
+            }
+        } else {
+            None
+        }
+    }
+
 }
 
 #[cfg(test)]
@@ -526,5 +618,83 @@ mod tests {
             assert_eq!(path[0].index(), e1.index());
             assert_eq!(path[1].index(), e2.index());
         }
+    }
+
+    #[test]
+    fn test_get_stations_from_route_with_junction() {
+        use crate::models::{Junctions, Junction};
+
+        let mut graph = RailwayGraph::new();
+        let a = graph.add_or_get_station("Station A".to_string());
+        let b = graph.add_or_get_station("Station B".to_string());
+        let j = graph.add_junction(Junction {
+            name: Some("Junction J".to_string()),
+            position: None,
+            routing_rules: vec![],
+        });
+
+        // Create A -> J -> B
+        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let route = vec![
+            create_test_route_segment(e1.index()),
+            create_test_route_segment(e2.index()),
+        ];
+
+        let nodes = graph.get_stations_from_route(&route, RouteDirection::Forward);
+
+        // Should have all 3 nodes: A, J, and B
+        assert_eq!(nodes.len(), 3, "Expected 3 nodes (A, J, B), got {}", nodes.len());
+        assert_eq!(nodes[0].0, "Station A");
+        assert_eq!(nodes[1].0, "Junction J");
+        assert_eq!(nodes[2].0, "Station B");
+    }
+
+    #[test]
+    fn test_pathfinding_creates_complete_route() {
+        use crate::models::{Junctions, Junction, RouteSegment};
+
+        let mut graph = RailwayGraph::new();
+        let a = graph.add_or_get_station("Station A".to_string());
+        let b = graph.add_or_get_station("Station B".to_string());
+        let j = graph.add_junction(Junction {
+            name: Some("Junction J".to_string()),
+            position: None,
+            routing_rules: vec![],
+        });
+
+        // Create A -> J -> B
+        graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // Use pathfinding like the UI does
+        let path = graph.find_path_between_nodes(a, b);
+        assert!(path.is_some());
+
+        // Create route segments from path
+        let mut route: Vec<RouteSegment> = Vec::new();
+        if let Some(path) = path {
+            for edge in &path {
+                route.push(RouteSegment {
+                    edge_index: edge.index(),
+                    track_index: 0,
+                    origin_platform: 0,
+                    destination_platform: 0,
+                    duration: Duration::minutes(5),
+                    wait_time: Duration::seconds(30),
+                });
+            }
+        }
+
+        // Verify route has 2 segments (A->J, J->B)
+        assert_eq!(route.len(), 2, "Route should have 2 segments");
+
+        // Verify get_stations_from_route returns all 3 nodes
+        let nodes = graph.get_stations_from_route(&route, RouteDirection::Forward);
+        assert_eq!(nodes.len(), 3, "Expected 3 nodes (A, J, B), got {}", nodes.len());
+        assert_eq!(nodes[0].0, "Station A");
+        assert_eq!(nodes[1].0, "Junction J");
+        assert_eq!(nodes[2].0, "Station B");
     }
 }

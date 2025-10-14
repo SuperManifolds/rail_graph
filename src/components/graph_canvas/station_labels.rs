@@ -1,5 +1,5 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{RailwayGraph, StationNode, Nodes, Node};
+use crate::models::{RailwayGraph, Node};
 use super::types::GraphDimensions;
 use petgraph::stable_graph::NodeIndex;
 
@@ -32,62 +32,28 @@ const TOGGLE_SINGLE_TRACK_ICON: &str = "─";
 pub fn draw_station_labels(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[(NodeIndex, StationNode)],
-    graph: &RailwayGraph,
+    stations: &[(NodeIndex, Node)],
     zoom_level: f64,
     pan_offset_y: f64,
 ) {
-    let all_nodes = graph.get_all_nodes_ordered();
     let station_height = dims.graph_height / stations.len() as f64;
 
-    // First pass: determine Y positions for all nodes
-    let mut station_positions = Vec::new();
-    let mut junction_positions = Vec::new();
-    let mut prev_station_row: Option<usize> = None;
+    // Draw labels for each node in the stations list (includes both stations and junctions)
+    for (idx, (_, station_node)) in stations.iter().enumerate() {
+        let base_y = (idx as f64 * station_height) + (station_height / 2.0);
+        let adjusted_y = dims.top_margin + (base_y * zoom_level) + pan_offset_y;
 
-    for node in &all_nodes {
-        match node {
-            Node::Station(station) => {
-                let station_index = stations.iter().position(|(_, s)| s.name == station.name);
-                if let Some(idx) = station_index {
-                    let base_y = (idx as f64 * station_height) + (station_height / 2.0);
-                    let adjusted_y = dims.top_margin + (base_y * zoom_level) + pan_offset_y;
-                    station_positions.push((station.name.clone(), adjusted_y));
-                    prev_station_row = Some(idx);
+        // Only draw if visible
+        if adjusted_y >= dims.top_margin && adjusted_y <= dims.top_margin + dims.graph_height {
+            // Check if this is a junction or a station
+            match station_node {
+                Node::Station(_) => {
+                    draw_station_label(ctx, &station_node.display_name(), adjusted_y);
+                }
+                Node::Junction(_) => {
+                    draw_junction_label(ctx, Some(&station_node.display_name()), adjusted_y);
                 }
             }
-            Node::Junction(junction) => {
-                // Junction should be between the previous station and the next station
-                // We'll position it in the second pass after we know both station positions
-                junction_positions.push((junction.clone(), prev_station_row));
-            }
-        }
-    }
-
-    // Second pass: calculate junction positions based on their adjacent stations
-    let mut junction_y_positions = Vec::new();
-    for (junction, prev_row) in &junction_positions {
-        if let Some(prev) = prev_row {
-            // Junction is between prev station and next station (prev + 1)
-            let prev_y = (*prev as f64 * station_height) + (station_height / 2.0);
-            let next_y = ((*prev + 1) as f64 * station_height) + (station_height / 2.0);
-            let junction_base_y = (prev_y + next_y) / 2.0;
-            let adjusted_y = dims.top_margin + (junction_base_y * zoom_level) + pan_offset_y;
-            junction_y_positions.push((junction.name.clone(), adjusted_y));
-        }
-    }
-
-    // Draw stations
-    for (station_name, y) in &station_positions {
-        if *y >= dims.top_margin && *y <= dims.top_margin + dims.graph_height {
-            draw_station_label(ctx, station_name, *y);
-        }
-    }
-
-    // Draw junctions
-    for (junction_name, y) in &junction_y_positions {
-        if *y >= dims.top_margin && *y <= dims.top_margin + dims.graph_height {
-            draw_junction_label(ctx, junction_name.as_deref(), *y);
         }
     }
 }
@@ -125,7 +91,7 @@ fn draw_junction_label(ctx: &CanvasRenderingContext2d, junction_name: Option<&st
 pub fn draw_segment_toggles(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[(NodeIndex, StationNode)],
+    stations: &[(NodeIndex, Node)],
     graph: &RailwayGraph,
     zoom_level: f64,
     pan_offset_y: f64,
@@ -204,7 +170,7 @@ pub fn check_toggle_click(
     mouse_x: f64,
     mouse_y: f64,
     canvas_height: f64,
-    stations: &[(NodeIndex, StationNode)],
+    stations: &[(NodeIndex, Node)],
     zoom_level: f64,
     pan_offset_y: f64,
 ) -> Option<usize> {

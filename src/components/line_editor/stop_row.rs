@@ -50,6 +50,12 @@ fn render_time_column(
                                                 }
                                             }
                                         }
+
+                                        // Sync return route if editing forward route and sync is enabled
+                                        if matches!(route_direction, RouteDirection::Forward) {
+                                            updated_line.apply_route_sync_if_enabled();
+                                        }
+
                                         on_save(updated_line);
                                     }
                                 }
@@ -87,6 +93,7 @@ fn render_time_column(
 
                                             if segment_duration_seconds >= 0 {
                                                 updated_line.forward_route[index - 1].duration = Duration::seconds(segment_duration_seconds);
+                                                updated_line.apply_route_sync_if_enabled();
                                                 on_save(updated_line);
                                             }
                                         }
@@ -165,6 +172,11 @@ fn render_platform_selector(
     edited_line: ReadSignal<Option<Line>>,
     on_save: Rc<dyn Fn(Line)>,
 ) -> leptos::View {
+    // If no platforms (junction), just show placeholder
+    if platforms.is_empty() {
+        return view! { <span class="platform-placeholder">"-"</span> }.into_view();
+    }
+
     if is_first && index < route.len() {
         let current_platform = route[index].origin_platform;
         view! {
@@ -271,6 +283,7 @@ fn render_track_selector(
                                             }
                                         }
                                     }
+                                    // Note: We don't sync track indices, they are user-configured per direction
                                     on_save(updated_line);
                                 }
                             }
@@ -326,6 +339,12 @@ fn render_delete_button(
                                     }
                                 }
                             }
+
+                            // Sync return route if editing forward route and sync is enabled
+                            if matches!(route_direction, RouteDirection::Forward) {
+                                updated_line.apply_route_sync_if_enabled();
+                            }
+
                             on_save(updated_line);
                         }
                     }

@@ -62,16 +62,16 @@ fn setup_sync_conflict_detection(
 }
 
 #[inline]
-fn compute_display_stations(
+fn compute_display_nodes(
     view: Option<GraphView>,
     graph: ReadSignal<RailwayGraph>,
-) -> Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::StationNode)>> {
+) -> Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>> {
     Signal::derive(move || {
         let current_graph = graph.get();
         if let Some(ref graph_view) = view {
-            graph_view.get_stations_for_display(&current_graph)
+            graph_view.get_nodes_for_display(&current_graph)
         } else {
-            current_graph.get_all_stations_ordered()
+            current_graph.get_all_nodes_ordered()
         }
     })
 }
@@ -169,8 +169,8 @@ pub fn TimeGraph(
     let (new_line_dialog_open, set_new_line_dialog_open) = create_signal(false);
     let (next_line_number, set_next_line_number) = create_signal(1);
 
-    // Get stations to display based on view
-    let display_stations = compute_display_stations(view.clone(), graph);
+    // Get nodes (stations and junctions) to display based on view
+    let display_stations = compute_display_nodes(view.clone(), graph);
 
     view! {
         <div class="time-graph-container">

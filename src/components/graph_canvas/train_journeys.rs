@@ -1,5 +1,5 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::StationNode;
+use crate::models::Node;
 use crate::train_journey::TrainJourney;
 use super::types::GraphDimensions;
 use std::collections::HashMap;
@@ -13,8 +13,12 @@ const MIN_DOT_RADIUS: f64 = 2.0; // Minimum dot radius in pixels
 const TOTAL_HOURS: f64 = 48.0; // Total hours displayed on the graph
 
 /// Build a map from `NodeIndex` to display position (0, 1, 2, ...)
-fn build_station_position_map(stations: &[(NodeIndex, StationNode)]) -> HashMap<NodeIndex, usize> {
-    stations.iter()
+/// All nodes (stations and junctions) get sequential integer positions
+#[allow(clippy::cast_precision_loss)]
+fn build_node_position_map(
+    nodes: &[(NodeIndex, Node)],
+) -> HashMap<NodeIndex, usize> {
+    nodes.iter()
         .enumerate()
         .map(|(idx, (node_idx, _))| (*node_idx, idx))
         .collect()
@@ -24,13 +28,13 @@ fn build_station_position_map(stations: &[(NodeIndex, StationNode)]) -> HashMap<
 pub fn draw_train_journeys(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[(NodeIndex, StationNode)],
+    nodes: &[(NodeIndex, Node)],
     train_journeys: &[&TrainJourney],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
-    let station_height = dims.graph_height / stations.len() as f64;
-    let station_positions = build_station_position_map(stations);
+    let node_height = dims.graph_height / nodes.len() as f64;
+    let node_positions = build_node_position_map(nodes);
 
     // Draw lines for each journey
     for journey in train_journeys {
@@ -42,40 +46,54 @@ pub fn draw_train_journeys(
         ctx.set_line_width(journey.thickness / zoom_level);
         ctx.begin_path();
 
-        let mut first_point = true;
+        let mut last_visible_point: Option<(f64, f64)> = None; // (x, y)
         let mut prev_x = 0.0;
 
         for (node_idx, arrival_time, departure_time) in &journey.station_times {
             // Look up the display position for this station
-            let Some(&station_idx) = station_positions.get(node_idx) else {
-                continue; // Skip if station not in display list
-            };
+            let station_idx = node_positions.get(node_idx);
 
             let arrival_fraction = time_to_fraction(*arrival_time);
             let departure_fraction = time_to_fraction(*departure_time);
             let mut arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
             let mut departure_x = dims.left_margin + (departure_fraction * dims.hour_width);
 
-            if !first_point && arrival_x < prev_x - dims.graph_width * MIDNIGHT_WRAP_THRESHOLD {
+            if prev_x > 0.0 && arrival_x < prev_x - dims.graph_width * MIDNIGHT_WRAP_THRESHOLD {
                 arrival_x += dims.graph_width;
                 departure_x += dims.graph_width;
             }
-            let y = dims.top_margin
-                + (station_idx as f64 * station_height)
-                + (station_height / 2.0);
 
-            if first_point {
-                ctx.move_to(arrival_x, y);
-                first_point = false;
+            // Only draw if this node is visible
+            if let Some(&idx) = station_idx {
+                let y = dims.top_margin
+                    + (idx as f64 * node_height)
+                    + (node_height / 2.0);
+
+                if let Some((last_x, last_y)) = last_visible_point {
+                    // Draw line from last visible point to this arrival
+                    ctx.move_to(last_x, last_y);
+                    ctx.line_to(arrival_x, y);
+                } else {
+                    // First visible point - start the path
+                    ctx.move_to(arrival_x, y);
+                }
+
+                // Draw horizontal segment if there's wait time and this is a station (not a junction)
+                let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
+                if !is_junction && (arrival_x - departure_x).abs() > f64::EPSILON {
+                    ctx.line_to(departure_x, y);
+                }
+
+                // Update last visible point to departure position
+                // Note: the pen is now at (departure_x, y) whether or not there was a horizontal segment
+                // because if arrival_x == departure_x, we're already there
+                last_visible_point = Some((departure_x, y));
+                prev_x = departure_x;
             } else {
-                ctx.line_to(arrival_x, y);
+                // Node is not visible - break the line
+                last_visible_point = None;
+                prev_x = departure_x;
             }
-
-            if (arrival_x - departure_x).abs() > f64::EPSILON {
-                ctx.line_to(departure_x, y);
-            }
-
-            prev_x = departure_x;
         }
 
         ctx.stroke();
@@ -94,9 +112,7 @@ pub fn draw_train_journeys(
         let mut prev_x = 0.0;
         for (node_idx, arrival_time, departure_time) in &journey.station_times {
             // Look up the display position for this station
-            let Some(&station_idx) = station_positions.get(node_idx) else {
-                continue; // Skip if station not in display list
-            };
+            let station_idx = node_positions.get(node_idx);
 
             let arrival_fraction = time_to_fraction(*arrival_time);
             let departure_fraction = time_to_fraction(*departure_time);
@@ -108,18 +124,22 @@ pub fn draw_train_journeys(
                 departure_x += dims.graph_width;
             }
 
-            let y = dims.top_margin
-                + (station_idx as f64 * station_height)
-                + (station_height / 2.0);
+            // Only draw dots for visible nodes
+            if let Some(&idx) = station_idx {
+                let y = dims.top_margin
+                    + (idx as f64 * node_height)
+                    + (node_height / 2.0);
 
-            // Add arrival dot to path (move_to starts a new subpath)
-            ctx.move_to(arrival_x + dot_radius / zoom_level, y);
-            let _ = ctx.arc(arrival_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+                // Add arrival dot to path (move_to starts a new subpath)
+                ctx.move_to(arrival_x + dot_radius / zoom_level, y);
+                let _ = ctx.arc(arrival_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
 
-            // Add departure dot if different from arrival
-            if (arrival_x - departure_x).abs() > f64::EPSILON {
-                ctx.move_to(departure_x + dot_radius / zoom_level, y);
-                let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+                // Add departure dot if different from arrival and this is a station (not a junction)
+                let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
+                if !is_junction && (arrival_x - departure_x).abs() > f64::EPSILON {
+                    ctx.move_to(departure_x + dot_radius / zoom_level, y);
+                    let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+                }
             }
 
             prev_x = departure_x;
@@ -135,7 +155,7 @@ pub fn check_journey_hover(
     mouse_x: f64,
     mouse_y: f64,
     train_journeys: &[&TrainJourney],
-    stations: &[(NodeIndex, StationNode)],
+    nodes: &[(NodeIndex, Node)],
     canvas_width: f64,
     canvas_height: f64,
     viewport: &super::types::ViewportState,
@@ -151,8 +171,8 @@ pub fn check_journey_hover(
         return None;
     }
 
-    let station_height = graph_height / stations.len() as f64;
-    let station_positions = build_station_position_map(stations);
+    let node_height = graph_height / nodes.len() as f64;
+    let node_positions = build_node_position_map(nodes);
 
     train_journeys
         .iter()
@@ -162,9 +182,9 @@ pub fn check_journey_hover(
                 mouse_y,
                 journey,
                 graph_width,
-                station_height,
+                node_height,
                 viewport,
-                &station_positions,
+                &node_positions,
             )
         })
 }
@@ -175,9 +195,9 @@ fn check_single_journey_hover(
     mouse_y: f64,
     journey: &TrainJourney,
     graph_width: f64,
-    station_height: f64,
+    node_height: f64,
     viewport: &super::types::ViewportState,
-    station_positions: &HashMap<NodeIndex, usize>,
+    node_positions: &HashMap<NodeIndex, usize>,
 ) -> Option<uuid::Uuid> {
     use super::canvas::{LEFT_MARGIN, TOP_MARGIN};
     use crate::time::time_to_fraction;
@@ -190,9 +210,7 @@ fn check_single_journey_hover(
 
     for (node_idx, arrival_time, departure_time) in &journey.station_times {
         // Look up the display position for this station
-        let Some(&station_idx) = station_positions.get(node_idx) else {
-            continue; // Skip if station not in display list
-        };
+        let station_idx = node_positions.get(node_idx);
 
         let arrival_fraction = time_to_fraction(*arrival_time);
         let departure_fraction = time_to_fraction(*departure_time);
@@ -205,32 +223,36 @@ fn check_single_journey_hover(
             departure_x_zoomed += graph_width;
         }
 
-        let y_in_zoomed = (station_idx as f64 * station_height) + (station_height / 2.0);
+        // Only process hover detection for visible stations
+        if let Some(&idx) = station_idx {
+            let y_in_zoomed = (idx as f64 * node_height) + (node_height / 2.0);
 
-        // Transform to screen coordinates
-        let arrival_screen_x = LEFT_MARGIN + (arrival_x_zoomed * viewport.zoom_level * viewport.zoom_level_x) + viewport.pan_offset_x;
-        let departure_screen_x = LEFT_MARGIN + (departure_x_zoomed * viewport.zoom_level * viewport.zoom_level_x) + viewport.pan_offset_x;
-        let screen_y = TOP_MARGIN + (y_in_zoomed * viewport.zoom_level) + viewport.pan_offset_y;
+            // Transform to screen coordinates
+            let arrival_screen_x = LEFT_MARGIN + (arrival_x_zoomed * viewport.zoom_level * viewport.zoom_level_x) + viewport.pan_offset_x;
+            let departure_screen_x = LEFT_MARGIN + (departure_x_zoomed * viewport.zoom_level * viewport.zoom_level_x) + viewport.pan_offset_x;
+            let screen_y = TOP_MARGIN + (y_in_zoomed * viewport.zoom_level) + viewport.pan_offset_y;
 
-        // Check diagonal segment from previous departure to this arrival
-        if let Some((prev_dep_x, prev_dep_y)) = prev_departure_point {
-            let distance = point_to_line_distance(mouse_x, mouse_y, prev_dep_x, prev_dep_y, arrival_screen_x, screen_y);
-            if distance < HOVER_DISTANCE_THRESHOLD {
-                return Some(journey.id);
+            // Check diagonal segment from previous departure to this arrival
+            if let Some((prev_dep_x, prev_dep_y)) = prev_departure_point {
+                let distance = point_to_line_distance(mouse_x, mouse_y, prev_dep_x, prev_dep_y, arrival_screen_x, screen_y);
+                if distance < HOVER_DISTANCE_THRESHOLD {
+                    return Some(journey.id);
+                }
             }
+
+            // Check horizontal segment from arrival to departure at this station
+            if (arrival_screen_x - departure_screen_x).abs() > f64::EPSILON {
+                let distance = point_to_line_distance(mouse_x, mouse_y, arrival_screen_x, screen_y, departure_screen_x, screen_y);
+                if distance < HOVER_DISTANCE_THRESHOLD {
+                    return Some(journey.id);
+                }
+            }
+
+            prev_departure_point = Some((departure_screen_x, screen_y));
+            first_point = false;
         }
 
-        // Check horizontal segment from arrival to departure at this station
-        if (arrival_screen_x - departure_screen_x).abs() > f64::EPSILON {
-            let distance = point_to_line_distance(mouse_x, mouse_y, arrival_screen_x, screen_y, departure_screen_x, screen_y);
-            if distance < HOVER_DISTANCE_THRESHOLD {
-                return Some(journey.id);
-            }
-        }
-
-        prev_departure_point = Some((departure_screen_x, screen_y));
         prev_x = departure_x_zoomed;
-        first_point = false;
     }
 
     None

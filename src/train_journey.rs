@@ -173,11 +173,9 @@ impl TrainJourney {
             let mut segments = Vec::with_capacity(line.forward_route.len());
             let mut cumulative_time = Duration::zero();
 
-            // Add first station (only if it's actually a station, not a junction)
+            // Add first node (station or junction)
             if let Some(node_idx) = route_nodes[0] {
-                if graph.get_station_name(node_idx).is_some() {
-                    station_times.push((node_idx, departure_time, departure_time));
-                }
+                station_times.push((node_idx, departure_time, departure_time));
             }
 
             // Walk the route, accumulating travel times and wait times
@@ -189,10 +187,8 @@ impl TrainJourney {
                 cumulative_time += segment.wait_time;
                 let departure_from_station = departure_time + cumulative_time;
 
-                // Only add station times for stations, not junctions
-                if let Some(node_idx) = route_nodes[i + 1].and_then(|idx|
-                    graph.get_station_name(idx).map(|_| idx)
-                ) {
+                // Add all nodes (stations and junctions)
+                if let Some(node_idx) = route_nodes[i + 1] {
                     station_times.push((node_idx, arrival_time, departure_from_station));
                 }
 
@@ -321,10 +317,8 @@ impl TrainJourney {
         let mut station_times = Vec::new();
         let mut segments = Vec::new();
 
-        // Add first station (only if it's actually a station, not a junction)
-        if graph.get_station_name(from_idx).is_some() {
-            station_times.push((from_idx, departure_time, departure_time));
-        }
+        // Add first node (station or junction)
+        station_times.push((from_idx, departure_time, departure_time));
 
         let mut cumulative_time = Duration::zero();
         for i in from_pos..to_pos {
@@ -335,11 +329,9 @@ impl TrainJourney {
             cumulative_time += route[i].wait_time;
             let departure_from_station = departure_time + cumulative_time;
 
-            // Only add station times for stations, not junctions
+            // Add all nodes (stations and junctions)
             let node_idx = route_nodes[i + 1];
-            if graph.get_station_name(node_idx).is_some() {
-                station_times.push((node_idx, arrival_time, departure_from_station));
-            }
+            station_times.push((node_idx, arrival_time, departure_from_station));
 
             // Add segment info
             segments.push(JourneySegment {
@@ -409,11 +401,9 @@ impl TrainJourney {
             let mut segments = Vec::with_capacity(line.return_route.len());
             let mut cumulative_time = Duration::zero();
 
-            // Add first station (only if it's actually a station, not a junction)
+            // Add first node (station or junction)
             if let Some(node_idx) = route_nodes[0] {
-                if graph.get_station_name(node_idx).is_some() {
-                    station_times.push((node_idx, return_departure_time, return_departure_time));
-                }
+                station_times.push((node_idx, return_departure_time, return_departure_time));
             }
 
             // Walk the return route
@@ -425,10 +415,8 @@ impl TrainJourney {
                 cumulative_time += segment.wait_time;
                 let departure_from_station = return_departure_time + cumulative_time;
 
-                // Only add station times for stations, not junctions
-                if let Some(node_idx) = route_nodes[i + 1].and_then(|idx|
-                    graph.get_station_name(idx).map(|_| idx)
-                ) {
+                // Add all nodes (stations and junctions)
+                if let Some(node_idx) = route_nodes[i + 1] {
                     station_times.push((node_idx, arrival_time, departure_from_station));
                 }
 
@@ -522,6 +510,7 @@ mod tests {
             schedule_mode: ScheduleMode::Auto,
             days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
+            sync_routes: true,
         }
     }
 
@@ -841,6 +830,7 @@ mod tests {
             schedule_mode: ScheduleMode::Auto,
             days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
+            sync_routes: true,
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
@@ -852,10 +842,11 @@ mod tests {
             .find(|j| j.departure_time == BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"))
             .expect("has 8:00 journey");
 
-        // Journey should only have 2 stations (A and B), not the junction
-        assert_eq!(journey.station_times.len(), 2);
+        // Journey should have 3 nodes (A, junction, and B)
+        assert_eq!(journey.station_times.len(), 3);
         assert_eq!(journey.station_times[0].0, idx_a);
-        assert_eq!(journey.station_times[1].0, idx_b);
+        assert_eq!(journey.station_times[1].0, idx_junction);
+        assert_eq!(journey.station_times[2].0, idx_b);
 
         // But it should still have 2 segments (A->Junction, Junction->B)
         assert_eq!(journey.segments.len(), 2);
@@ -864,9 +855,16 @@ mod tests {
         // Travel: 5 min to junction + 0 wait + 5 min to B = 10 min total
         // Then 30 sec wait at B
         let start_time = BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time");
-        let expected_arrival_b = start_time + Duration::minutes(10); // 5 min + 5 min
+
+        // Check junction arrival (5 min from start)
+        let expected_arrival_junction = start_time + Duration::minutes(5);
+        assert_eq!(journey.station_times[1].1, expected_arrival_junction);
+        assert_eq!(journey.station_times[1].2, expected_arrival_junction); // No wait at junction
+
+        // Check Station B arrival (10 min from start)
+        let expected_arrival_b = start_time + Duration::minutes(10);
         let expected_departure_b = expected_arrival_b + Duration::seconds(30);
-        assert_eq!(journey.station_times[1].1, expected_arrival_b);
-        assert_eq!(journey.station_times[1].2, expected_departure_b);
+        assert_eq!(journey.station_times[2].1, expected_arrival_b);
+        assert_eq!(journey.station_times[2].2, expected_departure_b);
     }
 }

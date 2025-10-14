@@ -1,5 +1,5 @@
 use super::types::GraphDimensions;
-use crate::models::StationNode;
+use crate::models::Node;
 use crate::conflict::{Conflict, StationCrossing};
 use web_sys::{CanvasRenderingContext2d, Path2d};
 
@@ -134,7 +134,7 @@ pub fn check_conflict_hover(
     mouse_x: f64,
     mouse_y: f64,
     conflicts: &[Conflict],
-    stations: &[(petgraph::stable_graph::NodeIndex, StationNode)],
+    stations: &[(petgraph::stable_graph::NodeIndex, Node)],
     canvas_width: f64,
     canvas_height: f64,
     zoom_level: f64,
@@ -288,7 +288,7 @@ pub fn draw_journey_blocks(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     journey: &crate::train_journey::TrainJourney,
-    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::StationNode)],
+    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)],
     station_height: f64,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,

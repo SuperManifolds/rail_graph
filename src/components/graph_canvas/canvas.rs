@@ -31,7 +31,7 @@ fn setup_render_effect(
     show_line_blocks: Signal<bool>,
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
     hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
-    display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::StationNode)>>,
+    display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
 ) {
     let (render_requested, set_render_requested) = create_signal(false);
     let zoom_level = viewport.zoom_level;
@@ -123,7 +123,7 @@ fn handle_mouse_move_hover(
     canvas: &web_sys::HtmlCanvasElement,
     viewport: ViewportState,
     conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
-    display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::StationNode)>>,
+    display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
     show_line_blocks: Signal<bool>,
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     set_hovered_conflict: WriteSignal<Option<(Conflict, f64, f64)>>,
@@ -169,7 +169,7 @@ pub fn GraphCanvas(
     set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
     conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
     #[prop(optional)] pan_to_conflict_signal: Option<ReadSignal<Option<(f64, f64)>>>,
-    display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::StationNode)>>,
+    display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
@@ -377,7 +377,7 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
 #[allow(clippy::too_many_lines)]
 fn render_graph(
     canvas: &leptos::HtmlElement<leptos::html::Canvas>,
-    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::StationNode)],
+    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)],
     train_journeys: &std::collections::HashMap<uuid::Uuid, TrainJourney>,
     current_time: chrono::NaiveDateTime,
     viewport: &ViewportState,
@@ -560,7 +560,6 @@ fn render_graph(
         &ctx,
         &dimensions,
         stations,
-        graph,
         viewport.zoom_level,
         viewport.pan_offset_y,
     );
@@ -591,7 +590,7 @@ fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
 
 fn toggle_segment_double_track(
     clicked_segment: usize,
-    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::StationNode)],
+    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)],
     set_graph: WriteSignal<RailwayGraph>,
     set_lines: WriteSignal<Vec<crate::models::Line>>,
 ) {
@@ -600,8 +599,13 @@ fn toggle_segment_double_track(
         return;
     }
 
-    let station1_name = stations[clicked_segment - 1].1.name.clone();
-    let station2_name = stations[clicked_segment].1.name.clone();
+    // Extract station names - only works for stations, not junctions
+    let Some(station1_name) = stations[clicked_segment - 1].1.as_station().map(|s| s.name.clone()) else {
+        return;
+    };
+    let Some(station2_name) = stations[clicked_segment].1.as_station().map(|s| s.name.clone()) else {
+        return;
+    };
 
     // Toggle track in the graph model
     set_graph.update(|g| {

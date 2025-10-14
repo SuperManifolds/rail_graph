@@ -1,6 +1,6 @@
 use web_sys::CanvasRenderingContext2d;
 use chrono::NaiveDateTime;
-use crate::models::StationNode;
+use crate::models::Node;
 use crate::train_journey::TrainJourney;
 use super::types::GraphDimensions;
 use petgraph::stable_graph::NodeIndex;
@@ -17,7 +17,7 @@ const CURRENT_TRAIN_LABEL_FONT_SIZE: f64 = 10.0;
 pub fn draw_current_train_positions(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[(NodeIndex, StationNode)],
+    stations: &[(NodeIndex, Node)],
     train_journeys: &[&TrainJourney],
     station_height: f64,
     visualization_time: NaiveDateTime,

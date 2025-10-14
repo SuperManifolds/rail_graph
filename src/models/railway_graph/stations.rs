@@ -32,10 +32,15 @@ pub trait Stations {
     /// Returns (`removed_edges`, `bypass_mapping`) where `bypass_mapping` maps (`old_edge1`, `old_edge2`) -> `new_edge`
     fn delete_station(&mut self, index: NodeIndex) -> (Vec<usize>, std::collections::HashMap<(usize, usize), usize>);
 
-    /// Get all stations in order by traversing the graph
+    /// Get all stations in order by traversing the graph (deprecated, use get_all_nodes_ordered)
     /// Performs a breadth-first traversal starting from the first station
     /// Returns Vec<(`NodeIndex`, `StationNode`)>
     fn get_all_stations_ordered(&self) -> Vec<(NodeIndex, StationNode)>;
+
+    /// Get all nodes (stations and junctions) in order by traversing the graph
+    /// Performs a breadth-first traversal starting from the first node
+    /// Returns Vec<(`NodeIndex`, `Node`)>
+    fn get_all_nodes_ordered(&self) -> Vec<(NodeIndex, Node)>;
 
     /// Get all station names in order
     fn get_all_station_names(&self) -> Vec<String>;
@@ -201,6 +206,49 @@ impl Stations for RailwayGraph {
             let Some(node) = self.graph.node_weight(node_idx) else { continue };
             let Some(station) = node.as_station() else { continue };
             ordered.push((node_idx, station.clone()));
+        }
+
+        ordered
+    }
+
+    fn get_all_nodes_ordered(&self) -> Vec<(NodeIndex, Node)> {
+        if self.graph.node_count() == 0 {
+            return Vec::new();
+        }
+
+        let mut ordered = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+
+        let Some(start_node) = self.graph.node_indices().next() else {
+            return Vec::new();
+        };
+
+        // BFS traversal
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back(start_node);
+        seen.insert(start_node);
+
+        while let Some(node_idx) = queue.pop_front() {
+            if let Some(node) = self.graph.node_weight(node_idx) {
+                ordered.push((node_idx, node.clone()));
+            }
+
+            // Add neighbors
+            for edge in self.graph.edges(node_idx) {
+                let target = edge.target();
+                if seen.insert(target) {
+                    queue.push_back(target);
+                }
+            }
+        }
+
+        // Add any remaining disconnected nodes
+        for node_idx in self.graph.node_indices() {
+            if !seen.insert(node_idx) {
+                continue;
+            }
+            let Some(node) = self.graph.node_weight(node_idx) else { continue };
+            ordered.push((node_idx, node.clone()));
         }
 
         ordered

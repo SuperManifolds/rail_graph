@@ -1,6 +1,6 @@
 use crate::components::tab_view::TabPanel;
 use crate::models::Line;
-use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_value, SignalGetUntracked, SignalSet};
+use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_value, event_target_checked, SignalGetUntracked, SignalSet};
 use std::rc::Rc;
 
 #[component]
@@ -82,6 +82,28 @@ pub fn GeneralTab(
                             }
                         }}
                     </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input
+                            type="checkbox"
+                            checked=move || edited_line.get().is_none_or(|l| l.sync_routes)
+                            on:change={
+                                let on_save = on_save.get_value();
+                                move |ev| {
+                                    let checked = event_target_checked(&ev);
+                                    if let Some(mut updated_line) = edited_line.get_untracked() {
+                                        updated_line.sync_routes = checked;
+                                        set_edited_line.set(Some(updated_line.clone()));
+                                        on_save(updated_line);
+                                    }
+                                }
+                            }
+                        />
+                        "Keep forward and return routes in sync"
+                    </label>
+                    <p class="form-help">"When enabled, changes to forward route automatically update return route"</p>
                 </div>
             </div>
         </TabPanel>

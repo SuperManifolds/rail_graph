@@ -109,6 +109,12 @@ pub fn StationSelect(
                                                 }
                                             }
                                         }
+
+                                        // Sync return route if editing forward route and sync is enabled
+                                        if matches!(route_direction, RouteDirection::Forward) {
+                                            updated_line.apply_route_sync_if_enabled();
+                                        }
+
                                         on_save(updated_line);
                                     }
                                 }
