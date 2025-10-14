@@ -20,32 +20,15 @@ pub fn CreateViewDialog(
             .unwrap_or_default()
     };
 
-    let on_create_clone = on_create.clone();
-    let on_create_clone2 = on_create.clone();
-    let handle_create = move |()| {
-        if let (Some(start), Some(end)) = (start_station.get(), end_station.get()) {
-            if !view_name.get().trim().is_empty() {
-                on_create_clone(view_name.get().trim().to_string(), start, end);
-                set_view_name.set(String::new());
+    let create_view = {
+        let on_create = on_create.clone();
+        move || {
+            if let (Some(start), Some(end)) = (start_station.get(), end_station.get()) {
+                if !view_name.get().trim().is_empty() {
+                    on_create(view_name.get().trim().to_string(), start, end);
+                    set_view_name.set(String::new());
+                }
             }
-        }
-    };
-
-    let handle_create2 = move |()| {
-        web_sys::console::log_1(&"Create button clicked".into());
-        web_sys::console::log_1(&format!("Start: {:?}, End: {:?}", start_station.get(), end_station.get()).into());
-        web_sys::console::log_1(&format!("Name: {}", view_name.get()).into());
-
-        if let (Some(start), Some(end)) = (start_station.get(), end_station.get()) {
-            if view_name.get().trim().is_empty() {
-                web_sys::console::log_1(&"View name is empty".into());
-            } else {
-                web_sys::console::log_1(&"Calling on_create".into());
-                on_create_clone2(view_name.get().trim().to_string(), start, end);
-                set_view_name.set(String::new());
-            }
-        } else {
-            web_sys::console::log_1(&"Start or end station is None".into());
         }
     };
 
@@ -68,9 +51,12 @@ pub fn CreateViewDialog(
                         placeholder="Enter view name"
                         value=view_name
                         on:input=move |ev| set_view_name.set(event_target_value(&ev))
-                        on:keydown=move |ev| {
-                            if ev.key() == "Enter" {
-                                handle_create(());
+                        on:keydown={
+                            let create_view = create_view.clone();
+                            move |ev| {
+                                if ev.key() == "Enter" {
+                                    create_view();
+                                }
                             }
                         }
                         prop:autofocus=true
@@ -88,7 +74,7 @@ pub fn CreateViewDialog(
                     <button on:click=move |_| on_close()>"Cancel"</button>
                     <button
                         class="primary"
-                        on:click=move |_| handle_create2(())
+                        on:click=move |_| create_view()
                         prop:disabled=move || view_name.get().trim().is_empty()
                     >
                         "Create View"
