@@ -100,7 +100,7 @@ struct JourneySegment {
 }
 
 struct ConflictContext<'a> {
-    station_indices: HashMap<&'a str, usize>,
+    station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize>,
     graph: &'a RailwayGraph,
     station_margin: chrono::Duration,
 }
@@ -151,11 +151,12 @@ pub fn detect_line_conflicts(
 
     let stations = graph.get_all_stations_ordered();
 
-    // Pre-compute station name to index mapping for O(1) lookups
-    let station_indices: HashMap<&str, usize> = stations
+    // Pre-compute NodeIndex to display index mapping for O(1) lookups
+    // This only includes stations, so conflicts are positioned between stations
+    let station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize> = stations
         .iter()
         .enumerate()
-        .map(|(idx, station)| (station.name.as_str(), idx))
+        .map(|(idx, (node_idx, _))| (*node_idx, idx))
         .collect();
 
     let ctx = ConflictContext {
@@ -281,9 +282,6 @@ fn detect_conflicts_sweep_line(
         eprintln!("Sort time: {sort_time:?}");
     }
 
-    #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&format!("Using sweep-line algorithm for {} journeys", journey_times.len()).into());
-
     let mut comparisons = 0;
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -353,10 +351,6 @@ fn detect_conflicts_sweep_line(
         eprintln!("Comparison loop time: {comparison_time:?}");
         eprintln!("Made {comparisons} comparisons (vs {} for naive O(n²))", train_journeys.len() * (train_journeys.len() - 1) / 2);
     }
-
-    #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&format!("Sweep-line made {comparisons} comparisons (vs {} for naive O(n²))",
-        train_journeys.len() * (train_journeys.len() - 1) / 2).into());
 }
 
 fn check_journey_pair(
@@ -425,8 +419,8 @@ fn check_segments_for_pair(
 
     let mut prev1: Option<(NaiveDateTime, usize)> = None;
 
-    for (station1, arrival_time1, departure_time1) in &journey1.station_times {
-        let Some(&station1_idx) = ctx.station_indices.get(station1.as_str()) else {
+    for (node_idx1, arrival_time1, departure_time1) in &journey1.station_times {
+        let Some(&station1_idx) = ctx.station_indices.get(node_idx1) else {
             continue;
         };
 
@@ -459,12 +453,12 @@ fn build_segment_lookup_map<'a>(
 
     for (i, _) in journey.station_times.iter().enumerate().skip(1) {
         if i - 1 < journey.segments.len() {
-            let station1_name = &journey.station_times[i - 1].0;
-            let station2_name = &journey.station_times[i].0;
+            let node_idx1 = &journey.station_times[i - 1].0;
+            let node_idx2 = &journey.station_times[i].0;
 
             if let (Some(&s1_idx), Some(&s2_idx)) = (
-                ctx.station_indices.get(station1_name.as_str()),
-                ctx.station_indices.get(station2_name.as_str()),
+                ctx.station_indices.get(node_idx1),
+                ctx.station_indices.get(node_idx2),
             ) {
                 map.insert((s1_idx, s2_idx), &journey.segments[i - 1]);
             }
@@ -502,8 +496,8 @@ fn check_segment_against_journey(
         }
     }
 
-    for (station2, arrival_time2, departure_time2) in &journey2.station_times {
-        let Some(&station2_idx) = ctx.station_indices.get(station2.as_str()) else {
+    for (node_idx2, arrival_time2, departure_time2) in &journey2.station_times {
+        let Some(&station2_idx) = ctx.station_indices.get(node_idx2) else {
             continue;
         };
 
@@ -909,10 +903,10 @@ fn extract_platform_occupancies(
     let mut occupancies = Vec::new();
     let buffer = chrono::Duration::minutes(PLATFORM_BUFFER_MINUTES);
 
-    for (i, (station_name, arrival_time, departure_time)) in
+    for (i, (node_idx, arrival_time, departure_time)) in
         journey.station_times.iter().enumerate()
     {
-        let Some(&station_idx) = ctx.station_indices.get(station_name.as_str()) else {
+        let Some(&station_idx) = ctx.station_indices.get(node_idx) else {
             continue;
         };
 
@@ -1120,10 +1114,9 @@ mod tests {
             line_id: "Line 1".to_string(),
             departure_time: BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"),
             station_times: vec![
-                ("A".to_string(), BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"), BASE_DATE.and_hms_opt(8, 1, 0).expect("valid time")),
-                ("B".to_string(), BASE_DATE.and_hms_opt(8, 10, 0).expect("valid time"), BASE_DATE.and_hms_opt(8, 11, 0).expect("valid time")),
+                (idx1, BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"), BASE_DATE.and_hms_opt(8, 1, 0).expect("valid time")),
+                (idx2, BASE_DATE.and_hms_opt(8, 10, 0).expect("valid time"), BASE_DATE.and_hms_opt(8, 11, 0).expect("valid time")),
             ],
-            station_indices: vec![0, 1],
             segments: vec![JourneySegment {
                 edge_index: edge.index(),
                 track_index: 0,

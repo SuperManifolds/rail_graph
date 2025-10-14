@@ -1,4 +1,6 @@
 use leptos::*;
+use leptos::set_timeout_with_handle;
+use std::time::Duration;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
@@ -31,6 +33,8 @@ fn setup_render_effect(
     show_line_blocks: Signal<bool>,
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
     hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
+    display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
+    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
 ) {
     let (render_requested, set_render_requested) = create_signal(false);
     let zoom_level = viewport.zoom_level;
@@ -43,6 +47,8 @@ fn setup_render_effect(
         let _ = train_journeys.get();
         let _ = visualization_time.get();
         let _ = graph.get();
+        let _ = display_stations.get();
+        let _ = station_idx_map.get();
         let _ = zoom_level.get();
         let _ = zoom_level_x.get();
         let _ = pan_offset_x.get();
@@ -64,7 +70,8 @@ fn setup_render_effect(
                 let journeys = train_journeys.get_untracked();
                 let current = visualization_time.get_untracked();
                 let current_graph = graph.get_untracked();
-                let stations_for_render = current_graph.get_all_stations_ordered();
+                let stations_for_render = display_stations.get_untracked();
+                let idx_map = station_idx_map.get_untracked();
 
                 let Some(canvas) = canvas_ref.get_untracked() else { return };
 
@@ -105,7 +112,7 @@ fn setup_render_effect(
                     show_line_blocks: show_line_blocks.get_untracked(),
                     hovered_journey_id: hovered_journey_value.as_ref(),
                 };
-                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph);
+                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph, &idx_map);
             });
 
             let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
@@ -121,19 +128,21 @@ fn handle_mouse_move_hover(
     canvas: &web_sys::HtmlCanvasElement,
     viewport: ViewportState,
     conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
-    graph: ReadSignal<RailwayGraph>,
+    display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
     show_line_blocks: Signal<bool>,
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     set_hovered_conflict: WriteSignal<Option<(Conflict, f64, f64)>>,
     set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
+    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
 ) {
     let (current_conflicts, _) = conflicts_and_crossings.get();
-    let current_graph = graph.get();
-    let current_stations = current_graph.get_all_stations_ordered();
+    let current_stations = display_stations.get();
+    let idx_map = station_idx_map.get();
     let hovered = conflict_indicators::check_conflict_hover(
         x, y, &current_conflicts, &current_stations,
         f64::from(canvas.width()), f64::from(canvas.height()),
-        viewport.zoom_level, viewport.zoom_level_x, viewport.pan_offset_x, viewport.pan_offset_y
+        viewport.zoom_level, viewport.zoom_level_x, viewport.pan_offset_x, viewport.pan_offset_y,
+        &idx_map,
     );
     set_hovered_conflict.set(hovered);
 
@@ -151,7 +160,7 @@ fn handle_mouse_move_hover(
     }
 }
 
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_lines)]
 #[component]
 #[must_use]
 pub fn GraphCanvas(
@@ -168,12 +177,24 @@ pub fn GraphCanvas(
     set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
     conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
     #[prop(optional)] pan_to_conflict_signal: Option<ReadSignal<Option<(f64, f64)>>>,
+    display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
+    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
+    initial_viewport: crate::models::ViewportState,
+    on_viewport_change: leptos::Callback<crate::models::ViewportState>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
 
     let viewport = canvas_viewport::create_viewport_signals(true);
+
+    // Initialize viewport from saved state
+    viewport.set_zoom_level.set(initial_viewport.zoom_level);
+    if let Some((_, set_zoom_x)) = viewport.zoom_level_x {
+        set_zoom_x.set(initial_viewport.zoom_level_x.unwrap_or(1.0));
+    }
+    viewport.set_pan_offset_x.set(initial_viewport.pan_offset_x);
+    viewport.set_pan_offset_y.set(initial_viewport.pan_offset_y);
     let zoom_level = viewport.zoom_level;
     let set_zoom_level = viewport.set_zoom_level;
     let (zoom_level_x, set_zoom_level_x) = viewport.zoom_level_x.expect("horizontal zoom enabled");
@@ -182,6 +203,49 @@ pub fn GraphCanvas(
     let pan_offset_y = viewport.pan_offset_y;
     let set_pan_offset_y = viewport.set_pan_offset_y;
     let is_panning = viewport.is_panning;
+
+    // Save viewport changes to the view (debounced)
+    let debounce_handle = store_value(None::<leptos::leptos_dom::helpers::TimeoutHandle>);
+
+    create_effect(move |prev_state: Option<(f64, f64, f64, f64)>| {
+        let zoom = zoom_level.get();
+        let zoom_x = zoom_level_x.get();
+        let pan_x = pan_offset_x.get();
+        let pan_y = pan_offset_y.get();
+
+        let current = (zoom, zoom_x, pan_x, pan_y);
+
+        // Only update if values actually changed (skip initial render)
+        let Some(prev) = prev_state else {
+            return current;
+        };
+
+        if prev != current {
+            // Clear existing timer
+            debounce_handle.update_value(|handle| {
+                if let Some(h) = handle.take() {
+                    h.clear();
+                }
+            });
+
+            // Set new timer to save after 300ms of no changes
+            let handle = set_timeout_with_handle(
+                move || {
+                    on_viewport_change.call(crate::models::ViewportState {
+                        zoom_level: zoom,
+                        zoom_level_x: Some(zoom_x),
+                        pan_offset_x: pan_x,
+                        pan_offset_y: pan_y,
+                    });
+                },
+                Duration::from_millis(300)
+            ).ok();
+
+            debounce_handle.set_value(handle);
+        }
+
+        current
+    });
 
     if let Some(pan_signal) = pan_to_conflict_signal {
         create_effect(move |_| {
@@ -213,7 +277,7 @@ pub fn GraphCanvas(
     setup_render_effect(
         canvas_ref, train_journeys, visualization_time, graph, &viewport,
         conflicts_and_crossings, show_station_crossings, show_conflicts, show_line_blocks,
-        hovered_conflict, hovered_journey_id
+        hovered_conflict, hovered_journey_id, display_stations, station_idx_map
     );
 
     let handle_mouse_down = move |ev: MouseEvent| {
@@ -228,8 +292,7 @@ pub fn GraphCanvas(
             } else {
                 let canvas_width = f64::from(canvas.width());
                 let canvas_height = f64::from(canvas.height());
-                let current_graph = graph.get();
-                let current_stations = current_graph.get_all_stations_ordered();
+                let current_stations = display_stations.get();
 
                 if let Some(clicked_segment) = station_labels::check_toggle_click(
                     x, y, canvas_height, &current_stations,
@@ -266,7 +329,7 @@ pub fn GraphCanvas(
                     pan_offset_x: pan_offset_x.get(),
                     pan_offset_y: pan_offset_y.get(),
                 };
-                handle_mouse_move_hover(x, y, canvas, viewport_state, conflicts_and_crossings, graph, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id);
+                handle_mouse_move_hover(x, y, canvas, viewport_state, conflicts_and_crossings, display_stations, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id, station_idx_map);
             }
         }
     };
@@ -316,7 +379,7 @@ pub fn GraphCanvas(
                     Some(0.1)
                 };
 
-                canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport, min_zoom);
+                canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport, min_zoom, Some((graph_width, graph_height)));
             }
         }
     };
@@ -334,7 +397,7 @@ pub fn GraphCanvas(
                 style="cursor: crosshair;"
             ></canvas>
 
-            <ConflictTooltip hovered_conflict=hovered_conflict stations=Signal::derive(move || graph.get().get_all_stations_ordered()) />
+            <ConflictTooltip hovered_conflict=hovered_conflict graph=graph />
         </div>
     }
 }
@@ -373,16 +436,17 @@ fn update_time_from_x(x: f64, left_margin: f64, graph_width: f64, zoom_level: f6
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn render_graph(
     canvas: &leptos::HtmlElement<leptos::html::Canvas>,
-    stations: &[crate::models::StationNode],
+    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)],
     train_journeys: &std::collections::HashMap<uuid::Uuid, TrainJourney>,
     current_time: chrono::NaiveDateTime,
     viewport: &ViewportState,
     conflict_display: &ConflictDisplayState,
     hover_state: &HoverState,
     graph: &RailwayGraph,
+    station_idx_map: &std::collections::HashMap<usize, usize>,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = canvas;
     let canvas_width = f64::from(canvas_element.width());
@@ -485,9 +549,10 @@ fn render_graph(
             station_height,
             viewport.zoom_level,
             time_to_fraction,
+            station_idx_map,
         );
 
-        // Draw block visualization for hovered block violation
+        // Draw block violation visualization for hovered block violation
         if let Some(conflict) = hover_state.hovered_conflict {
             if conflict.conflict_type == crate::conflict::ConflictType::BlockViolation {
                 conflict_indicators::draw_block_violation_visualization(
@@ -498,6 +563,7 @@ fn render_graph(
                     station_height,
                     viewport.zoom_level,
                     time_to_fraction,
+                    station_idx_map,
                 );
             }
         }
@@ -529,6 +595,7 @@ fn render_graph(
             station_height,
             viewport.zoom_level,
             time_to_fraction,
+            station_idx_map,
         );
     }
 
@@ -559,7 +626,6 @@ fn render_graph(
         &ctx,
         &dimensions,
         stations,
-        graph,
         viewport.zoom_level,
         viewport.pan_offset_y,
     );
@@ -590,7 +656,7 @@ fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
 
 fn toggle_segment_double_track(
     clicked_segment: usize,
-    stations: &[crate::models::StationNode],
+    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)],
     set_graph: WriteSignal<RailwayGraph>,
     set_lines: WriteSignal<Vec<crate::models::Line>>,
 ) {
@@ -599,8 +665,13 @@ fn toggle_segment_double_track(
         return;
     }
 
-    let station1_name = stations[clicked_segment - 1].name.clone();
-    let station2_name = stations[clicked_segment].name.clone();
+    // Extract station names - only works for stations, not junctions
+    let Some(station1_name) = stations[clicked_segment - 1].1.as_station().map(|s| s.name.clone()) else {
+        return;
+    };
+    let Some(station2_name) = stations[clicked_segment].1.as_station().map(|s| s.name.clone()) else {
+        return;
+    };
 
     // Toggle track in the graph model
     set_graph.update(|g| {

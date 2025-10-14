@@ -64,6 +64,16 @@ body {
     gap: 0;
 }
 
+.tab-button-container {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+
+    &:hover .tab-close-button {
+        opacity: 1;
+    }
+}
+
 .tab-button {
     background-color: transparent;
     border: none;
@@ -73,6 +83,10 @@ body {
     cursor: pointer;
     border-bottom: 2px solid transparent;
     transition: all var(--transition-base) var(--transition-ease);
+
+    .tab-button-container & {
+        padding-right: calc(var(--spacing-lg) + 24px);
+    }
 
     &:hover {
         background-color: var(--color-bg-tertiary);
@@ -84,6 +98,47 @@ body {
         border-bottom-color: var(--color-accent);
         background-color: var(--color-bg-primary);
     }
+}
+
+.tab-close-button {
+    position: absolute;
+    right: var(--spacing-xs);
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: var(--spacing-xs);
+    opacity: 0.6;
+    transition: all var(--transition-base) var(--transition-ease);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-sm);
+    width: 20px;
+    height: 20px;
+    z-index: 1;
+
+    &:hover {
+        opacity: 1;
+        color: var(--color-danger);
+        background-color: var(--color-bg-tertiary);
+    }
+
+    i {
+        font-size: var(--font-size-xs);
+    }
+}
+
+.tab-rename-input {
+    @include input-base;
+    background-color: var(--color-bg-primary);
+    color: var(--color-text-primary);
+    padding: var(--spacing-lg) var(--spacing-2xl);
+    font-size: var(--font-size-md);
+    border-bottom: 2px solid var(--color-accent);
+    min-width: 150px;
 }
 
 // Shared input styles

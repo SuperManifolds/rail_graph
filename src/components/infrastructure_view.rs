@@ -4,11 +4,12 @@ use crate::components::infrastructure_toolbar::{InfrastructureToolbar, EditMode}
 use crate::components::canvas_viewport;
 use crate::components::graph_canvas::types::ViewportState;
 use crate::components::add_station::AddStation;
+use crate::components::create_view_dialog::CreateViewDialog;
 use crate::components::delete_station_confirmation::DeleteStationConfirmation;
 use crate::components::edit_junction::EditJunction;
 use crate::components::edit_station::EditStation;
 use crate::components::edit_track::EditTrack;
-use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, IntoView, create_node_ref, create_signal, create_effect, SignalGet, SignalSet, SignalGetUntracked};
+use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, IntoView, create_node_ref, create_signal, create_effect, SignalGet, SignalSet, SignalGetUntracked, Callable};
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::rc::Rc;
@@ -428,7 +429,7 @@ fn get_canvas_cursor_style(
         "cursor: grabbing;"
     } else {
         match edit_mode.get() {
-            EditMode::AddingTrack | EditMode::AddingJunction => "cursor: pointer;",
+            EditMode::AddingTrack | EditMode::AddingJunction | EditMode::CreatingView => "cursor: pointer;",
             EditMode::None => {
                 if is_over_edited_station.get() {
                     "cursor: grab;"
@@ -476,12 +477,16 @@ fn setup_render_effect(
     pan_offset_x: ReadSignal<f64>,
     pan_offset_y: ReadSignal<f64>,
     canvas_ref: leptos::NodeRef<leptos::html::Canvas>,
+    edit_mode: ReadSignal<EditMode>,
+    selected_station: ReadSignal<Option<NodeIndex>>,
 ) {
     create_effect(move |_| {
         let current_graph = graph.get();
         let _ = zoom_level.get();
         let _ = pan_offset_x.get();
         let _ = pan_offset_y.get();
+        let _ = edit_mode.get();
+        let _ = selected_station.get();
 
         let Some(canvas) = canvas_ref.get() else { return };
 
@@ -510,7 +515,14 @@ fn setup_render_effect(
         let pan_x = pan_offset_x.get_untracked();
         let pan_y = pan_offset_y.get_untracked();
 
-        renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y);
+        // Build list of selected stations when in CreatingView mode
+        let selected_stations: Vec<NodeIndex> = if matches!(edit_mode.get_untracked(), EditMode::CreatingView) {
+            selected_station.get_untracked().into_iter().collect()
+        } else {
+            Vec::new()
+        };
+
+        renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations);
     });
 }
 
@@ -520,6 +532,7 @@ fn create_event_handlers(
     edit_mode: ReadSignal<EditMode>,
     selected_station: ReadSignal<Option<NodeIndex>>,
     set_selected_station: WriteSignal<Option<NodeIndex>>,
+    set_second_station_clicked: WriteSignal<Option<NodeIndex>>,
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     lines: ReadSignal<Vec<Line>>,
@@ -568,6 +581,24 @@ fn create_event_handlers(
                 }
                 EditMode::AddingJunction if is_single_click => {
                     handle_adding_junction(world_x, world_y, graph, set_graph, lines, set_lines, set_editing_junction);
+                }
+                EditMode::CreatingView if is_single_click => {
+                    let current_graph = graph.get();
+                    let Some(clicked_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) else {
+                        return;
+                    };
+                    // Only allow selecting stations, not junctions
+                    if current_graph.is_junction(clicked_station) {
+                        return;
+                    }
+
+                    if selected_station.get().is_none() {
+                        // First station selected
+                        set_selected_station.set(Some(clicked_station));
+                    } else if Some(clicked_station) != selected_station.get() {
+                        // Second station selected - trigger the dialog opening
+                        set_second_station_clicked.set(Some(clicked_station));
+                    }
                 }
                 EditMode::None => {
                     let current_graph = graph.get();
@@ -682,7 +713,7 @@ fn create_event_handlers(
             let mouse_x = f64::from(ev.client_x()) - rect.left();
             let mouse_y = f64::from(ev.client_y()) - rect.top();
 
-            canvas_viewport::handle_zoom(&ev, mouse_x, mouse_y, &viewport_copy, None);
+            canvas_viewport::handle_zoom(&ev, mouse_x, mouse_y, &viewport_copy, None, None);
         }
     };
 
@@ -691,11 +722,13 @@ fn create_event_handlers(
 
 #[component]
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn InfrastructureView(
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
+    on_create_view: leptos::Callback<crate::models::GraphView>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (auto_layout_enabled, set_auto_layout_enabled) = create_signal(true);
@@ -713,6 +746,31 @@ pub fn InfrastructureView(
     let (is_over_edited_station, set_is_over_edited_station) = create_signal(false);
     let (is_over_track, set_is_over_track) = create_signal(false);
     let (dragging_station, set_dragging_station) = create_signal(None::<NodeIndex>);
+
+    // View creation state
+    let (view_start_station, set_view_start_station) = create_signal(None::<NodeIndex>);
+    let (view_end_station, set_view_end_station) = create_signal(None::<NodeIndex>);
+    let (show_create_view_dialog, set_show_create_view_dialog) = create_signal(false);
+
+    // Separate signal to trigger the dialog opening (to avoid effect loop)
+    let (second_station_clicked, set_second_station_clicked) = create_signal(None::<NodeIndex>);
+
+    // Watch for when second station is selected to open the dialog
+    create_effect(move |_| {
+        if let Some(end) = second_station_clicked.get() {
+            if let Some(start) = selected_station.get() {
+                if start != end {
+                    // Set the dialog's station signals
+                    set_view_start_station.set(Some(start));
+                    set_view_end_station.set(Some(end));
+                    set_show_create_view_dialog.set(true);
+                    // Clear the selection state
+                    set_selected_station.set(None);
+                    set_second_station_clicked.set(None);
+                }
+            }
+        }
+    });
 
     let viewport = canvas_viewport::create_viewport_signals(false);
     let zoom_level = viewport.zoom_level;
@@ -744,10 +802,10 @@ pub fn InfrastructureView(
     let (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
         create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, station_to_delete);
 
-    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref);
+    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station);
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_wheel) = create_event_handlers(
-        canvas_ref, edit_mode, selected_station, set_selected_station, graph, set_graph,
+        canvas_ref, edit_mode, selected_station, set_selected_station, set_second_station_clicked, graph, set_graph,
         lines, set_lines,
         editing_station, set_editing_station, set_editing_junction, set_editing_track,
         dragging_station, set_dragging_station, set_is_over_station, set_is_over_edited_station, set_is_over_track,
@@ -761,6 +819,21 @@ pub fn InfrastructureView(
         set_is_over_edited_station.set(false);
         set_is_over_track.set(false);
     };
+
+    // Callback for creating a view from station range
+    let handle_create_view = Rc::new(move |name: String, start: NodeIndex, end: NodeIndex| {
+        let current_graph = graph.get();
+        match crate::models::GraphView::from_station_range(name, start, end, &current_graph) {
+            Ok(new_view) => {
+                on_create_view.call(new_view);
+                set_show_create_view_dialog.set(false);
+                set_edit_mode.set(EditMode::None);
+            }
+            Err(err) => {
+                web_sys::console::error_1(&format!("Failed to create view: {err}").into());
+            }
+        }
+    });
 
     view! {
         <div class="infrastructure-view">
@@ -826,6 +899,18 @@ pub fn InfrastructureView(
                 affected_lines=delete_affected_lines
                 on_cancel=Rc::new(move || set_show_delete_confirmation.set(false))
                 on_confirm=confirm_delete_station
+            />
+
+            <CreateViewDialog
+                is_open=show_create_view_dialog
+                start_station=view_start_station
+                end_station=view_end_station
+                graph=graph
+                on_close=Rc::new(move || {
+                    set_show_create_view_dialog.set(false);
+                    set_edit_mode.set(EditMode::None);
+                })
+                on_create=handle_create_view
             />
         </div>
     }

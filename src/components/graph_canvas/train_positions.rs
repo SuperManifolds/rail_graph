@@ -1,8 +1,10 @@
 use web_sys::CanvasRenderingContext2d;
 use chrono::NaiveDateTime;
-use crate::models::StationNode;
+use crate::models::Node;
 use crate::train_journey::TrainJourney;
 use super::types::GraphDimensions;
+use petgraph::stable_graph::NodeIndex;
+use std::collections::HashMap;
 
 // Current train position constants
 const CURRENT_TRAIN_RADIUS: f64 = 6.0;
@@ -15,20 +17,27 @@ const CURRENT_TRAIN_LABEL_FONT_SIZE: f64 = 10.0;
 pub fn draw_current_train_positions(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[StationNode],
+    stations: &[(NodeIndex, Node)],
     train_journeys: &[&TrainJourney],
     station_height: f64,
     visualization_time: NaiveDateTime,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
+    // Build NodeIndex to display position map
+    let station_positions: HashMap<NodeIndex, usize> = stations
+        .iter()
+        .enumerate()
+        .map(|(idx, (node_idx, _))| (*node_idx, idx))
+        .collect();
+
     for journey in train_journeys {
         // Find which segment the train is currently on (or if it's waiting at a station)
-        let mut prev_departure: Option<(&String, NaiveDateTime, usize)> = None;
-        let mut next_arrival: Option<(&String, NaiveDateTime, usize)> = None;
+        let mut prev_departure: Option<(NodeIndex, NaiveDateTime, usize)> = None;
+        let mut next_arrival: Option<(NodeIndex, NaiveDateTime, usize)> = None;
 
-        for (station_name, arrival_time, departure_time) in &journey.station_times {
-            if let Some(station_idx) = stations.iter().position(|s| s.name == *station_name) {
+        for (node_idx, arrival_time, departure_time) in &journey.station_times {
+            if let Some(&station_idx) = station_positions.get(node_idx) {
                 // Check if train is currently waiting at this station
                 if *arrival_time <= visualization_time && visualization_time <= *departure_time {
                     // Train is waiting at this station
@@ -52,9 +61,9 @@ pub fn draw_current_train_positions(
                 }
 
                 if *departure_time <= visualization_time {
-                    prev_departure = Some((station_name, *departure_time, station_idx));
+                    prev_departure = Some((*node_idx, *departure_time, station_idx));
                 } else if next_arrival.is_none() {
-                    next_arrival = Some((station_name, *arrival_time, station_idx));
+                    next_arrival = Some((*node_idx, *arrival_time, station_idx));
                     break;
                 }
             }

@@ -1,7 +1,8 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{StationNode, RailwayGraph, Stations};
+use crate::models::{Node, RailwayGraph};
 use super::types::GraphDimensions;
 use petgraph::visit::EdgeRef;
+use petgraph::stable_graph::NodeIndex;
 
 // Background constants
 const BACKGROUND_COLOR: &str = "#0a0a0a";
@@ -19,10 +20,10 @@ pub fn draw_background(ctx: &CanvasRenderingContext2d, width: f64, height: f64) 
 }
 
 #[allow(clippy::cast_precision_loss)]
-pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[StationNode], zoom_level: f64, pan_offset_x: f64) {
+pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[(NodeIndex, Node)], zoom_level: f64, pan_offset_x: f64) {
     let station_height = dims.graph_height / stations.len() as f64;
 
-    for (i, _station) in stations.iter().enumerate() {
+    for (i, _) in stations.iter().enumerate() {
         let y = calculate_station_y(dims, i, station_height);
         draw_horizontal_line(ctx, dims, y, zoom_level, pan_offset_x);
     }
@@ -59,7 +60,7 @@ fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, 
 pub fn draw_double_track_indicators(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
-    stations: &[StationNode],
+    stations: &[(NodeIndex, Node)],
     graph: &RailwayGraph,
     zoom_level: f64,
     pan_offset_x: f64,
@@ -78,21 +79,17 @@ pub fn draw_double_track_indicators(
     // Draw lighter background for double-tracked segments
     // Check each consecutive pair of stations
     for segment_idx in 1..stations.len() {
-        let prev_station = &stations[segment_idx - 1];
-        let curr_station = &stations[segment_idx];
+        let (node1, _) = &stations[segment_idx - 1];
+        let (node2, _) = &stations[segment_idx];
 
         // Check if there's a multi-tracked edge between these stations
-        let has_multiple_tracks = if let (Some(node1), Some(node2)) =
-            (graph.get_station_index(&prev_station.name), graph.get_station_index(&curr_station.name)) {
-
+        let has_multiple_tracks = {
             // Check both directions for an edge
-            graph.graph.edges(node1).any(|e| {
-                e.target() == node2 && e.weight().tracks.len() >= 2
-            }) || graph.graph.edges(node2).any(|e| {
-                e.target() == node1 && e.weight().tracks.len() >= 2
+            graph.graph.edges(*node1).any(|e| {
+                e.target() == *node2 && e.weight().tracks.len() >= 2
+            }) || graph.graph.edges(*node2).any(|e| {
+                e.target() == *node1 && e.weight().tracks.len() >= 2
             })
-        } else {
-            false
         };
 
         if has_multiple_tracks {

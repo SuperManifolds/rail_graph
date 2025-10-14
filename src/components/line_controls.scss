@@ -22,6 +22,7 @@
                 gap: var(--spacing-sm);
 
                 .visibility-toggle,
+                .create-view-button,
                 .edit-button,
                 .delete-button {
                     @include button-icon;

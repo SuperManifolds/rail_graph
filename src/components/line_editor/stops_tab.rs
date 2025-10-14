@@ -148,6 +148,12 @@ pub fn StopsTab(
                                                                                     }
                                                                                 }
                                                                             }
+
+                                                                            // Sync return route if editing forward route and sync is enabled
+                                                                            if matches!(route_direction.get(), RouteDirection::Forward) {
+                                                                                updated_line.apply_route_sync_if_enabled();
+                                                                            }
+
                                                                             on_save(updated_line);
                                                                             set_first_station.set(None);
                                                                         }
@@ -232,13 +238,13 @@ pub fn StopsTab(
                                     />
 
                                     {
-                                        let num_stations = stations.len();
-                                        stations.into_iter().enumerate().map(|(i, (name, station_idx))| {
+                                        stations.iter().enumerate().map(|(i, (name, station_idx))| {
+                                            let num_stations = stations.len();
                                             view! {
                                                 <StopRow
                                                     index=i
-                                                    name=name
-                                                    station_idx=station_idx
+                                                    name=name.clone()
+                                                    station_idx=*station_idx
                                                     line=line.clone()
                                                     graph=current_graph.clone()
                                                     time_mode=mode

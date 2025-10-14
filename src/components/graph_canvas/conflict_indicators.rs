@@ -1,5 +1,5 @@
 use super::types::GraphDimensions;
-use crate::models::StationNode;
+use crate::models::Node;
 use crate::conflict::{Conflict, StationCrossing};
 use web_sys::{CanvasRenderingContext2d, Path2d};
 
@@ -30,6 +30,7 @@ pub fn draw_conflict_highlights(
     station_height: f64,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
+    station_idx_map: &std::collections::HashMap<usize, usize>,
 ) {
     let size = CONFLICT_TRIANGLE_SIZE / zoom_level;
     let bar_width = 1.5 / zoom_level;
@@ -56,14 +57,23 @@ pub fn draw_conflict_highlights(
 
     // Draw each marker by translating and stamping the paths
     for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
+        // Map full-graph indices to display indices
+        let Some(&display_idx1) = station_idx_map.get(&conflict.station1_idx) else {
+            continue; // Station not in current view
+        };
+        let Some(&display_idx2) = station_idx_map.get(&conflict.station2_idx) else {
+            continue; // Station not in current view
+        };
+
         let time_fraction = time_to_fraction(conflict.time);
         let x = dims.left_margin + (time_fraction * dims.hour_width);
+
         let y = dims.top_margin
-            + (conflict.station1_idx as f64 * station_height)
+            + (display_idx1 as f64 * station_height)
             + (station_height / 2.0)
             + (conflict.position
                 * station_height
-                * (conflict.station2_idx - conflict.station1_idx) as f64);
+                * (display_idx2 as f64 - display_idx1 as f64));
 
         ctx.save();
         ctx.translate(x, y).ok();
@@ -99,14 +109,22 @@ pub fn draw_conflict_highlights(
 
         // Draw all labels
         for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
+            // Map full-graph indices to display indices
+            let Some(&display_idx1) = station_idx_map.get(&conflict.station1_idx) else {
+                continue; // Station not in current view
+            };
+            let Some(&display_idx2) = station_idx_map.get(&conflict.station2_idx) else {
+                continue; // Station not in current view
+            };
+
             let time_fraction = time_to_fraction(conflict.time);
             let x = dims.left_margin + (time_fraction * dims.hour_width);
             let y = dims.top_margin
-                + (conflict.station1_idx as f64 * station_height)
+                + (display_idx1 as f64 * station_height)
                 + (station_height / 2.0)
                 + (conflict.position
                     * station_height
-                    * (conflict.station2_idx - conflict.station1_idx) as f64);
+                    * (display_idx2 as f64 - display_idx1 as f64));
 
             let label = format!("{} × {}", conflict.journey1_id, conflict.journey2_id);
             let _ = ctx.fill_text(&label, x + size + CONFLICT_LABEL_OFFSET / zoom_level, y);
@@ -134,13 +152,14 @@ pub fn check_conflict_hover(
     mouse_x: f64,
     mouse_y: f64,
     conflicts: &[Conflict],
-    stations: &[StationNode],
+    stations: &[(petgraph::stable_graph::NodeIndex, Node)],
     canvas_width: f64,
     canvas_height: f64,
     zoom_level: f64,
     zoom_level_x: f64,
     pan_offset_x: f64,
     pan_offset_y: f64,
+    station_idx_map: &std::collections::HashMap<usize, usize>,
 ) -> Option<(Conflict, f64, f64)> {
     use super::canvas::{BOTTOM_PADDING, LEFT_MARGIN, RIGHT_PADDING, TOP_MARGIN};
     use crate::time::time_to_fraction;
@@ -158,6 +177,14 @@ pub fn check_conflict_hover(
     }
 
     for conflict in conflicts {
+        // Map full-graph indices to display indices
+        let Some(&display_idx1) = station_idx_map.get(&conflict.station1_idx) else {
+            continue; // Station not in current view
+        };
+        let Some(&display_idx2) = station_idx_map.get(&conflict.station2_idx) else {
+            continue; // Station not in current view
+        };
+
         // Calculate conflict position in screen coordinates
         // The canvas uses: translate(LEFT_MARGIN, TOP_MARGIN) + translate(pan) + scale(zoom)
         let time_fraction = time_to_fraction(conflict.time);
@@ -168,11 +195,11 @@ pub fn check_conflict_hover(
         let x_in_zoomed = time_fraction * hour_width;
 
         let station_height = graph_height / stations.len() as f64;
-        let y_in_zoomed = (conflict.station1_idx as f64 * station_height)
+        let y_in_zoomed = (display_idx1 as f64 * station_height)
             + (station_height / 2.0)
             + (conflict.position
                 * station_height
-                * (conflict.station2_idx - conflict.station1_idx) as f64);
+                * (display_idx2 as f64 - display_idx1 as f64));
 
         // Transform to screen coordinates
         let screen_x = LEFT_MARGIN + (x_in_zoomed * zoom_level * zoom_level_x) + pan_offset_x;
@@ -200,13 +227,19 @@ pub fn draw_station_crossings(
     station_height: f64,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
+    station_idx_map: &std::collections::HashMap<usize, usize>,
 ) {
     for crossing in station_crossings {
+        // Map full-graph index to display index
+        let Some(&display_idx) = station_idx_map.get(&crossing.station_idx) else {
+            continue; // Station not in current view
+        };
+
         let time_fraction = time_to_fraction(crossing.time);
         let x = dims.left_margin + (time_fraction * dims.hour_width);
         // Use station_height / 2.0 offset to center on the station line
         let y = dims.top_margin
-            + (crossing.station_idx as f64 * station_height)
+            + (display_idx as f64 * station_height)
             + (station_height / 2.0);
 
         // Draw a translucent green circle at the crossing point
@@ -237,13 +270,19 @@ pub fn draw_block_violation_visualization(
     station_height: f64,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
+    station_idx_map: &std::collections::HashMap<usize, usize>,
 ) {
     // Use the segment times stored in the conflict
     if let (Some((s1_start, s1_end)), Some((s2_start, s2_end))) =
         (conflict.segment1_times, conflict.segment2_times) {
 
-        let start_idx = conflict.station1_idx;
-        let end_idx = conflict.station2_idx;
+        // Map full-graph indices to display indices
+        let Some(&display_idx1) = station_idx_map.get(&conflict.station1_idx) else {
+            return; // Station not in current view
+        };
+        let Some(&display_idx2) = station_idx_map.get(&conflict.station2_idx) else {
+            return; // Station not in current view
+        };
 
         // Find the journeys to get their colors
         let journey1 = train_journeys.iter().find(|j| j.line_id == conflict.journey1_id);
@@ -262,7 +301,7 @@ pub fn draw_block_violation_visualization(
             ctx,
             dims,
             (s1_start, s1_end),
-            (start_idx, end_idx),
+            (display_idx1, display_idx2),
             station_height,
             zoom_level,
             time_to_fraction,
@@ -274,7 +313,7 @@ pub fn draw_block_violation_visualization(
             ctx,
             dims,
             (s2_start, s2_end),
-            (start_idx, end_idx),
+            (display_idx1, display_idx2),
             station_height,
             zoom_level,
             time_to_fraction,
@@ -288,7 +327,7 @@ pub fn draw_journey_blocks(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     journey: &crate::train_journey::TrainJourney,
-    stations: &[crate::models::StationNode],
+    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)],
     station_height: f64,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
@@ -299,23 +338,23 @@ pub fn draw_journey_blocks(
     let fill_color = format!("{color}{BLOCK_FILL_OPACITY}");
     let stroke_color = format!("{color}{BLOCK_STROKE_OPACITY}");
 
-    // Create station name to index mapping
-    let station_map: std::collections::HashMap<&str, usize> = stations
+    // Create NodeIndex to display index mapping
+    let station_map: std::collections::HashMap<petgraph::stable_graph::NodeIndex, usize> = stations
         .iter()
         .enumerate()
-        .map(|(idx, station)| (station.name.as_str(), idx))
+        .map(|(idx, (node_idx, _))| (*node_idx, idx))
         .collect();
 
     // Draw a block for each segment
     for i in 1..journey.station_times.len() {
-        let (station_from, _arrival_from, departure_from) = &journey.station_times[i - 1];
-        let (station_to, arrival_to, _departure_to) = &journey.station_times[i];
+        let (node_from, _arrival_from, departure_from) = &journey.station_times[i - 1];
+        let (node_to, arrival_to, _departure_to) = &journey.station_times[i];
 
         // Look up station indices
-        let Some(&start_idx) = station_map.get(station_from.as_str()) else {
+        let Some(&start_idx) = station_map.get(node_from) else {
             continue;
         };
-        let Some(&end_idx) = station_map.get(station_to.as_str()) else {
+        let Some(&end_idx) = station_map.get(node_to) else {
             continue;
         };
 

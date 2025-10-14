@@ -1,5 +1,5 @@
 use web_sys::CanvasRenderingContext2d;
-use crate::models::{StationNode, RailwayGraph, Nodes, Node};
+use crate::models::{StationNode, RailwayGraph, Stations, Node};
 use super::types::GraphDimensions;
 
 // Junction indicator constants
@@ -34,7 +34,7 @@ pub fn draw_junction_indicators(
     let mut station_row = 0;
     let mut junction_positions = Vec::new();
 
-    for node in &all_nodes {
+    for (_, node) in &all_nodes {
         match node {
             Node::Station(_) => {
                 station_row += 1;

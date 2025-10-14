@@ -1,5 +1,5 @@
-use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, SignalGet, SignalUpdate, SignalSet, For, Signal, store_value};
-use crate::models::{Line, RailwayGraph};
+use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, SignalGet, SignalUpdate, SignalSet, For, Signal, store_value, Callback, Callable};
+use crate::models::{Line, RailwayGraph, GraphView};
 use crate::components::line_editor::LineEditor;
 use crate::components::confirmation_dialog::ConfirmationDialog;
 use std::collections::HashSet;
@@ -12,6 +12,7 @@ pub fn LineControls(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
     graph: ReadSignal<RailwayGraph>,
+    on_create_view: Callback<GraphView>,
 ) -> impl IntoView {
     let (open_editors, set_open_editors) = create_signal(HashSet::<String>::new());
     let (delete_pending, set_delete_pending) = create_signal(None::<String>);
@@ -32,6 +33,7 @@ pub fn LineControls(
                                 line_id=line_id.clone()
                                 lines=lines
                                 set_lines=set_lines
+                                graph=graph
                                 on_edit=move |id: String| {
                                     set_open_editors.update(|editors| {
                                         editors.insert(id);
@@ -40,6 +42,7 @@ pub fn LineControls(
                                 on_delete=move |id: String| {
                                     set_delete_pending.set(Some(id));
                                 }
+                                on_create_view=on_create_view
                             />
                         }
                     }).collect::<Vec<_>>()
@@ -122,8 +125,10 @@ pub fn LineControl(
     line_id: String,
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
+    graph: ReadSignal<RailwayGraph>,
     on_edit: impl Fn(String) + 'static,
     on_delete: impl Fn(String) + 'static,
+    on_create_view: Callback<GraphView>,
 ) -> impl IntoView {
     let id_for_derive = line_id.clone();
     let current_line = Signal::derive(move || {
@@ -161,6 +166,24 @@ pub fn LineControl(
                                     title=if line.visible { "Hide line" } else { "Show line" }
                                 >
                                     <i class=if line.visible { "fa-solid fa-eye" } else { "fa-solid fa-eye-slash" }></i>
+                                </button>
+                                <button
+                                    class="create-view-button"
+                                    on:click={
+                                        let line = line.clone();
+                                        let current_graph = graph.get();
+                                        move |_| {
+                                            let path = line.get_station_path(&current_graph);
+                                            if let (Some(&from), Some(&to)) = (path.first(), path.last()) {
+                                                if let Ok(view) = GraphView::from_station_range(line.id.clone(), from, to, &current_graph) {
+                                                    on_create_view.call(view);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    title="Open line in new view"
+                                >
+                                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
                                 </button>
                                 <button
                                     class="edit-button"

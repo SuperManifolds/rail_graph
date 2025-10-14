@@ -18,6 +18,14 @@
         select {
             @include input-select;
         }
+
+        .station-name-display {
+            padding: var(--spacing-sm) var(--spacing-md);
+            background-color: var(--color-bg-tertiary);
+            border-radius: var(--radius-md);
+            color: var(--color-text-primary);
+            font-size: var(--font-size-sm);
+        }
     }
 
     .form-buttons {
