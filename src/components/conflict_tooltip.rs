@@ -1,24 +1,32 @@
-use leptos::{component, IntoView, ReadSignal, Signal, SignalGet, view};
+use leptos::{component, IntoView, ReadSignal, SignalGet, view};
 use crate::conflict::Conflict;
-use crate::models::Node;
-use petgraph::stable_graph::NodeIndex;
+use crate::models::{RailwayGraph, Stations};
 
 #[component]
 #[must_use]
 pub fn ConflictTooltip(
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
-    stations: Signal<Vec<(NodeIndex, Node)>>,
+    graph: ReadSignal<RailwayGraph>,
 ) -> impl IntoView {
     view! {
         {move || {
             if let Some((conflict, tooltip_x, tooltip_y)) = hovered_conflict.get() {
-                let current_stations = stations.get();
+                let current_graph = graph.get();
 
-                // Get node names
-                let station1_name = current_stations.get(conflict.station1_idx)
-                    .map_or("Unknown".to_string(), |(_, n)| n.display_name());
-                let station2_name = current_stations.get(conflict.station2_idx)
-                    .map_or("Unknown".to_string(), |(_, n)| n.display_name());
+                // Convert station indices to NodeIndex by looking up in full graph station list
+                let all_stations = current_graph.get_all_stations_ordered();
+                let station1_node_idx = all_stations.get(conflict.station1_idx).map(|(idx, _)| *idx);
+                let station2_node_idx = all_stations.get(conflict.station2_idx).map(|(idx, _)| *idx);
+
+                // Get node names from the graph
+                let station1_name = station1_node_idx
+                    .and_then(|idx| current_graph.get_station_name(idx))
+                    .unwrap_or("Unknown")
+                    .to_string();
+                let station2_name = station2_node_idx
+                    .and_then(|idx| current_graph.get_station_name(idx))
+                    .unwrap_or("Unknown")
+                    .to_string();
 
                 let message = conflict.format_message(&station1_name, &station2_name);
                 let timestamp = conflict.time.format("%H:%M:%S");
