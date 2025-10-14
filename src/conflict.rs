@@ -152,6 +152,7 @@ pub fn detect_line_conflicts(
     let stations = graph.get_all_stations_ordered();
 
     // Pre-compute NodeIndex to display index mapping for O(1) lookups
+    // This only includes stations, so conflicts are positioned between stations
     let station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize> = stations
         .iter()
         .enumerate()

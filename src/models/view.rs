@@ -3,6 +3,7 @@ use petgraph::stable_graph::NodeIndex;
 use uuid::Uuid;
 use std::collections::HashSet;
 use super::RailwayGraph;
+use super::railway_graph::stations::Stations;
 use crate::train_journey::TrainJourney;
 use crate::conflict::Conflict;
 
@@ -188,6 +189,30 @@ impl GraphView {
         self.path.iter()
             .filter_map(|&node_idx| {
                 graph.graph.node_weight(node_idx).map(|node| (node_idx, node.clone()))
+            })
+            .collect()
+    }
+
+    /// Build a mapping from full-graph station indices to view display indices
+    /// This is used for rendering conflicts/crossings which store indices from the full graph
+    /// The display index accounts for ALL nodes (stations and junctions) in the view
+    #[must_use]
+    pub fn build_station_index_map(&self, graph: &RailwayGraph) -> std::collections::HashMap<usize, usize> {
+        let all_stations = graph.get_all_stations_ordered();
+
+        // Build a reverse map: NodeIndex -> station index in full graph
+        let node_to_station_idx: std::collections::HashMap<NodeIndex, usize> = all_stations
+            .iter()
+            .enumerate()
+            .map(|(idx, (node_idx, _))| (*node_idx, idx))
+            .collect();
+
+        // Map station indices to display positions (which include junctions)
+        self.path.iter()
+            .enumerate()
+            .filter_map(|(display_idx, &node_idx)| {
+                // Only map if this node is a station
+                node_to_station_idx.get(&node_idx).map(|&station_idx| (station_idx, display_idx))
             })
             .collect()
     }

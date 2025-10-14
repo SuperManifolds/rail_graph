@@ -76,6 +76,23 @@ fn compute_display_nodes(
     })
 }
 
+#[inline]
+fn compute_station_index_map(
+    view: Option<GraphView>,
+    graph: ReadSignal<RailwayGraph>,
+) -> Signal<std::collections::HashMap<usize, usize>> {
+    Signal::derive(move || {
+        let current_graph = graph.get();
+        if let Some(ref graph_view) = view {
+            graph_view.build_station_index_map(&current_graph)
+        } else {
+            // For full graph view, it's a 1:1 identity mapping
+            let all_stations = current_graph.get_all_stations_ordered();
+            (0..all_stations.len()).map(|i| (i, i)).collect()
+        }
+    })
+}
+
 #[component]
 #[allow(clippy::too_many_lines)]
 #[must_use]
@@ -171,6 +188,8 @@ pub fn TimeGraph(
 
     // Get nodes (stations and junctions) to display based on view
     let display_stations = compute_display_nodes(view.clone(), graph);
+    // Build station index mapping for conflict rendering
+    let station_idx_map = compute_station_index_map(view, graph);
 
     view! {
         <div class="time-graph-container">
@@ -190,6 +209,7 @@ pub fn TimeGraph(
                     conflicts_and_crossings=conflicts_and_crossings
                     pan_to_conflict_signal=pan_to_conflict
                     display_stations=display_stations
+                    station_idx_map=station_idx_map
                 />
             </div>
             <div class="sidebar">
