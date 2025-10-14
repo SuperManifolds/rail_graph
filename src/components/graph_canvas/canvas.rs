@@ -1,4 +1,6 @@
 use leptos::*;
+use leptos::set_timeout_with_handle;
+use std::time::Duration;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
@@ -158,7 +160,7 @@ fn handle_mouse_move_hover(
     }
 }
 
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_lines)]
 #[component]
 #[must_use]
 pub fn GraphCanvas(
@@ -177,12 +179,22 @@ pub fn GraphCanvas(
     #[prop(optional)] pan_to_conflict_signal: Option<ReadSignal<Option<(f64, f64)>>>,
     display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
     station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
+    initial_viewport: crate::models::ViewportState,
+    on_viewport_change: leptos::Callback<crate::models::ViewportState>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
 
     let viewport = canvas_viewport::create_viewport_signals(true);
+
+    // Initialize viewport from saved state
+    viewport.set_zoom_level.set(initial_viewport.zoom_level);
+    if let Some((_, set_zoom_x)) = viewport.zoom_level_x {
+        set_zoom_x.set(initial_viewport.zoom_level_x.unwrap_or(1.0));
+    }
+    viewport.set_pan_offset_x.set(initial_viewport.pan_offset_x);
+    viewport.set_pan_offset_y.set(initial_viewport.pan_offset_y);
     let zoom_level = viewport.zoom_level;
     let set_zoom_level = viewport.set_zoom_level;
     let (zoom_level_x, set_zoom_level_x) = viewport.zoom_level_x.expect("horizontal zoom enabled");
@@ -191,6 +203,49 @@ pub fn GraphCanvas(
     let pan_offset_y = viewport.pan_offset_y;
     let set_pan_offset_y = viewport.set_pan_offset_y;
     let is_panning = viewport.is_panning;
+
+    // Save viewport changes to the view (debounced)
+    let debounce_handle = store_value(None::<leptos::leptos_dom::helpers::TimeoutHandle>);
+
+    create_effect(move |prev_state: Option<(f64, f64, f64, f64)>| {
+        let zoom = zoom_level.get();
+        let zoom_x = zoom_level_x.get();
+        let pan_x = pan_offset_x.get();
+        let pan_y = pan_offset_y.get();
+
+        let current = (zoom, zoom_x, pan_x, pan_y);
+
+        // Only update if values actually changed (skip initial render)
+        let Some(prev) = prev_state else {
+            return current;
+        };
+
+        if prev != current {
+            // Clear existing timer
+            debounce_handle.update_value(|handle| {
+                if let Some(h) = handle.take() {
+                    h.clear();
+                }
+            });
+
+            // Set new timer to save after 300ms of no changes
+            let handle = set_timeout_with_handle(
+                move || {
+                    on_viewport_change.call(crate::models::ViewportState {
+                        zoom_level: zoom,
+                        zoom_level_x: Some(zoom_x),
+                        pan_offset_x: pan_x,
+                        pan_offset_y: pan_y,
+                    });
+                },
+                Duration::from_millis(300)
+            ).ok();
+
+            debounce_handle.set_value(handle);
+        }
+
+        current
+    });
 
     if let Some(pan_signal) = pan_to_conflict_signal {
         create_effect(move |_| {

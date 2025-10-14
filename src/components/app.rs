@@ -1,10 +1,14 @@
-use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value};
+use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value, SignalWith, Signal, store_value};
+use std::collections::HashMap;
 use leptos_meta::{provide_meta_context, Stylesheet, Title};
 use uuid::Uuid;
 use crate::components::time_graph::TimeGraph;
 use crate::components::infrastructure_view::InfrastructureView;
-use crate::models::{Project, RailwayGraph, Legend, GraphView};
+use crate::models::{Project, RailwayGraph, Legend, GraphView, ViewportState};
 use crate::storage::{load_project_from_storage, save_project_to_storage};
+use crate::train_journey::TrainJourney;
+use crate::conflict::{Conflict, StationCrossing};
+use crate::worker_bridge::ConflictDetector;
 
 #[derive(Clone, PartialEq)]
 enum AppTab {
@@ -45,6 +49,13 @@ pub fn App() -> impl IntoView {
     let (is_loading, set_is_loading) = create_signal(true);
     let (initial_load_complete, set_initial_load_complete) = create_signal(false);
 
+    // Store viewport states separately to avoid triggering view updates
+    let (viewport_states, set_viewport_states) = create_signal(HashMap::<Uuid, ViewportState>::new());
+
+    // Compute train journeys at app level
+    let (train_journeys, set_train_journeys) = create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
+    let (selected_day, set_selected_day) = create_signal(None::<chrono::Weekday>);
+
     // Auto-load saved project on component mount
     create_effect(move |_| {
         spawn_local(async move {
@@ -68,6 +79,13 @@ pub fn App() -> impl IntoView {
                     views.push(default_view);
                 }
             }
+
+            // Extract viewport states into separate signal
+            let viewports: HashMap<Uuid, ViewportState> = views.iter()
+                .map(|v| (v.id, v.viewport_state.clone()))
+                .collect();
+            set_viewport_states.set(viewports);
+
             set_views.set(views.clone());
 
             // Restore active tab, or default to first view
@@ -81,12 +99,13 @@ pub fn App() -> impl IntoView {
         });
     });
 
-    // Auto-save project whenever lines, graph, legend, views, or active tab change
+    // Auto-save project whenever lines, graph, legend, views, viewport states, or active tab change
     create_effect(move |_| {
         let current_lines = lines.get();
         let current_graph = graph.get();
         let current_legend = legend.get();
         let current_views = views.get();
+        let current_viewports = viewport_states.get();
         let current_tab = active_tab.get();
 
         if !current_lines.is_empty() || current_graph.graph.node_count() > 0 {
@@ -96,8 +115,18 @@ pub fn App() -> impl IntoView {
                 AppTab::GraphView(uuid) => Some(uuid.to_string()),
             };
 
+            // Merge viewport states back into views for saving
+            let views_with_viewports: Vec<GraphView> = current_views.into_iter()
+                .map(|mut v| {
+                    if let Some(viewport) = current_viewports.get(&v.id) {
+                        v.viewport_state = viewport.clone();
+                    }
+                    v
+                })
+                .collect();
+
             let mut project = Project::new(current_lines, current_graph, current_legend);
-            project.views = current_views;
+            project.views = views_with_viewports;
             project.active_tab_id = active_tab_id;
 
             spawn_local(async move {
@@ -115,9 +144,49 @@ pub fn App() -> impl IntoView {
         }
     });
 
+    // Generate train journeys when lines or graph change
+    create_effect(move |_| {
+        let current_lines = lines.get();
+        let current_graph = graph.get();
+        let day_filter = selected_day.get();
+
+        // Filter to only visible lines
+        let visible_lines: Vec<_> = current_lines.into_iter()
+            .filter(|line| line.visible)
+            .collect();
+
+        // Generate journeys for the full day
+        let new_journeys = TrainJourney::generate_journeys(&visible_lines, &current_graph, day_filter);
+        set_train_journeys.set(new_journeys);
+    });
+
+    // Compute conflicts and station crossings at app level using worker
+    let (conflicts, set_conflicts) = create_signal(Vec::new());
+    let (crossings, set_crossings) = create_signal(Vec::new());
+
+    let detector = store_value(ConflictDetector::new(
+        set_conflicts,
+        set_crossings,
+    ));
+
+    create_effect(move |_| {
+        let journeys = train_journeys.get();
+        let journeys_vec: Vec<_> = journeys.values().cloned().collect();
+        let current_graph = graph.get();
+
+        detector.update_value(|d| {
+            d.detect(journeys_vec, current_graph);
+        });
+    });
+
+    let raw_conflicts: Signal<Vec<Conflict>> = conflicts.into();
+    let raw_crossings: Signal<Vec<StationCrossing>> = crossings.into();
+
     // Callback for creating a new view
     let on_create_view = Callback::new(move |new_view: GraphView| {
         let view_id = new_view.id;
+        let viewport = new_view.viewport_state.clone();
+        set_viewport_states.update(|vs| { vs.insert(view_id, viewport); });
         set_views.update(|v| v.push(new_view));
         set_active_tab.set(AppTab::GraphView(view_id));
     });
@@ -130,8 +199,9 @@ pub fn App() -> impl IntoView {
             AppTab::Infrastructure => false,
         };
 
-        // Remove the view
+        // Remove the view and its viewport state
         set_views.update(|v| v.retain(|view| view.id != view_id));
+        set_viewport_states.update(|vs| { vs.remove(&view_id); });
 
         // If we closed the active tab, switch to another tab
         if is_active {
@@ -158,6 +228,14 @@ pub fn App() -> impl IntoView {
             });
         }
         set_editing_view_id.set(None);
+    };
+
+    // Callback for updating viewport state of a view
+    // Update separate viewport signal to avoid triggering view updates and re-rendering TimeGraph
+    let on_viewport_change = move |view_id: Uuid, viewport_state: ViewportState| {
+        set_viewport_states.update(|vs| {
+            vs.insert(view_id, viewport_state);
+        });
     };
 
     view! {
@@ -254,7 +332,12 @@ pub fn App() -> impl IntoView {
                     }.into_view(),
                     AppTab::GraphView(view_id) => {
                         // Find the view with matching ID
-                        if let Some(view) = views.get().iter().find(|v| v.id == view_id).cloned() {
+                        if let Some(mut view) = views.get().iter().find(|v| v.id == view_id).cloned() {
+                            // Inject current viewport state from separate signal
+                            view.viewport_state = viewport_states.with(|vs| {
+                                vs.get(&view_id).cloned().unwrap_or_default()
+                            });
+
                             view! {
                                 <TimeGraph
                                     lines=lines
@@ -264,7 +347,15 @@ pub fn App() -> impl IntoView {
                                     legend=legend
                                     set_legend=set_legend
                                     view=view
+                                    train_journeys=train_journeys
+                                    selected_day=selected_day
+                                    set_selected_day=set_selected_day
+                                    raw_conflicts=raw_conflicts
+                                    raw_crossings=raw_crossings
                                     on_create_view=on_create_view
+                                    on_viewport_change=Callback::new(move |viewport_state: ViewportState| {
+                                        on_viewport_change(view_id, viewport_state);
+                                    })
                                 />
                             }.into_view()
                         } else {
