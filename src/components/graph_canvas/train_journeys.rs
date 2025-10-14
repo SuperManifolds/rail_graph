@@ -46,7 +46,7 @@ pub fn draw_train_journeys(
         ctx.set_line_width(journey.thickness / zoom_level);
         ctx.begin_path();
 
-        let mut last_visible_point: Option<(f64, f64)> = None; // (x, y)
+        let mut last_visible_point: Option<(f64, f64, usize)> = None; // (x, y, view_position)
         let mut prev_x = 0.0;
 
         for (node_idx, arrival_time, departure_time) in &journey.station_times {
@@ -64,36 +64,42 @@ pub fn draw_train_journeys(
             }
 
             // Only draw if this node is visible
-            if let Some(&idx) = station_idx {
-                let y = dims.top_margin
-                    + (idx as f64 * node_height)
-                    + (node_height / 2.0);
-
-                if let Some((last_x, last_y)) = last_visible_point {
-                    // Draw line from last visible point to this arrival
-                    ctx.move_to(last_x, last_y);
-                    ctx.line_to(arrival_x, y);
-                } else {
-                    // First visible point - start the path
-                    ctx.move_to(arrival_x, y);
-                }
-
-                // Draw horizontal segment if there's wait time and this is a station (not a junction)
-                let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
-                if !is_junction && (arrival_x - departure_x).abs() > f64::EPSILON {
-                    ctx.line_to(departure_x, y);
-                }
-
-                // Update last visible point to departure position
-                // Note: the pen is now at (departure_x, y) whether or not there was a horizontal segment
-                // because if arrival_x == departure_x, we're already there
-                last_visible_point = Some((departure_x, y));
-                prev_x = departure_x;
-            } else {
+            let Some(&idx) = station_idx else {
                 // Node is not visible - break the line
                 last_visible_point = None;
                 prev_x = departure_x;
+                continue;
+            };
+
+            let y = dims.top_margin
+                + (idx as f64 * node_height)
+                + (node_height / 2.0);
+
+            // Draw segment from previous point if applicable
+            if let Some((last_x, last_y, last_idx)) = last_visible_point {
+                // Check if this node is consecutive with the previous node in the view
+                let is_consecutive = idx == last_idx + 1;
+
+                if is_consecutive {
+                    // Draw normal diagonal segment from last visible point to this arrival
+                    ctx.move_to(last_x, last_y);
+                    ctx.line_to(arrival_x, y);
+                }
+                // If not consecutive, don't draw a segment (gap with invisible nodes)
+            } else {
+                // First visible point - start the path
+                ctx.move_to(arrival_x, y);
             }
+
+            // Draw horizontal segment if there's wait time and this is a station (not a junction)
+            let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
+            if !is_junction && (arrival_x - departure_x).abs() > f64::EPSILON {
+                ctx.line_to(departure_x, y);
+            }
+
+            // Update last visible point to departure position
+            last_visible_point = Some((departure_x, y, idx));
+            prev_x = departure_x;
         }
 
         ctx.stroke();
@@ -109,7 +115,9 @@ pub fn draw_train_journeys(
         let dot_radius = (journey.thickness * DOT_RADIUS_MULTIPLIER).max(MIN_DOT_RADIUS);
         ctx.begin_path();
 
+        let mut last_visible_idx: Option<usize> = None;
         let mut prev_x = 0.0;
+
         for (node_idx, arrival_time, departure_time) in &journey.station_times {
             // Look up the display position for this station
             let station_idx = node_positions.get(node_idx);
@@ -124,24 +132,42 @@ pub fn draw_train_journeys(
                 departure_x += dims.graph_width;
             }
 
-            // Only draw dots for visible nodes
-            if let Some(&idx) = station_idx {
-                let y = dims.top_margin
-                    + (idx as f64 * node_height)
-                    + (node_height / 2.0);
+            // Only draw dots for visible nodes that have visible segments
+            let Some(&idx) = station_idx else {
+                last_visible_idx = None;
+                prev_x = departure_x;
+                continue;
+            };
 
+            let y = dims.top_margin
+                + (idx as f64 * node_height)
+                + (node_height / 2.0);
+
+            // Check if this node has a segment connecting to previous or next visible node
+            let has_segment = if let Some(last_idx) = last_visible_idx {
+                idx == last_idx + 1
+            } else {
+                false
+            };
+
+            // Only draw dots if this node has at least one connecting segment
+            // or if it's a station (not junction) with wait time (horizontal segment)
+            let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
+            let has_wait_time = !is_junction && (arrival_x - departure_x).abs() > f64::EPSILON;
+
+            if has_segment || has_wait_time {
                 // Add arrival dot to path (move_to starts a new subpath)
                 ctx.move_to(arrival_x + dot_radius / zoom_level, y);
                 let _ = ctx.arc(arrival_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
 
                 // Add departure dot if different from arrival and this is a station (not a junction)
-                let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
-                if !is_junction && (arrival_x - departure_x).abs() > f64::EPSILON {
+                if has_wait_time {
                     ctx.move_to(departure_x + dot_radius / zoom_level, y);
                     let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
                 }
             }
 
+            last_visible_idx = Some(idx);
             prev_x = departure_x;
         }
 
