@@ -269,11 +269,11 @@ impl GraphView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{Track, TrackDirection};
+    use crate::models::railway_graph::tracks::Tracks;
 
     #[test]
-    fn test_calculate_path() {
-        // This test would require a full graph setup, so it's more of an integration test
-        // For now, just verify the structure compiles
+    fn test_view_structure() {
         let view = GraphView {
             id: Uuid::new_v4(),
             name: "Test".to_string(),
@@ -283,5 +283,70 @@ mod tests {
 
         assert_eq!(view.name, "Test");
         assert!(view.station_range.is_some());
+    }
+
+    #[test]
+    fn test_default_main_line_empty_graph() {
+        let graph = RailwayGraph::new();
+        let view = GraphView::default_main_line(&graph);
+
+        assert_eq!(view.name, "Main Line");
+        assert_eq!(view.station_range, None);
+    }
+
+    #[test]
+    fn test_default_main_line_with_stations() {
+        let mut graph = RailwayGraph::new();
+        let s1 = graph.add_or_get_station("A".to_string());
+        let s2 = graph.add_or_get_station("B".to_string());
+        graph.add_track(s1, s2, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let view = GraphView::default_main_line(&graph);
+
+        assert_eq!(view.name, "Main Line");
+        assert!(view.station_range.is_some());
+        let (from, to) = view.station_range.unwrap();
+        assert!(from == s1 || from == s2);
+        assert!(to == s1 || to == s2);
+        assert_ne!(from, to);
+    }
+
+    #[test]
+    fn test_calculate_path_with_graph() {
+        let mut graph = RailwayGraph::new();
+        let s1 = graph.add_or_get_station("A".to_string());
+        let s2 = graph.add_or_get_station("B".to_string());
+        let s3 = graph.add_or_get_station("C".to_string());
+        graph.add_track(s1, s2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s2, s3, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let view = GraphView {
+            id: Uuid::new_v4(),
+            name: "Test".to_string(),
+            viewport_state: ViewportState::default(),
+            station_range: Some((s1, s3)),
+        };
+
+        let path = view.calculate_path(&graph);
+        assert!(path.is_some());
+        let path = path.unwrap();
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[0], s1);
+        assert_eq!(path[1], s2);
+        assert_eq!(path[2], s3);
+    }
+
+    #[test]
+    fn test_calculate_path_no_station_range() {
+        let graph = RailwayGraph::new();
+        let view = GraphView {
+            id: Uuid::new_v4(),
+            name: "Test".to_string(),
+            viewport_state: ViewportState::default(),
+            station_range: None,
+        };
+
+        let path = view.calculate_path(&graph);
+        assert_eq!(path, None);
     }
 }
