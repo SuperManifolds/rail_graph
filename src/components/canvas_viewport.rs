@@ -152,13 +152,12 @@ fn apply_normal_zoom(
     // Check if we hit the minimum zoom cap
     let hit_min_cap = new_zoom == min && old_zoom * zoom_factor < min;
 
+    let new_pan_x = mouse_x - (mouse_x - pan_x) * (new_zoom / old_zoom);
     let (new_pan_x, new_pan_y) = if hit_min_cap && canvas_dimensions.is_some() {
         // Center the content vertically when hitting the zoom cap, keep horizontal pan
-        let new_pan_x = mouse_x - (mouse_x - pan_x) * (new_zoom / old_zoom);
         (new_pan_x, 0.0)
     } else {
         // Normal zoom-around-cursor behavior
-        let new_pan_x = mouse_x - (mouse_x - pan_x) * (new_zoom / old_zoom);
         let new_pan_y = mouse_y - (mouse_y - pan_y) * (new_zoom / old_zoom);
         (new_pan_x, new_pan_y)
     };
