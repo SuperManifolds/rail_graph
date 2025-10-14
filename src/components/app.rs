@@ -60,10 +60,18 @@ pub fn App() -> impl IntoView {
     create_effect(move |_| {
         spawn_local(async move {
             let Ok(project) = load_project_from_storage().await else {
+                let empty_graph = RailwayGraph::new();
                 set_lines.set(Vec::new());
-                set_graph.set(RailwayGraph::new());
+                set_graph.set(empty_graph.clone());
                 set_legend.set(Legend::default());
-                set_views.set(Vec::new());
+
+                // Create default Main Line view even for empty graph
+                let default_view = GraphView::default_main_line(&empty_graph);
+                let view_id = default_view.id;
+                let viewport = default_view.viewport_state.clone();
+                set_viewport_states.update(|vs| { vs.insert(view_id, viewport); });
+                set_active_tab.set(AppTab::GraphView(view_id));
+                set_views.set(vec![default_view]);
                 set_initial_load_complete.set(true);
                 return;
             };
@@ -75,9 +83,7 @@ pub fn App() -> impl IntoView {
             // Ensure we have at least one view (create default "Main Line" view)
             let mut views = project.views.clone();
             if views.is_empty() {
-                if let Some(default_view) = GraphView::default_main_line(&project.graph) {
-                    views.push(default_view);
-                }
+                views.push(GraphView::default_main_line(&project.graph));
             }
 
             // Extract viewport states into separate signal

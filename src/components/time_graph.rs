@@ -110,7 +110,8 @@ pub fn TimeGraph(
         Signal::derive(move || {
             let all_conflicts = raw_conflicts.get();
             if let Some(ref graph_view) = view {
-                graph_view.filter_conflicts(&all_conflicts)
+                let current_graph = graph.get();
+                graph_view.filter_conflicts(&all_conflicts, &current_graph)
             } else {
                 all_conflicts
             }

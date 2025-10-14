@@ -174,8 +174,11 @@ pub fn LineControl(
                                         let current_graph = graph.get();
                                         move |_| {
                                             let path = line.get_station_path(&current_graph);
-                                            let view = GraphView::new(line.id.clone(), path);
-                                            on_create_view.call(view);
+                                            if let (Some(&from), Some(&to)) = (path.first(), path.last()) {
+                                                if let Ok(view) = GraphView::from_station_range(line.id.clone(), from, to, &current_graph) {
+                                                    on_create_view.call(view);
+                                                }
+                                            }
                                         }
                                     }
                                     title="Open line in new view"
