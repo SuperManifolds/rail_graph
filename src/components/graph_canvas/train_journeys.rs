@@ -76,13 +76,12 @@ pub fn draw_train_journeys(
                 + (node_height / 2.0);
 
             // Draw segment from previous point if applicable
-            if let Some((last_x, last_y, last_idx)) = last_visible_point {
-                // Check if this node is consecutive with the previous node in the view
-                let is_consecutive = idx == last_idx + 1;
+            if let Some(last_visible_idx) = last_visible_point.map(|(_, _, idx)| idx) {
+                // Check if this node is consecutive with the previous node in the view (forward or backward)
+                let is_consecutive = idx == last_visible_idx + 1 || idx + 1 == last_visible_idx;
 
                 if is_consecutive {
                     // Draw normal diagonal segment from last visible point to this arrival
-                    ctx.move_to(last_x, last_y);
                     ctx.line_to(arrival_x, y);
                 }
                 // If not consecutive, don't draw a segment (gap with invisible nodes)
@@ -145,7 +144,7 @@ pub fn draw_train_journeys(
 
             // Check if this node has a segment connecting to previous or next visible node
             let has_segment = if let Some(last_idx) = last_visible_idx {
-                idx == last_idx + 1
+                idx == last_idx + 1 || idx + 1 == last_idx
             } else {
                 false
             };

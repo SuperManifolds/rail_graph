@@ -129,6 +129,67 @@ impl TrainJourney {
         journeys
     }
 
+    fn determine_start_node(
+        first_segment: &crate::models::RouteSegment,
+        second_segment: Option<&crate::models::RouteSegment>,
+        graph: &RailwayGraph,
+    ) -> Option<petgraph::stable_graph::NodeIndex> {
+        let first_edge_idx = petgraph::graph::EdgeIndex::new(first_segment.edge_index);
+        let (from1, to1) = graph.get_track_endpoints(first_edge_idx)?;
+
+        let Some(second_seg) = second_segment else {
+            return Some(from1);
+        };
+
+        let second_edge_idx = petgraph::graph::EdgeIndex::new(second_seg.edge_index);
+        let Some((from2, to2)) = graph.get_track_endpoints(second_edge_idx) else {
+            return Some(from1);
+        };
+
+        // Start from the endpoint NOT shared with the second edge
+        if from1 == from2 || from1 == to2 {
+            Some(to1)
+        } else {
+            Some(from1)
+        }
+    }
+
+    fn build_route_nodes(
+        route: &[crate::models::RouteSegment],
+        graph: &RailwayGraph,
+    ) -> Vec<Option<petgraph::stable_graph::NodeIndex>> {
+        let mut route_nodes: Vec<Option<petgraph::stable_graph::NodeIndex>> = Vec::with_capacity(route.len() + 1);
+
+        // Determine the starting node
+        if let Some(first_segment) = route.first() {
+            let start_node = Self::determine_start_node(first_segment, route.get(1), graph);
+            route_nodes.push(start_node);
+        }
+
+        // Build remaining nodes by following connections
+        for segment in route {
+            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
+            let Some(endpoints) = graph.get_track_endpoints(edge_idx) else {
+                route_nodes.push(None);
+                continue;
+            };
+
+            let Some(Some(prev_node)) = route_nodes.last() else {
+                route_nodes.push(Some(endpoints.1));
+                continue;
+            };
+
+            let next_node = if endpoints.0 == *prev_node {
+                endpoints.1
+            } else {
+                endpoints.0
+            };
+            route_nodes.push(Some(next_node));
+        }
+
+        route_nodes
+    }
+
     fn generate_forward_journeys(
         journeys: &mut HashMap<uuid::Uuid, TrainJourney>,
         line: &Line,
@@ -137,8 +198,6 @@ impl TrainJourney {
         day_end: NaiveDateTime,
         _station_map: &HashMap<&str, usize>,
     ) {
-        use petgraph::stable_graph::NodeIndex;
-
         if line.forward_route.is_empty() {
             return;
         }
@@ -149,19 +208,8 @@ impl TrainJourney {
         };
 
         // Pre-compute route node indices
-        let mut route_nodes: Vec<Option<NodeIndex>> = Vec::with_capacity(line.forward_route.len() + 1);
+        let route_nodes = Self::build_route_nodes(&line.forward_route, graph);
 
-        // Add first node
-        if let Some(segment) = line.forward_route.first() {
-            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-            route_nodes.push(graph.get_track_endpoints(edge_idx).map(|(from, _)| from));
-        }
-
-        // Add remaining nodes
-        for segment in &line.forward_route {
-            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-            route_nodes.push(graph.get_track_endpoints(edge_idx).map(|(_, to)| to));
-        }
 
         let mut journey_count = 0;
         let line_id = line.id.clone();
@@ -365,8 +413,6 @@ impl TrainJourney {
         day_end: NaiveDateTime,
         _station_map: &HashMap<&str, usize>,
     ) {
-        use petgraph::stable_graph::NodeIndex;
-
         if line.return_route.is_empty() {
             return;
         }
@@ -377,19 +423,8 @@ impl TrainJourney {
         };
 
         // Pre-compute route node indices
-        let mut route_nodes: Vec<Option<NodeIndex>> = Vec::with_capacity(line.return_route.len() + 1);
+        let route_nodes = Self::build_route_nodes(&line.return_route, graph);
 
-        // Add first node (destination of first edge)
-        if let Some(segment) = line.return_route.first() {
-            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-            route_nodes.push(graph.get_track_endpoints(edge_idx).map(|(_, to)| to));
-        }
-
-        // Add remaining nodes (sources of edges)
-        for segment in &line.return_route {
-            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-            route_nodes.push(graph.get_track_endpoints(edge_idx).map(|(from, _)| from));
-        }
 
         let mut return_journey_count = 0;
         let line_id = line.id.clone();
