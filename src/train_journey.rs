@@ -1,4 +1,4 @@
-use crate::models::{Line, RailwayGraph, ScheduleMode, Stations, Tracks, DaysOfWeek};
+use crate::models::{Line, RailwayGraph, ScheduleMode, Tracks, DaysOfWeek};
 use crate::constants::{BASE_DATE, GENERATION_END_HOUR};
 use chrono::{Duration, NaiveDateTime, Timelike, Weekday};
 use std::collections::HashMap;
@@ -51,14 +51,6 @@ impl TrainJourney {
     /// * `selected_day` - Optional day of week filter. If provided, only generates journeys for lines operating on that day
     #[must_use]
     pub fn generate_journeys(lines: &[Line], graph: &RailwayGraph, selected_day: Option<Weekday>) -> HashMap<uuid::Uuid, TrainJourney> {
-        // Build station name → index map for fast lookups
-        let stations = graph.get_all_stations_ordered();
-        let station_map: HashMap<&str, usize> = stations
-            .iter()
-            .enumerate()
-            .map(|(idx, (_, station))| (station.name.as_str(), idx))
-            .collect();
-
         let mut journeys = HashMap::new();
 
         // Determine which days to simulate
@@ -99,14 +91,14 @@ impl TrainJourney {
                 match line.schedule_mode {
                     ScheduleMode::Auto => {
                         // Generate forward journeys
-                        Self::generate_forward_journeys(&mut journeys, line, graph, current_date, day_end, &station_map);
+                        Self::generate_forward_journeys(&mut journeys, line, graph, current_date, day_end);
 
                         // Generate return journeys
-                        Self::generate_return_journeys(&mut journeys, line, graph, current_date, day_end, &station_map);
+                        Self::generate_return_journeys(&mut journeys, line, graph, current_date, day_end);
                     }
                     ScheduleMode::Manual => {
                         // Generate journeys from manual departures
-                        Self::generate_manual_journeys(&mut journeys, line, graph, current_date, day_filter, &station_map);
+                        Self::generate_manual_journeys(&mut journeys, line, graph, current_date, day_filter);
                     }
                 }
             }
@@ -182,7 +174,6 @@ impl TrainJourney {
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
         day_end: NaiveDateTime,
-        _station_map: &HashMap<&str, usize>,
     ) {
         if line.forward_route.is_empty() {
             return;
@@ -263,7 +254,6 @@ impl TrainJourney {
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
         day_filter: DaysOfWeek,
-        station_map: &HashMap<&str, usize>,
     ) {
         for manual_dep in &line.manual_departures {
             // Filter by day of week
@@ -287,7 +277,6 @@ impl TrainJourney {
                 departure_time,
                 from_idx,
                 to_idx,
-                station_map,
             ) {
                 journeys.insert(journey.id, journey);
                 continue;
@@ -301,7 +290,6 @@ impl TrainJourney {
                 departure_time,
                 from_idx,
                 to_idx,
-                station_map,
             ) {
                 journeys.insert(journey.id, journey);
             }
@@ -315,7 +303,6 @@ impl TrainJourney {
         departure_time: NaiveDateTime,
         from_idx: petgraph::graph::NodeIndex,
         to_idx: petgraph::graph::NodeIndex,
-        _station_map: &HashMap<&str, usize>,
     ) -> Option<TrainJourney> {
         
 
@@ -397,7 +384,6 @@ impl TrainJourney {
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
         day_end: NaiveDateTime,
-        _station_map: &HashMap<&str, usize>,
     ) {
         if line.return_route.is_empty() {
             return;
@@ -476,7 +462,7 @@ impl TrainJourney {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{RouteSegment, RailwayGraph, Line, ScheduleMode, Track, TrackDirection};
+    use crate::models::{RouteSegment, RailwayGraph, Line, ScheduleMode, Track, TrackDirection, Stations, Tracks};
 
     const TEST_COLOR: &str = "#FF0000";
     const TEST_THICKNESS: f64 = 2.0;
