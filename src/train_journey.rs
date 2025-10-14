@@ -51,14 +51,6 @@ impl TrainJourney {
     /// * `selected_day` - Optional day of week filter. If provided, only generates journeys for lines operating on that day
     #[must_use]
     pub fn generate_journeys(lines: &[Line], graph: &RailwayGraph, selected_day: Option<Weekday>) -> HashMap<uuid::Uuid, TrainJourney> {
-        #[cfg(target_arch = "wasm32")]
-        let (performance, start) = {
-            let window = web_sys::window().expect("should have a window");
-            let performance = window.performance().expect("should have performance");
-            let start = performance.now();
-            (performance, start)
-        };
-
         // Build station name → index map for fast lookups
         let stations = graph.get_all_stations_ordered();
         let station_map: HashMap<&str, usize> = stations
@@ -118,12 +110,6 @@ impl TrainJourney {
                     }
                 }
             }
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            let duration = performance.now() - start;
-            web_sys::console::log_1(&format!("Journey generation took: {:.2}ms ({} journeys)", duration, journeys.len()).into());
         }
 
         journeys

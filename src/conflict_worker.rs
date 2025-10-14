@@ -47,34 +47,7 @@ impl Worker for ConflictWorker {
     }
 
     fn received(&mut self, scope: &WorkerScope<Self>, msg: Self::Input, id: HandlerId) {
-        #[cfg(target_arch = "wasm32")]
-        {
-            use web_sys::console;
-            let start = web_sys::window()
-                .and_then(|w| w.performance())
-                .map(|p| p.now());
-
-            let (conflicts, crossings) = detect_line_conflicts(&msg.journeys, &msg.graph);
-
-            if let Some(start_time) = start {
-                if let Some(performance) = web_sys::window().and_then(|w| w.performance()) {
-                    let duration = performance.now() - start_time;
-                    console::log_1(&format!(
-                        "Worker conflict detection: {:.2}ms ({} conflicts, {} crossings)",
-                        duration,
-                        conflicts.len(),
-                        crossings.len()
-                    ).into());
-                }
-            }
-
-            scope.respond(id, ConflictResponse { conflicts, crossings });
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let (conflicts, crossings) = detect_line_conflicts(&msg.journeys, &msg.graph);
-            scope.respond(id, ConflictResponse { conflicts, crossings });
-        }
+        let (conflicts, crossings) = detect_line_conflicts(&msg.journeys, &msg.graph);
+        scope.respond(id, ConflictResponse { conflicts, crossings });
     }
 }

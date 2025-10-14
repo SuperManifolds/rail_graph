@@ -282,9 +282,6 @@ fn detect_conflicts_sweep_line(
         eprintln!("Sort time: {sort_time:?}");
     }
 
-    #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&format!("Using sweep-line algorithm for {} journeys", journey_times.len()).into());
-
     let mut comparisons = 0;
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -354,10 +351,6 @@ fn detect_conflicts_sweep_line(
         eprintln!("Comparison loop time: {comparison_time:?}");
         eprintln!("Made {comparisons} comparisons (vs {} for naive O(n²))", train_journeys.len() * (train_journeys.len() - 1) / 2);
     }
-
-    #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&format!("Sweep-line made {comparisons} comparisons (vs {} for naive O(n²))",
-        train_journeys.len() * (train_journeys.len() - 1) / 2).into());
 }
 
 fn check_journey_pair(
