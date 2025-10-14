@@ -13,6 +13,9 @@ const PASSING_LOOP_COLOR: &str = "#888";
 const JUNCTION_SIZE: f64 = 8.4;
 const NODE_FILL_COLOR: &str = "#2a2a2a";
 const LABEL_COLOR: &str = "#fff";
+const SELECTION_RING_COLOR: &str = "#ffaa00";
+const SELECTION_RING_WIDTH: f64 = 3.0;
+const SELECTION_RING_OFFSET: f64 = 4.0;
 
 type TrackSegment = ((f64, f64), (f64, f64));
 
@@ -147,6 +150,7 @@ fn draw_station_nodes(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
     zoom: f64,
+    selected_stations: &[NodeIndex],
 ) -> Vec<(NodeIndex, (f64, f64), f64)> {
     let mut node_positions = Vec::new();
 
@@ -169,6 +173,15 @@ fn draw_station_nodes(
             let _ = ctx.arc(pos.0, pos.1, radius, 0.0, std::f64::consts::PI * 2.0);
             ctx.fill();
             ctx.stroke();
+
+            // Draw selection ring if this station is selected
+            if selected_stations.contains(&idx) {
+                ctx.set_stroke_style_str(SELECTION_RING_COLOR);
+                ctx.set_line_width(SELECTION_RING_WIDTH / zoom);
+                ctx.begin_path();
+                let _ = ctx.arc(pos.0, pos.1, radius + SELECTION_RING_OFFSET, 0.0, std::f64::consts::PI * 2.0);
+                ctx.stroke();
+            }
 
             node_positions.push((idx, pos, radius));
         } else if graph.is_junction(idx) {
@@ -294,11 +307,12 @@ pub fn draw_stations(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
     zoom: f64,
+    selected_stations: &[NodeIndex],
 ) {
     let font_size = 14.0 / zoom;
     let track_segments = track_renderer::get_track_segments(graph);
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom);
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations);
 
     // Calculate optimal label positions using BFS traversal
     let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();

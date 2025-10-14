@@ -4,6 +4,7 @@ use uuid::Uuid;
 use std::collections::HashSet;
 use super::RailwayGraph;
 use super::railway_graph::stations::Stations;
+use super::railway_graph::routes::Routes;
 use crate::train_journey::TrainJourney;
 use crate::conflict::Conflict;
 
@@ -41,22 +42,6 @@ impl Default for ViewportState {
             pan_offset_y: 0.0,
         }
     }
-}
-
-/// Find the predecessor node in a shortest path
-fn find_predecessor(
-    graph: &RailwayGraph,
-    distances: &std::collections::HashMap<NodeIndex, i32>,
-    current: NodeIndex,
-) -> Result<NodeIndex, String> {
-    for neighbor in graph.graph.neighbors_undirected(current) {
-        if let (Some(&dist), Some(&current_dist)) = (distances.get(&neighbor), distances.get(&current)) {
-            if dist + 1 == current_dist {
-                return Ok(neighbor);
-            }
-        }
-    }
-    Err("Failed to reconstruct path".to_string())
 }
 
 /// Find the longest simple path in the graph (the "main line")
@@ -131,31 +116,30 @@ impl GraphView {
         to: NodeIndex,
         graph: &RailwayGraph,
     ) -> Result<Self, String> {
-        // Use Dijkstra to find shortest path
-        use petgraph::algo::dijkstra;
+        // Use existing pathfinding that respects track directions
+        let edge_path = graph.find_path_between_nodes(from, to)
+            .ok_or_else(|| "No path exists between the selected stations".to_string())?;
 
-        // Run Dijkstra from 'from' node
-        let distances = dijkstra(&graph.graph, from, Some(to), |_| 1);
+        // Convert edge path to node path
+        let mut path = vec![from];
+        let mut current = from;
 
-        // Check if 'to' is reachable
-        if !distances.contains_key(&to) {
-            return Err("No path exists between the selected stations".to_string());
+        for edge_idx in edge_path {
+            if let Some(edge) = graph.graph.edge_endpoints(edge_idx) {
+                // Determine which endpoint is the next node
+                let next = if edge.0 == current {
+                    edge.1
+                } else if edge.1 == current {
+                    edge.0
+                } else {
+                    return Err("Path reconstruction failed: edge doesn't connect to current node".to_string());
+                };
+                path.push(next);
+                current = next;
+            } else {
+                return Err("Path reconstruction failed: edge not found".to_string());
+            }
         }
-
-        // Reconstruct the path
-        let mut path = vec![to];
-        let mut current = to;
-
-        // Build path backwards from 'to' to 'from'
-        while current != from {
-            // Find the predecessor with minimum distance
-            let predecessor = find_predecessor(graph, &distances, current)?;
-            path.push(predecessor);
-            current = predecessor;
-        }
-
-        // Reverse to get path from 'from' to 'to'
-        path.reverse();
 
         Ok(Self {
             id: Uuid::new_v4(),

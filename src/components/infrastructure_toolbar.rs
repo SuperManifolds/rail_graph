@@ -6,6 +6,7 @@ pub enum EditMode {
     None,
     AddingTrack,
     AddingJunction,
+    CreatingView,
 }
 
 #[component]
@@ -60,6 +61,19 @@ pub fn InfrastructureToolbar(
             >
                 <i class="fa-solid fa-diamond"></i>
                 " Add Junction"
+            </button>
+            <button
+                class=move || if edit_mode.get() == EditMode::CreatingView { "toolbar-button active" } else { "toolbar-button" }
+                on:click=move |_| {
+                    if edit_mode.get() == EditMode::CreatingView {
+                        set_edit_mode.set(EditMode::None);
+                    } else {
+                        set_edit_mode.set(EditMode::CreatingView);
+                    }
+                }
+            >
+                <i class="fa-solid fa-eye"></i>
+                " Create View"
             </button>
         </div>
     }

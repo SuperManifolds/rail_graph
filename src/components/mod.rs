@@ -3,6 +3,7 @@
 pub mod add_station;
 pub mod canvas_viewport;
 pub mod confirmation_dialog;
+pub mod create_view_dialog;
 pub mod delete_station_confirmation;
 pub mod edit_junction;
 pub mod edit_station;

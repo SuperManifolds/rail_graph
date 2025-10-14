@@ -328,7 +328,13 @@ pub fn App() -> impl IntoView {
             >
                 {move || match active_tab.get() {
                     AppTab::Infrastructure => view! {
-                        <InfrastructureView graph=graph set_graph=set_graph lines=lines set_lines=set_lines />
+                        <InfrastructureView
+                            graph=graph
+                            set_graph=set_graph
+                            lines=lines
+                            set_lines=set_lines
+                            on_create_view=on_create_view
+                        />
                     }.into_view(),
                     AppTab::GraphView(view_id) => {
                         // Find the view with matching ID
