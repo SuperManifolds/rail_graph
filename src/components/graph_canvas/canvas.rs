@@ -379,7 +379,7 @@ pub fn GraphCanvas(
                     Some(0.1)
                 };
 
-                canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport, min_zoom);
+                canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport, min_zoom, Some((graph_width, graph_height)));
             }
         }
     };

@@ -88,6 +88,7 @@ pub fn handle_zoom(
     mouse_y: f64,
     viewport: &ViewportSignals,
     min_zoom: Option<f64>,
+    canvas_dimensions: Option<(f64, f64)>,
 ) {
     let delta = ev.delta_y();
     let shift_pressed = ev.shift_key();
@@ -108,7 +109,7 @@ pub fn handle_zoom(
     } else if !shift_pressed && !alt_pressed {
         // Normal zoom
         let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
-        apply_normal_zoom(zoom_factor, mouse_x, mouse_y, viewport, min_zoom);
+        apply_normal_zoom(zoom_factor, mouse_x, mouse_y, viewport, min_zoom, canvas_dimensions);
     }
 }
 
@@ -139,6 +140,7 @@ fn apply_normal_zoom(
     mouse_y: f64,
     viewport: &ViewportSignals,
     min_zoom: Option<f64>,
+    canvas_dimensions: Option<(f64, f64)>,
 ) {
     let old_zoom = viewport.zoom_level.get();
     let min = min_zoom.unwrap_or(0.1);
@@ -146,8 +148,20 @@ fn apply_normal_zoom(
 
     let pan_x = viewport.pan_offset_x.get();
     let pan_y = viewport.pan_offset_y.get();
-    let new_pan_x = mouse_x - (mouse_x - pan_x) * (new_zoom / old_zoom);
-    let new_pan_y = mouse_y - (mouse_y - pan_y) * (new_zoom / old_zoom);
+
+    // Check if we hit the minimum zoom cap
+    let hit_min_cap = new_zoom == min && old_zoom * zoom_factor < min;
+
+    let (new_pan_x, new_pan_y) = if hit_min_cap && canvas_dimensions.is_some() {
+        // Center the content vertically when hitting the zoom cap, keep horizontal pan
+        let new_pan_x = mouse_x - (mouse_x - pan_x) * (new_zoom / old_zoom);
+        (new_pan_x, 0.0)
+    } else {
+        // Normal zoom-around-cursor behavior
+        let new_pan_x = mouse_x - (mouse_x - pan_x) * (new_zoom / old_zoom);
+        let new_pan_y = mouse_y - (mouse_y - pan_y) * (new_zoom / old_zoom);
+        (new_pan_x, new_pan_y)
+    };
 
     batch(move || {
         viewport.set_zoom_level.set(new_zoom);
