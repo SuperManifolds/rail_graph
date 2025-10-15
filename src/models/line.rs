@@ -70,6 +70,8 @@ pub struct ManualDeparture {
     pub to_station: NodeIndex,
     #[serde(default)]
     pub days_of_week: DaysOfWeek,
+    #[serde(default)]
+    pub train_number: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -98,6 +100,8 @@ pub struct Line {
     pub return_route: Vec<RouteSegment>,
     #[serde(default = "default_sync_routes")]
     pub sync_routes: bool,
+    #[serde(default = "default_train_number_format")]
+    pub auto_train_number_format: String,
 }
 
 fn default_visible() -> bool {
@@ -110,6 +114,10 @@ fn default_thickness() -> f64 {
 
 fn default_sync_routes() -> bool {
     true
+}
+
+fn default_train_number_format() -> String {
+    "{line} {seq:04}".to_string()
 }
 
 impl Line {
@@ -135,6 +143,7 @@ impl Line {
                     forward_route: Vec::new(),
                     return_route: Vec::new(),
                     sync_routes: true,
+                    auto_train_number_format: default_train_number_format(),
                 }
             })
             .collect()
@@ -615,6 +624,7 @@ mod tests {
             forward_route: vec![create_test_segment(1), create_test_segment(2)],
             return_route: vec![create_test_segment(3)],
             sync_routes: true,
+                auto_train_number_format: "{line} {seq:04}".to_string(),
         };
 
         assert!(line.uses_edge(1));
@@ -639,6 +649,7 @@ mod tests {
             forward_route: vec![create_test_segment(1), create_test_segment(2)],
             return_route: vec![],
             sync_routes: true,
+                auto_train_number_format: "{line} {seq:04}".to_string(),
         };
 
         assert!(line.uses_any_edge(&[1, 5, 6]));
@@ -666,6 +677,7 @@ mod tests {
             ],
             return_route: vec![],
             sync_routes: true,
+                auto_train_number_format: "{line} {seq:04}".to_string(),
         };
 
         // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
@@ -704,6 +716,7 @@ mod tests {
             ],
             return_route: vec![],
             sync_routes: true,
+                auto_train_number_format: "{line} {seq:04}".to_string(),
         };
 
         // Remove edge 1 but no bypass mapping
@@ -750,6 +763,7 @@ mod tests {
             }],
             return_route: vec![],
             sync_routes: true,
+                auto_train_number_format: "{line} {seq:04}".to_string(),
         };
 
         line.fix_track_indices_after_change(edge.index(), 2, &graph);
@@ -833,6 +847,7 @@ mod tests {
                 create_test_segment(5),
             ],
             sync_routes: true,
+                auto_train_number_format: "{line} {seq:04}".to_string(),
         };
 
         // Split edge 10 into edges 20 and 21
@@ -898,6 +913,7 @@ mod tests {
             ],
             return_route: vec![],
             sync_routes: true,
+                auto_train_number_format: "{line} {seq:04}".to_string(),
         };
 
         // Delete the direct edge B -> C
@@ -938,6 +954,7 @@ mod tests {
             forward_route: vec![create_test_segment(e1.index())],
             return_route: vec![],
             sync_routes: true,
+                auto_train_number_format: "{line} {seq:04}".to_string(),
         };
 
         // Delete the edge

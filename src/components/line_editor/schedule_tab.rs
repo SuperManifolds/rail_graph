@@ -6,7 +6,7 @@ use crate::components::{
     time_input::TimeInput,
 };
 use crate::models::{Line, ScheduleMode, RailwayGraph, DaysOfWeek};
-use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_checked, SignalGetUntracked, SignalSet, Show};
+use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_checked, event_target_value, SignalGetUntracked, SignalSet, Show};
 use std::rc::Rc;
 
 #[component]
@@ -48,6 +48,27 @@ pub fn ScheduleTab(
                         let on_save = on_save.get_value();
                         move || {
                             view! {
+                                <div class="form-group">
+                                    <label>"Train Number Format"</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g., {line} {seq:04}"
+                                        value=move || edited_line.get().map(|l| l.auto_train_number_format).unwrap_or_default()
+                                        on:input={
+                                            let on_save = on_save.clone();
+                                            move |ev| {
+                                                let format = event_target_value(&ev);
+                                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                                    updated_line.auto_train_number_format = format;
+                                                    set_edited_line.set(Some(updated_line.clone()));
+                                                    on_save(updated_line);
+                                                }
+                                            }
+                                        }
+                                    />
+                                    <small class="help-text">"Format: {{line}} for line ID, {{seq:04}} for sequence number"</small>
+                                </div>
+
                                 <div class="form-group">
                                     <label>"Operating days"</label>
                                     <DaysOfWeekSelector

@@ -5,6 +5,17 @@ use std::collections::HashMap;
 
 const MAX_JOURNEYS_PER_LINE: usize = 100; // Limit to prevent performance issues
 
+/// Generate a train number from a format string
+/// Supports: {line} for line ID, {seq:04} for sequence number with padding
+fn generate_train_number(format: &str, line_id: &str, sequence: usize) -> String {
+    format
+        .replace("{line}", line_id)
+        .replace("{seq:04}", &format!("{sequence:04}"))
+        .replace("{seq:03}", &format!("{sequence:03}"))
+        .replace("{seq:02}", &format!("{sequence:02}"))
+        .replace("{seq}", &sequence.to_string())
+}
+
 /// Convert `chrono::Weekday` to our `DaysOfWeek` bitflag
 fn weekday_to_days_of_week(weekday: Weekday) -> DaysOfWeek {
     match weekday {
@@ -35,6 +46,7 @@ pub struct JourneySegment {
 pub struct TrainJourney {
     pub id: uuid::Uuid,
     pub line_id: String,
+    pub train_number: String,
     pub departure_time: NaiveDateTime,
     pub station_times: Vec<(petgraph::stable_graph::NodeIndex, NaiveDateTime, NaiveDateTime)>, // (station_node, arrival_time, departure_time)
     pub segments: Vec<JourneySegment>, // Track and platform info for each segment
@@ -228,9 +240,11 @@ impl TrainJourney {
 
             if station_times.len() >= 2 {
                 let id = uuid::Uuid::new_v4();
+                let train_number = generate_train_number(&line.auto_train_number_format, &line_id, journey_count + 1);
                 journeys.insert(id, TrainJourney {
                     id,
                     line_id: line_id.clone(),
+                    train_number,
                     departure_time,
                     station_times,
                     segments,
@@ -255,6 +269,7 @@ impl TrainJourney {
         current_date: chrono::NaiveDate,
         day_filter: DaysOfWeek,
     ) {
+        let mut sequence = 1;
         for manual_dep in &line.manual_departures {
             // Filter by day of week
             if !manual_dep.days_of_week.contains(day_filter) {
@@ -269,6 +284,10 @@ impl TrainJourney {
             let from_idx = manual_dep.from_station;
             let to_idx = manual_dep.to_station;
 
+            // Use custom train number if provided, otherwise generate one
+            let train_number = manual_dep.train_number.clone()
+                .unwrap_or_else(|| generate_train_number(&line.auto_train_number_format, &line.id, sequence));
+
             // Try forward route first
             if let Some(journey) = Self::generate_manual_journey_for_route(
                 &line.forward_route,
@@ -277,8 +296,10 @@ impl TrainJourney {
                 departure_time,
                 from_idx,
                 to_idx,
+                &train_number,
             ) {
                 journeys.insert(journey.id, journey);
+                sequence += 1;
                 continue;
             }
 
@@ -290,8 +311,10 @@ impl TrainJourney {
                 departure_time,
                 from_idx,
                 to_idx,
+                &train_number,
             ) {
                 journeys.insert(journey.id, journey);
+                sequence += 1;
             }
         }
     }
@@ -303,6 +326,7 @@ impl TrainJourney {
         departure_time: NaiveDateTime,
         from_idx: petgraph::graph::NodeIndex,
         to_idx: petgraph::graph::NodeIndex,
+        train_number: &str,
     ) -> Option<TrainJourney> {
         
 
@@ -367,6 +391,7 @@ impl TrainJourney {
             Some(TrainJourney {
                 id: uuid::Uuid::new_v4(),
                 line_id: line.id.clone(),
+                train_number: train_number.to_string(),
                 departure_time,
                 station_times,
                 segments,
@@ -438,9 +463,11 @@ impl TrainJourney {
 
             if station_times.len() >= 2 {
                 let id = uuid::Uuid::new_v4();
+                let train_number = generate_train_number(&line.auto_train_number_format, &line_id, return_journey_count + 1);
                 journeys.insert(id, TrainJourney {
                     id,
                     line_id: line_id.clone(),
+                    train_number,
                     departure_time: return_departure_time,
                     station_times,
                     segments,
@@ -518,6 +545,7 @@ mod tests {
             days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             sync_routes: true,
+            auto_train_number_format: "{line} {seq:04}".to_string(),
         }
     }
 
@@ -776,6 +804,7 @@ mod tests {
                 from_station: idx1,
                 to_station: idx2,
                 days_of_week: DaysOfWeek::MONDAY | DaysOfWeek::WEDNESDAY | DaysOfWeek::FRIDAY,
+                train_number: None,
             },
         ];
 
@@ -838,6 +867,7 @@ mod tests {
             days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             sync_routes: true,
+            auto_train_number_format: "{line} {seq:04}".to_string(),
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
