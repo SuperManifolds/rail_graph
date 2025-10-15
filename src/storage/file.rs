@@ -36,7 +36,7 @@ pub fn deserialize_project_from_bytes(bytes: &[u8]) -> Result<Project, String> {
         .map_err(|_| "Invalid version header")?;
     let version = f32::from_le_bytes(version_bytes);
 
-    if (version - 1.0).abs() >= f32::EPSILON {
+    if (version - CURRENT_PROJECT_VERSION).abs() >= f32::EPSILON {
         return Err(format!("Unsupported project version: {version}"));
     }
 
