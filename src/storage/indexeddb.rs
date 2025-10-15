@@ -1,5 +1,5 @@
 use crate::models::{Project, ProjectMetadata};
-use crate::storage::Storage;
+use crate::storage::{Storage, CURRENT_PROJECT_VERSION};
 use leptos::{wasm_bindgen, web_sys};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -10,9 +10,6 @@ const DB_NAME: &str = "rail_graph_db";
 const DB_VERSION: u32 = 3;
 const PROJECTS_STORE: &str = "projects";
 const CURRENT_PROJECT_ID_KEY: &str = "current_project_id";
-
-// Current project data format version
-const CURRENT_PROJECT_VERSION: f32 = 1.0;
 
 /// `IndexedDB` implementation of the Storage trait
 #[derive(Clone, Copy)]
@@ -119,7 +116,7 @@ fn serialize_project(project: &Project) -> Result<Vec<u8>, String> {
     let project_bytes =
         rmp_serde::to_vec(project).map_err(|e| format!("Failed to serialize project: {e}"))?;
 
-    // Create versioned format: [4 bytes f32 version][MessagePack data]
+    // Create versioned format: [4 bytes u32 version][MessagePack data]
     let mut bytes = Vec::with_capacity(4 + project_bytes.len());
     bytes.extend_from_slice(&CURRENT_PROJECT_VERSION.to_le_bytes());
     bytes.extend_from_slice(&project_bytes);
@@ -134,15 +131,15 @@ fn deserialize_project(bytes: &[u8]) -> Result<Project, String> {
         let version_bytes: [u8; 4] = bytes[0..4]
             .try_into()
             .map_err(|_| "Invalid version bytes")?;
-        let version = f32::from_le_bytes(version_bytes);
+        let version = u32::from_le_bytes(version_bytes);
 
         // Extract project data (skip first 4 bytes)
         let project_bytes = &bytes[4..];
 
         // Handle different versions
         match version {
-            v if (v - 1.0).abs() < f32::EPSILON => {
-                // Version 1.0 - current format
+            1 => {
+                // Version 1 - current format
                 let project: Project = rmp_serde::from_slice(project_bytes)
                     .map_err(|e| format!("Failed to parse project: {e}"))?;
                 Ok(project)
@@ -400,8 +397,8 @@ mod tests {
         // Check that version header is present (first 4 bytes)
         assert!(bytes.len() > 4);
         let version_bytes: [u8; 4] = bytes[0..4].try_into().expect("Failed to extract version bytes");
-        let version = f32::from_le_bytes(version_bytes);
-        assert!((version - 1.0).abs() < f32::EPSILON);
+        let version = u32::from_le_bytes(version_bytes);
+        assert_eq!(version, 1);
     }
 
     #[test]
@@ -433,7 +430,7 @@ mod tests {
     fn test_deserialize_project_invalid_version() {
         // Create invalid version header
         let mut bytes = vec![0u8; 8];
-        let invalid_version = 99.0f32;
+        let invalid_version = 99u32;
         bytes[0..4].copy_from_slice(&invalid_version.to_le_bytes());
 
         let result = deserialize_project(&bytes);
