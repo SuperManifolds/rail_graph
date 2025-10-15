@@ -63,6 +63,7 @@ pub fn TimeGraph(
     raw_crossings: Signal<Vec<StationCrossing>>,
     on_create_view: leptos::Callback<GraphView>,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
+    set_show_project_manager: WriteSignal<bool>,
 ) -> impl IntoView {
     let (visualization_time, set_visualization_time) =
         create_signal(chrono::Local::now().naive_local());
@@ -172,6 +173,13 @@ pub fn TimeGraph(
                 </div>
                 <LineControls lines=lines set_lines=set_lines graph=graph on_create_view=on_create_view />
                 <div class="sidebar-footer">
+                    <button
+                        class="import-button"
+                        on:click=move |_| set_show_project_manager.set(true)
+                        title="Manage Projects"
+                    >
+                        <i class="fa-solid fa-folder"></i>
+                    </button>
                     <button
                         class="import-button"
                         on:click=move |_| set_new_line_dialog_open.set(true)

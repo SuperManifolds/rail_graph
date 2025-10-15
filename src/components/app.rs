@@ -4,8 +4,9 @@ use leptos_meta::{provide_meta_context, Stylesheet, Title};
 use uuid::Uuid;
 use crate::components::time_graph::TimeGraph;
 use crate::components::infrastructure_view::InfrastructureView;
+use crate::components::project_manager::ProjectManager;
 use crate::models::{Project, RailwayGraph, Legend, GraphView, ViewportState};
-use crate::storage::{load_project_from_storage, save_project_to_storage};
+use crate::storage::{IndexedDbStorage, Storage};
 use crate::train_journey::TrainJourney;
 use crate::conflict::{Conflict, StationCrossing};
 use crate::worker_bridge::ConflictDetector;
@@ -41,6 +42,9 @@ pub fn App() -> impl IntoView {
 
     let (active_tab, set_active_tab) = create_signal(AppTab::Infrastructure);
 
+    // Storage implementation
+    let storage = IndexedDbStorage;
+
     // Shared graph, lines, and views state
     let (lines, set_lines) = create_signal(Vec::new());
     let (graph, set_graph) = create_signal(RailwayGraph::new());
@@ -56,26 +60,26 @@ pub fn App() -> impl IntoView {
     let (train_journeys, set_train_journeys) = create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
     let (selected_day, set_selected_day) = create_signal(None::<chrono::Weekday>);
 
+    // Project manager state
+    let (show_project_manager, set_show_project_manager) = create_signal(false);
+    let (current_project, set_current_project) = create_signal(Project::empty());
+
     // Auto-load saved project on component mount
     create_effect(move |_| {
         spawn_local(async move {
-            let Ok(project) = load_project_from_storage().await else {
-                let empty_graph = RailwayGraph::new();
-                set_lines.set(Vec::new());
-                set_graph.set(empty_graph.clone());
-                set_legend.set(Legend::default());
+            // Try to load the last used project
+            let project_id = storage.get_current_project_id().await.ok().flatten();
 
-                // Create default Main Line view even for empty graph
-                let default_view = GraphView::default_main_line(&empty_graph);
-                let view_id = default_view.id;
-                let viewport = default_view.viewport_state.clone();
-                set_viewport_states.update(|vs| { vs.insert(view_id, viewport); });
-                set_active_tab.set(AppTab::GraphView(view_id));
-                set_views.set(vec![default_view]);
-                set_initial_load_complete.set(true);
-                return;
+            let project = if let Some(id) = project_id {
+                storage.load_project(&id).await.ok()
+            } else {
+                None
             };
 
+            let project = project.unwrap_or_else(Project::empty);
+            let empty_graph = project.graph.clone();
+
+            set_current_project.set(project.clone());
             set_lines.set(project.lines.clone());
             set_graph.set(project.graph.clone());
             set_legend.set(project.legend);
@@ -83,7 +87,7 @@ pub fn App() -> impl IntoView {
             // Ensure we have at least one view (create default "Main Line" view)
             let mut views = project.views.clone();
             if views.is_empty() {
-                views.push(GraphView::default_main_line(&project.graph));
+                views.push(GraphView::default_main_line(&empty_graph));
             }
 
             // Extract viewport states into separate signal
@@ -113,6 +117,7 @@ pub fn App() -> impl IntoView {
         let current_views = views.get();
         let current_viewports = viewport_states.get();
         let current_tab = active_tab.get();
+        let mut proj = current_project.get();
 
         if !current_lines.is_empty() || current_graph.graph.node_count() > 0 {
             // Convert active tab to string ID
@@ -131,13 +136,22 @@ pub fn App() -> impl IntoView {
                 })
                 .collect();
 
-            let mut project = Project::new(current_lines, current_graph, current_legend);
-            project.views = views_with_viewports;
-            project.active_tab_id = active_tab_id;
+            // Update project with current data, preserving metadata
+            proj.lines = current_lines;
+            proj.graph = current_graph;
+            proj.legend = current_legend;
+            proj.views = views_with_viewports;
+            proj.active_tab_id = active_tab_id;
+            proj.touch_updated_at();
 
+            let project_id = proj.metadata.id.clone();
             spawn_local(async move {
-                if let Err(e) = save_project_to_storage(&project).await {
+                if let Err(e) = storage.save_project(&proj).await {
                     web_sys::console::error_1(&format!("Auto-save failed: {e}").into());
+                    return;
+                }
+                if let Err(e) = storage.set_current_project_id(&project_id).await {
+                    web_sys::console::error_1(&format!("Failed to set current project ID: {e}").into());
                 }
             });
         }
@@ -243,6 +257,43 @@ pub fn App() -> impl IntoView {
             vs.insert(view_id, viewport_state);
         });
     };
+
+    // Callback for loading a project from project manager
+    let on_load_project = Callback::new(move |project: Project| {
+        let project_id = project.metadata.id.clone();
+
+        set_current_project.set(project.clone());
+        set_lines.set(project.lines.clone());
+        set_graph.set(project.graph.clone());
+        set_legend.set(project.legend.clone());
+
+        // Handle views
+        let mut project_views = project.views.clone();
+        if project_views.is_empty() {
+            project_views.push(GraphView::default_main_line(&project.graph));
+        }
+
+        // Extract viewport states
+        let viewports: HashMap<Uuid, ViewportState> = project_views.iter()
+            .map(|v| (v.id, v.viewport_state.clone()))
+            .collect();
+        set_viewport_states.set(viewports);
+        set_views.set(project_views.clone());
+
+        // Set active tab
+        if let Some(tab_id) = &project.active_tab_id {
+            restore_active_tab(tab_id, &project_views, set_active_tab);
+        } else if let Some(first_view) = project_views.first() {
+            set_active_tab.set(AppTab::GraphView(first_view.id));
+        }
+
+        // Set this as the current project
+        spawn_local(async move {
+            if let Err(e) = storage.set_current_project_id(&project_id).await {
+                web_sys::console::error_1(&format!("Failed to set current project ID: {e}").into());
+            }
+        });
+    });
 
     view! {
         <Stylesheet id="leptos" href="/pkg/nimby_graph.css"/>
@@ -368,6 +419,7 @@ pub fn App() -> impl IntoView {
                                     on_viewport_change=Callback::new(move |viewport_state: ViewportState| {
                                         on_viewport_change(view_id, viewport_state);
                                     })
+                                    set_show_project_manager=set_show_project_manager
                                 />
                             }.into_view()
                         } else {
@@ -380,6 +432,13 @@ pub fn App() -> impl IntoView {
                     }
                 }}
             </Show>
+
+            <ProjectManager
+                is_open=show_project_manager.into()
+                on_close=move || set_show_project_manager.set(false)
+                on_load_project=on_load_project
+                current_project=current_project.into()
+            />
         </div>
     }
 }

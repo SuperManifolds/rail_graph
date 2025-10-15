@@ -22,6 +22,7 @@
 
 - Always run `cargo check` and `cargo clippy` after making code changes (cargo clippy --all-targets -- -D warnings)
 - Avoid excessive nesting in functions (prefer early returns, extract helper functions)
+- Do not silence clippy warnings without expressed consent, address the problem instead
 - Keep functions small and focused on a single responsibility
 - Follow Rust naming conventions and idiomatic patterns
 - Structure the project according to Rust conventions (proper module organization, appropriate use of traits, etc.)
