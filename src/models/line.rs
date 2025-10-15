@@ -102,6 +102,8 @@ pub struct Line {
     pub sync_routes: bool,
     #[serde(default = "default_train_number_format")]
     pub auto_train_number_format: String,
+    #[serde(with = "naive_datetime_serde")]
+    pub last_departure: NaiveDateTime,
 }
 
 fn default_visible() -> bool {
@@ -144,6 +146,7 @@ impl Line {
                     return_route: Vec::new(),
                     sync_routes: true,
                     auto_train_number_format: default_train_number_format(),
+                    last_departure: BASE_DATE.and_hms_opt(22, 0, 0).unwrap_or(BASE_MIDNIGHT),
                 }
             })
             .collect()
@@ -625,6 +628,7 @@ mod tests {
             return_route: vec![create_test_segment(3)],
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         assert!(line.uses_edge(1));
@@ -650,6 +654,7 @@ mod tests {
             return_route: vec![],
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         assert!(line.uses_any_edge(&[1, 5, 6]));
@@ -678,6 +683,7 @@ mod tests {
             return_route: vec![],
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
@@ -717,6 +723,7 @@ mod tests {
             return_route: vec![],
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         // Remove edge 1 but no bypass mapping
@@ -764,6 +771,7 @@ mod tests {
             return_route: vec![],
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         line.fix_track_indices_after_change(edge.index(), 2, &graph);
@@ -848,6 +856,7 @@ mod tests {
             ],
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         // Split edge 10 into edges 20 and 21
@@ -914,6 +923,7 @@ mod tests {
             return_route: vec![],
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         // Delete the direct edge B -> C
@@ -955,6 +965,7 @@ mod tests {
             return_route: vec![],
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         // Delete the edge

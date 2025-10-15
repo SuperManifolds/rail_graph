@@ -1,5 +1,5 @@
 use crate::models::{Line, RailwayGraph, ScheduleMode, Tracks, DaysOfWeek};
-use crate::constants::{BASE_DATE, GENERATION_END_HOUR};
+use crate::constants::BASE_DATE;
 use chrono::{Duration, NaiveDateTime, Timelike, Weekday};
 use std::collections::HashMap;
 
@@ -256,7 +256,11 @@ impl TrainJourney {
 
             departure_time += line.frequency;
 
-            if departure_time.hour() > GENERATION_END_HOUR {
+            // Check if next departure would be after the last departure time
+            let Some(last_departure_on_date) = time_on_date(line.last_departure, current_date) else {
+                break;
+            };
+            if departure_time > last_departure_on_date {
                 break;
             }
         }
@@ -479,7 +483,11 @@ impl TrainJourney {
 
             return_departure_time += line.frequency;
 
-            if return_departure_time.hour() > GENERATION_END_HOUR {
+            // Check if next departure would be after the last departure time
+            let Some(last_departure_on_date) = time_on_date(line.last_departure, current_date) else {
+                break;
+            };
+            if return_departure_time > last_departure_on_date {
                 break;
             }
         }
@@ -546,6 +554,7 @@ mod tests {
             manual_departures: vec![],
             sync_routes: true,
             auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         }
     }
 
@@ -633,17 +642,23 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_journeys_stops_at_end_hour() {
+    fn test_generate_journeys_stops_at_last_departure() {
         let graph = create_test_graph();
         let mut line = create_test_line(&graph);
-        line.first_departure = BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time");
+        line.first_departure = BASE_DATE.and_hms_opt(20, 0, 0).expect("valid time");
+        line.return_first_departure = BASE_DATE.and_hms_opt(20, 0, 0).expect("valid time");
+        line.last_departure = BASE_DATE.and_hms_opt(21, 0, 0).expect("valid time");
         line.frequency = Duration::minutes(30);
 
-        let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
+        let journeys = TrainJourney::generate_journeys(&[line], &graph, Some(Weekday::Mon));
 
-        // Should only generate journeys up to GENERATION_END_HOUR (22)
+        // Should only generate journeys up to and including last_departure (21:00)
+        // With 20:00 start, 30 min frequency, and 21:00 end: expect 20:00, 20:30, 21:00
+        assert!(!journeys.is_empty());
+
         for journey in journeys.values() {
-            assert!(journey.departure_time.hour() <= GENERATION_END_HOUR);
+            assert!(journey.departure_time <= BASE_DATE.and_hms_opt(21, 0, 0).expect("valid time"),
+                "Journey departed at {:?}, which is after 21:00", journey.departure_time);
         }
     }
 
@@ -868,6 +883,7 @@ mod tests {
             manual_departures: vec![],
             sync_routes: true,
             auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);

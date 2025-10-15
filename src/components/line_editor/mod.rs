@@ -1,6 +1,7 @@
 mod general_tab;
 mod stops_tab;
 mod schedule_tab;
+mod auto_schedule_form;
 mod manual_departure_editor;
 mod manual_departures_list;
 mod platform_select;
