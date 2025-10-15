@@ -243,7 +243,6 @@ pub fn ProjectManager(
 
     // Load a project - inline in the view to avoid move issues
     // Duplicate a project - inline in the view
-    // Delete - inline in the view
 
     // Confirm delete
     let confirm_delete = Rc::new(move || {
