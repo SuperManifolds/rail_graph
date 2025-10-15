@@ -1,8 +1,7 @@
 use crate::models::Project;
+use crate::storage::CURRENT_PROJECT_VERSION;
 use wasm_bindgen::JsCast;
 use web_sys;
-
-const CURRENT_PROJECT_VERSION: f32 = 1.0;
 
 /// Serialize a project to bytes with version header
 ///
@@ -12,7 +11,7 @@ pub fn serialize_project_to_bytes(project: &Project) -> Result<Vec<u8>, String> 
     let project_bytes =
         rmp_serde::to_vec(project).map_err(|e| format!("Failed to serialize project: {e}"))?;
 
-    // Create versioned format: [4 bytes f32 version][`MessagePack` data]
+    // Create versioned format: [4 bytes u32 version][`MessagePack` data]
     let mut bytes = Vec::with_capacity(4 + project_bytes.len());
     bytes.extend_from_slice(&CURRENT_PROJECT_VERSION.to_le_bytes());
     bytes.extend_from_slice(&project_bytes);
@@ -34,9 +33,9 @@ pub fn deserialize_project_from_bytes(bytes: &[u8]) -> Result<Project, String> {
     let version_bytes: [u8; 4] = bytes[0..4]
         .try_into()
         .map_err(|_| "Invalid version header")?;
-    let version = f32::from_le_bytes(version_bytes);
+    let version = u32::from_le_bytes(version_bytes);
 
-    if (version - CURRENT_PROJECT_VERSION).abs() >= f32::EPSILON {
+    if version != CURRENT_PROJECT_VERSION {
         return Err(format!("Unsupported project version: {version}"));
     }
 
@@ -126,7 +125,7 @@ mod tests {
     #[test]
     fn test_deserialize_invalid_version() {
         let mut bytes = vec![0u8; 8];
-        let invalid_version = 99.0f32;
+        let invalid_version = 99u32;
         bytes[0..4].copy_from_slice(&invalid_version.to_le_bytes());
         let result = deserialize_project_from_bytes(&bytes);
         assert!(result.is_err());
