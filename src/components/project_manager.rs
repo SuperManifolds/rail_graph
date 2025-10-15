@@ -1,9 +1,11 @@
-use leptos::{component, view, IntoView, Signal, create_signal, SignalGet, SignalSet, spawn_local, event_target_value, Callback, Callable, WriteSignal, create_effect};
+use leptos::{component, view, IntoView, Signal, create_signal, SignalGet, SignalSet, spawn_local, event_target_value, Callback, Callable, WriteSignal, create_effect, wasm_bindgen, create_node_ref};
 use crate::components::window::Window;
 use crate::components::confirmation_dialog::ConfirmationDialog;
 use crate::models::{Project, ProjectMetadata};
-use crate::storage::{Storage, IndexedDbStorage, format_bytes};
+use crate::storage::{self, Storage, IndexedDbStorage, format_bytes};
 use std::rc::Rc;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 
 fn load_project_action(
     project_id: String,
@@ -40,6 +42,37 @@ fn duplicate_project_action(
                 }
             }
             Err(e) => set_error.set(Some(format!("Failed to load project for duplication: {e}"))),
+        }
+    });
+}
+
+fn export_project_action(
+    project_id: String,
+    project_name: String,
+    storage_backend: IndexedDbStorage,
+    set_error: WriteSignal<Option<String>>,
+) {
+    spawn_local(async move {
+        let project = match storage_backend.load_project(&project_id).await {
+            Ok(p) => p,
+            Err(e) => {
+                set_error.set(Some(format!("Failed to load project for export: {e}")));
+                return;
+            }
+        };
+
+        let bytes = match storage::serialize_project_to_bytes(&project) {
+            Ok(b) => b,
+            Err(e) => {
+                set_error.set(Some(e));
+                return;
+            }
+        };
+
+        let filename = storage::create_export_filename(&project_name);
+
+        if let Err(e) = storage::trigger_download(&bytes, &filename) {
+            set_error.set(Some(e));
         }
     });
 }
@@ -122,6 +155,24 @@ fn render_project_row(
                     <i class="fa-solid fa-copy"></i>
                 </button>
                 <button
+                    class="action-button"
+                    on:click={
+                        let project_id = Rc::clone(&project_id);
+                        let project_name = Rc::clone(&project_name);
+                        move |_| {
+                            export_project_action(
+                                (*project_id).clone(),
+                                (*project_name).clone(),
+                                storage,
+                                set_error_message,
+                            );
+                        }
+                    }
+                    title="Export project"
+                >
+                    <i class="fa-solid fa-download"></i>
+                </button>
+                <button
                     class="action-button danger"
                     on:click={
                         let project_id = Rc::clone(&project_id);
@@ -166,6 +217,9 @@ pub fn ProjectManager(
     // Save As dialog state
     let (show_save_as_dialog, set_show_save_as_dialog) = create_signal(false);
     let (save_as_name, set_save_as_name) = create_signal(String::new());
+
+    // Import file input
+    let import_file_input_ref = create_node_ref::<leptos::html::Input>();
 
     // Load projects when dialog opens
     let load_projects = move || {
@@ -230,8 +284,18 @@ pub fn ProjectManager(
             project.metadata.created_at = chrono::Utc::now().to_rfc3339();
             project.metadata.updated_at.clone_from(&project.metadata.created_at);
 
+            let project_id = project.metadata.id.clone();
+
             match storage.save_project(&project).await {
                 Ok(()) => {
+                    // Switch to the newly saved project
+                    on_load_project.call(project);
+
+                    if let Err(e) = storage.set_current_project_id(&project_id).await {
+                        set_error_message.set(Some(format!("Failed to set current project: {e}")));
+                        return;
+                    }
+
                     set_show_save_as_dialog.set(false);
                     set_save_as_name.set(String::new());
                     load_projects();
@@ -273,6 +337,69 @@ pub fn ProjectManager(
             on_load_project.call(project);
             on_close();
         }
+    };
+
+    // Process imported project file
+    let process_import = move |bytes: Vec<u8>| {
+        let project = match storage::deserialize_project_from_bytes(&bytes) {
+            Ok(p) => p,
+            Err(e) => {
+                set_error_message.set(Some(e));
+                return;
+            }
+        };
+
+        let project = storage::regenerate_project_ids(project);
+
+        spawn_local(async move {
+            if let Err(e) = storage.save_project(&project).await {
+                set_error_message.set(Some(format!("Failed to save imported project: {e}")));
+                return;
+            }
+
+            load_projects();
+            if let Some(input) = import_file_input_ref.get() {
+                input.set_value("");
+            }
+        });
+    };
+
+    // Import project
+    let handle_import_file = move |_| {
+        let Some(input_elem) = import_file_input_ref.get() else { return };
+        let input: &web_sys::HtmlInputElement = &input_elem;
+        let Some(files) = input.files() else { return };
+        let Some(file) = files.get(0) else { return };
+
+        spawn_local(async move {
+            let Ok(reader) = web_sys::FileReader::new() else {
+                set_error_message.set(Some("Failed to create FileReader".to_string()));
+                return;
+            };
+            let reader_clone = reader.clone();
+
+            let onload = Closure::wrap(Box::new(move |_: web_sys::Event| {
+                let Ok(result) = reader_clone.result() else {
+                    set_error_message.set(Some("Failed to read file".to_string()));
+                    return;
+                };
+
+                let Ok(array_buffer) = result.dyn_into::<js_sys::ArrayBuffer>() else {
+                    set_error_message.set(Some("Invalid file format".to_string()));
+                    return;
+                };
+
+                let uint8_array = js_sys::Uint8Array::new(&array_buffer);
+                let bytes = uint8_array.to_vec();
+
+                process_import(bytes);
+            }) as Box<dyn FnMut(_)>);
+
+            reader.set_onload(Some(onload.as_ref().unchecked_ref()));
+            onload.forget();
+
+            let _ = reader.read_as_array_buffer(&file);
+        });
     };
 
     view! {
@@ -333,6 +460,23 @@ pub fn ProjectManager(
                     >
                         <i class="fa-solid fa-save"></i>
                         " Save As..."
+                    </button>
+                    <input
+                        type="file"
+                        accept=".rgproject"
+                        node_ref=import_file_input_ref
+                        on:change=handle_import_file
+                        style="display: none;"
+                    />
+                    <button
+                        on:click=move |_| {
+                            if let Some(input) = import_file_input_ref.get() {
+                                input.click();
+                            }
+                        }
+                    >
+                        <i class="fa-solid fa-upload"></i>
+                        " Import Project"
                     </button>
                 </div>
 
