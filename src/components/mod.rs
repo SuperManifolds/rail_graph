@@ -24,6 +24,7 @@ pub mod legend;
 pub mod line_controls;
 pub mod line_editor;
 pub mod platform_editor;
+pub mod project_manager;
 pub mod routing_rule_editor;
 pub mod tab_view;
 pub mod time_graph;
