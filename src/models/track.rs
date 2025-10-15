@@ -17,6 +17,12 @@ pub struct TrackSegment {
     pub tracks: Vec<Track>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub distance: Option<f64>,
+    /// Default platform index when arriving at the source station (traveling backward on edge)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_platform_source: Option<usize>,
+    /// Default platform index when arriving at the target station (traveling forward on edge)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_platform_target: Option<usize>,
 }
 
 impl TrackSegment {
@@ -25,6 +31,8 @@ impl TrackSegment {
         Self {
             tracks: vec![Track { direction: TrackDirection::Bidirectional }],
             distance: None,
+            default_platform_source: None,
+            default_platform_target: None,
         }
     }
 
@@ -36,7 +44,21 @@ impl TrackSegment {
                 Track { direction: TrackDirection::Backward },
             ],
             distance: None,
+            default_platform_source: None,
+            default_platform_target: None,
         }
+    }
+
+    /// Get the default platform for arriving at the source station (traveling backward)
+    #[must_use]
+    pub fn get_default_platform_at_source(&self) -> Option<usize> {
+        self.default_platform_source
+    }
+
+    /// Get the default platform for arriving at the target station (traveling forward)
+    #[must_use]
+    pub fn get_default_platform_at_target(&self) -> Option<usize> {
+        self.default_platform_target
     }
 }
 
@@ -80,6 +102,8 @@ mod tests {
         let segment = TrackSegment {
             tracks: vec![Track { direction: TrackDirection::Bidirectional }],
             distance: Some(100.5),
+            default_platform_source: None,
+            default_platform_target: None,
         };
         assert_eq!(segment.tracks.len(), 1);
         assert_eq!(segment.distance, Some(100.5));

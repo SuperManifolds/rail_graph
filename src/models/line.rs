@@ -788,6 +788,8 @@ mod tests {
                 Track { direction: TrackDirection::Backward },
             ],
             distance: None,
+            default_platform_source: None,
+            default_platform_target: None,
         };
 
         // Forward route should be compatible with Forward track (index 0)
@@ -812,6 +814,8 @@ mod tests {
                 Track { direction: TrackDirection::Bidirectional },
             ],
             distance: None,
+            default_platform_source: None,
+            default_platform_target: None,
         };
 
         // For forward route, should find first compatible track (index 1 - Forward)

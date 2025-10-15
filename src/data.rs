@@ -135,12 +135,24 @@ fn build_graph_and_routes_from_csv(
                 line_wait_time
             };
 
-            // Add to this line's forward route (using platform 0)
+            // Determine default platforms based on track configuration
+            let origin_platforms = graph.graph.node_weight(prev_idx)
+                .and_then(|n| n.as_station())
+                .map_or(1, |s| s.platforms.len());
+
+            let dest_platforms = graph.graph.node_weight(station_idx)
+                .and_then(|n| n.as_station())
+                .map_or(1, |s| s.platforms.len());
+
+            let origin_platform = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms);
+            let destination_platform = graph.get_default_platform_for_arrival(edge_idx, true, dest_platforms);
+
+            // Add to this line's forward route
             route.push(RouteSegment {
                 edge_index: edge_idx.index(),
                 track_index: 0,
-                origin_platform: 0,
-                destination_platform: 0,
+                origin_platform,
+                destination_platform,
                 duration: travel_time,
                 wait_time: station_wait_time,
             });
@@ -151,7 +163,7 @@ fn build_graph_and_routes_from_csv(
         // Assign forward route to line
         lines[line_idx].forward_route.clone_from(&route);
 
-        // Generate return route (reverse direction, using platform 1 and opposite track)
+        // Generate return route (reverse direction, using opposite track and swapped platforms)
         let mut return_route = Vec::new();
         for i in (0..route.len()).rev() {
             let forward_segment = &route[i];
@@ -164,11 +176,12 @@ fn build_graph_and_routes_from_csv(
                 0 // Default to track 0 if edge not found
             };
 
+            // For return route, swap origin and destination platforms since we're traveling in reverse
             return_route.push(RouteSegment {
                 edge_index: forward_segment.edge_index,
                 track_index: return_track_index,
-                origin_platform: 1, // Use platform 1 for return direction
-                destination_platform: 1,
+                origin_platform: forward_segment.destination_platform,
+                destination_platform: forward_segment.origin_platform,
                 duration: forward_segment.duration,
                 wait_time: forward_segment.wait_time,
             });
@@ -307,8 +320,10 @@ mod tests {
         assert_eq!(lines[0].return_route[0].edge_index, lines[0].forward_route[1].edge_index);
         assert_eq!(lines[0].return_route[1].edge_index, lines[0].forward_route[0].edge_index);
 
-        // Return route should use platform 1
-        assert_eq!(lines[0].return_route[0].origin_platform, 1);
-        assert_eq!(lines[0].return_route[0].destination_platform, 1);
+        // Return route platforms should be swapped from forward route
+        // Forward route: C->B segment has destination_platform for B
+        // Return route: B->C segment has origin_platform (was forward's destination) for B
+        assert_eq!(lines[0].return_route[0].origin_platform, lines[0].forward_route[1].destination_platform);
+        assert_eq!(lines[0].return_route[0].destination_platform, lines[0].forward_route[1].origin_platform);
     }
 }
