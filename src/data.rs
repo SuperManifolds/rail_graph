@@ -153,7 +153,7 @@ fn build_graph_and_routes_from_csv(
                 track_index: 0,
                 origin_platform,
                 destination_platform,
-                duration: travel_time,
+                duration: Some(travel_time),
                 wait_time: station_wait_time,
             });
 

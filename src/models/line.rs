@@ -41,8 +41,8 @@ pub struct RouteSegment {
     pub origin_platform: usize,
     #[serde(default)]
     pub destination_platform: usize,
-    #[serde(with = "duration_serde")]
-    pub duration: Duration,
+    #[serde(with = "option_duration_serde", default)]
+    pub duration: Option<Duration>,
     #[serde(with = "duration_serde", default = "default_wait_time")]
     pub wait_time: Duration,
 }
@@ -122,6 +122,15 @@ fn default_train_number_format() -> String {
     "{line} {seq:04}".to_string()
 }
 
+impl RouteSegment {
+    /// Validate that a route segment with no duration is valid
+    /// Segments without duration are only valid for passing stations (must have zero wait time)
+    #[must_use]
+    pub fn is_valid_for_passing_station(&self) -> bool {
+        self.duration.is_none() && self.wait_time == Duration::zero()
+    }
+}
+
 impl Line {
     /// Create lines from IDs with default settings
     #[must_use]
@@ -195,7 +204,7 @@ impl Line {
             };
 
             // Combine durations (travel time + wait time at deleted station + next travel time)
-            let combined_duration = segment.duration + segment.wait_time + next_segment.duration;
+            let combined_duration = segment.duration.and_then(|d1| next_segment.duration.map(|d2| d1 + segment.wait_time + d2));
 
             // Preserve platforms from the original segments
             new_route.push(RouteSegment {
@@ -361,7 +370,7 @@ impl Line {
                     track_index: segment.track_index.min(track_count.saturating_sub(1)),
                     origin_platform: segment.origin_platform,
                     destination_platform: 0,
-                    duration: segment.duration / 2,
+                    duration: segment.duration.map(|d| d / 2),
                     wait_time: segment.wait_time,
                 });
                 new_route.push(RouteSegment {
@@ -369,7 +378,7 @@ impl Line {
                     track_index: segment.track_index.min(track_count.saturating_sub(1)),
                     origin_platform: 0,
                     destination_platform: segment.destination_platform,
-                    duration: segment.duration / 2,
+                    duration: segment.duration.map(|d| d / 2),
                     wait_time: Duration::zero(),
                 });
             } else {
@@ -492,7 +501,7 @@ impl Line {
                     ),
                     origin_platform: if i == 0 { segment.origin_platform } else { 0 },
                     destination_platform: if i == path.len() - 1 { segment.destination_platform } else { 0 },
-                    duration: segment.duration / path.len().max(1) as i32,
+                    duration: segment.duration.map(|d| d / path.len().max(1) as i32),
                     wait_time: if i == 0 { segment.wait_time } else { Duration::zero() },
                 };
                 new_segments.push(new_segment);
@@ -524,6 +533,30 @@ mod duration_serde {
     {
         let seconds = i64::deserialize(deserializer)?;
         Ok(Duration::seconds(seconds))
+    }
+}
+
+mod option_duration_serde {
+    use chrono::Duration;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    #[allow(clippy::ref_option)]
+    pub fn serialize<S>(duration: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match duration {
+            Some(d) => serializer.serialize_some(&d.num_seconds()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<i64>::deserialize(deserializer)
+            .map(|opt| opt.map(Duration::seconds))
     }
 }
 
@@ -582,7 +615,7 @@ mod tests {
             track_index: 0,
             origin_platform: 0,
             destination_platform: 0,
-            duration: Duration::minutes(5),
+            duration: Some(Duration::minutes(5)),
             wait_time: Duration::seconds(30),
         }
     }
@@ -700,7 +733,7 @@ mod tests {
 
         // Check combined duration
         let expected_duration = Duration::minutes(5) + Duration::seconds(30) + Duration::minutes(5);
-        assert_eq!(line.forward_route[0].duration, expected_duration);
+        assert_eq!(line.forward_route[0].duration, Some(expected_duration));
     }
 
     #[test]
@@ -765,7 +798,7 @@ mod tests {
                 track_index: 5, // Out of bounds
                 origin_platform: 0,
                 destination_platform: 0,
-                duration: Duration::minutes(5),
+                duration: Some(Duration::minutes(5)),
                 wait_time: Duration::seconds(30),
             }],
             return_route: vec![],
@@ -881,8 +914,8 @@ mod tests {
         assert_eq!(line.return_route[3].edge_index, 5);
 
         // Check duration is split in half
-        assert_eq!(line.forward_route[1].duration, Duration::minutes(5) / 2);
-        assert_eq!(line.forward_route[2].duration, Duration::minutes(5) / 2);
+        assert_eq!(line.forward_route[1].duration, Some(Duration::minutes(5) / 2));
+        assert_eq!(line.forward_route[2].duration, Some(Duration::minutes(5) / 2));
     }
 
     #[test]

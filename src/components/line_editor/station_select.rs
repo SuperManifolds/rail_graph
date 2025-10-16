@@ -88,7 +88,7 @@ pub fn StationSelect(
                                                 track_index: 0,
                                                 origin_platform: 0,
                                                 destination_platform: 0,
-                                                duration: Duration::minutes(5),
+                                                duration: None,
                                                 // Only the first segment gets the wait time
                                                 // Subsequent segments have zero wait time (no stops at intermediate junctions)
                                                 wait_time: if i == 0 { default_wait } else { Duration::zero() },
