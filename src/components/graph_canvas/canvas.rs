@@ -165,7 +165,8 @@ fn handle_mouse_move_hover(
 
     if show_line_blocks.get() {
         let journeys = train_journeys.get();
-        let journeys_vec: Vec<_> = journeys.values().collect();
+        let mut journeys_vec: Vec<_> = journeys.values().collect();
+        journeys_vec.sort_by_key(|j| j.departure_time);
         let hovered_journey = train_journeys::check_journey_hover(
             x, y, &journeys_vec, &current_stations,
             f64::from(canvas.width()), f64::from(canvas.height()),
@@ -467,7 +468,7 @@ fn render_graph(
     let visible_start = -viewport.pan_offset_x / visible_hour_width;
     let visible_end = visible_start + (dimensions.graph_width / visible_hour_width);
 
-    let journeys_vec: Vec<&TrainJourney> = train_journeys.values()
+    let mut journeys_vec: Vec<&TrainJourney> = train_journeys.values()
         .filter(|journey| {
             // Quick time-based culling: check if journey overlaps visible time range
             if let (Some((_, start, _)), Some((_, _, end))) =
@@ -482,6 +483,9 @@ fn render_graph(
             }
         })
         .collect();
+
+    // Sort by departure time for consistent draw order (prevents z-fighting)
+    journeys_vec.sort_by_key(|j| j.departure_time);
 
     let Ok(Some(context)) = canvas_element.get_context("2d") else {
         leptos::logging::warn!("Failed to get 2D context");
