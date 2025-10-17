@@ -612,12 +612,25 @@ pub fn import_jtraingraph(
             let default_platform_source = find_platform_index(&from_station.platforms, &from_station.default_platform_away);
             let default_platform_target = find_platform_index(&to_station.platforms, &to_station.default_platform_in);
 
+            // Calculate distance from km values (use km_right for forward direction)
+            // Round to 3 decimal places (meter precision)
+            let distance = from_station.km_right
+                .parse::<f64>()
+                .ok()
+                .and_then(|from_km| {
+                    to_station.km_right.parse::<f64>().ok().map(|to_km| {
+                        let dist = (to_km - from_km).abs();
+                        (dist * 1000.0).round() / 1000.0
+                    })
+                });
+
             let edge_idx = graph.add_track(from, to, tracks);
 
-            // Set default platforms on the track segment
+            // Set default platforms and distance on the track segment
             if let Some(track_segment) = graph.graph.edge_weight_mut(edge_idx) {
                 track_segment.default_platform_source = default_platform_source;
                 track_segment.default_platform_target = default_platform_target;
+                track_segment.distance = distance;
             }
 
             edge_idx
@@ -973,5 +986,80 @@ mod tests {
         let has_ic_4224 = pattern_groups.values()
             .any(|trains| trains.iter().any(|t| t.name == "NS(IC)-4224"));
         assert!(has_ic_4224, "NS(IC)-4224 should be in pattern groups");
+    }
+
+    #[test]
+    fn test_track_distances_imported() {
+        let xml_content = std::fs::read_to_string("dortmund.fpl")
+            .expect("Failed to read dortmund.fpl");
+
+        let timetable = parse_jtraingraph(&xml_content)
+            .expect("Failed to parse dortmund.fpl");
+
+        let mut graph = RailwayGraph::new();
+
+        let result = import_jtraingraph(&timetable, &mut graph, 0, &[]);
+        assert!(result.is_ok(), "Failed to import: {:?}", result.err());
+
+        // Get station nodes in order - they are created in the same order as in the timetable
+        let station_nodes: Vec<NodeIndex> = timetable.stations.stations.iter()
+            .map(|station| graph.add_or_get_station(station.name.clone()))
+            .collect();
+
+        // Get all station names in order
+        let stations = timetable.stations.stations.iter()
+            .map(|s| s.name.clone())
+            .collect::<Vec<_>>();
+
+        // Verify some expected distances
+        // Den Haag Centraal (0.0) to Leidschendam Voorburg (2.9) = 2.9 km
+        // Leidschendam Voorburg (2.9) to Den Haag Ypenburg (5.9) = 3.0 km
+        // Den Haag Ypenburg (5.9) to Zoetermeer (11.9) = 6.0 km
+        // Gouda (28.6) to Gouda Goverwelle (31.1) = 2.5 km
+
+        // Check Den Haag Centraal to Leidschendam Voorburg
+        if let Some(edge) = graph.graph.find_edge(station_nodes[0], station_nodes[1]) {
+            let track_segment = graph.graph.edge_weight(edge).expect("Edge weight not found");
+            eprintln!("Den Haag Centraal -> Leidschendam Voorburg: distance = {:?}", track_segment.distance);
+            assert!(track_segment.distance.is_some(), "Distance should be set for Den Haag Centraal -> Leidschendam Voorburg");
+            let distance = track_segment.distance.expect("Distance should be Some");
+            assert!((distance - 2.9).abs() < 0.1, "Expected ~2.9 km, got {distance}");
+        } else {
+            panic!("No edge found between Den Haag Centraal and Leidschendam Voorburg");
+        }
+
+        // Check Leidschendam Voorburg to Den Haag Ypenburg
+        if let Some(edge) = graph.graph.find_edge(station_nodes[1], station_nodes[2]) {
+            let track_segment = graph.graph.edge_weight(edge).expect("Edge weight not found");
+            eprintln!("Leidschendam Voorburg -> Den Haag Ypenburg: distance = {:?}", track_segment.distance);
+            assert!(track_segment.distance.is_some(), "Distance should be set for Leidschendam Voorburg -> Den Haag Ypenburg");
+            let distance = track_segment.distance.expect("Distance should be Some");
+            assert!((distance - 3.0).abs() < 0.1, "Expected ~3.0 km, got {distance}");
+        } else {
+            panic!("No edge found between Leidschendam Voorburg and Den Haag Ypenburg");
+        }
+
+        // Check Gouda to Gouda Goverwelle (stations 5 and 6)
+        if let Some(edge) = graph.graph.find_edge(station_nodes[5], station_nodes[6]) {
+            let track_segment = graph.graph.edge_weight(edge).expect("Edge weight not found");
+            eprintln!("Gouda -> Gouda Goverwelle: distance = {:?}", track_segment.distance);
+            assert!(track_segment.distance.is_some(), "Distance should be set for Gouda -> Gouda Goverwelle");
+            let distance = track_segment.distance.expect("Distance should be Some");
+            assert!((distance - 2.5).abs() < 0.1, "Expected ~2.5 km, got {distance}");
+        } else {
+            panic!("No edge found between Gouda and Gouda Goverwelle");
+        }
+
+        // Print all distances for debugging
+        eprintln!("\nAll track segment distances:");
+        for (i, window) in station_nodes.windows(2).enumerate() {
+            let from = window[0];
+            let to = window[1];
+            if let Some(edge) = graph.graph.find_edge(from, to) {
+                let track_segment = graph.graph.edge_weight(edge).expect("Edge weight not found");
+                eprintln!("{} -> {}: distance = {:?}",
+                    stations[i], stations[i + 1], track_segment.distance);
+            }
+        }
     }
 }
