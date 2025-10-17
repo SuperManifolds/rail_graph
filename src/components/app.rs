@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::components::time_graph::TimeGraph;
 use crate::components::infrastructure_view::InfrastructureView;
 use crate::components::project_manager::ProjectManager;
+use crate::components::alpha_disclaimer::AlphaDisclaimer;
 use crate::models::{Project, RailwayGraph, Legend, GraphView, ViewportState};
 use crate::storage::{IndexedDbStorage, Storage};
 use crate::train_journey::TrainJourney;
@@ -433,6 +434,8 @@ pub fn App() -> impl IntoView {
                 on_load_project=on_load_project
                 current_project=current_project.into()
             />
+
+            <AlphaDisclaimer />
         </div>
     }
 }
