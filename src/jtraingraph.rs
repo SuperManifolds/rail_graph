@@ -719,6 +719,7 @@ pub fn import_jtraingraph(
                 let departure_datetime = BASE_DATE.and_time(departure_time);
 
                 Some(ManualDeparture {
+                    id: uuid::Uuid::new_v4(),
                     time: departure_datetime,
                     from_station: station_node_indices[dep_station_idx],
                     to_station: station_node_indices[arr_station_idx],

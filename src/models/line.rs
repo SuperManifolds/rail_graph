@@ -63,6 +63,8 @@ pub enum ScheduleMode {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ManualDeparture {
+    #[serde(default = "uuid::Uuid::new_v4")]
+    pub id: uuid::Uuid,
     #[serde(with = "naive_datetime_serde")]
     pub time: NaiveDateTime,
     #[serde(with = "node_index_serde")]

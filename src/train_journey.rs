@@ -919,6 +919,7 @@ mod tests {
         line.schedule_mode = ScheduleMode::Manual;
         line.manual_departures = vec![
             crate::models::ManualDeparture {
+                id: uuid::Uuid::new_v4(),
                 time: BASE_DATE.and_hms_opt(10, 0, 0).expect("valid time"),
                 from_station: idx1,
                 to_station: idx2,
