@@ -3,9 +3,7 @@ use crate::jtraingraph::{parse_jtraingraph, import_jtraingraph};
 use crate::models::{Line, RailwayGraph};
 use crate::components::duration_input::DurationInput;
 use crate::components::window::Window;
-use leptos::{wasm_bindgen, component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, web_sys, spawn_local, SignalSet, Signal, SignalUpdate};
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
+use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, web_sys, spawn_local, SignalSet, Signal, SignalUpdate};
 use chrono::Duration;
 use std::collections::HashMap;
 
@@ -99,40 +97,36 @@ pub fn Importer(
         let Some(file) = files.get(0) else { return };
 
         let filename = file.name();
+        let file_clone = file.clone();
 
         spawn_local(async move {
-            let Ok(reader) = web_sys::FileReader::new() else {
-                leptos::logging::error!("Failed to create FileReader");
-                return;
-            };
-            let reader_clone = reader.clone();
-
-            let onload = Closure::wrap(Box::new(move |_: web_sys::Event| {
-                let Ok(result) = reader_clone.result() else {
-                    return;
-                };
-                let Some(text) = result.as_string() else {
-                    return;
-                };
-
-                set_file_content.set(text.clone());
-
-                // Check file type by extension
-                let is_fpl = std::path::Path::new(&filename)
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case("fpl"));
-
-                if is_fpl {
-                    handle_fpl_import(&text, set_graph, set_lines, lines);
-                } else {
-                    handle_csv_preview(&text, set_line_ids, set_wait_times, set_show_dialog);
+            let text = match wasm_bindgen_futures::JsFuture::from(file_clone.text()).await {
+                Ok(val) => {
+                    if let Some(s) = val.as_string() {
+                        s
+                    } else {
+                        leptos::logging::error!("Failed to convert file content to string");
+                        return;
+                    }
                 }
-            }) as Box<dyn FnMut(_)>);
+                Err(e) => {
+                    leptos::logging::error!("Failed to read file: {:?}", e);
+                    return;
+                }
+            };
 
-            reader.set_onload(Some(onload.as_ref().unchecked_ref()));
-            onload.forget();
+            set_file_content.set(text.clone());
 
-            let _ = reader.read_as_text(&file);
+            // Check file type by extension
+            let is_fpl = std::path::Path::new(&filename)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("fpl"));
+
+            if is_fpl {
+                handle_fpl_import(&text, set_graph, set_lines, lines);
+            } else {
+                handle_csv_preview(&text, set_line_ids, set_wait_times, set_show_dialog);
+            }
         });
     };
 
@@ -158,9 +152,12 @@ pub fn Importer(
         <button
             class="import-button"
             on:click=move |_| {
-                if let Some(input) = file_input_ref.get() {
-                    input.click();
-                }
+                spawn_local(async move {
+                    if let Some(input) = file_input_ref.get() {
+                        input.set_value("");
+                        input.click();
+                    }
+                });
             }
             title="Import CSV or JTrainGraph (.fpl)"
         >
