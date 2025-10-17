@@ -1,4 +1,4 @@
-use crate::components::{duration_input::DurationInput, time_input::TimeInput};
+use crate::components::{duration_input::{DurationInput, OptionalDurationInput}, time_input::TimeInput};
 use crate::models::{Line, RailwayGraph, RouteDirection};
 use crate::constants::BASE_MIDNIGHT;
 use super::{PlatformSelect, PlatformField};
@@ -32,7 +32,7 @@ fn render_time_column(
 
                 view! {
                     <div class="time-input-with-preview">
-                        <DurationInput
+                        <OptionalDurationInput
                             duration=Signal::derive(move || segment_duration)
                             on_change={
                                 let on_save = on_save.clone();
@@ -86,13 +86,13 @@ fn render_time_column(
                                         RouteDirection::Forward => {
                                             let prev_cumulative_seconds: i64 = updated_line.forward_route.iter()
                                                 .take(index - 1)
-                                                .map(|seg| (seg.duration + seg.wait_time).num_seconds())
+                                                .map(|seg| (seg.duration.unwrap_or(Duration::zero()) + seg.wait_time).num_seconds())
                                                 .sum();
                                             let prev_wait_seconds = updated_line.forward_route[index - 1].wait_time.num_seconds();
                                             let segment_duration_seconds = new_cumulative_seconds - prev_cumulative_seconds - prev_wait_seconds;
 
                                             if segment_duration_seconds >= 0 {
-                                                updated_line.forward_route[index - 1].duration = Duration::seconds(segment_duration_seconds);
+                                                updated_line.forward_route[index - 1].duration = Some(Duration::seconds(segment_duration_seconds));
                                                 updated_line.apply_route_sync_if_enabled();
                                                 on_save(updated_line);
                                             }
@@ -100,13 +100,13 @@ fn render_time_column(
                                         RouteDirection::Return => {
                                             let prev_cumulative_seconds: i64 = updated_line.return_route.iter()
                                                 .take(index - 1)
-                                                .map(|seg| (seg.duration + seg.wait_time).num_seconds())
+                                                .map(|seg| (seg.duration.unwrap_or(Duration::zero()) + seg.wait_time).num_seconds())
                                                 .sum();
                                             let prev_wait_seconds = updated_line.return_route[index - 1].wait_time.num_seconds();
                                             let segment_duration_seconds = new_cumulative_seconds - prev_cumulative_seconds - prev_wait_seconds;
 
                                             if segment_duration_seconds >= 0 {
-                                                updated_line.return_route[index - 1].duration = Duration::seconds(segment_duration_seconds);
+                                                updated_line.return_route[index - 1].duration = Some(Duration::seconds(segment_duration_seconds));
                                                 on_save(updated_line);
                                             }
                                         }
@@ -381,7 +381,7 @@ pub fn StopRow(
     let cumulative_seconds: i64 = if index == 0 {
         0
     } else {
-        route.iter().take(index).map(|seg| (seg.duration + seg.wait_time).num_seconds()).sum()
+        route.iter().take(index).map(|seg| (seg.duration.unwrap_or(Duration::zero()) + seg.wait_time).num_seconds()).sum()
     };
 
     let platforms = graph.graph.node_weight(station_idx)

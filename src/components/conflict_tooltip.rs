@@ -28,7 +28,7 @@ pub fn ConflictTooltip(
                     .unwrap_or("Unknown")
                     .to_string();
 
-                let message = conflict.format_message(&station1_name, &station2_name);
+                let message = conflict.format_message(&station1_name, &station2_name, &current_graph);
                 let timestamp = conflict.time.format("%H:%M:%S");
                 let tooltip_text = format!("{timestamp} - {message}");
 

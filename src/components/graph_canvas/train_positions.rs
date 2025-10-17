@@ -53,10 +53,10 @@ pub fn draw_current_train_positions(
                     ctx.fill();
                     ctx.stroke();
 
-                    // Draw train ID label
+                    // Draw train number label
                     ctx.set_fill_style_str(CURRENT_TRAIN_LABEL_COLOR);
                     ctx.set_font(&format!("bold {}px monospace", CURRENT_TRAIN_LABEL_FONT_SIZE / zoom_level));
-                    let _ = ctx.fill_text(&journey.line_id, x - 12.0 / zoom_level, y - 10.0 / zoom_level);
+                    let _ = ctx.fill_text(&journey.train_number, x - 12.0 / zoom_level, y - 10.0 / zoom_level);
                     break;
                 }
 
@@ -105,11 +105,11 @@ pub fn draw_current_train_positions(
             ctx.fill();
             ctx.stroke();
 
-            // Draw train ID label with zoom-compensated font size
+            // Draw train number label with zoom-compensated font size
             ctx.set_fill_style_str(CURRENT_TRAIN_LABEL_COLOR);
             ctx.set_font(&format!("bold {}px monospace", CURRENT_TRAIN_LABEL_FONT_SIZE / zoom_level));
             let _ = ctx.fill_text(
-                &journey.line_id,
+                &journey.train_number,
                 current_x - 12.0 / zoom_level,
                 current_y - 10.0 / zoom_level,
             );

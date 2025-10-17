@@ -873,6 +873,18 @@ pub fn InfrastructureView(
                 on_save=handle_edit_station
                 on_delete=handle_delete_station
                 graph=graph
+                on_update_track_defaults=Rc::new(move |edge_idx: EdgeIndex, source_platform: Option<usize>, target_platform: Option<usize>| {
+                    let mut current_graph = graph.get();
+                    if let Some(track_segment) = current_graph.graph.edge_weight_mut(edge_idx) {
+                        if let Some(src) = source_platform {
+                            track_segment.default_platform_source = Some(src);
+                        }
+                        if let Some(tgt) = target_platform {
+                            track_segment.default_platform_target = Some(tgt);
+                        }
+                    }
+                    set_graph.set(current_graph);
+                })
             />
 
             <EditJunction

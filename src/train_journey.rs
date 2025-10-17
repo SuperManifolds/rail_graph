@@ -1,9 +1,20 @@
 use crate::models::{Line, RailwayGraph, ScheduleMode, Tracks, DaysOfWeek};
-use crate::constants::{BASE_DATE, GENERATION_END_HOUR};
+use crate::constants::BASE_DATE;
 use chrono::{Duration, NaiveDateTime, Timelike, Weekday};
 use std::collections::HashMap;
 
 const MAX_JOURNEYS_PER_LINE: usize = 100; // Limit to prevent performance issues
+
+/// Generate a train number from a format string
+/// Supports: {line} for line ID, {seq:04} for sequence number with padding
+fn generate_train_number(format: &str, line_id: &str, sequence: usize) -> String {
+    format
+        .replace("{line}", line_id)
+        .replace("{seq:04}", &format!("{sequence:04}"))
+        .replace("{seq:03}", &format!("{sequence:03}"))
+        .replace("{seq:02}", &format!("{sequence:02}"))
+        .replace("{seq}", &sequence.to_string())
+}
 
 /// Convert `chrono::Weekday` to our `DaysOfWeek` bitflag
 fn weekday_to_days_of_week(weekday: Weekday) -> DaysOfWeek {
@@ -35,6 +46,7 @@ pub struct JourneySegment {
 pub struct TrainJourney {
     pub id: uuid::Uuid,
     pub line_id: String,
+    pub train_number: String,
     pub departure_time: NaiveDateTime,
     pub station_times: Vec<(petgraph::stable_graph::NodeIndex, NaiveDateTime, NaiveDateTime)>, // (station_node, arrival_time, departure_time)
     pub segments: Vec<JourneySegment>, // Track and platform info for each segment
@@ -43,6 +55,85 @@ pub struct TrainJourney {
 }
 
 impl TrainJourney {
+    /// Process segments without duration (fallback for missing durations)
+    fn process_segments_without_duration(
+        segments_without_duration: &[usize],
+        route: &[crate::models::RouteSegment],
+        route_nodes: &[Option<petgraph::stable_graph::NodeIndex>],
+        departure_time: NaiveDateTime,
+        cumulative_time: &mut Duration,
+        station_times: &mut Vec<(petgraph::stable_graph::NodeIndex, NaiveDateTime, NaiveDateTime)>,
+        segments: &mut Vec<JourneySegment>,
+    ) {
+        for &seg_idx in segments_without_duration {
+            let seg = &route[seg_idx];
+            let arrival_time = departure_time + *cumulative_time;
+            *cumulative_time += seg.wait_time;
+            let departure_from_station = departure_time + *cumulative_time;
+
+            if let Some(node_idx) = route_nodes[seg_idx + 1] {
+                station_times.push((node_idx, arrival_time, departure_from_station));
+            }
+
+            segments.push(JourneySegment {
+                edge_index: seg.edge_index,
+                track_index: seg.track_index,
+                origin_platform: seg.origin_platform,
+                destination_platform: seg.destination_platform,
+            });
+        }
+    }
+
+    /// Find how many consecutive segments have no duration starting from index+1
+    fn count_segments_without_duration(route: &[crate::models::RouteSegment], start_index: usize) -> Vec<usize> {
+        let mut segments_to_cover = vec![start_index];
+        let mut j = start_index + 1;
+        while j < route.len() && route[j].duration.is_none() {
+            segments_to_cover.push(j);
+            j += 1;
+        }
+        segments_to_cover
+    }
+
+    /// Process segments with duration inheritance and add station times/segments
+    fn process_segments_with_duration(
+        segments_since_duration: &[usize],
+        duration: Duration,
+        route: &[crate::models::RouteSegment],
+        route_nodes: &[Option<petgraph::stable_graph::NodeIndex>],
+        departure_time: NaiveDateTime,
+        cumulative_time: &mut Duration,
+        station_times: &mut Vec<(petgraph::stable_graph::NodeIndex, NaiveDateTime, NaiveDateTime)>,
+        segments: &mut Vec<JourneySegment>,
+    ) {
+        let segments_to_cover = segments_since_duration.len();
+        let duration_per_segment = if segments_to_cover > 0 {
+            duration / i32::try_from(segments_to_cover).unwrap_or(1)
+        } else {
+            duration
+        };
+
+        for &seg_idx in segments_since_duration {
+            let seg = &route[seg_idx];
+            *cumulative_time += duration_per_segment;
+            let arrival_time = departure_time + *cumulative_time;
+
+            *cumulative_time += seg.wait_time;
+            let departure_from_station = departure_time + *cumulative_time;
+
+            if let Some(node_idx) = route_nodes[seg_idx + 1] {
+                station_times.push((node_idx, arrival_time, departure_from_station));
+            }
+
+            segments.push(JourneySegment {
+                edge_index: seg.edge_index,
+                track_index: seg.track_index,
+                origin_platform: seg.origin_platform,
+                destination_platform: seg.destination_platform,
+            });
+        }
+    }
+
     /// Generate train journeys for all lines throughout the day
     ///
     /// # Arguments
@@ -203,34 +294,48 @@ impl TrainJourney {
                 station_times.push((node_idx, departure_time, departure_time));
             }
 
-            // Walk the route, accumulating travel times and wait times
-            for (i, segment) in line.forward_route.iter().enumerate() {
-                cumulative_time += segment.duration;
-                let arrival_time = departure_time + cumulative_time;
+            // Walk the route, handling duration inheritance
+            // When a segment has a duration, it covers all segments until the next duration
+            let mut i = 0;
+            while i < line.forward_route.len() {
+                if let Some(duration) = line.forward_route[i].duration {
+                    let segments_to_cover = Self::count_segments_without_duration(&line.forward_route, i);
+                    let next_index = segments_to_cover.last().copied().unwrap_or(i) + 1;
 
-                // Add wait time to get departure time
-                cumulative_time += segment.wait_time;
-                let departure_from_station = departure_time + cumulative_time;
+                    Self::process_segments_with_duration(
+                        &segments_to_cover,
+                        duration,
+                        &line.forward_route,
+                        &route_nodes,
+                        departure_time,
+                        &mut cumulative_time,
+                        &mut station_times,
+                        &mut segments,
+                    );
 
-                // Add all nodes (stations and junctions)
-                if let Some(node_idx) = route_nodes[i + 1] {
-                    station_times.push((node_idx, arrival_time, departure_from_station));
+                    i = next_index;
+                } else {
+                    // Segment without duration and no previous duration - use fallback
+                    Self::process_segments_without_duration(
+                        &[i],
+                        &line.forward_route,
+                        &route_nodes,
+                        departure_time,
+                        &mut cumulative_time,
+                        &mut station_times,
+                        &mut segments,
+                    );
+                    i += 1;
                 }
-
-                // Add segment info
-                segments.push(JourneySegment {
-                    edge_index: segment.edge_index,
-                    track_index: segment.track_index,
-                    origin_platform: segment.origin_platform,
-                    destination_platform: segment.destination_platform,
-                });
             }
 
             if station_times.len() >= 2 {
                 let id = uuid::Uuid::new_v4();
+                let train_number = generate_train_number(&line.auto_train_number_format, &line_id, journey_count + 1);
                 journeys.insert(id, TrainJourney {
                     id,
                     line_id: line_id.clone(),
+                    train_number,
                     departure_time,
                     station_times,
                     segments,
@@ -242,7 +347,11 @@ impl TrainJourney {
 
             departure_time += line.frequency;
 
-            if departure_time.hour() > GENERATION_END_HOUR {
+            // Check if next departure would be after the last departure time
+            let Some(last_departure_on_date) = time_on_date(line.last_departure, current_date) else {
+                break;
+            };
+            if departure_time > last_departure_on_date {
                 break;
             }
         }
@@ -255,6 +364,7 @@ impl TrainJourney {
         current_date: chrono::NaiveDate,
         day_filter: DaysOfWeek,
     ) {
+        let mut sequence = 1;
         for manual_dep in &line.manual_departures {
             // Filter by day of week
             if !manual_dep.days_of_week.contains(day_filter) {
@@ -269,6 +379,10 @@ impl TrainJourney {
             let from_idx = manual_dep.from_station;
             let to_idx = manual_dep.to_station;
 
+            // Use custom train number if provided, otherwise generate one
+            let train_number = manual_dep.train_number.clone()
+                .unwrap_or_else(|| generate_train_number(&line.auto_train_number_format, &line.id, sequence));
+
             // Try forward route first
             if let Some(journey) = Self::generate_manual_journey_for_route(
                 &line.forward_route,
@@ -277,8 +391,10 @@ impl TrainJourney {
                 departure_time,
                 from_idx,
                 to_idx,
+                &train_number,
             ) {
                 journeys.insert(journey.id, journey);
+                sequence += 1;
                 continue;
             }
 
@@ -290,8 +406,10 @@ impl TrainJourney {
                 departure_time,
                 from_idx,
                 to_idx,
+                &train_number,
             ) {
                 journeys.insert(journey.id, journey);
+                sequence += 1;
             }
         }
     }
@@ -303,27 +421,11 @@ impl TrainJourney {
         departure_time: NaiveDateTime,
         from_idx: petgraph::graph::NodeIndex,
         to_idx: petgraph::graph::NodeIndex,
+        train_number: &str,
     ) -> Option<TrainJourney> {
-        
-
-        // Build list of node indices along this route
-        let mut route_nodes = Vec::new();
-
-        // Add first node
-        if let Some(segment) = route.first() {
-            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-            if let Some((from, _)) = graph.get_track_endpoints(edge_idx) {
-                route_nodes.push(from);
-            }
-        }
-
-        // Add all target nodes from route segments
-        for segment in route {
-            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-            if let Some((_, to)) = graph.get_track_endpoints(edge_idx) {
-                route_nodes.push(to);
-            }
-        }
+        // Use the same route node building logic as auto-generated journeys
+        let route_nodes_opt = Self::build_route_nodes(route, graph);
+        let route_nodes: Vec<_> = route_nodes_opt.iter().filter_map(|&n| n).collect();
 
         // Find positions of from and to stations
         let from_pos = route_nodes.iter().position(|&idx| idx == from_idx)?;
@@ -342,31 +444,52 @@ impl TrainJourney {
         station_times.push((from_idx, departure_time, departure_time));
 
         let mut cumulative_time = Duration::zero();
-        for i in from_pos..to_pos {
-            cumulative_time += route[i].duration;
-            let arrival_time = departure_time + cumulative_time;
 
-            // Add wait time to get departure time
-            cumulative_time += route[i].wait_time;
-            let departure_from_station = departure_time + cumulative_time;
+        // Convert route_nodes to Option<NodeIndex> for compatibility with helper functions
+        let route_nodes_opt: Vec<Option<petgraph::stable_graph::NodeIndex>> = route_nodes.iter().map(|&idx| Some(idx)).collect();
 
-            // Add all nodes (stations and junctions)
-            let node_idx = route_nodes[i + 1];
-            station_times.push((node_idx, arrival_time, departure_from_station));
+        let mut i = from_pos;
+        while i < to_pos {
+            if let Some(duration) = route[i].duration {
+                // Find all segments until the next duration (or end of route segment)
+                let mut segments_to_cover = vec![i];
+                let mut j = i + 1;
+                while j < to_pos && route[j].duration.is_none() {
+                    segments_to_cover.push(j);
+                    j += 1;
+                }
 
-            // Add segment info
-            segments.push(JourneySegment {
-                edge_index: route[i].edge_index,
-                track_index: route[i].track_index,
-                origin_platform: route[i].origin_platform,
-                destination_platform: route[i].destination_platform,
-            });
+                Self::process_segments_with_duration(
+                    &segments_to_cover,
+                    duration,
+                    route,
+                    &route_nodes_opt,
+                    departure_time,
+                    &mut cumulative_time,
+                    &mut station_times,
+                    &mut segments,
+                );
+
+                i = j;
+            } else {
+                Self::process_segments_without_duration(
+                    &[i],
+                    route,
+                    &route_nodes_opt,
+                    departure_time,
+                    &mut cumulative_time,
+                    &mut station_times,
+                    &mut segments,
+                );
+                i += 1;
+            }
         }
 
         if station_times.len() >= 2 {
             Some(TrainJourney {
                 id: uuid::Uuid::new_v4(),
                 line_id: line.id.clone(),
+                train_number: train_number.to_string(),
                 departure_time,
                 station_times,
                 segments,
@@ -413,34 +536,46 @@ impl TrainJourney {
                 station_times.push((node_idx, return_departure_time, return_departure_time));
             }
 
-            // Walk the return route
-            for (i, segment) in line.return_route.iter().enumerate() {
-                cumulative_time += segment.duration;
-                let arrival_time = return_departure_time + cumulative_time;
+            // Walk the return route, handling duration inheritance
+            let mut i = 0;
+            while i < line.return_route.len() {
+                if let Some(duration) = line.return_route[i].duration {
+                    let segments_to_cover = Self::count_segments_without_duration(&line.return_route, i);
+                    let next_index = segments_to_cover.last().copied().unwrap_or(i) + 1;
 
-                // Add wait time to get departure time
-                cumulative_time += segment.wait_time;
-                let departure_from_station = return_departure_time + cumulative_time;
+                    Self::process_segments_with_duration(
+                        &segments_to_cover,
+                        duration,
+                        &line.return_route,
+                        &route_nodes,
+                        return_departure_time,
+                        &mut cumulative_time,
+                        &mut station_times,
+                        &mut segments,
+                    );
 
-                // Add all nodes (stations and junctions)
-                if let Some(node_idx) = route_nodes[i + 1] {
-                    station_times.push((node_idx, arrival_time, departure_from_station));
+                    i = next_index;
+                } else {
+                    Self::process_segments_without_duration(
+                        &[i],
+                        &line.return_route,
+                        &route_nodes,
+                        return_departure_time,
+                        &mut cumulative_time,
+                        &mut station_times,
+                        &mut segments,
+                    );
+                    i += 1;
                 }
-
-                // Add segment info
-                segments.push(JourneySegment {
-                    edge_index: segment.edge_index,
-                    track_index: segment.track_index,
-                    origin_platform: segment.origin_platform,
-                    destination_platform: segment.destination_platform,
-                });
             }
 
             if station_times.len() >= 2 {
                 let id = uuid::Uuid::new_v4();
+                let train_number = generate_train_number(&line.auto_train_number_format, &line_id, return_journey_count + 1);
                 journeys.insert(id, TrainJourney {
                     id,
                     line_id: line_id.clone(),
+                    train_number,
                     departure_time: return_departure_time,
                     station_times,
                     segments,
@@ -452,7 +587,11 @@ impl TrainJourney {
 
             return_departure_time += line.frequency;
 
-            if return_departure_time.hour() > GENERATION_END_HOUR {
+            // Check if next departure would be after the last departure time
+            let Some(last_departure_on_date) = time_on_date(line.last_departure, current_date) else {
+                break;
+            };
+            if return_departure_time > last_departure_on_date {
                 break;
             }
         }
@@ -498,7 +637,7 @@ mod tests {
                     track_index: 0,
                     origin_platform: 0,
                     destination_platform: 0,
-                    duration: Duration::minutes(10),
+                    duration: Some(Duration::minutes(10)),
                     wait_time: Duration::seconds(30),
                 },
                 RouteSegment {
@@ -506,7 +645,7 @@ mod tests {
                     track_index: 0,
                     origin_platform: 0,
                     destination_platform: 0,
-                    duration: Duration::minutes(15),
+                    duration: Some(Duration::minutes(15)),
                     wait_time: Duration::seconds(30),
                 },
             ],
@@ -518,6 +657,8 @@ mod tests {
             days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             sync_routes: true,
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         }
     }
 
@@ -605,17 +746,23 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_journeys_stops_at_end_hour() {
+    fn test_generate_journeys_stops_at_last_departure() {
         let graph = create_test_graph();
         let mut line = create_test_line(&graph);
-        line.first_departure = BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time");
+        line.first_departure = BASE_DATE.and_hms_opt(20, 0, 0).expect("valid time");
+        line.return_first_departure = BASE_DATE.and_hms_opt(20, 0, 0).expect("valid time");
+        line.last_departure = BASE_DATE.and_hms_opt(21, 0, 0).expect("valid time");
         line.frequency = Duration::minutes(30);
 
-        let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
+        let journeys = TrainJourney::generate_journeys(&[line], &graph, Some(Weekday::Mon));
 
-        // Should only generate journeys up to GENERATION_END_HOUR (22)
+        // Should only generate journeys up to and including last_departure (21:00)
+        // With 20:00 start, 30 min frequency, and 21:00 end: expect 20:00, 20:30, 21:00
+        assert!(!journeys.is_empty());
+
         for journey in journeys.values() {
-            assert!(journey.departure_time.hour() <= GENERATION_END_HOUR);
+            assert!(journey.departure_time <= BASE_DATE.and_hms_opt(21, 0, 0).expect("valid time"),
+                "Journey departed at {:?}, which is after 21:00", journey.departure_time);
         }
     }
 
@@ -657,7 +804,7 @@ mod tests {
                     track_index: 0,
                     origin_platform: 1,
                     destination_platform: 1,
-                    duration: Duration::minutes(15),
+                    duration: Some(Duration::minutes(15)),
                     wait_time: Duration::seconds(30),
                 },
                 RouteSegment {
@@ -665,7 +812,7 @@ mod tests {
                     track_index: 0,
                     origin_platform: 1,
                     destination_platform: 1,
-                    duration: Duration::minutes(10),
+                    duration: Some(Duration::minutes(10)),
                     wait_time: Duration::seconds(30),
                 },
             ];
@@ -772,10 +919,12 @@ mod tests {
         line.schedule_mode = ScheduleMode::Manual;
         line.manual_departures = vec![
             crate::models::ManualDeparture {
+                id: uuid::Uuid::new_v4(),
                 time: BASE_DATE.and_hms_opt(10, 0, 0).expect("valid time"),
                 from_station: idx1,
                 to_station: idx2,
                 days_of_week: DaysOfWeek::MONDAY | DaysOfWeek::WEDNESDAY | DaysOfWeek::FRIDAY,
+                train_number: None,
             },
         ];
 
@@ -818,7 +967,7 @@ mod tests {
                     track_index: 0,
                     origin_platform: 0,
                     destination_platform: 0,
-                    duration: Duration::minutes(5),
+                    duration: Some(Duration::minutes(5)),
                     wait_time: Duration::seconds(0), // No wait at junction
                 },
                 RouteSegment {
@@ -826,7 +975,7 @@ mod tests {
                     track_index: 0,
                     origin_platform: 0,
                     destination_platform: 0,
-                    duration: Duration::minutes(5),
+                    duration: Some(Duration::minutes(5)),
                     wait_time: Duration::seconds(30),
                 },
             ],
@@ -838,6 +987,8 @@ mod tests {
             days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
             manual_departures: vec![],
             sync_routes: true,
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);

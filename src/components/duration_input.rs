@@ -46,3 +46,28 @@ pub fn DurationInput(
         />
     }
 }
+
+#[component]
+pub fn OptionalDurationInput(
+    duration: Signal<Option<Duration>>,
+    on_change: impl Fn(Option<Duration>) + 'static,
+) -> impl IntoView {
+    view! {
+        <input
+            type="text"
+            class="duration-input"
+            placeholder="-"
+            prop:value=move || {
+                duration.get().map_or(String::new(), duration_to_hhmmss)
+            }
+            on:change=move |ev| {
+                let input_str = event_target_value(&ev).trim().to_string();
+                if input_str.is_empty() || input_str == "-" {
+                    on_change(None);
+                } else if let Some(new_duration) = parse_hhmmss(&input_str) {
+                    on_change(Some(new_duration));
+                }
+            }
+        />
+    }
+}

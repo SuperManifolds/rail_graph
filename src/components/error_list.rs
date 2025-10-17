@@ -10,6 +10,7 @@ fn ErrorListPopover(
     conflicts: Signal<Vec<Conflict>>,
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
     stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, StationNode)>>,
+    graph: ReadSignal<RailwayGraph>,
 ) -> impl IntoView {
     view! {
         <div class="error-list-popover">
@@ -34,7 +35,7 @@ fn ErrorListPopover(
                                         let station2_name = current_stations.get(conflict.station2_idx)
                                             .map_or("Unknown", |(_, s)| s.name.as_str());
 
-                                        let conflict_message = conflict.format_message(station1_name, station2_name);
+                                        let conflict_message = conflict.format_message(station1_name, station2_name, &graph.get());
 
                                         let time_fraction = time_to_fraction(conflict.time);
                                         // Direct usize to f64 conversion is safe for reasonable station counts
@@ -92,7 +93,8 @@ pub fn ErrorList(
     let container_ref = create_node_ref::<leptos::html::Div>();
 
     window_event_listener(leptos::ev::click, move |ev| {
-        if !is_open.get() {
+        // Use try_get to avoid panic if signal is disposed
+        if is_open.try_get() != Some(true) {
             return;
         }
         let Some(container) = container_ref.get() else {
@@ -133,6 +135,7 @@ pub fn ErrorList(
                             conflicts=conflicts
                             on_conflict_click=on_conflict_click
                             stations=Signal::derive(move || graph.get().get_all_stations_ordered())
+                            graph=graph
                         />
                     }.into_view()
                 } else {

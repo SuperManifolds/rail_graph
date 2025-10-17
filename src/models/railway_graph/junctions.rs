@@ -505,7 +505,7 @@ mod tests {
                 track_index: 0,
                 origin_platform: 0,
                 destination_platform: 0,
-                duration: Duration::minutes(5),
+                duration: Some(Duration::minutes(5)),
                 wait_time: Duration::seconds(0),
             },
             RouteSegment {
@@ -513,7 +513,7 @@ mod tests {
                 track_index: 0,
                 origin_platform: 0,
                 destination_platform: 0,
-                duration: Duration::minutes(5),
+                duration: Some(Duration::minutes(5)),
                 wait_time: Duration::seconds(30),
             },
         ];
@@ -556,7 +556,7 @@ mod tests {
                 track_index: 0,
                 origin_platform: 0,
                 destination_platform: 0,
-                duration: Duration::minutes(5),
+                duration: Some(Duration::minutes(5)),
                 wait_time: Duration::seconds(0),
             },
             RouteSegment {
@@ -564,7 +564,7 @@ mod tests {
                 track_index: 0,
                 origin_platform: 0,
                 destination_platform: 0,
-                duration: Duration::minutes(5),
+                duration: Some(Duration::minutes(5)),
                 wait_time: Duration::seconds(30),
             },
         ];
@@ -739,7 +739,7 @@ mod tests {
                 track_index: 0,
                 origin_platform: 0,
                 destination_platform: 0,
-                duration: Duration::minutes(5),
+                duration: Some(Duration::minutes(5)),
                 wait_time: Duration::seconds(0),
             },
             RouteSegment {
@@ -747,7 +747,7 @@ mod tests {
                 track_index: 0,
                 origin_platform: 0,
                 destination_platform: 0,
-                duration: Duration::minutes(5),
+                duration: Some(Duration::minutes(5)),
                 wait_time: Duration::seconds(30),
             },
         ];
@@ -761,7 +761,7 @@ mod tests {
                 track_index: 0,
                 origin_platform: 0,
                 destination_platform: 0,
-                duration: Duration::minutes(5),
+                duration: Some(Duration::minutes(5)),
                 wait_time: Duration::seconds(0),
             },
             RouteSegment {
@@ -769,7 +769,7 @@ mod tests {
                 track_index: 0,
                 origin_platform: 0,
                 destination_platform: 0,
-                duration: Duration::minutes(5),
+                duration: Some(Duration::minutes(5)),
                 wait_time: Duration::seconds(30),
             },
         ];

@@ -1,10 +1,12 @@
 use leptos::*;
 use leptos::set_timeout_with_handle;
 use std::time::Duration;
+use std::rc::Rc;
+use std::cell::Cell;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
-use crate::models::{RailwayGraph, Stations, Tracks};
+use crate::models::{RailwayGraph, Stations};
 use crate::conflict::{Conflict, StationCrossing};
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
@@ -37,10 +39,18 @@ fn setup_render_effect(
     station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
 ) {
     let (render_requested, set_render_requested) = create_signal(false);
+    let is_disposed = Rc::new(Cell::new(false));
     let zoom_level = viewport.zoom_level;
     let zoom_level_x = viewport.zoom_level_x.expect("horizontal zoom enabled").0;
     let pan_offset_x = viewport.pan_offset_x;
     let pan_offset_y = viewport.pan_offset_y;
+
+    {
+        let is_disposed = Rc::clone(&is_disposed);
+        on_cleanup(move || {
+            is_disposed.set(true);
+        });
+    }
 
     create_effect(move |_| {
         // Track all dependencies
@@ -64,7 +74,16 @@ fn setup_render_effect(
             set_render_requested.set(true);
 
             let window = web_sys::window().expect("window");
+            let is_disposed = Rc::clone(&is_disposed);
             let callback = Closure::once(move || {
+                // Check if component has been disposed
+                if is_disposed.get() {
+                    return;
+                }
+
+                // Check if component is still mounted before accessing signals
+                let Some(canvas) = canvas_ref.get_untracked() else { return };
+
                 set_render_requested.set(false);
 
                 let journeys = train_journeys.get_untracked();
@@ -72,8 +91,6 @@ fn setup_render_effect(
                 let current_graph = graph.get_untracked();
                 let stations_for_render = display_stations.get_untracked();
                 let idx_map = station_idx_map.get_untracked();
-
-                let Some(canvas) = canvas_ref.get_untracked() else { return };
 
                 let zoom = zoom_level.get_untracked();
                 let zoom_x = zoom_level_x.get_untracked();
@@ -148,7 +165,8 @@ fn handle_mouse_move_hover(
 
     if show_line_blocks.get() {
         let journeys = train_journeys.get();
-        let journeys_vec: Vec<_> = journeys.values().collect();
+        let mut journeys_vec: Vec<_> = journeys.values().collect();
+        journeys_vec.sort_by_key(|j| j.departure_time);
         let hovered_journey = train_journeys::check_journey_hover(
             x, y, &journeys_vec, &current_stations,
             f64::from(canvas.width()), f64::from(canvas.height()),
@@ -165,8 +183,6 @@ fn handle_mouse_move_hover(
 #[must_use]
 pub fn GraphCanvas(
     graph: ReadSignal<RailwayGraph>,
-    set_graph: WriteSignal<RailwayGraph>,
-    set_lines: WriteSignal<Vec<crate::models::Line>>,
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     visualization_time: ReadSignal<NaiveDateTime>,
     set_visualization_time: WriteSignal<NaiveDateTime>,
@@ -260,7 +276,7 @@ pub fn GraphCanvas(
                     let current_graph = graph.get();
                     let station_count = current_graph.get_all_stations_ordered().len() as f64;
 
-                    let target_zoom = 4.0;
+                    let target_zoom = 8.0;
                     set_zoom_level.set(target_zoom);
                     set_zoom_level_x.set(target_zoom);
 
@@ -291,17 +307,7 @@ pub fn GraphCanvas(
                 canvas_viewport::handle_pan_start(x, y, &viewport);
             } else {
                 let canvas_width = f64::from(canvas.width());
-                let canvas_height = f64::from(canvas.height());
-                let current_stations = display_stations.get();
-
-                if let Some(clicked_segment) = station_labels::check_toggle_click(
-                    x, y, canvas_height, &current_stations,
-                    zoom_level.get(), pan_offset_y.get()
-                ) {
-                    toggle_segment_double_track(clicked_segment, &current_stations, set_graph, set_lines);
-                } else {
-                    handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
-                }
+                handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
             }
         }
     };
@@ -366,14 +372,16 @@ pub fn GraphCanvas(
                 let graph_mouse_y = mouse_y - TOP_MARGIN;
 
                 // Calculate minimum zoom to fit all stations in Y axis
-                // The graph content height at zoom=1.0 is graph_height
-                // We want min zoom where (graph_height * zoom) >= (station_count * min_station_spacing)
-                // With reasonable min_station_spacing of ~20 pixels per station
+                // Stations are evenly spaced, so with N stations there are N-1 gaps
+                // At zoom=1.0, spacing between stations = graph_height / (N-1)
+                // At zoom=z, spacing = z * graph_height / (N-1)
+                // We want: z * graph_height / (N-1) >= min_station_spacing
+                // So: z >= min_station_spacing * (N-1) / graph_height
                 let current_graph = graph.get();
                 let station_count = current_graph.get_all_stations_ordered().len() as f64;
                 let min_zoom = if station_count > 1.0 {
                     let min_station_spacing = 20.0; // Minimum pixels between stations
-                    let required_height = station_count * min_station_spacing;
+                    let required_height = (station_count - 1.0) * min_station_spacing;
                     Some((required_height / graph_height).max(0.1))
                 } else {
                     Some(0.1)
@@ -460,7 +468,7 @@ fn render_graph(
     let visible_start = -viewport.pan_offset_x / visible_hour_width;
     let visible_end = visible_start + (dimensions.graph_width / visible_hour_width);
 
-    let journeys_vec: Vec<&TrainJourney> = train_journeys.values()
+    let mut journeys_vec: Vec<&TrainJourney> = train_journeys.values()
         .filter(|journey| {
             // Quick time-based culling: check if journey overlaps visible time range
             if let (Some((_, start, _)), Some((_, _, end))) =
@@ -475,6 +483,9 @@ fn render_graph(
             }
         })
         .collect();
+
+    // Sort by departure time for consistent draw order (prevents z-fighting)
+    journeys_vec.sort_by_key(|j| j.departure_time);
 
     let Ok(Some(context)) = canvas_element.get_context("2d") else {
         leptos::logging::warn!("Failed to get 2D context");
@@ -629,14 +640,6 @@ fn render_graph(
         viewport.zoom_level,
         viewport.pan_offset_y,
     );
-    station_labels::draw_segment_toggles(
-        &ctx,
-        &dimensions,
-        stations,
-        graph,
-        viewport.zoom_level,
-        viewport.pan_offset_y,
-    );
 
     // Draw time scrubber on top (adjusted for zoom/pan)
     time_scrubber::draw_time_scrubber(
@@ -652,40 +655,6 @@ fn render_graph(
 
 fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
     ctx.clear_rect(0.0, 0.0, width, height);
-}
-
-fn toggle_segment_double_track(
-    clicked_segment: usize,
-    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)],
-    set_graph: WriteSignal<RailwayGraph>,
-    set_lines: WriteSignal<Vec<crate::models::Line>>,
-) {
-    // segment index i represents the segment between stations[i-1] and stations[i]
-    if clicked_segment == 0 || clicked_segment >= stations.len() {
-        return;
-    }
-
-    // Extract station names - only works for stations, not junctions
-    let Some(station1_name) = stations[clicked_segment - 1].1.as_station().map(|s| s.name.clone()) else {
-        return;
-    };
-    let Some(station2_name) = stations[clicked_segment].1.as_station().map(|s| s.name.clone()) else {
-        return;
-    };
-
-    // Toggle track in the graph model
-    set_graph.update(|g| {
-        let changed_edges = g.toggle_segment_double_track(&station1_name, &station2_name);
-
-        // Update lines to fix incompatible track assignments
-        set_lines.update(|current_lines| {
-            for (edge_index, new_track_count) in changed_edges {
-                for line in current_lines.iter_mut() {
-                    line.fix_track_indices_after_change(edge_index, new_track_count, g);
-                }
-            }
-        });
-    });
 }
 
 fn handle_time_scrubbing(

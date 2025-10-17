@@ -1,5 +1,5 @@
 use crate::components::tab_view::TabPanel;
-use crate::models::{Line, RailwayGraph, RouteDirection, Routes, Stations, RouteSegment};
+use crate::models::{Line, RailwayGraph, RouteDirection, Routes, Stations, RouteSegment, Tracks};
 use super::{StopRow, TimeDisplayMode, StationSelect, StationPosition};
 use leptos::*;
 use chrono::Duration;
@@ -11,10 +11,10 @@ pub fn StopsTab(
     graph: ReadSignal<RailwayGraph>,
     active_tab: RwSignal<String>,
     on_save: std::rc::Rc<dyn Fn(Line)>,
+    time_mode: RwSignal<TimeDisplayMode>,
+    route_direction: RwSignal<RouteDirection>,
+    first_station: RwSignal<Option<String>>,
 ) -> impl IntoView {
-    let (time_mode, set_time_mode) = create_signal(TimeDisplayMode::Difference);
-    let (route_direction, set_route_direction) = create_signal(RouteDirection::Forward);
-    let (first_station, set_first_station) = create_signal(None::<String>);
     view! {
         <TabPanel when=Signal::derive(move || active_tab.get() == "stops")>
             <div class="line-editor-content">
@@ -22,7 +22,7 @@ pub fn StopsTab(
                     <button
                         class="route-direction-toggle"
                         on:click=move |_| {
-                            set_route_direction.update(|dir| {
+                            route_direction.update(|dir| {
                                 *dir = match *dir {
                                     RouteDirection::Forward => RouteDirection::Return,
                                     RouteDirection::Return => RouteDirection::Forward,
@@ -42,7 +42,7 @@ pub fn StopsTab(
                     <button
                         class="time-mode-toggle"
                         on:click=move |_| {
-                            set_time_mode.update(|mode| {
+                            time_mode.update(|mode| {
                                 *mode = match *mode {
                                     TimeDisplayMode::Difference => TimeDisplayMode::Absolute,
                                     TimeDisplayMode::Absolute => TimeDisplayMode::Difference,
@@ -114,8 +114,8 @@ pub fn StopsTab(
                                                                         if let Some(path) = graph.find_path_between_nodes(first_idx, second_idx) {
                                                                             // Add all segments in the path
                                                                             for (i, edge) in path.iter().enumerate() {
-                                                                                // Get the source node of this edge
-                                                                                let Some((source, _)) = graph.graph.edge_endpoints(*edge) else {
+                                                                                // Get the source and target nodes of this edge
+                                                                                let Some((source, target)) = graph.graph.edge_endpoints(*edge) else {
                                                                                     continue;
                                                                                 };
 
@@ -128,12 +128,25 @@ pub fn StopsTab(
                                                                                     Duration::seconds(30)
                                                                                 };
 
+                                                                                // Get platform counts for default platform logic
+                                                                                let source_platform_count = graph.graph.node_weight(source)
+                                                                                    .and_then(|n| n.as_station())
+                                                                                    .map_or(1, |s| s.platforms.len());
+
+                                                                                let target_platform_count = graph.graph.node_weight(target)
+                                                                                    .and_then(|n| n.as_station())
+                                                                                    .map_or(1, |s| s.platforms.len());
+
+                                                                                // Use track default platforms
+                                                                                let origin_platform = graph.get_default_platform_for_arrival(*edge, false, source_platform_count);
+                                                                                let destination_platform = graph.get_default_platform_for_arrival(*edge, true, target_platform_count);
+
                                                                                 let segment = RouteSegment {
                                                                                     edge_index: edge.index(),
                                                                                     track_index: 0,
-                                                                                    origin_platform: 0,
-                                                                                    destination_platform: 0,
-                                                                                    duration: Duration::minutes(5),
+                                                                                    origin_platform,
+                                                                                    destination_platform,
+                                                                                    duration: None,
                                                                                     // Only the first segment gets the wait time, representing the dwell time at the origin station.
                                                                                     // Subsequent segments have zero wait time, as trains do not stop at intermediate segments.
                                                                                     wait_time: if i == 0 { default_wait } else { Duration::zero() },
@@ -155,7 +168,7 @@ pub fn StopsTab(
                                                                             }
 
                                                                             on_save(updated_line);
-                                                                            set_first_station.set(None);
+                                                                            first_station.set(None);
                                                                         }
                                                                     }
                                                                 }
@@ -172,7 +185,7 @@ pub fn StopsTab(
                                                 </select>
                                                 <button
                                                     class="cancel-button"
-                                                    on:click=move |_| set_first_station.set(None)
+                                                    on:click=move |_| first_station.set(None)
                                                 >
                                                     "Cancel"
                                                 </button>
@@ -188,7 +201,7 @@ pub fn StopsTab(
                                                     on:change=move |ev| {
                                                         let station_name = event_target_value(&ev);
                                                         if !station_name.is_empty() {
-                                                            set_first_station.set(Some(station_name));
+                                                            first_station.set(Some(station_name));
                                                         }
                                                     }
                                                 >

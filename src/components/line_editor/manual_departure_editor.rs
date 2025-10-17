@@ -109,6 +109,20 @@ pub fn ManualDepartureEditor(
                 }
             />
             </div>
+            <div class="form-group">
+                <label>"Train Number (optional)"</label>
+                <input
+                    type="text"
+                    placeholder="Leave empty for auto-generated"
+                    value=move || local_departure.get().train_number.unwrap_or_default()
+                    on:input=move |ev| {
+                        let value = event_target_value(&ev);
+                        let train_number = if value.is_empty() { None } else { Some(value) };
+                        set_local_departure.update(|dep| dep.train_number = train_number);
+                        on_update.with_value(|f| f(index, local_departure.get_untracked()));
+                    }
+                />
+            </div>
         </div>
     }
 }

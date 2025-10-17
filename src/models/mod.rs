@@ -10,7 +10,7 @@ mod view;
 
 pub use days_of_week::DaysOfWeek;
 pub use junction::{Junction, RoutingRule};
-pub use line::{Line, ScheduleMode, ManualDeparture, RouteSegment};
+pub use line::{Line, ScheduleMode, ManualDeparture, RouteSegment, generate_random_color};
 pub use node::Node;
 pub use project::{Project, ProjectMetadata, Legend};
 pub use railway_graph::{RailwayGraph, Stations, Tracks, Routes, Junctions};

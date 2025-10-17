@@ -1,6 +1,7 @@
-use leptos::{component, view, IntoView, Signal, create_signal, SignalGet, SignalSet, spawn_local, event_target_value, Callback, Callable, WriteSignal, create_effect, wasm_bindgen, create_node_ref};
+use leptos::{component, view, IntoView, Signal, create_signal, SignalGet, SignalSet, spawn_local, Callback, Callable, WriteSignal, create_effect, wasm_bindgen, create_node_ref};
 use crate::components::window::Window;
 use crate::components::confirmation_dialog::ConfirmationDialog;
+use crate::components::text_input_dialog::TextInputDialog;
 use crate::models::{Project, ProjectMetadata};
 use crate::storage::{self, Storage, IndexedDbStorage, format_bytes};
 use std::rc::Rc;
@@ -218,6 +219,10 @@ pub fn ProjectManager(
     let (show_save_as_dialog, set_show_save_as_dialog) = create_signal(false);
     let (save_as_name, set_save_as_name) = create_signal(String::new());
 
+    // New Project dialog state
+    let (show_new_project_dialog, set_show_new_project_dialog) = create_signal(false);
+    let (new_project_name, set_new_project_name) = create_signal(String::new());
+
     // Import file input
     let import_file_input_ref = create_node_ref::<leptos::html::Input>();
 
@@ -270,7 +275,7 @@ pub fn ProjectManager(
 
 
     // Save current project with new name
-    let handle_save_as = move || {
+    let handle_save_as = Rc::new(move || {
         let name = save_as_name.get().trim().to_string();
         if name.is_empty() {
             set_error_message.set(Some("Project name cannot be empty".to_string()));
@@ -303,7 +308,12 @@ pub fn ProjectManager(
                 Err(e) => set_error_message.set(Some(format!("Failed to save project: {e}"))),
             }
         });
-    };
+    });
+
+    let cancel_save_as = Rc::new(move || {
+        set_show_save_as_dialog.set(false);
+        set_save_as_name.set(String::new());
+    });
 
     // Load a project - inline in the view to avoid move issues
     // Duplicate a project - inline in the view
@@ -330,14 +340,27 @@ pub fn ProjectManager(
     });
 
     // New project
-    let handle_new_project = {
+    let handle_new_project = Rc::new({
         let on_close = Rc::clone(&on_close);
         move || {
-            let project = Project::empty();
+            let name = new_project_name.get().trim().to_string();
+            if name.is_empty() {
+                set_error_message.set(Some("Project name cannot be empty".to_string()));
+                return;
+            }
+
+            let project = Project::new_with_name(name);
             on_load_project.call(project);
+            set_show_new_project_dialog.set(false);
+            set_new_project_name.set(String::new());
             on_close();
         }
-    };
+    });
+
+    let cancel_new_project = Rc::new(move || {
+        set_show_new_project_dialog.set(false);
+        set_new_project_name.set(String::new());
+    });
 
     // Process imported project file
     let process_import = move |bytes: Vec<u8>| {
@@ -447,7 +470,7 @@ pub fn ProjectManager(
                 <div class="project-manager-actions">
                     <button
                         class="primary"
-                        on:click=move |_| handle_new_project()
+                        on:click=move |_| set_show_new_project_dialog.set(true)
                     >
                         <i class="fa-solid fa-file"></i>
                         " New Project"
@@ -541,37 +564,31 @@ pub fn ProjectManager(
             </div>
         </Window>
 
+        // New Project Dialog
+        <TextInputDialog
+            is_open=show_new_project_dialog.into()
+            title=Signal::derive(|| "New Project".to_string())
+            label="Project Name:".to_string()
+            value=new_project_name
+            set_value=set_new_project_name
+            on_confirm=handle_new_project
+            on_cancel=cancel_new_project
+            confirm_text="Create".to_string()
+            cancel_text="Cancel".to_string()
+        />
+
         // Save As Dialog
-        <Window
-            is_open=show_save_as_dialog
+        <TextInputDialog
+            is_open=show_save_as_dialog.into()
             title=Signal::derive(|| "Save Project As".to_string())
-            on_close=move || set_show_save_as_dialog.set(false)
-            max_size=(400.0, 200.0)
-        >
-            <div class="save-as-dialog">
-                <label>"Project Name:"</label>
-                <input
-                    type="text"
-                    class="project-name-input"
-                    value=save_as_name
-                    on:input=move |ev| set_save_as_name.set(event_target_value(&ev))
-                    on:keydown=move |ev| {
-                        if ev.key() == "Enter" {
-                            handle_save_as();
-                        }
-                    }
-                    prop:autofocus=true
-                />
-                <div class="dialog-buttons">
-                    <button on:click=move |_| set_show_save_as_dialog.set(false)>
-                        "Cancel"
-                    </button>
-                    <button class="primary" on:click=move |_| handle_save_as()>
-                        "Save"
-                    </button>
-                </div>
-            </div>
-        </Window>
+            label="Project Name:".to_string()
+            value=save_as_name
+            set_value=set_save_as_name
+            on_confirm=handle_save_as
+            on_cancel=cancel_save_as
+            confirm_text="Save".to_string()
+            cancel_text="Cancel".to_string()
+        />
 
         // Delete Confirmation Dialog
         <ConfirmationDialog

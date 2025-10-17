@@ -27,6 +27,7 @@ pub mod platform_editor;
 pub mod project_manager;
 pub mod routing_rule_editor;
 pub mod tab_view;
+pub mod text_input_dialog;
 pub mod time_graph;
 pub mod time_input;
 pub mod window;
