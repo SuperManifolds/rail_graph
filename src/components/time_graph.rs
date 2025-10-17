@@ -187,7 +187,7 @@ pub fn TimeGraph(
                     >
                         <i class="fa-solid fa-plus"></i>
                     </button>
-                    <Importer set_lines=set_lines set_graph=set_graph />
+                    <Importer lines=lines set_lines=set_lines set_graph=set_graph />
                     <Legend
                         show_station_crossings=show_station_crossings
                         set_show_station_crossings=set_show_station_crossings

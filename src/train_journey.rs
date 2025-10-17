@@ -423,26 +423,9 @@ impl TrainJourney {
         to_idx: petgraph::graph::NodeIndex,
         train_number: &str,
     ) -> Option<TrainJourney> {
-        
-
-        // Build list of node indices along this route
-        let mut route_nodes = Vec::new();
-
-        // Add first node
-        if let Some(segment) = route.first() {
-            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-            if let Some((from, _)) = graph.get_track_endpoints(edge_idx) {
-                route_nodes.push(from);
-            }
-        }
-
-        // Add all target nodes from route segments
-        for segment in route {
-            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-            if let Some((_, to)) = graph.get_track_endpoints(edge_idx) {
-                route_nodes.push(to);
-            }
-        }
+        // Use the same route node building logic as auto-generated journeys
+        let route_nodes_opt = Self::build_route_nodes(route, graph);
+        let route_nodes: Vec<_> = route_nodes_opt.iter().filter_map(|&n| n).collect();
 
         // Find positions of from and to stations
         let from_pos = route_nodes.iter().position(|&idx| idx == from_idx)?;

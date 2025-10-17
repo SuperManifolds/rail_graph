@@ -366,14 +366,16 @@ pub fn GraphCanvas(
                 let graph_mouse_y = mouse_y - TOP_MARGIN;
 
                 // Calculate minimum zoom to fit all stations in Y axis
-                // The graph content height at zoom=1.0 is graph_height
-                // We want min zoom where (graph_height * zoom) >= (station_count * min_station_spacing)
-                // With reasonable min_station_spacing of ~20 pixels per station
+                // Stations are evenly spaced, so with N stations there are N-1 gaps
+                // At zoom=1.0, spacing between stations = graph_height / (N-1)
+                // At zoom=z, spacing = z * graph_height / (N-1)
+                // We want: z * graph_height / (N-1) >= min_station_spacing
+                // So: z >= min_station_spacing * (N-1) / graph_height
                 let current_graph = graph.get();
                 let station_count = current_graph.get_all_stations_ordered().len() as f64;
                 let min_zoom = if station_count > 1.0 {
                     let min_station_spacing = 20.0; // Minimum pixels between stations
-                    let required_height = station_count * min_station_spacing;
+                    let required_height = (station_count - 1.0) * min_station_spacing;
                     Some((required_height / graph_height).max(0.1))
                 } else {
                     Some(0.1)

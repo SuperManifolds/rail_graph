@@ -37,13 +37,24 @@ pub struct Conflict {
 impl Conflict {
     /// Format a human-readable message describing the conflict (without timestamp)
     #[must_use]
-    pub fn format_message(&self, station1_name: &str, station2_name: &str) -> String {
+    pub fn format_message(&self, station1_name: &str, station2_name: &str, graph: &RailwayGraph) -> String {
         match self.conflict_type {
             ConflictType::PlatformViolation => {
-                let platform_num = self.platform_idx.unwrap_or(0) + 1;
+                let platform_name = self.platform_idx.and_then(|idx| {
+                    // Get the station node
+                    let stations = graph.get_all_stations_ordered();
+                    let (node_idx, _) = stations.get(self.station1_idx)?;
+
+                    // Get the platform name
+                    graph.graph.node_weight(*node_idx)
+                        .and_then(|n| n.as_station())
+                        .and_then(|s| s.platforms.get(idx))
+                        .map(|p| p.name.clone())
+                }).unwrap_or_else(|| "?".to_string());
+
                 format!(
                     "{} conflicts with {} at {} Platform {}",
-                    self.journey1_id, self.journey2_id, station1_name, platform_num
+                    self.journey1_id, self.journey2_id, station1_name, platform_name
                 )
             }
             ConflictType::HeadOn => {
@@ -1036,6 +1047,10 @@ mod tests {
 
     #[test]
     fn test_conflict_format_message_head_on() {
+        let mut graph = RailwayGraph::new();
+        graph.add_or_get_station("Station 1".to_string());
+        graph.add_or_get_station("Station 2".to_string());
+
         let conflict = Conflict {
             time: BASE_DATE.and_hms_opt(12, 0, 0).expect("valid time"),
             position: 0.5,
@@ -1049,12 +1064,25 @@ mod tests {
             platform_idx: None,
         };
 
-        let message = conflict.format_message("Station 1", "Station 2");
+        let message = conflict.format_message("Station 1", "Station 2", &graph);
         assert_eq!(message, "Train A conflicts with Train B between Station 1 and Station 2");
     }
 
     #[test]
     fn test_conflict_format_message_platform() {
+        let mut graph = RailwayGraph::new();
+        let station_idx = graph.add_or_get_station("Central Station".to_string());
+
+        // Add platforms to the station
+        if let Some(station_node) = graph.graph.node_weight_mut(station_idx) {
+            if let Some(station) = station_node.as_station_mut() {
+                station.platforms = vec![
+                    crate::models::Platform { name: "1".to_string() },
+                    crate::models::Platform { name: "2".to_string() },
+                ];
+            }
+        }
+
         let conflict = Conflict {
             time: BASE_DATE.and_hms_opt(12, 0, 0).expect("valid time"),
             position: 0.0,
@@ -1068,12 +1096,16 @@ mod tests {
             platform_idx: Some(1),
         };
 
-        let message = conflict.format_message("Central Station", "Central Station");
+        let message = conflict.format_message("Central Station", "Central Station", &graph);
         assert_eq!(message, "Train A conflicts with Train B at Central Station Platform 2");
     }
 
     #[test]
     fn test_conflict_format_message_overtaking() {
+        let mut graph = RailwayGraph::new();
+        graph.add_or_get_station("A".to_string());
+        graph.add_or_get_station("B".to_string());
+
         let conflict = Conflict {
             time: BASE_DATE.and_hms_opt(12, 0, 0).expect("valid time"),
             position: 0.5,
@@ -1087,7 +1119,7 @@ mod tests {
             platform_idx: None,
         };
 
-        let message = conflict.format_message("A", "B");
+        let message = conflict.format_message("A", "B", &graph);
         assert_eq!(message, "Fast overtakes Slow between A and B");
     }
 

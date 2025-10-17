@@ -153,13 +153,14 @@ fn apply_normal_zoom(
     let hit_min_cap = new_zoom == min && old_zoom * zoom_factor < min;
 
     let new_pan_x = mouse_x - (mouse_x - pan_x) * (new_zoom / old_zoom);
-    let (new_pan_x, new_pan_y) = if hit_min_cap && canvas_dimensions.is_some() {
-        // Center the content vertically when hitting the zoom cap, keep horizontal pan
-        (new_pan_x, 0.0)
+    let new_pan_y = if let (true, Some((_, graph_height))) = (hit_min_cap, canvas_dimensions) {
+        // When hitting the zoom cap, center the content vertically
+        // At zoom < 1.0, content is smaller than viewport
+        // We want to position it so: pan_y = graph_height * (1 - zoom) / 2
+        graph_height * (1.0 - new_zoom) / 2.0
     } else {
         // Normal zoom-around-cursor behavior
-        let new_pan_y = mouse_y - (mouse_y - pan_y) * (new_zoom / old_zoom);
-        (new_pan_x, new_pan_y)
+        mouse_y - (mouse_y - pan_y) * (new_zoom / old_zoom)
     };
 
     batch(move || {

@@ -4,8 +4,9 @@ use crate::constants::{BASE_DATE, BASE_MIDNIGHT};
 use petgraph::stable_graph::NodeIndex;
 use super::{RailwayGraph, TrackSegment, TrackDirection, Tracks, DaysOfWeek};
 
+#[must_use]
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-fn generate_random_color(seed: usize) -> String {
+pub fn generate_random_color(seed: usize) -> String {
     // Use a simple hash-based color generator for deterministic but varied colors
     let hue = f64::from(((seed * 137) % 360) as i32);
     let saturation = 65.0 + f64::from(((seed * 97) % 20) as i32); // 65-85%
