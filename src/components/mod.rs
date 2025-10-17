@@ -11,6 +11,7 @@ pub mod edit_station;
 pub mod edit_track;
 pub mod track_editor;
 pub mod app;
+pub mod button;
 pub mod conflict_tooltip;
 pub mod day_selector;
 pub mod days_of_week_selector;

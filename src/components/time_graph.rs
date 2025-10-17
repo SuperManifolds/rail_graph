@@ -1,4 +1,5 @@
 use crate::components::{
+    button::Button,
     day_selector::DaySelector,
     error_list::ErrorList,
     graph_canvas::GraphCanvas,
@@ -164,20 +165,22 @@ pub fn TimeGraph(
                 </div>
                 <LineControls lines=lines set_lines=set_lines graph=graph on_create_view=on_create_view />
                 <div class="sidebar-footer">
-                    <button
+                    <Button
                         class="import-button"
-                        on:click=move |_| set_show_project_manager.set(true)
+                        on_click=leptos::Callback::new(move |_| set_show_project_manager.set(true))
+                        shortcut="P"
                         title="Manage Projects"
                     >
                         <i class="fa-solid fa-folder"></i>
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                         class="import-button"
-                        on:click=move |_| set_new_line_dialog_open.set(true)
+                        on_click=leptos::Callback::new(move |_| set_new_line_dialog_open.set(true))
+                        shortcut="L"
                         title="Create new line"
                     >
                         <i class="fa-solid fa-plus"></i>
-                    </button>
+                    </Button>
                     <Importer lines=lines set_lines=set_lines set_graph=set_graph />
                     <Legend
                         show_conflicts=show_conflicts

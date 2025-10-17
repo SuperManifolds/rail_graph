@@ -3,7 +3,8 @@ use crate::jtraingraph::{parse_jtraingraph, import_jtraingraph};
 use crate::models::{Line, RailwayGraph};
 use crate::components::duration_input::DurationInput;
 use crate::components::window::Window;
-use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, web_sys, spawn_local, SignalSet, Signal, SignalUpdate};
+use crate::components::button::Button;
+use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback};
 use chrono::Duration;
 use std::collections::HashMap;
 
@@ -149,20 +150,21 @@ pub fn Importer(
             on:change=handle_file_change
             style="display: none;"
         />
-        <button
+        <Button
             class="import-button"
-            on:click=move |_| {
+            on_click=Callback::new(move |_| {
                 spawn_local(async move {
                     if let Some(input) = file_input_ref.get() {
                         input.set_value("");
                         input.click();
                     }
                 });
-            }
+            })
+            shortcut="O"
             title="Import CSV or JTrainGraph (.fpl)"
         >
             <i class="fa-solid fa-file-import"></i>
-        </button>
+        </Button>
 
         <Window
             is_open=show_dialog
