@@ -1,6 +1,8 @@
 use leptos::*;
 use leptos::set_timeout_with_handle;
 use std::time::Duration;
+use std::rc::Rc;
+use std::cell::Cell;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
@@ -37,10 +39,18 @@ fn setup_render_effect(
     station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
 ) {
     let (render_requested, set_render_requested) = create_signal(false);
+    let is_disposed = Rc::new(Cell::new(false));
     let zoom_level = viewport.zoom_level;
     let zoom_level_x = viewport.zoom_level_x.expect("horizontal zoom enabled").0;
     let pan_offset_x = viewport.pan_offset_x;
     let pan_offset_y = viewport.pan_offset_y;
+
+    {
+        let is_disposed = Rc::clone(&is_disposed);
+        on_cleanup(move || {
+            is_disposed.set(true);
+        });
+    }
 
     create_effect(move |_| {
         // Track all dependencies
@@ -64,7 +74,16 @@ fn setup_render_effect(
             set_render_requested.set(true);
 
             let window = web_sys::window().expect("window");
+            let is_disposed = Rc::clone(&is_disposed);
             let callback = Closure::once(move || {
+                // Check if component has been disposed
+                if is_disposed.get() {
+                    return;
+                }
+
+                // Check if component is still mounted before accessing signals
+                let Some(canvas) = canvas_ref.get_untracked() else { return };
+
                 set_render_requested.set(false);
 
                 let journeys = train_journeys.get_untracked();
@@ -72,8 +91,6 @@ fn setup_render_effect(
                 let current_graph = graph.get_untracked();
                 let stations_for_render = display_stations.get_untracked();
                 let idx_map = station_idx_map.get_untracked();
-
-                let Some(canvas) = canvas_ref.get_untracked() else { return };
 
                 let zoom = zoom_level.get_untracked();
                 let zoom_x = zoom_level_x.get_untracked();
