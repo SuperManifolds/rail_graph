@@ -1,5 +1,5 @@
 use super::canvas::{LEFT_MARGIN, TOP_MARGIN, RIGHT_PADDING, BOTTOM_PADDING};
-use crate::conflict::{Conflict, StationCrossing};
+use crate::conflict::Conflict;
 
 #[derive(Clone)]
 pub struct GraphDimensions {
@@ -37,9 +37,7 @@ pub struct ViewportState {
 
 pub struct ConflictDisplayState<'a> {
     pub conflicts: &'a [Conflict],
-    pub station_crossings: &'a [StationCrossing],
     pub show_conflicts: bool,
-    pub show_station_crossings: bool,
 }
 
 pub struct HoverState<'a> {

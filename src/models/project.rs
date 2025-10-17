@@ -11,7 +11,6 @@ pub struct ProjectMetadata {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Legend {
-    pub show_station_crossings: bool,
     pub show_conflicts: bool,
     pub show_line_blocks: bool,
 }
@@ -19,7 +18,6 @@ pub struct Legend {
 impl Default for Legend {
     fn default() -> Self {
         Self {
-            show_station_crossings: true,
             show_conflicts: true,
             show_line_blocks: false,
         }

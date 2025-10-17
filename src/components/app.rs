@@ -8,7 +8,7 @@ use crate::components::project_manager::ProjectManager;
 use crate::models::{Project, RailwayGraph, Legend, GraphView, ViewportState};
 use crate::storage::{IndexedDbStorage, Storage};
 use crate::train_journey::TrainJourney;
-use crate::conflict::{Conflict, StationCrossing};
+use crate::conflict::Conflict;
 use crate::worker_bridge::ConflictDetector;
 
 #[derive(Clone, PartialEq)]
@@ -180,14 +180,10 @@ pub fn App() -> impl IntoView {
         set_train_journeys.set(new_journeys);
     });
 
-    // Compute conflicts and station crossings at app level using worker
+    // Compute conflicts at app level using worker
     let (conflicts, set_conflicts) = create_signal(Vec::new());
-    let (crossings, set_crossings) = create_signal(Vec::new());
 
-    let detector = store_value(ConflictDetector::new(
-        set_conflicts,
-        set_crossings,
-    ));
+    let detector = store_value(ConflictDetector::new(set_conflicts));
 
     create_effect(move |_| {
         let journeys = train_journeys.get();
@@ -200,7 +196,6 @@ pub fn App() -> impl IntoView {
     });
 
     let raw_conflicts: Signal<Vec<Conflict>> = conflicts.into();
-    let raw_crossings: Signal<Vec<StationCrossing>> = crossings.into();
 
     // Callback for creating a new view
     let on_create_view = Callback::new(move |new_view: GraphView| {
@@ -414,7 +409,6 @@ pub fn App() -> impl IntoView {
                                     selected_day=selected_day
                                     set_selected_day=set_selected_day
                                     raw_conflicts=raw_conflicts
-                                    raw_crossings=raw_crossings
                                     on_create_view=on_create_view
                                     on_viewport_change=Callback::new(move |viewport_state: ViewportState| {
                                         on_viewport_change(view_id, viewport_state);

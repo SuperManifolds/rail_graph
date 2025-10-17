@@ -2,8 +2,6 @@ use leptos::{component, view, Signal, IntoView, create_signal, SignalUpdate, Sho
 
 #[component]
 pub fn Legend(
-    show_station_crossings: Signal<bool>,
-    set_show_station_crossings: impl Fn(bool) + 'static + Copy,
     show_conflicts: Signal<bool>,
     set_show_conflicts: impl Fn(bool) + 'static + Copy,
     show_line_blocks: Signal<bool>,
@@ -29,21 +27,6 @@ pub fn Legend(
                     </div>
 
                     <div class="legend-items">
-                        <div class="legend-item">
-                            <label class="legend-label">
-                                <input
-                                    type="checkbox"
-                                    checked=move || show_station_crossings.get()
-                                    on:change=move |ev| {
-                                        set_show_station_crossings(event_target_checked(&ev));
-                                    }
-                                />
-                                <span class="legend-icon station-crossing-icon"></span>
-                                <span>"Station Crossings"</span>
-                            </label>
-                            <p class="legend-description">"Successful passes at stations (green circles)"</p>
-                        </div>
-
                         <div class="legend-item">
                             <label class="legend-label">
                                 <input

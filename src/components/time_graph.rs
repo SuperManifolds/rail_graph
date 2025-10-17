@@ -9,7 +9,7 @@ use crate::components::{
 };
 use crate::models::{Line, RailwayGraph, GraphView, Stations};
 use crate::train_journey::TrainJourney;
-use crate::conflict::{Conflict, StationCrossing};
+use crate::conflict::Conflict;
 use leptos::{component, view, Signal, IntoView, SignalGet, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect};
 
 #[inline]
@@ -60,7 +60,6 @@ pub fn TimeGraph(
     selected_day: ReadSignal<Option<chrono::Weekday>>,
     set_selected_day: WriteSignal<Option<chrono::Weekday>>,
     raw_conflicts: Signal<Vec<Conflict>>,
-    raw_crossings: Signal<Vec<StationCrossing>>,
     on_create_view: leptos::Callback<GraphView>,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
     set_show_project_manager: WriteSignal<bool>,
@@ -69,13 +68,9 @@ pub fn TimeGraph(
         create_signal(chrono::Local::now().naive_local());
 
     // Extract legend signals
-    let show_station_crossings = Signal::derive(move || legend.get().show_station_crossings);
     let show_conflicts = Signal::derive(move || legend.get().show_conflicts);
     let show_line_blocks = Signal::derive(move || legend.get().show_line_blocks);
 
-    let set_show_station_crossings = move |value: bool| {
-        set_legend.update(|l| l.show_station_crossings = value);
-    };
     let set_show_conflicts = move |value: bool| {
         set_legend.update(|l| l.show_conflicts = value);
     };
@@ -119,8 +114,7 @@ pub fn TimeGraph(
         })
     };
 
-    let conflicts_and_crossings = create_memo(move |_| (conflicts.get(), raw_crossings.get()));
-    let conflicts_only = Signal::derive(move || conflicts.get());
+    let conflicts_memo = create_memo(move |_| conflicts.get());
 
     // Signal for panning to conflicts
     let (pan_to_conflict, set_pan_to_conflict) = create_signal(None::<(f64, f64)>);
@@ -141,12 +135,11 @@ pub fn TimeGraph(
                     train_journeys=filtered_journeys
                     visualization_time=visualization_time
                     set_visualization_time=set_visualization_time
-                    show_station_crossings=show_station_crossings
                     show_conflicts=show_conflicts
                     show_line_blocks=show_line_blocks
                     hovered_journey_id=hovered_journey_id
                     set_hovered_journey_id=set_hovered_journey_id
-                    conflicts_and_crossings=conflicts_and_crossings
+                    conflicts_memo=conflicts_memo
                     pan_to_conflict_signal=pan_to_conflict
                     display_stations=display_stations
                     station_idx_map=station_idx_map
@@ -162,7 +155,7 @@ pub fn TimeGraph(
                         set_selected_day=set_selected_day
                     />
                     <ErrorList
-                        conflicts=conflicts_only
+                        conflicts=conflicts
                         on_conflict_click=move |time_fraction, station_pos| {
                             set_pan_to_conflict.set(Some((time_fraction, station_pos)));
                         }
@@ -187,8 +180,6 @@ pub fn TimeGraph(
                     </button>
                     <Importer lines=lines set_lines=set_lines set_graph=set_graph />
                     <Legend
-                        show_station_crossings=show_station_crossings
-                        set_show_station_crossings=set_show_station_crossings
                         show_conflicts=show_conflicts
                         set_show_conflicts=set_show_conflicts
                         show_line_blocks=show_line_blocks

@@ -1,6 +1,6 @@
 use super::types::GraphDimensions;
 use crate::models::Node;
-use crate::conflict::{Conflict, StationCrossing};
+use crate::conflict::Conflict;
 use web_sys::{CanvasRenderingContext2d, Path2d};
 
 // Conflict highlight constants
@@ -11,11 +11,6 @@ const CONFLICT_LABEL_OFFSET: f64 = 5.0;
 const CONFLICT_WARNING_COLOR: &str = "rgba(255, 0, 0, 0.8)";
 const CONFLICT_WARNING_FONT_SIZE: f64 = 14.0;
 const MAX_CONFLICTS_DISPLAYED: usize = 9999;
-
-// Station crossing constants
-const CROSSING_FILL_COLOR: &str = "rgba(0, 200, 100, 0.3)";
-const CROSSING_STROKE_COLOR: &str = "rgba(0, 150, 75, 0.6)";
-const CROSSING_LINE_WIDTH: f64 = 2.0;
 
 // Block visualization constants
 const BLOCK_FILL_OPACITY: &str = "33"; // ~20% opacity in hex
@@ -217,48 +212,6 @@ pub fn check_conflict_hover(
     }
 
     None
-}
-
-#[allow(clippy::cast_precision_loss)]
-pub fn draw_station_crossings(
-    ctx: &CanvasRenderingContext2d,
-    dims: &GraphDimensions,
-    station_crossings: &[StationCrossing],
-    station_height: f64,
-    zoom_level: f64,
-    time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
-    station_idx_map: &std::collections::HashMap<usize, usize>,
-) {
-    for crossing in station_crossings {
-        // Map full-graph index to display index
-        let Some(&display_idx) = station_idx_map.get(&crossing.station_idx) else {
-            continue; // Station not in current view
-        };
-
-        let time_fraction = time_to_fraction(crossing.time);
-        let x = dims.left_margin + (time_fraction * dims.hour_width);
-        // Use station_height / 2.0 offset to center on the station line
-        let y = dims.top_margin
-            + (display_idx as f64 * station_height)
-            + (station_height / 2.0);
-
-        // Draw a translucent green circle at the crossing point
-        // Radius represents 1.5 minutes of travel time
-        let one_minute_width = dims.hour_width / 60.0;
-        let radius = one_minute_width * 1.5;
-
-        ctx.begin_path();
-        let _ = ctx.arc(x, y, radius, 0.0, 2.0 * std::f64::consts::PI);
-
-        // Fill with translucent green
-        ctx.set_fill_style_str(CROSSING_FILL_COLOR);
-        ctx.fill();
-
-        // Stroke with darker green border
-        ctx.set_stroke_style_str(CROSSING_STROKE_COLOR);
-        ctx.set_line_width(CROSSING_LINE_WIDTH / zoom_level);
-        ctx.stroke();
-    }
 }
 
 #[allow(clippy::cast_precision_loss)]

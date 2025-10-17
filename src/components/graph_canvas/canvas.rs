@@ -7,7 +7,7 @@ use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
 use crate::models::{RailwayGraph, Stations};
-use crate::conflict::{Conflict, StationCrossing};
+use crate::conflict::Conflict;
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
 use crate::components::canvas_viewport;
@@ -29,8 +29,7 @@ fn setup_render_effect(
     visualization_time: ReadSignal<NaiveDateTime>,
     graph: ReadSignal<RailwayGraph>,
     viewport: &canvas_viewport::ViewportSignals,
-    conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
-    show_station_crossings: Signal<bool>,
+    conflicts_memo: Memo<Vec<Conflict>>,
     show_conflicts: Signal<bool>,
     show_line_blocks: Signal<bool>,
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
@@ -63,8 +62,7 @@ fn setup_render_effect(
         let _ = zoom_level_x.get();
         let _ = pan_offset_x.get();
         let _ = pan_offset_y.get();
-        let _ = conflicts_and_crossings.get();
-        let _ = show_station_crossings.get();
+        let _ = conflicts_memo.get();
         let _ = show_conflicts.get();
         let _ = hovered_conflict.get();
         let _ = show_line_blocks.get();
@@ -115,12 +113,10 @@ fn setup_render_effect(
                     pan_offset_x: pan_x,
                     pan_offset_y: pan_y,
                 };
-                let (current_conflicts, current_station_crossings) = conflicts_and_crossings.get_untracked();
+                let current_conflicts = conflicts_memo.get_untracked();
                 let conflict_display = ConflictDisplayState {
                     conflicts: &current_conflicts,
-                    station_crossings: &current_station_crossings,
                     show_conflicts: show_conflicts.get_untracked(),
-                    show_station_crossings: show_station_crossings.get_untracked(),
                 };
                 let hovered = hovered_conflict.get_untracked();
                 let hovered_journey_value = hovered_journey_id.get_untracked();
@@ -144,7 +140,7 @@ fn handle_mouse_move_hover(
     y: f64,
     canvas: &web_sys::HtmlCanvasElement,
     viewport: ViewportState,
-    conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
+    conflicts_memo: Memo<Vec<Conflict>>,
     display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
     show_line_blocks: Signal<bool>,
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
@@ -152,7 +148,7 @@ fn handle_mouse_move_hover(
     set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
     station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
 ) {
-    let (current_conflicts, _) = conflicts_and_crossings.get();
+    let current_conflicts = conflicts_memo.get();
     let current_stations = display_stations.get();
     let idx_map = station_idx_map.get();
     let hovered = conflict_indicators::check_conflict_hover(
@@ -186,12 +182,11 @@ pub fn GraphCanvas(
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     visualization_time: ReadSignal<NaiveDateTime>,
     set_visualization_time: WriteSignal<NaiveDateTime>,
-    show_station_crossings: Signal<bool>,
     show_conflicts: Signal<bool>,
     show_line_blocks: Signal<bool>,
     hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
     set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
-    conflicts_and_crossings: Memo<(Vec<Conflict>, Vec<StationCrossing>)>,
+    conflicts_memo: Memo<Vec<Conflict>>,
     #[prop(optional)] pan_to_conflict_signal: Option<ReadSignal<Option<(f64, f64)>>>,
     display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
     station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
@@ -292,7 +287,7 @@ pub fn GraphCanvas(
 
     setup_render_effect(
         canvas_ref, train_journeys, visualization_time, graph, &viewport,
-        conflicts_and_crossings, show_station_crossings, show_conflicts, show_line_blocks,
+        conflicts_memo, show_conflicts, show_line_blocks,
         hovered_conflict, hovered_journey_id, display_stations, station_idx_map
     );
 
@@ -335,7 +330,7 @@ pub fn GraphCanvas(
                     pan_offset_x: pan_offset_x.get(),
                     pan_offset_y: pan_offset_y.get(),
                 };
-                handle_mouse_move_hover(x, y, canvas, viewport_state, conflicts_and_crossings, display_stations, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id, station_idx_map);
+                handle_mouse_move_hover(x, y, canvas, viewport_state, conflicts_memo, display_stations, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id, station_idx_map);
             }
         }
     };
@@ -595,19 +590,6 @@ fn render_graph(
                 );
             }
         }
-    }
-
-    // Draw station crossings if enabled
-    if conflict_display.show_station_crossings {
-        conflict_indicators::draw_station_crossings(
-            &ctx,
-            &zoomed_dimensions,
-            conflict_display.station_crossings,
-            station_height,
-            viewport.zoom_level,
-            time_to_fraction,
-            station_idx_map,
-        );
     }
 
     // Draw current train positions
