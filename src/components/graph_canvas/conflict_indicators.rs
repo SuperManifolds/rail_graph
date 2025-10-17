@@ -285,8 +285,8 @@ pub fn draw_block_violation_visualization(
         };
 
         // Find the journeys to get their colors
-        let journey1 = train_journeys.iter().find(|j| j.line_id == conflict.journey1_id);
-        let journey2 = train_journeys.iter().find(|j| j.line_id == conflict.journey2_id);
+        let journey1 = train_journeys.iter().find(|j| j.train_number == conflict.journey1_id);
+        let journey2 = train_journeys.iter().find(|j| j.train_number == conflict.journey2_id);
 
         // Get colors from journeys (hex format like #FF0000)
         let color1 = journey1.map_or("#FF0000", |j| j.color.as_str());

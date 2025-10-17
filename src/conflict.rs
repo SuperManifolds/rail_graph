@@ -660,8 +660,8 @@ fn check_segment_pair(
                 position,
                 station1_idx: seg1_min,
                 station2_idx: seg1_max,
-                journey1_id: journey1.line_id.clone(),
-                journey2_id: journey2.line_id.clone(),
+                journey1_id: journey1.train_number.clone(),
+                journey2_id: journey2.train_number.clone(),
                 conflict_type: ConflictType::BlockViolation,
                 segment1_times: Some((segment1.time_start, segment1.time_end)),
                 segment2_times: Some((segment2.time_start, segment2.time_end)),
@@ -698,8 +698,8 @@ fn check_segment_pair(
         results.station_crossings.push(StationCrossing {
             time: intersection.time,
             station_idx,
-            journey1_id: journey1.line_id.clone(),
-            journey2_id: journey2.line_id.clone(),
+            journey1_id: journey1.train_number.clone(),
+            journey2_id: journey2.train_number.clone(),
         });
         return;
     }
@@ -718,8 +718,8 @@ fn check_segment_pair(
         position: intersection.position,
         station1_idx: seg1_min,
         station2_idx: seg1_max,
-        journey1_id: journey1.line_id.clone(),
-        journey2_id: journey2.line_id.clone(),
+        journey1_id: journey1.train_number.clone(),
+        journey2_id: journey2.train_number.clone(),
         conflict_type,
         segment1_times: None,
         segment2_times: None,
@@ -999,8 +999,8 @@ fn check_platform_conflicts_cached(
                     position: 0.0, // Platform conflicts occur at a station, not between stations
                     station1_idx: occ1.station_idx,
                     station2_idx: occ1.station_idx,
-                    journey1_id: journey1.line_id.clone(),
-                    journey2_id: journey2.line_id.clone(),
+                    journey1_id: journey1.train_number.clone(),
+                    journey2_id: journey2.train_number.clone(),
                     conflict_type: ConflictType::PlatformViolation,
                     segment1_times: Some((occ1.time_start, occ1.time_end)),
                     segment2_times: Some((occ2.time_start, occ2.time_end)),
