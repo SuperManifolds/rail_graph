@@ -43,21 +43,43 @@ pub fn Window(
     // Auto-size function that can be called on demand
     let auto_size = move || {
         if let Some(content_el) = content_ref.get() {
-            leptos::set_timeout(
-                move || {
-                    let content_width = f64::from(content_el.scroll_width());
-                    let content_height = f64::from(content_el.scroll_height());
+            // Use double requestAnimationFrame to ensure layout is fully settled
+            let Some(window) = web_sys::window() else { return };
+            let content_el_clone = content_el.clone();
+            let callback1 = Closure::once(move || {
+                let Some(window) = web_sys::window() else { return };
+                let callback2 = Closure::once(move || {
+                    // Get the underlying web_sys element
+                    let web_el: &web_sys::HtmlElement = &content_el_clone;
+                    let style = web_el.style();
+
+                    // Temporarily allow content to expand to natural size for measurement
+                    let _ = style.set_property("flex", "0 0 auto");
+                    let _ = style.set_property("height", "auto");
+                    let _ = style.set_property("width", "max-content");
+
+                    let content_width = f64::from(web_el.scroll_width());
+                    let content_height = f64::from(web_el.scroll_height());
+
+                    // Restore flex layout
+                    let _ = style.set_property("flex", "1");
+                    let _ = style.remove_property("height");
+                    let _ = style.remove_property("width");
 
                     let header_height = 45.0;
-                    let padding = 20.0;
+                    let extra_padding = 20.0; // Extra space to prevent scrollbars
 
-                    let target_width = (content_width + padding).min(max_size.0).max(250.0);
-                    let target_height = (content_height + header_height + padding).min(max_size.1).max(200.0);
+                    // Clamp width: minimum 250, maximum max_size.0, prefer content_width + padding
+                    let target_width = (content_width + extra_padding).clamp(250.0, max_size.0);
+                    let target_height = (content_height + header_height + extra_padding).clamp(200.0, max_size.1);
 
                     set_size.set((target_width, target_height));
-                },
-                std::time::Duration::from_millis(10),
-            );
+                });
+                let _ = window.request_animation_frame(callback2.as_ref().unchecked_ref());
+                callback2.forget();
+            });
+            let _ = window.request_animation_frame(callback1.as_ref().unchecked_ref());
+            callback1.forget();
         }
     };
 

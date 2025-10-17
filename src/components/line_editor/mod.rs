@@ -80,6 +80,7 @@ pub fn LineEditor(
             is_open=is_window_open
             title=window_title
             on_close=close_dialog
+            max_size=(900.0, 1200.0)
         >
             <Show when=move || edited_line.get().is_some()>
                 <TabView tabs=tabs.get_value() active_tab=active_tab>
