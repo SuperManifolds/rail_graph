@@ -93,7 +93,8 @@ pub fn ErrorList(
     let container_ref = create_node_ref::<leptos::html::Div>();
 
     window_event_listener(leptos::ev::click, move |ev| {
-        if !is_open.get() {
+        // Use try_get to avoid panic if signal is disposed
+        if is_open.try_get() != Some(true) {
             return;
         }
         let Some(container) = container_ref.get() else {
