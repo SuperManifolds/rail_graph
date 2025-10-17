@@ -11,10 +11,10 @@ pub fn StopsTab(
     graph: ReadSignal<RailwayGraph>,
     active_tab: RwSignal<String>,
     on_save: std::rc::Rc<dyn Fn(Line)>,
+    time_mode: RwSignal<TimeDisplayMode>,
+    route_direction: RwSignal<RouteDirection>,
+    first_station: RwSignal<Option<String>>,
 ) -> impl IntoView {
-    let (time_mode, set_time_mode) = create_signal(TimeDisplayMode::Difference);
-    let (route_direction, set_route_direction) = create_signal(RouteDirection::Forward);
-    let (first_station, set_first_station) = create_signal(None::<String>);
     view! {
         <TabPanel when=Signal::derive(move || active_tab.get() == "stops")>
             <div class="line-editor-content">
@@ -22,7 +22,7 @@ pub fn StopsTab(
                     <button
                         class="route-direction-toggle"
                         on:click=move |_| {
-                            set_route_direction.update(|dir| {
+                            route_direction.update(|dir| {
                                 *dir = match *dir {
                                     RouteDirection::Forward => RouteDirection::Return,
                                     RouteDirection::Return => RouteDirection::Forward,
@@ -42,7 +42,7 @@ pub fn StopsTab(
                     <button
                         class="time-mode-toggle"
                         on:click=move |_| {
-                            set_time_mode.update(|mode| {
+                            time_mode.update(|mode| {
                                 *mode = match *mode {
                                     TimeDisplayMode::Difference => TimeDisplayMode::Absolute,
                                     TimeDisplayMode::Absolute => TimeDisplayMode::Difference,
@@ -168,7 +168,7 @@ pub fn StopsTab(
                                                                             }
 
                                                                             on_save(updated_line);
-                                                                            set_first_station.set(None);
+                                                                            first_station.set(None);
                                                                         }
                                                                     }
                                                                 }
@@ -185,7 +185,7 @@ pub fn StopsTab(
                                                 </select>
                                                 <button
                                                     class="cancel-button"
-                                                    on:click=move |_| set_first_station.set(None)
+                                                    on:click=move |_| first_station.set(None)
                                                 >
                                                     "Cancel"
                                                 </button>
@@ -201,7 +201,7 @@ pub fn StopsTab(
                                                     on:change=move |ev| {
                                                         let station_name = event_target_value(&ev);
                                                         if !station_name.is_empty() {
-                                                            set_first_station.set(Some(station_name));
+                                                            first_station.set(Some(station_name));
                                                         }
                                                     }
                                                 >

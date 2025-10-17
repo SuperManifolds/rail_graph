@@ -18,7 +18,7 @@ pub use stop_row::{StopRow, TimeDisplayMode};
 pub use station_select::{StationSelect, StationPosition};
 
 use crate::components::{tab_view::{Tab, TabView}, window::Window};
-use crate::models::{Line, RailwayGraph};
+use crate::models::{Line, RailwayGraph, RouteDirection};
 use leptos::{component, view, MaybeSignal, Signal, ReadSignal, IntoView, create_signal, create_rw_signal, create_effect, SignalGet, SignalGetUntracked, SignalSet, store_value};
 use std::rc::Rc;
 
@@ -32,6 +32,11 @@ pub fn LineEditor(
 ) -> impl IntoView {
     let (edited_line, set_edited_line) = create_signal(None::<Line>);
     let active_tab = create_rw_signal("general".to_string());
+
+    // Persistent UI state for StopsTab to avoid resets on save
+    let time_mode = create_rw_signal(TimeDisplayMode::Difference);
+    let route_direction = create_rw_signal(RouteDirection::Forward);
+    let first_station = create_rw_signal(None::<String>);
 
     // Reset edited_line when dialog opens (not when initial_line changes)
     create_effect(move |prev_open| {
@@ -91,6 +96,9 @@ pub fn LineEditor(
                                     graph=graph
                                     active_tab=active_tab
                                     on_save=on_save_stored.get_value()
+                                    time_mode=time_mode
+                                    route_direction=route_direction
+                                    first_station=first_station
                                 />
                                 <ScheduleTab
                                     edited_line=edited_line
