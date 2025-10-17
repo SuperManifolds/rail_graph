@@ -275,7 +275,7 @@ pub fn GraphCanvas(
                     let current_graph = graph.get();
                     let station_count = current_graph.get_all_stations_ordered().len() as f64;
 
-                    let target_zoom = 4.0;
+                    let target_zoom = 8.0;
                     set_zoom_level.set(target_zoom);
                     set_zoom_level_x.set(target_zoom);
 
