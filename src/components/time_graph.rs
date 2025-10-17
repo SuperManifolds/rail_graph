@@ -138,8 +138,6 @@ pub fn TimeGraph(
             <div class="main-content">
                 <GraphCanvas
                     graph=graph
-                    set_graph=set_graph
-                    set_lines=set_lines
                     train_journeys=filtered_journeys
                     visualization_time=visualization_time
                     set_visualization_time=set_visualization_time

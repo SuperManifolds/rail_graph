@@ -4,7 +4,7 @@ use std::time::Duration;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
-use crate::models::{RailwayGraph, Stations, Tracks};
+use crate::models::{RailwayGraph, Stations};
 use crate::conflict::{Conflict, StationCrossing};
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
@@ -165,8 +165,6 @@ fn handle_mouse_move_hover(
 #[must_use]
 pub fn GraphCanvas(
     graph: ReadSignal<RailwayGraph>,
-    set_graph: WriteSignal<RailwayGraph>,
-    set_lines: WriteSignal<Vec<crate::models::Line>>,
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     visualization_time: ReadSignal<NaiveDateTime>,
     set_visualization_time: WriteSignal<NaiveDateTime>,
@@ -291,17 +289,7 @@ pub fn GraphCanvas(
                 canvas_viewport::handle_pan_start(x, y, &viewport);
             } else {
                 let canvas_width = f64::from(canvas.width());
-                let canvas_height = f64::from(canvas.height());
-                let current_stations = display_stations.get();
-
-                if let Some(clicked_segment) = station_labels::check_toggle_click(
-                    x, y, canvas_height, &current_stations,
-                    zoom_level.get(), pan_offset_y.get()
-                ) {
-                    toggle_segment_double_track(clicked_segment, &current_stations, set_graph, set_lines);
-                } else {
-                    handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
-                }
+                handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
             }
         }
     };
@@ -631,14 +619,6 @@ fn render_graph(
         viewport.zoom_level,
         viewport.pan_offset_y,
     );
-    station_labels::draw_segment_toggles(
-        &ctx,
-        &dimensions,
-        stations,
-        graph,
-        viewport.zoom_level,
-        viewport.pan_offset_y,
-    );
 
     // Draw time scrubber on top (adjusted for zoom/pan)
     time_scrubber::draw_time_scrubber(
@@ -654,40 +634,6 @@ fn render_graph(
 
 fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
     ctx.clear_rect(0.0, 0.0, width, height);
-}
-
-fn toggle_segment_double_track(
-    clicked_segment: usize,
-    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)],
-    set_graph: WriteSignal<RailwayGraph>,
-    set_lines: WriteSignal<Vec<crate::models::Line>>,
-) {
-    // segment index i represents the segment between stations[i-1] and stations[i]
-    if clicked_segment == 0 || clicked_segment >= stations.len() {
-        return;
-    }
-
-    // Extract station names - only works for stations, not junctions
-    let Some(station1_name) = stations[clicked_segment - 1].1.as_station().map(|s| s.name.clone()) else {
-        return;
-    };
-    let Some(station2_name) = stations[clicked_segment].1.as_station().map(|s| s.name.clone()) else {
-        return;
-    };
-
-    // Toggle track in the graph model
-    set_graph.update(|g| {
-        let changed_edges = g.toggle_segment_double_track(&station1_name, &station2_name);
-
-        // Update lines to fix incompatible track assignments
-        set_lines.update(|current_lines| {
-            for (edge_index, new_track_count) in changed_edges {
-                for line in current_lines.iter_mut() {
-                    line.fix_track_indices_after_change(edge_index, new_track_count, g);
-                }
-            }
-        });
-    });
 }
 
 fn handle_time_scrubbing(
