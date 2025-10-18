@@ -209,12 +209,10 @@ pub fn CsvColumnMapper(
                 update_column_type=update_column_type
             />
 
-            <Show when=move || local_config.get().pattern_repeat.is_some()>
-                <LineGroupingSection
-                    local_config=local_config
-                    update_group_name=update_group_name
-                />
-            </Show>
+            <LineGroupingSection
+                local_config=local_config
+                update_group_name=update_group_name
+            />
 
             <DefaultValuesSection
                 local_config=local_config
@@ -377,18 +375,24 @@ fn LineGroupingSection(
 
     view! {
         <div class="mapper-section line-grouping-section">
-            <h3>"Line Grouping"</h3>
-            <p class="help-text">
-                "Detected repeating pattern: columns repeat every "
-                {pattern_len}
-                " columns for "
-                {num_groups}
-                " lines"
-            </p>
+            <h3>"Line Names"</h3>
+            <Show when=move || { pattern_len() > 1 }>
+                <p class="help-text">
+                    {move || {
+                        let pattern = pattern_len();
+                        let groups = num_groups();
+                        format!("Detected repeating pattern: columns repeat every {pattern} columns for {groups} lines")
+                    }}
+                </p>
+            </Show>
 
             <div class="group-names-form">
-                {move || {
-                    (0..num_groups()).map(|group_idx| {
+                <For
+                    each=move || (0..num_groups())
+                    key=|group_idx| *group_idx
+                    let:group_idx
+                >
+                    {
                         let default_name = format!("Line {}", group_idx + 1);
                         view! {
                             <div class="form-row">
@@ -410,8 +414,8 @@ fn LineGroupingSection(
                                 />
                             </div>
                         }
-                    }).collect::<Vec<_>>()
-                }}
+                    }
+                </For>
             </div>
         </div>
     }

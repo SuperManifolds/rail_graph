@@ -132,14 +132,12 @@ pub fn analyze_csv(content: &str) -> Option<CsvImportConfig> {
         });
     }
 
-    // Detect repeating patterns
+    // Detect repeating patterns (simple format is treated as pattern_repeat=1)
     let (pattern_repeat, group_assignments, group_line_names) = detect_column_grouping(&columns);
 
-    // Apply group assignments if pattern detected
-    if pattern_repeat.is_some() {
-        for col in &mut columns {
-            col.group_index = group_assignments.get(&col.column_index).copied();
-        }
+    // Apply group assignments
+    for col in &mut columns {
+        col.group_index = group_assignments.get(&col.column_index).copied();
     }
 
     Some(CsvImportConfig {
@@ -184,14 +182,6 @@ fn detect_column_grouping(columns: &[ColumnMapping]) -> (Option<usize>, HashMap<
     // Try different pattern lengths (from 2 to half the number of data columns)
     // Note: We start at 2 because pattern_len=1 means each column is a separate line (simple format)
     let max_pattern_len = data_columns.len() / 2;
-
-    // Special case: If all columns are the same type and there are multiple columns,
-    // this is likely the simple format (one line per column), not a grouped format
-    let all_same_type = data_columns.windows(2).all(|w| w[0].column_type == w[1].column_type);
-    if all_same_type && data_columns.len() > 1 {
-        // This is the simple format - each column is a separate line
-        return (None, group_assignments, group_line_names);
-    }
 
     for pattern_len in 2..=max_pattern_len {
         if data_columns.len() % pattern_len != 0 {
@@ -244,6 +234,20 @@ fn detect_column_grouping(columns: &[ColumnMapping]) -> (Option<usize>, HashMap<
 
             return (Some(pattern_len), group_assignments, group_line_names);
         }
+    }
+
+    // No repeating pattern found - treat as simple format (all columns in group 0)
+    for col in &data_columns {
+        group_assignments.insert(col.column_index, 0);
+    }
+
+    // Try to extract line name from any header that contains a digit
+    let headers: Vec<Option<&str>> = data_columns.iter()
+        .map(|c| c.header.as_deref())
+        .collect();
+
+    if let Some(line_name) = extract_line_identifier(&headers) {
+        group_line_names.insert(0, line_name);
     }
 
     (None, group_assignments, group_line_names)
@@ -582,15 +586,14 @@ pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig) -> (Vec<L
 }
 
 /// Build line groups from column configuration
+/// Both grouped and simple formats use `group_index` (simple format has all columns in group 0)
 fn build_line_groups(config: &CsvImportConfig) -> Vec<LineGroupData> {
-    if config.pattern_repeat.is_some() {
-        // Grouped format: columns repeat every pattern_len columns
-        let num_groups = config.columns.iter()
-            .filter_map(|c| c.group_index)
-            .max()
-            .map_or(0, |max_idx| max_idx + 1);
+    let num_groups = config.columns.iter()
+        .filter_map(|c| c.group_index)
+        .max()
+        .map_or(0, |max_idx| max_idx + 1);
 
-        (0..num_groups).map(|group_idx| {
+    (0..num_groups).map(|group_idx| {
             let group_columns: Vec<&ColumnMapping> = config.columns.iter()
                 .filter(|c| c.group_index == Some(group_idx))
                 .collect();
@@ -645,63 +648,6 @@ fn build_line_groups(config: &CsvImportConfig) -> Vec<LineGroupData> {
             }
         }).filter(|g| g.arrival_time_column.is_some() || g.departure_time_column.is_some() || g.offset_column.is_some() || g.travel_time_column.is_some())
           .collect()
-    } else {
-        // Simple format: each time/travel-time column is a separate line
-        let time_columns: Vec<_> = config.columns.iter()
-            .filter(|c| matches!(c.column_type, ColumnType::ArrivalTime | ColumnType::DepartureTime | ColumnType::Offset))
-            .collect();
-
-        let travel_time_columns: Vec<_> = config.columns.iter()
-            .filter(|c| c.column_type == ColumnType::TravelTime)
-            .collect();
-
-        // Combine time and travel time columns
-        let all_time_columns = time_columns.into_iter().chain(travel_time_columns);
-
-        all_time_columns.map(|c| {
-            let line_name = c.header.clone()
-                .unwrap_or_else(|| format!("Line {}", c.column_index));
-
-            // Determine which column type this is
-            let (arrival_col, departure_col, offset_col, travel_col) = match c.column_type {
-                ColumnType::ArrivalTime => (Some(c.column_index), None, None, None),
-                ColumnType::DepartureTime => (None, Some(c.column_index), None, None),
-                ColumnType::Offset => (None, None, Some(c.column_index), None),
-                ColumnType::TravelTime => (None, None, None, Some(c.column_index)),
-                _ => (None, None, None, None),
-            };
-
-            // In simple format, look for global wait/platform/track columns
-            let wait_col = config.columns.iter()
-                .find(|col| col.column_type == ColumnType::WaitTime && col.group_index.is_none())
-                .map(|col| col.column_index);
-
-            let platform_col = config.columns.iter()
-                .find(|col| col.column_type == ColumnType::Platform && col.group_index.is_none())
-                .map(|col| col.column_index);
-
-            let track_num_col = config.columns.iter()
-                .find(|col| col.column_type == ColumnType::TrackNumber && col.group_index.is_none())
-                .map(|col| col.column_index);
-
-            let track_dist_col = config.columns.iter()
-                .find(|col| col.column_type == ColumnType::TrackDistance && col.group_index.is_none())
-                .map(|col| col.column_index);
-
-            LineGroupData {
-                line_name,
-                arrival_time_column: arrival_col,
-                departure_time_column: departure_col,
-                offset_column: offset_col,
-                travel_time_column: travel_col,
-                wait_column: wait_col,
-                platform_column: platform_col,
-                track_number_column: track_num_col,
-                track_distance_column: track_dist_col,
-            }
-        })
-        .collect()
-    }
 }
 
 /// Collect station data from CSV records
