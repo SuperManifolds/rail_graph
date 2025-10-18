@@ -118,12 +118,14 @@ pub fn select_track_for_direction(
         .unwrap_or(0)
 }
 
-/// Ensure an edge has enough tracks for the given track number (0-indexed)
-/// If `track_number` is Some(N), ensures at least N+1 tracks exist
+/// Ensure an edge has enough tracks for the given track number (1-indexed)
+/// If `track_number` is Some(N), ensures at least N tracks exist
 /// Recreates tracks using `create_tracks_with_count` if expansion is needed
 pub fn ensure_track_count(graph: &mut RailwayGraph, edge_idx: EdgeIndex, track_number: Option<usize>) {
     let Some(track_num) = track_number else { return };
-    let required_track_count = track_num + 1; // Convert 0-indexed to count
+    if track_num == 0 { return; } // Invalid track number
+
+    let required_track_count = track_num; // Track numbers are 1-indexed
 
     let Some(track_segment) = graph.graph.edge_weight_mut(edge_idx) else { return };
     if track_segment.tracks.len() < required_track_count {

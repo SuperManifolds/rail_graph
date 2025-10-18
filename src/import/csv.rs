@@ -745,7 +745,7 @@ fn build_routes(
 
     for (line_idx, group) in line_groups.iter().enumerate() {
         let mut route = Vec::new();
-        let mut prev_station: Option<(NodeIndex, Duration)> = None;
+        let mut prev_station: Option<(NodeIndex, Duration, LineStationData)> = None;
 
         // Track cumulative time for TravelTime format
         let mut cumulative_time_tracker = Duration::zero();
@@ -779,7 +779,7 @@ fn build_routes(
             } else {
                 // Handle arrival time with midnight wraparound detection
                 line_station_data.arrival_time.map(|time| {
-                    normalize_time_with_wraparound(time, prev_station.map(|(_, t)| t))
+                    normalize_time_with_wraparound(time, prev_station.as_ref().map(|(_, t, _)| *t))
                 })
             };
 
@@ -823,8 +823,8 @@ fn build_routes(
             }
 
             // If there was a previous station, create or reuse edge
-            let Some((prev_idx, prev_time)) = prev_station else {
-                prev_station = Some((station_idx, cumulative_time));
+            let Some((prev_idx, prev_time, prev_line_data)) = prev_station else {
+                prev_station = Some((station_idx, cumulative_time, line_station_data.clone()));
                 continue;
             };
 
@@ -838,8 +838,15 @@ fn build_routes(
                     graph.add_track(prev_idx, station_idx, tracks)
                 });
 
-            // Ensure edge has enough tracks for the requested track index
-            super::shared::ensure_track_count(graph, edge_idx, line_station_data.track_number);
+            // Ensure edge has enough tracks for the requested track index (from origin station)
+            super::shared::ensure_track_count(graph, edge_idx, prev_line_data.track_number);
+
+            // Set distance on edge if provided (from origin station)
+            if let Some(distance) = prev_line_data.track_distance {
+                if let Some(track_segment) = graph.graph.edge_weight_mut(edge_idx) {
+                    track_segment.distance = Some(distance);
+                }
+            }
 
             // Determine wait time based on priority:
             // 1. Passing loops always have 0 wait time
@@ -886,8 +893,11 @@ fn build_routes(
                 (origin_platform_idx, dest_platform_idx)
             };
 
-            // Use track number from CSV if provided, otherwise default to 0
-            let track_index = line_station_data.track_number.unwrap_or(0);
+            // Use track number from origin station if provided, otherwise default to 0
+            // Track numbers in CSV are 1-indexed, convert to 0-indexed for internal use
+            let track_index = prev_line_data.track_number
+                .and_then(|n| n.checked_sub(1))
+                .unwrap_or(0);
 
             route.push(RouteSegment {
                 edge_index: edge_idx.index(),
@@ -898,7 +908,7 @@ fn build_routes(
                 wait_time: station_wait_time,
             });
 
-            prev_station = Some((station_idx, cumulative_time));
+            prev_station = Some((station_idx, cumulative_time, line_station_data.clone()));
         }
 
         // Assign forward route
@@ -913,13 +923,22 @@ fn build_routes(
             // Select track compatible with backward travel direction
             let return_track_index = super::shared::select_track_for_direction(graph, edge_idx, true);
 
+            // Wait time should be from the previous forward segment (or default for last return segment)
+            // Forward segment i goes from station i to i+1 with wait at i+1
+            // Return segment should have wait at station i (from forward segment i-1)
+            let return_wait_time = if i > 0 {
+                route[i - 1].wait_time
+            } else {
+                default_wait_time
+            };
+
             return_route.push(RouteSegment {
                 edge_index: forward_segment.edge_index,
                 track_index: return_track_index,
                 origin_platform: forward_segment.destination_platform,
                 destination_platform: forward_segment.origin_platform,
                 duration: forward_segment.duration,
-                wait_time: forward_segment.wait_time,
+                wait_time: return_wait_time,
             });
         }
         lines[line_idx].return_route = return_route;
@@ -943,13 +962,13 @@ struct StationRowData {
     line_data: Vec<LineStationData>,
 }
 
+#[derive(Clone)]
 struct LineStationData {
     arrival_time: Option<Duration>,
     departure_time: Option<Duration>,
     travel_time: Option<Duration>,
     wait_time: Option<Duration>,
     platform: Option<String>,
-    #[allow(dead_code)] // Reserved for future distance-based time calculation
     track_distance: Option<f64>,
     track_number: Option<usize>,
 }
