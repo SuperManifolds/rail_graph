@@ -557,8 +557,9 @@ fn is_duration_format(s: &str) -> bool {
 }
 
 /// Parse CSV content with the given column mapping configuration
+/// Merges stations and tracks into the existing graph
 #[must_use]
-pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig) -> (Vec<Line>, RailwayGraph) {
+pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &mut RailwayGraph) -> Vec<Line> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(content.as_bytes());
@@ -572,18 +573,17 @@ pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig) -> (Vec<L
 
     let line_groups = build_line_groups(config);
     if line_groups.is_empty() {
-        return (Vec::new(), RailwayGraph::new());
+        return Vec::new();
     }
 
     let line_ids: Vec<String> = line_groups.iter().map(|g| g.line_name.clone()).collect();
     let mut lines = Line::create_from_ids(&line_ids);
-    let mut graph = RailwayGraph::new();
 
     let station_data = collect_station_data(&mut records, config, &line_groups);
 
-    build_routes(&mut lines, &mut graph, &station_data, &line_groups, config);
+    build_routes(&mut lines, graph, &station_data, &line_groups, config);
 
-    (lines, graph)
+    lines
 }
 
 /// Build line groups from column configuration
@@ -733,6 +733,37 @@ fn collect_station_data(
     station_data
 }
 
+/// Find an existing junction with the given name that's connected to a station with the given name
+fn find_junction_by_connection(
+    graph: &RailwayGraph,
+    junction_name: &str,
+    connected_station_name: &str,
+) -> Option<NodeIndex> {
+    use crate::models::Junctions;
+    use petgraph::visit::EdgeRef;
+    use petgraph::Direction;
+
+    graph.graph.node_indices()
+        .find(|&junction_idx| {
+            // Check if this is a junction with the right name
+            let is_matching_junction = graph.get_junction(junction_idx)
+                .and_then(|j| j.name.as_ref())
+                .is_some_and(|name| name == junction_name);
+
+            if !is_matching_junction {
+                return false;
+            }
+
+            // Check if it's connected to a station with the matching name
+            graph.graph.edges(junction_idx)
+                .chain(graph.graph.edges_directed(junction_idx, Direction::Incoming))
+                .any(|edge| {
+                    let neighbor = if edge.source() == junction_idx { edge.target() } else { edge.source() };
+                    graph.get_station_name(neighbor).is_some_and(|name| name == connected_station_name)
+                })
+        })
+}
+
 /// Build routes and graph from station data
 fn build_routes(
     lines: &mut [Line],
@@ -799,9 +830,14 @@ fn build_routes(
 
             // Get or create station/junction node
             let station_idx = if is_junction {
-                // Create or get junction node
                 use crate::models::{Junctions, Junction};
-                if let Some(idx) = graph.get_station_index(&clean_name) {
+
+                // Check if there's already a junction with this name connected to a station with the same name as prev_station
+                let existing_junction = prev_station.as_ref()
+                    .and_then(|(prev_idx, _, _)| graph.get_station_name(*prev_idx))
+                    .and_then(|prev_station_name| find_junction_by_connection(graph, &clean_name, prev_station_name));
+
+                if let Some(idx) = existing_junction {
                     idx
                 } else {
                     graph.add_junction(Junction {
@@ -1086,7 +1122,8 @@ mod tests {
 
         let config = analyze_csv(&csv_content).expect("Should parse R70.csv");
 
-        let (mut lines, graph) = parse_csv_with_mapping(&csv_content, &config);
+        let mut graph = RailwayGraph::new();
+        let mut lines = parse_csv_with_mapping(&csv_content, &config, &mut graph);
 
         assert!(!lines.is_empty(), "Should have imported at least one line");
 

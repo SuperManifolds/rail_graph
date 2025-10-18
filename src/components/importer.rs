@@ -119,9 +119,21 @@ pub fn Importer(
     };
 
     let handle_import = move |config: CsvImportConfig| {
-        let (new_lines, new_graph) = parse_csv_with_mapping(&file_content.get(), &config);
-        set_lines.set(new_lines);
-        set_graph.set(new_graph);
+        let mut new_lines = None;
+
+        // Parse CSV into existing graph
+        set_graph.update(|graph| {
+            let lines = parse_csv_with_mapping(&file_content.get(), &config, graph);
+            new_lines = Some(lines);
+        });
+
+        // Add new lines to existing lines
+        if let Some(lines) = new_lines {
+            set_lines.update(|existing_lines| {
+                existing_lines.extend(lines);
+            });
+        }
+
         set_show_mapper.set(false);
         // Reset file input
         if let Some(input) = file_input_ref.get() {

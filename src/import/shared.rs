@@ -172,3 +172,31 @@ pub fn find_platform_by_name(platforms: &[Platform], platform_name: &str) -> Opt
 
     platforms.iter().position(|p| p.name == platform_name)
 }
+
+/// Find a junction with the given name connected to a station
+/// Returns the `NodeIndex` of the junction if found
+#[must_use]
+pub fn find_connected_junction(
+    graph: &RailwayGraph,
+    station_idx: NodeIndex,
+    junction_name: &str,
+) -> Option<NodeIndex> {
+    use crate::models::Junctions;
+    use petgraph::visit::EdgeRef;
+    use petgraph::Direction;
+
+    graph.graph.edges(station_idx)
+        .chain(graph.graph.edges_directed(station_idx, Direction::Incoming))
+        .find_map(|edge| {
+            let neighbor = if edge.source() == station_idx {
+                edge.target()
+            } else {
+                edge.source()
+            };
+
+            graph.get_junction(neighbor)
+                .and_then(|j| j.name.as_ref())
+                .filter(|name| *name == junction_name)
+                .map(|_| neighbor)
+        })
+}
