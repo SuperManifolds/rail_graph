@@ -38,9 +38,27 @@ fn compute_station_index_map(
         if let Some(ref graph_view) = view {
             graph_view.build_station_index_map(&current_graph)
         } else {
-            // For full graph view, it's a 1:1 identity mapping
+            // For full graph view, map station indices to display indices
+            // accounting for junctions that occupy display rows but aren't in the station list
+            let all_nodes = current_graph.get_all_nodes_ordered();
             let all_stations = current_graph.get_all_stations_ordered();
-            (0..all_stations.len()).map(|i| (i, i)).collect()
+
+            // Create a mapping from station NodeIndex to station list index
+            let station_node_to_idx: std::collections::HashMap<_, _> = all_stations
+                .iter()
+                .enumerate()
+                .map(|(idx, (node_idx, _))| (*node_idx, idx))
+                .collect();
+
+            // Map each station's index to its display row position
+            let mut map = std::collections::HashMap::new();
+            for (display_idx, (node_idx, _)) in all_nodes.iter().enumerate() {
+                if let Some(&station_idx) = station_node_to_idx.get(node_idx) {
+                    map.insert(station_idx, display_idx);
+                }
+            }
+
+            map
         }
     })
 }

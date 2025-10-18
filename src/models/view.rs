@@ -222,8 +222,16 @@ impl GraphView {
                 })
                 .collect()
         } else {
-            // No station range means identity mapping (show all stations)
-            (0..all_stations.len()).map(|i| (i, i)).collect()
+            // No station range means show all nodes (stations and junctions)
+            // Map station indices to display indices accounting for junctions
+            let all_nodes = graph.get_all_nodes_ordered();
+            let mut map = std::collections::HashMap::new();
+            for (display_idx, (node_idx, _)) in all_nodes.iter().enumerate() {
+                if let Some(&station_idx) = node_to_station_idx.get(node_idx) {
+                    map.insert(station_idx, display_idx);
+                }
+            }
+            map
         }
     }
 
