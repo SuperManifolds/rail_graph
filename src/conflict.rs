@@ -6,7 +6,7 @@ use chrono::NaiveDateTime;
 use std::collections::HashMap;
 
 // Conflict detection constants
-const STATION_MARGIN_MINUTES: i64 = 1;
+const STATION_MARGIN: chrono::Duration = chrono::Duration::seconds(30);
 const PLATFORM_BUFFER_MINUTES: i64 = 1;
 const MAX_CONFLICTS: usize = 9999;
 
@@ -173,7 +173,7 @@ pub fn detect_line_conflicts(
     let ctx = ConflictContext {
         station_indices,
         graph,
-        station_margin: chrono::Duration::minutes(STATION_MARGIN_MINUTES),
+        station_margin: STATION_MARGIN,
     };
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1176,7 +1176,7 @@ mod tests {
         let ctx = ConflictContext {
             station_indices: HashMap::new(),
             graph: &graph,
-            station_margin: chrono::Duration::minutes(1),
+            station_margin: STATION_MARGIN,
         };
 
         assert!(is_single_track_bidirectional(&ctx, edge1.index()));
