@@ -787,8 +787,9 @@ fn build_routes(
                 continue;
             };
 
-            // Check for passing loop marker
+            // Check for passing loop and junction markers
             let is_passing_loop = station.name.ends_with("(P)");
+            let is_junction = station.name.ends_with("(J)");
 
             let clean_name = station.name
                 .trim_end_matches("(P)")
@@ -796,8 +797,22 @@ fn build_routes(
                 .trim()
                 .to_string();
 
-            // Get or create station node
-            let station_idx = graph.add_or_get_station(clean_name);
+            // Get or create station/junction node
+            let station_idx = if is_junction {
+                // Create or get junction node
+                use crate::models::{Junctions, Junction};
+                if let Some(idx) = graph.get_station_index(&clean_name) {
+                    idx
+                } else {
+                    graph.add_junction(Junction {
+                        name: Some(clean_name),
+                        position: None,
+                        routing_rules: Vec::new(),
+                    })
+                }
+            } else {
+                graph.add_or_get_station(clean_name)
+            };
 
             // Mark as passing loop if needed
             if is_passing_loop {
