@@ -17,6 +17,7 @@
 - Make changes efficiently and test them
 - When asked to commit, create a clear commit message without asking for confirmation
 - Focus on the technical implementation rather than over-explaining what was done
+- When implementing a new utility function make sure it is not already implemented elsewhere in the code base
 
 ## Rust Code Quality
 
