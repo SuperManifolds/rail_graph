@@ -893,11 +893,9 @@ fn build_routes(
                 (origin_platform_idx, dest_platform_idx)
             };
 
-            // Use track number from origin station if provided, otherwise default to 0
-            // Track numbers in CSV are 1-indexed, convert to 0-indexed for internal use
-            let track_index = prev_line_data.track_number
-                .and_then(|n| n.checked_sub(1))
-                .unwrap_or(0);
+            // Select appropriate track for forward travel direction
+            // If CSV specifies a track number, validate it's appropriate for forward direction
+            let track_index = super::shared::select_track_for_direction(graph, edge_idx, false);
 
             route.push(RouteSegment {
                 edge_index: edge_idx.index(),
@@ -1075,5 +1073,64 @@ mod tests {
         assert!(!config.has_headers);
         assert_eq!(config.columns.len(), 3);
         assert_eq!(config.columns[0].column_type, ColumnType::StationName);
+    }
+
+    #[test]
+    fn test_r70_double_track_no_conflict() {
+        use crate::conflict::detect_line_conflicts;
+        use crate::train_journey::TrainJourney;
+        use crate::constants::BASE_DATE;
+
+        let csv_content = std::fs::read_to_string("test-data/R70.csv")
+            .expect("Failed to read test-data/R70.csv");
+
+        let config = analyze_csv(&csv_content).expect("Should parse R70.csv");
+
+        let (mut lines, graph) = parse_csv_with_mapping(&csv_content, &config);
+
+        assert!(!lines.is_empty(), "Should have imported at least one line");
+
+        // Set forward journey to start at 05:00:00
+        lines[0].first_departure = BASE_DATE.and_hms_opt(5, 0, 0).expect("valid time");
+        // Set return journey to start at 05:45:00 (to overlap with forward)
+        lines[0].return_first_departure = BASE_DATE.and_hms_opt(5, 45, 0).expect("valid time");
+        // Set last departure at 07:00:00 to allow multiple departures
+        lines[0].last_departure = BASE_DATE.and_hms_opt(7, 0, 0).expect("valid time");
+        // Set frequency to 1 hour to generate 2 forward (05:00, 06:00) and 2 return (05:45, 06:45)
+        lines[0].frequency = chrono::Duration::hours(1);
+
+        // Generate journeys
+        let all_journeys = TrainJourney::generate_journeys(&lines, &graph, None);
+        let journeys: Vec<_> = all_journeys.values().cloned().collect();
+
+        assert!(journeys.len() >= 4, "Should have generated at least 4 journeys (2 forward, 2 return), got {}", journeys.len());
+
+        // Run conflict detection
+        let (conflicts, _) = detect_line_conflicts(&journeys, &graph);
+
+        // Filter conflicts between Hommelvik and Hell specifically
+        let stations = graph.get_all_stations_ordered();
+        let hommelvik_hell_conflicts: Vec<_> = conflicts.iter()
+            .filter(|c| {
+                let station1_name = stations
+                    .get(c.station1_idx)
+                    .map(|(_, s)| s.name.as_str());
+                let station2_name = stations
+                    .get(c.station2_idx)
+                    .map(|(_, s)| s.name.as_str());
+
+                matches!((station1_name, station2_name),
+                    (Some("Hommelvik"), Some("Hell")) | (Some("Hell"), Some("Hommelvik")))
+            })
+            .collect();
+
+        // There should be NO conflicts between Hommelvik and Hell on a double-track section
+        // Forward uses track 0 (Forward), Return uses track 1 (Backward)
+        assert!(
+            hommelvik_hell_conflicts.is_empty(),
+            "Should not have conflicts on double-track section between Hommelvik and Hell. Found {} conflicts: {:?}",
+            hommelvik_hell_conflicts.len(),
+            hommelvik_hell_conflicts
+        );
     }
 }
