@@ -867,12 +867,18 @@ fn build_routes(
 
             let travel_time = cumulative_time - prev_time;
 
-            // Check if edge already exists, or create new track
+            // Check if edge already exists in the graph or the local map
             let edge_idx = *edge_map.entry((prev_idx, station_idx))
                 .or_insert_with(|| {
-                    // Default to 1 bidirectional track if no track info
-                    let tracks = super::shared::create_tracks_with_count(1);
-                    graph.add_track(prev_idx, station_idx, tracks)
+                    // First check if edge already exists in the graph
+                    if let Some(existing_edge) = graph.graph.find_edge(prev_idx, station_idx) {
+                        existing_edge
+                    } else {
+                        // Create new edge, using track count from CSV if available
+                        let track_count = prev_line_data.track_number.unwrap_or(1);
+                        let tracks = super::shared::create_tracks_with_count(track_count);
+                        graph.add_track(prev_idx, station_idx, tracks)
+                    }
                 });
 
             // Ensure edge has enough tracks for the requested track index (from origin station)
