@@ -497,19 +497,6 @@ fn detect_column_type(header: Option<&str>, samples: &[String], prev_columns: &[
     ColumnType::Skip
 }
 
-/// Ensure an edge has enough tracks for the given track number (0-indexed)
-/// If `track_number` is Some(N), ensures at least N+1 tracks exist
-fn ensure_track_count(graph: &mut RailwayGraph, edge_idx: EdgeIndex, track_number: Option<usize>) {
-    let Some(track_num) = track_number else { return };
-    let required_track_count = track_num + 1; // Convert 0-indexed to count
-
-    let Some(track_segment) = graph.graph.edge_weight_mut(edge_idx) else { return };
-    if track_segment.tracks.len() < required_track_count {
-        // Need to add more tracks - recreate with the new count
-        track_segment.tracks = super::shared::create_tracks_with_count(required_track_count);
-    }
-}
-
 /// Normalize time with midnight wraparound detection
 /// If current time < previous time, adds 24 hours to current time
 fn normalize_time_with_wraparound(time: Duration, prev_time: Option<Duration>) -> Duration {
@@ -890,7 +877,7 @@ fn build_routes(
                 });
 
             // Ensure edge has enough tracks for the requested track index
-            ensure_track_count(graph, edge_idx, line_station_data.track_number);
+            super::shared::ensure_track_count(graph, edge_idx, line_station_data.track_number);
 
             // Determine wait time based on priority:
             // 1. Passing loops always have 0 wait time
@@ -900,9 +887,11 @@ fn build_routes(
             let station_wait_time = if is_passing_loop {
                 Duration::seconds(0)
             } else if let (Some(arrival), Some(departure)) = (line_station_data.arrival_time, line_station_data.departure_time) {
-                // Handle midnight wraparound for departure time
-                let normalized_departure = normalize_time_with_wraparound(departure, Some(arrival));
-                normalized_departure - arrival
+                // Calculate wait time with midnight wraparound handling
+                Duration::seconds(super::shared::calculate_duration_with_wraparound(
+                    arrival.num_seconds(),
+                    departure.num_seconds()
+                ))
             } else {
                 line_station_data.wait_time.unwrap_or(default_wait_time)
             };
@@ -959,11 +948,8 @@ fn build_routes(
             let forward_segment = &route[i];
             let edge_idx = petgraph::graph::EdgeIndex::new(forward_segment.edge_index);
 
-            let return_track_index = if let Some(track_segment) = graph.get_track(edge_idx) {
-                usize::from(track_segment.tracks.len() > 1)
-            } else {
-                0
-            };
+            // Select track compatible with backward travel direction
+            let return_track_index = super::shared::select_track_for_direction(graph, edge_idx, true);
 
             return_route.push(RouteSegment {
                 edge_index: forward_segment.edge_index,
@@ -1011,8 +997,7 @@ struct LineStationData {
 fn parse_time_to_duration(s: &str) -> Option<Duration> {
     use chrono::Timelike;
 
-    crate::time::parse_time_hms(s)
-        .ok()
+    super::shared::parse_time(s)
         .map(|t| {
             Duration::hours(i64::from(t.hour())) +
             Duration::minutes(i64::from(t.minute())) +

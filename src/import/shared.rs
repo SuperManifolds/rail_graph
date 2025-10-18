@@ -1,5 +1,6 @@
 use crate::models::{RailwayGraph, Track, TrackDirection, Platform};
-use petgraph::stable_graph::NodeIndex;
+use petgraph::stable_graph::{NodeIndex, EdgeIndex};
+use chrono::NaiveTime;
 
 /// Create tracks based on count, using consistent direction assignment
 ///
@@ -80,4 +81,92 @@ pub fn get_or_add_platform(graph: &mut RailwayGraph, station_idx: NodeIndex, pla
     } else {
         0
     }
+}
+
+/// Calculate duration in seconds between two times, handling midnight wraparound
+/// If arrival time < departure time, assumes midnight crossing
+/// Returns duration in seconds
+#[must_use]
+pub fn calculate_duration_with_wraparound(from_seconds: i64, to_seconds: i64) -> i64 {
+    if to_seconds >= from_seconds {
+        to_seconds - from_seconds
+    } else {
+        // Crossed midnight
+        86400 - from_seconds + to_seconds
+    }
+}
+
+/// Select appropriate track index for a given travel direction
+/// Returns the index of the first track compatible with the travel direction
+/// Falls back to track 0 if no compatible track is found
+#[must_use]
+pub fn select_track_for_direction(
+    graph: &RailwayGraph,
+    edge_idx: EdgeIndex,
+    traveling_backward: bool,
+) -> usize {
+    graph.graph.edge_weight(edge_idx)
+        .and_then(|track_segment| {
+            track_segment.tracks.iter().position(|t| {
+                if traveling_backward {
+                    matches!(t.direction, TrackDirection::Backward | TrackDirection::Bidirectional)
+                } else {
+                    matches!(t.direction, TrackDirection::Forward | TrackDirection::Bidirectional)
+                }
+            })
+        })
+        .unwrap_or(0)
+}
+
+/// Ensure an edge has enough tracks for the given track number (0-indexed)
+/// If `track_number` is Some(N), ensures at least N+1 tracks exist
+/// Recreates tracks using `create_tracks_with_count` if expansion is needed
+pub fn ensure_track_count(graph: &mut RailwayGraph, edge_idx: EdgeIndex, track_number: Option<usize>) {
+    let Some(track_num) = track_number else { return };
+    let required_track_count = track_num + 1; // Convert 0-indexed to count
+
+    let Some(track_segment) = graph.graph.edge_weight_mut(edge_idx) else { return };
+    if track_segment.tracks.len() < required_track_count {
+        // Need to add more tracks - recreate with the new count
+        track_segment.tracks = create_tracks_with_count(required_track_count);
+    }
+}
+
+/// Parse time string in HH:MM or HH:MM:SS format to `NaiveTime`
+/// Returns None if the string is empty or cannot be parsed
+#[must_use]
+pub fn parse_time(time_str: &str) -> Option<NaiveTime> {
+    if time_str.is_empty() {
+        return None;
+    }
+
+    let parts: Vec<&str> = time_str.split(':').collect();
+
+    match parts.len() {
+        2 => {
+            // HH:MM format
+            let hour = parts[0].parse::<u32>().ok()?;
+            let minute = parts[1].parse::<u32>().ok()?;
+            NaiveTime::from_hms_opt(hour, minute, 0)
+        }
+        3 => {
+            // HH:MM:SS format
+            let hour = parts[0].parse::<u32>().ok()?;
+            let minute = parts[1].parse::<u32>().ok()?;
+            let second = parts[2].parse::<u32>().ok()?;
+            NaiveTime::from_hms_opt(hour, minute, second)
+        }
+        _ => None,
+    }
+}
+
+/// Find platform index by name in a platform list
+/// Returns None if platform name is empty or not found
+#[must_use]
+pub fn find_platform_by_name(platforms: &[Platform], platform_name: &str) -> Option<usize> {
+    if platform_name.is_empty() {
+        return None;
+    }
+
+    platforms.iter().position(|p| p.name == platform_name)
 }

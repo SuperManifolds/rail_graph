@@ -1,7 +1,7 @@
 use serde::Deserialize;
-use crate::models::{RailwayGraph, Line, RouteSegment, ManualDeparture, ScheduleMode, DaysOfWeek, TrackDirection, Stations, Tracks, generate_random_color};
+use crate::models::{RailwayGraph, Line, RouteSegment, ManualDeparture, ScheduleMode, DaysOfWeek, Stations, Tracks, generate_random_color};
 use crate::constants::BASE_DATE;
-use chrono::{Duration, NaiveTime, Timelike};
+use chrono::{Duration, Timelike};
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use std::collections::HashMap;
 
@@ -167,31 +167,6 @@ pub fn parse_jtraingraph(xml_content: &str) -> Result<JTrainGraphTimetable, quic
     quick_xml::de::from_str(xml_content)
 }
 
-/// Parse `JTrainGraph` time format (HH:MM or HH:MM:SS) to `NaiveTime`
-fn parse_time(time_str: &str) -> Option<NaiveTime> {
-    if time_str.is_empty() {
-        return None;
-    }
-
-    let parts: Vec<&str> = time_str.split(':').collect();
-
-    match parts.len() {
-        2 => {
-            // HH:MM format
-            let hour = parts[0].parse::<u32>().ok()?;
-            let minute = parts[1].parse::<u32>().ok()?;
-            NaiveTime::from_hms_opt(hour, minute, 0)
-        }
-        3 => {
-            // HH:MM:SS format
-            let hour = parts[0].parse::<u32>().ok()?;
-            let minute = parts[1].parse::<u32>().ok()?;
-            let second = parts[2].parse::<u32>().ok()?;
-            NaiveTime::from_hms_opt(hour, minute, second)
-        }
-        _ => None,
-    }
-}
 
 /// Represents a stop pattern for grouping trains (includes durations and platforms)
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -259,7 +234,7 @@ fn get_stop_pattern(train: &JTrainGraphTrainInfo, is_return: bool) -> Option<Sto
 
         // Times in the array are always the real-world times, regardless of direction
         // Use departure time from origin station
-        let dep_time = parse_time(&from_time.departure)?;
+        let dep_time = super::shared::parse_time(&from_time.departure)?;
 
         // Use arrival time if available at destination, otherwise use departure time
         let arr_time_str = if to_time.arrival.is_empty() {
@@ -267,17 +242,12 @@ fn get_stop_pattern(train: &JTrainGraphTrainInfo, is_return: bool) -> Option<Sto
         } else {
             &to_time.arrival
         };
-        let arr_time = parse_time(arr_time_str)?;
+        let arr_time = super::shared::parse_time(arr_time_str)?;
 
         let dep_seconds = i64::from(dep_time.num_seconds_from_midnight());
         let arr_seconds = i64::from(arr_time.num_seconds_from_midnight());
 
-        let duration = if arr_seconds >= dep_seconds {
-            arr_seconds - dep_seconds
-        } else {
-            // Crossed midnight
-            86400 - dep_seconds + arr_seconds
-        };
+        let duration = super::shared::calculate_duration_with_wraparound(dep_seconds, arr_seconds);
 
         durations.push(duration);
     }
@@ -305,17 +275,13 @@ fn calculate_wait_time(
     }
 
     let Some((arr_time, dep_time)) =
-        parse_time(&dest_time.arrival).zip(parse_time(&dest_time.departure)) else {
+        super::shared::parse_time(&dest_time.arrival).zip(super::shared::parse_time(&dest_time.departure)) else {
         return;
     };
 
     let arr_seconds = i64::from(arr_time.num_seconds_from_midnight());
     let dep_seconds = i64::from(dep_time.num_seconds_from_midnight());
-    let wait_seconds = if dep_seconds >= arr_seconds {
-        dep_seconds - arr_seconds
-    } else {
-        86400 - arr_seconds + dep_seconds
-    };
+    let wait_seconds = super::shared::calculate_duration_with_wraparound(arr_seconds, dep_seconds);
     wait_time_map.insert(to_idx, wait_seconds);
 }
 
@@ -341,16 +307,6 @@ fn add_platforms_to_station(
     station_node.platforms = platforms.iter()
         .map(|p| crate::models::Platform { name: p.name.clone() })
         .collect();
-}
-
-/// Find platform index by name in the platform list
-/// Returns None if platform name is empty or not found
-fn find_platform_index(platforms: &[JTrainGraphPlatform], platform_name: &str) -> Option<usize> {
-    if platform_name.is_empty() {
-        return None;
-    }
-
-    platforms.iter().position(|p| p.name == platform_name)
 }
 
 /// Create route segments for a pattern
@@ -440,25 +396,17 @@ fn create_route_segments(
             let (arrival_track, departure_track) = &pattern.platforms[*stop_idx];
             if !departure_track.is_empty() {
                 // Explicit departure platform specified
-                let station_platforms = graph.graph.node_weight(from_node)
+                let platform = graph.graph.node_weight(from_node)
                     .and_then(|n| n.as_station())
-                    .map(|s| s.platforms.iter()
-                        .map(|p| JTrainGraphPlatform { name: p.name.clone() })
-                        .collect::<Vec<_>>())
-                    .unwrap_or_default();
-                let platform = find_platform_index(&station_platforms, departure_track)
+                    .and_then(|s| super::shared::find_platform_by_name(&s.platforms, departure_track))
                     .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, false, origin_platforms));
                 current_platform = Some(platform);
                 platform
             } else if !arrival_track.is_empty() {
                 // No departure platform but arrival platform specified - stay on arrival platform
-                let station_platforms = graph.graph.node_weight(from_node)
+                let platform = graph.graph.node_weight(from_node)
                     .and_then(|n| n.as_station())
-                    .map(|s| s.platforms.iter()
-                        .map(|p| JTrainGraphPlatform { name: p.name.clone() })
-                        .collect::<Vec<_>>())
-                    .unwrap_or_default();
-                let platform = find_platform_index(&station_platforms, arrival_track)
+                    .and_then(|s| super::shared::find_platform_by_name(&s.platforms, arrival_track))
                     .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, false, origin_platforms));
                 current_platform = Some(platform);
                 platform
@@ -477,25 +425,17 @@ fn create_route_segments(
             let (arrival_track, departure_track) = &pattern.platforms[*stop_idx];
             if !arrival_track.is_empty() {
                 // Explicit arrival platform specified
-                let station_platforms = graph.graph.node_weight(to_node)
+                let platform = graph.graph.node_weight(to_node)
                     .and_then(|n| n.as_station())
-                    .map(|s| s.platforms.iter()
-                        .map(|p| JTrainGraphPlatform { name: p.name.clone() })
-                        .collect::<Vec<_>>())
-                    .unwrap_or_default();
-                let platform = find_platform_index(&station_platforms, arrival_track)
+                    .and_then(|s| super::shared::find_platform_by_name(&s.platforms, arrival_track))
                     .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, true, dest_platforms));
                 current_platform = Some(platform);
                 platform
             } else if !departure_track.is_empty() {
                 // No arrival platform but departure platform specified - use departure platform
-                let station_platforms = graph.graph.node_weight(to_node)
+                let platform = graph.graph.node_weight(to_node)
                     .and_then(|n| n.as_station())
-                    .map(|s| s.platforms.iter()
-                        .map(|p| JTrainGraphPlatform { name: p.name.clone() })
-                        .collect::<Vec<_>>())
-                    .unwrap_or_default();
-                let platform = find_platform_index(&station_platforms, departure_track)
+                    .and_then(|s| super::shared::find_platform_by_name(&s.platforms, departure_track))
                     .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, true, dest_platforms));
                 current_platform = Some(platform);
                 platform
@@ -517,17 +457,7 @@ fn create_route_segments(
             .map_or(Duration::seconds(0), |&w| Duration::seconds(w));
 
         // Select a track compatible with our travel direction
-        let track_index = graph.graph.edge_weight(*edge)
-            .and_then(|track_segment| {
-                track_segment.tracks.iter().position(|t| {
-                    if traveling_backward {
-                        matches!(t.direction, TrackDirection::Backward | TrackDirection::Bidirectional)
-                    } else {
-                        matches!(t.direction, TrackDirection::Forward | TrackDirection::Bidirectional)
-                    }
-                })
-            })
-            .unwrap_or(0);
+        let track_index = super::shared::select_track_for_direction(graph, *edge, traveling_backward);
 
         route_segments.push(RouteSegment {
             edge_index: edge.index(),
@@ -587,8 +517,14 @@ pub fn import_jtraingraph(
             // dTa (default platform away) = platform when departing from source station
             // dTi (default platform in) = platform when arriving at destination station
             // These are platform names, we need to find their index
-            let default_platform_source = find_platform_index(&from_station.platforms, &from_station.default_platform_away);
-            let default_platform_target = find_platform_index(&to_station.platforms, &to_station.default_platform_in);
+            let from_platforms: Vec<_> = from_station.platforms.iter()
+                .map(|p| crate::models::Platform { name: p.name.clone() })
+                .collect();
+            let to_platforms: Vec<_> = to_station.platforms.iter()
+                .map(|p| crate::models::Platform { name: p.name.clone() })
+                .collect();
+            let default_platform_source = super::shared::find_platform_by_name(&from_platforms, &from_station.default_platform_away);
+            let default_platform_target = super::shared::find_platform_by_name(&to_platforms, &to_station.default_platform_in);
 
             // Calculate distance from km values (use km_right for forward direction)
             // Round to 3 decimal places (meter precision)
@@ -702,7 +638,7 @@ pub fn import_jtraingraph(
                     return None;
                 }
 
-                let Some(departure_time) = parse_time(time_str) else {
+                let Some(departure_time) = super::shared::parse_time(time_str) else {
                     leptos::logging::error!("Failed to parse departure time '{}' for train '{}'",
                         time_str, train.name);
                     return None;
