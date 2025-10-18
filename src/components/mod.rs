@@ -13,6 +13,7 @@ pub mod track_editor;
 pub mod app;
 pub mod button;
 pub mod conflict_tooltip;
+pub mod csv_column_mapper;
 pub mod day_selector;
 pub mod days_of_week_selector;
 pub mod duration_input;

@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use crate::models::{RailwayGraph, Line, RouteSegment, ManualDeparture, ScheduleMode, DaysOfWeek, Track, TrackDirection, Stations, Tracks, generate_random_color};
+use crate::models::{RailwayGraph, Line, RouteSegment, ManualDeparture, ScheduleMode, DaysOfWeek, TrackDirection, Stations, Tracks, generate_random_color};
 use crate::constants::BASE_DATE;
 use chrono::{Duration, NaiveTime, Timelike};
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
@@ -580,30 +580,8 @@ pub fn import_jtraingraph(
                 .parse::<usize>()
                 .unwrap_or(1);
 
-            // Assign track directions based on count:
-            // 1 track: Bidirectional
-            // 2 tracks: Forward, Backward
-            // 3 tracks: Forward, Bidirectional, Backward
-            // 4 tracks: Forward, Forward, Backward, Backward
-            // 5 tracks: Forward, Forward, Bidirectional, Backward, Backward
-            // Pattern: outer tracks are directional, middle track(s) bidirectional for odd counts
-            let tracks: Vec<Track> = (0..track_count)
-                .map(|i| {
-                    let direction = if track_count == 1 {
-                        TrackDirection::Bidirectional
-                    } else if track_count % 2 == 1 && i == track_count / 2 {
-                        // Middle track in odd count is bidirectional
-                        TrackDirection::Bidirectional
-                    } else if i < track_count / 2 {
-                        // First half: Forward
-                        TrackDirection::Forward
-                    } else {
-                        // Second half: Backward
-                        TrackDirection::Backward
-                    };
-                    Track { direction }
-                })
-                .collect();
+            // Use shared track creation logic
+            let tracks = super::shared::create_tracks_with_count(track_count);
 
             // Parse default platforms
             // dTa (default platform away) = platform when departing from source station
