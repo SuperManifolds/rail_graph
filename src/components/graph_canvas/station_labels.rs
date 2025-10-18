@@ -4,7 +4,8 @@ use super::types::GraphDimensions;
 use petgraph::stable_graph::NodeIndex;
 
 // Station label constants
-const STATION_LABEL_COLOR: &str = "#aaa";
+const STATION_LABEL_COLOR: &str = "#ddd";
+const PASSING_LOOP_LABEL_COLOR: &str = "#777";
 const STATION_LABEL_FONT: &str = "11px monospace";
 const STATION_LABEL_X: f64 = 5.0;
 const STATION_LABEL_Y_OFFSET: f64 = 3.0;
@@ -33,8 +34,12 @@ pub fn draw_station_labels(
         if adjusted_y >= dims.top_margin && adjusted_y <= dims.top_margin + dims.graph_height {
             // Check if this is a junction or a station
             match station_node {
-                Node::Station(_) => {
-                    draw_station_label(ctx, &station_node.display_name(), adjusted_y);
+                Node::Station(station) => {
+                    if station.passing_loop {
+                        draw_passing_loop_label(ctx, &station_node.display_name(), adjusted_y);
+                    } else {
+                        draw_station_label(ctx, &station_node.display_name(), adjusted_y);
+                    }
                 }
                 Node::Junction(_) => {
                     draw_junction_label(ctx, Some(&station_node.display_name()), adjusted_y);
@@ -46,6 +51,12 @@ pub fn draw_station_labels(
 
 fn draw_station_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
     ctx.set_fill_style_str(STATION_LABEL_COLOR);
+    ctx.set_font(STATION_LABEL_FONT);
+    let _ = ctx.fill_text(station, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
+}
+
+fn draw_passing_loop_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
+    ctx.set_fill_style_str(PASSING_LOOP_LABEL_COLOR);
     ctx.set_font(STATION_LABEL_FONT);
     let _ = ctx.fill_text(station, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
 }
