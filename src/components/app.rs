@@ -1,4 +1,4 @@
-use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value, SignalWith, Signal, store_value};
+use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value, Signal, store_value};
 use std::collections::HashMap;
 use leptos_meta::{provide_meta_context, Stylesheet, Title};
 use uuid::Uuid;
@@ -391,12 +391,7 @@ pub fn App() -> impl IntoView {
                     }.into_view(),
                     AppTab::GraphView(view_id) => {
                         // Find the view with matching ID
-                        if let Some(mut view) = views.get().iter().find(|v| v.id == view_id).cloned() {
-                            // Inject current viewport state from separate signal
-                            view.viewport_state = viewport_states.with(|vs| {
-                                vs.get(&view_id).cloned().unwrap_or_default()
-                            });
-
+                        if let Some(view) = views.get().iter().find(|v| v.id == view_id).cloned() {
                             view! {
                                 <TimeGraph
                                     lines=lines
