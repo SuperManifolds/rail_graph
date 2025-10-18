@@ -6,7 +6,7 @@ use std::collections::HashMap;
 /// Parse CSV data into lines and railway graph
 #[must_use]
 pub fn parse_csv_data() -> (Vec<Line>, RailwayGraph) {
-    let csv_content = include_str!("../lines.csv");
+    let csv_content = include_str!("../test-data/lines.csv");
     parse_csv_string(csv_content, &HashMap::new())
 }
 

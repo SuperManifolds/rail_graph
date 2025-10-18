@@ -8,5 +8,5 @@ port = 8080
 open = false
 
 [watch]
-watch = ["src", "style", "index.html", "lines.csv"]
+watch = ["src", "style", "index.html", "test-data"]
 ignore = ["dist"]
