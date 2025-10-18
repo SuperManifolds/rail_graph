@@ -136,8 +136,9 @@ impl RouteSegment {
 
 impl Line {
     /// Create lines from IDs with default settings
+    /// `color_offset` is added to the color seed to avoid duplicate colors when adding lines to existing project
     #[must_use]
-    pub fn create_from_ids(line_ids: &[String]) -> Vec<Line> {
+    pub fn create_from_ids(line_ids: &[String], color_offset: usize) -> Vec<Line> {
         line_ids
             .iter()
             .enumerate()
@@ -146,7 +147,7 @@ impl Line {
                 Line {
                     id: id.clone(),
                     frequency: Duration::hours(1), // Default, configurable by user
-                    color: generate_random_color(i),
+                    color: generate_random_color(i + color_offset),
                     thickness: 2.0,
                     first_departure: BASE_DATE.and_hms_opt(5, offset_minutes, 0).unwrap_or(BASE_MIDNIGHT),
                     return_first_departure: BASE_DATE.and_hms_opt(6, offset_minutes, 0).unwrap_or(BASE_MIDNIGHT),
@@ -637,7 +638,7 @@ mod tests {
     #[test]
     fn test_create_from_ids() {
         let ids = vec!["Line 1".to_string(), "Line 2".to_string()];
-        let lines = Line::create_from_ids(&ids);
+        let lines = Line::create_from_ids(&ids, 0);
 
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0].id, "Line 1");

@@ -121,9 +121,12 @@ pub fn Importer(
     let handle_import = move |config: CsvImportConfig| {
         let mut new_lines = None;
 
+        // Get existing line count for color offset
+        let existing_line_count = lines.get().len();
+
         // Parse CSV into existing graph
         set_graph.update(|graph| {
-            let lines = parse_csv_with_mapping(&file_content.get(), &config, graph);
+            let lines = parse_csv_with_mapping(&file_content.get(), &config, graph, existing_line_count);
             new_lines = Some(lines);
         });
 

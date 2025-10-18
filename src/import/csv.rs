@@ -558,8 +558,9 @@ fn is_duration_format(s: &str) -> bool {
 
 /// Parse CSV content with the given column mapping configuration
 /// Merges stations and tracks into the existing graph
+/// `existing_line_count` is used to offset colors to avoid duplicates
 #[must_use]
-pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &mut RailwayGraph) -> Vec<Line> {
+pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &mut RailwayGraph, existing_line_count: usize) -> Vec<Line> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(content.as_bytes());
@@ -577,7 +578,7 @@ pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &m
     }
 
     let line_ids: Vec<String> = line_groups.iter().map(|g| g.line_name.clone()).collect();
-    let mut lines = Line::create_from_ids(&line_ids);
+    let mut lines = Line::create_from_ids(&line_ids, existing_line_count);
 
     let station_data = collect_station_data(&mut records, config, &line_groups);
 
@@ -1123,7 +1124,7 @@ mod tests {
         let config = analyze_csv(&csv_content).expect("Should parse R70.csv");
 
         let mut graph = RailwayGraph::new();
-        let mut lines = parse_csv_with_mapping(&csv_content, &config, &mut graph);
+        let mut lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0);
 
         assert!(!lines.is_empty(), "Should have imported at least one line");
 

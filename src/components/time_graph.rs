@@ -214,8 +214,9 @@ pub fn TimeGraph(
                     if new_line_dialog_open.get() {
                         let line_num = next_line_number.get();
                         let line_id = format!("Line {line_num}");
+                        let existing_line_count = lines.get().len();
 
-                        Some(Line::create_from_ids(&[line_id])[0].clone())
+                        Some(Line::create_from_ids(&[line_id], existing_line_count)[0].clone())
                     } else {
                         None
                     }

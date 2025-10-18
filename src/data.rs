@@ -43,7 +43,7 @@ fn build_graph_and_routes_from_csv(
     wait_times: &HashMap<String, Duration>,
 ) -> (Vec<Line>, RailwayGraph) {
     let mut graph = RailwayGraph::new();
-    let mut lines = Line::create_from_ids(line_ids);
+    let mut lines = Line::create_from_ids(line_ids, 0);
 
     // First pass: collect all station data
     let mut station_data: Vec<(String, Vec<Option<Duration>>)> = Vec::new();
