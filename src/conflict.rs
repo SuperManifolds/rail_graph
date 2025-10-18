@@ -921,32 +921,26 @@ fn extract_platform_occupancies(
             continue;
         };
 
-        // Determine which platform(s) this journey uses at this station
-        let mut platforms = Vec::new();
+        // Determine which platform this journey uses at this station
+        // A train can only occupy ONE platform at a time during a stop
+        // Priority: use arrival platform (where train stops), or departure platform if no arrival
+        let platform_idx = if i > 0 && i - 1 < journey.segments.len() {
+            // Not the first station: use the destination platform of the previous segment (arrival platform)
+            journey.segments[i - 1].destination_platform
+        } else if i < journey.segments.len() {
+            // First station: use the origin platform of the current segment (departure platform)
+            journey.segments[i].origin_platform
+        } else {
+            // Single station (no segments) - use platform 0
+            0
+        };
 
-        // If not the first station, the train arrives on the destination_platform of the previous segment
-        if i > 0 && i - 1 < journey.segments.len() {
-            platforms.push(journey.segments[i - 1].destination_platform);
-        }
-
-        // If not the last station, the train departs from the origin_platform of the next segment
-        if i < journey.segments.len() {
-            let departure_platform = journey.segments[i].origin_platform;
-            // Only add if different from arrival platform (to avoid duplicates)
-            if platforms.is_empty() || platforms[0] != departure_platform {
-                platforms.push(departure_platform);
-            }
-        }
-
-        // For each platform used, create an occupancy with buffer times
-        for &platform_idx in &platforms {
-            occupancies.push(PlatformOccupancy {
-                station_idx,
-                platform_idx,
-                time_start: *arrival_time - buffer,
-                time_end: *departure_time + buffer,
-            });
-        }
+        occupancies.push(PlatformOccupancy {
+            station_idx,
+            platform_idx,
+            time_start: *arrival_time - buffer,
+            time_end: *departure_time + buffer,
+        });
     }
 
     occupancies
