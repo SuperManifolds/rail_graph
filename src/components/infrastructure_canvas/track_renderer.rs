@@ -18,7 +18,8 @@ const JUNCTION_STOP_DISTANCE: f64 = 14.0; // Stop drawing tracks this far from j
 
 /// Check if a line segment from pos1 to pos2 passes near any stations (excluding source and target)
 /// Returns a perpendicular offset to shift the track away from the station
-fn calculate_avoidance_offset(
+#[must_use]
+pub fn calculate_avoidance_offset(
     graph: &RailwayGraph,
     pos1: (f64, f64),
     pos2: (f64, f64),

@@ -3,6 +3,7 @@ use web_sys::CanvasRenderingContext2d;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::Direction;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+use super::track_renderer;
 
 const JUNCTION_TRACK_DISTANCE: f64 = 14.0; // Match JUNCTION_STOP_DISTANCE from track_renderer
 const TRACK_SPACING: f64 = 3.0; // Match track_renderer
@@ -222,9 +223,15 @@ pub fn draw_junction(
             // Calculate entry base point
             let entry_delta = (from_node_pos.0 - pos.0, from_node_pos.1 - pos.1);
             let entry_distance = (entry_delta.0 * entry_delta.0 + entry_delta.1 * entry_delta.1).sqrt();
+
+            // Calculate avoidance offset for this edge
+            let (avoid_from_x, avoid_from_y) = track_renderer::calculate_avoidance_offset(
+                graph, from_source_pos, from_target_pos, from_source, from_target
+            );
+
             let entry_base = (
-                pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_TRACK_DISTANCE,
-                pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_TRACK_DISTANCE,
+                pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_TRACK_DISTANCE + avoid_from_x,
+                pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_TRACK_DISTANCE + avoid_from_y,
             );
 
             // Get the to edge details to calculate proper perpendicular
@@ -248,9 +255,15 @@ pub fn draw_junction(
             // Calculate exit base point
             let exit_delta = (to_node_pos.0 - pos.0, to_node_pos.1 - pos.1);
             let exit_distance = (exit_delta.0 * exit_delta.0 + exit_delta.1 * exit_delta.1).sqrt();
+
+            // Calculate avoidance offset for this edge
+            let (avoid_to_x, avoid_to_y) = track_renderer::calculate_avoidance_offset(
+                graph, to_source_pos, to_target_pos, to_source, to_target
+            );
+
             let exit_base = (
-                pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_TRACK_DISTANCE,
-                pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_TRACK_DISTANCE,
+                pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_TRACK_DISTANCE + avoid_to_x,
+                pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_TRACK_DISTANCE + avoid_to_y,
             );
 
             if arriving_tracks.len() == 1 && departing_tracks.len() == 1 {
