@@ -334,22 +334,13 @@ fn looks_like_header(row: &csv::StringRecord) -> bool {
 
 /// Detect the type of a column based on header, sample values, and previously processed columns
 fn detect_column_type(header: Option<&str>, samples: &[String], prev_columns: &[ColumnMapping]) -> ColumnType {
-    let non_empty_samples: Vec<&str> = samples.iter()
-        .map(String::as_str)
-        .filter(|s| !s.trim().is_empty())
-        .collect();
-
-    if non_empty_samples.is_empty() {
-        return ColumnType::Skip;
-    }
-
     // Check if there's already a station column
     let has_station = prev_columns.iter().any(|c| c.column_type == ColumnType::StationName);
 
     // Get the previous column type (for context-aware detection)
     let prev_col_type = prev_columns.last().map(|c| c.column_type);
 
-    // Check header-based detection first (these take precedence)
+    // Check header-based detection first (these take precedence over data)
     if let Some(h) = header {
         let lower = h.to_lowercase();
 
@@ -380,6 +371,16 @@ fn detect_column_type(header: Option<&str>, samples: &[String], prev_columns: &[
         if lower.contains("wait") || lower.contains("dwell") {
             return ColumnType::WaitTime;
         }
+    }
+
+    // Now check sample data
+    let non_empty_samples: Vec<&str> = samples.iter()
+        .map(String::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .collect();
+
+    if non_empty_samples.is_empty() {
+        return ColumnType::Skip;
     }
 
     // Data-based detection
