@@ -229,11 +229,6 @@ pub fn draw_junction(
                 graph, from_source_pos, from_target_pos, from_source, from_target
             );
 
-            let entry_base = (
-                pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_TRACK_DISTANCE + avoid_from_x,
-                pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_TRACK_DISTANCE + avoid_from_y,
-            );
-
             // Get the to edge details to calculate proper perpendicular
             let to_edge_ref = graph.graph.edge_references().find(|e| e.id() == *to_edge);
             let (to_source, to_target) = if let Some(e) = to_edge_ref {
@@ -261,10 +256,33 @@ pub fn draw_junction(
                 graph, to_source_pos, to_target_pos, to_source, to_target
             );
 
-            let exit_base = (
-                pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_TRACK_DISTANCE + avoid_to_x,
-                pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_TRACK_DISTANCE + avoid_to_y,
-            );
+            // For edges with avoidance offset, use half perimeter distance
+            let from_has_avoidance = avoid_from_x.abs() > 0.1 || avoid_from_y.abs() > 0.1;
+            let to_has_avoidance = avoid_to_x.abs() > 0.1 || avoid_to_y.abs() > 0.1;
+
+            let entry_base = if from_has_avoidance {
+                (
+                    pos.0 + (entry_delta.0 / entry_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_from_x,
+                    pos.1 + (entry_delta.1 / entry_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_from_y,
+                )
+            } else {
+                (
+                    pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_TRACK_DISTANCE,
+                    pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_TRACK_DISTANCE,
+                )
+            };
+
+            let exit_base = if to_has_avoidance {
+                (
+                    pos.0 + (exit_delta.0 / exit_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_to_x,
+                    pos.1 + (exit_delta.1 / exit_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_to_y,
+                )
+            } else {
+                (
+                    pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_TRACK_DISTANCE,
+                    pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_TRACK_DISTANCE,
+                )
+            };
 
             if arriving_tracks.len() == 1 && departing_tracks.len() == 1 {
                 // Single track to single track - draw simple connection
