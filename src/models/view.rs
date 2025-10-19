@@ -262,40 +262,31 @@ impl GraphView {
         }
     }
 
-    /// Build a mapping from full-graph station indices to view display indices
+    /// Build a mapping from full-graph node indices to view display indices
     /// This is used for rendering conflicts/crossings which store indices from the full graph
     /// The display index accounts for ALL nodes (stations and junctions) in the view
     #[must_use]
     pub fn build_station_index_map(&self, graph: &RailwayGraph) -> std::collections::HashMap<usize, usize> {
-        let all_stations = graph.get_all_stations_ordered();
+        let all_nodes = graph.get_all_nodes_ordered();
 
-        // Build a reverse map: NodeIndex -> station index in full graph
-        let node_to_station_idx: std::collections::HashMap<NodeIndex, usize> = all_stations
+        // Build a reverse map: NodeIndex -> node index in full graph
+        let node_to_idx: std::collections::HashMap<NodeIndex, usize> = all_nodes
             .iter()
             .enumerate()
             .map(|(idx, (node_idx, _))| (*node_idx, idx))
             .collect();
 
         if let Some(path) = self.calculate_path(graph) {
-            // Map station indices to display positions (which include junctions)
+            // Map node indices to display positions
             path.iter()
                 .enumerate()
                 .filter_map(|(display_idx, &node_idx)| {
-                    // Only map if this node is a station
-                    node_to_station_idx.get(&node_idx).map(|&station_idx| (station_idx, display_idx))
+                    node_to_idx.get(&node_idx).map(|&full_idx| (full_idx, display_idx))
                 })
                 .collect()
         } else {
-            // No station range means show all nodes (stations and junctions)
-            // Map station indices to display indices accounting for junctions
-            let all_nodes = graph.get_all_nodes_ordered();
-            let mut map = std::collections::HashMap::new();
-            for (display_idx, (node_idx, _)) in all_nodes.iter().enumerate() {
-                if let Some(&station_idx) = node_to_station_idx.get(node_idx) {
-                    map.insert(station_idx, display_idx);
-                }
-            }
-            map
+            // No station range means show all nodes - direct 1:1 mapping
+            (0..all_nodes.len()).map(|idx| (idx, idx)).collect()
         }
     }
 
@@ -327,13 +318,20 @@ impl GraphView {
     /// Filter conflicts to only those within this path
     #[must_use]
     pub fn filter_conflicts(&self, conflicts: &[Conflict], graph: &RailwayGraph) -> Vec<Conflict> {
-        let visible_stations = self.visible_stations(graph);
+        let visible_nodes = self.visible_stations(graph);
+        let all_nodes = graph.get_all_nodes_ordered();
 
         conflicts.iter()
             .filter(|conflict| {
-                // Include if both stations involved are in the visible set
-                visible_stations.contains(&NodeIndex::new(conflict.station1_idx)) &&
-                visible_stations.contains(&NodeIndex::new(conflict.station2_idx))
+                // Convert conflict indices to NodeIndex values
+                let node1 = all_nodes.get(conflict.station1_idx).map(|(node_idx, _)| node_idx);
+                let node2 = all_nodes.get(conflict.station2_idx).map(|(node_idx, _)| node_idx);
+
+                // Include if both nodes involved are in the visible set
+                match (node1, node2) {
+                    (Some(n1), Some(n2)) => visible_nodes.contains(n1) && visible_nodes.contains(n2),
+                    _ => false,
+                }
             })
             .cloned()
             .collect()

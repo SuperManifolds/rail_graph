@@ -1,5 +1,5 @@
 use crate::constants::BASE_DATE;
-use crate::models::{RailwayGraph, TrackDirection, Stations};
+use crate::models::{RailwayGraph, TrackDirection, Stations, Junctions};
 use crate::time::time_to_fraction;
 use crate::train_journey::TrainJourney;
 use chrono::NaiveDateTime;
@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 // Conflict detection constants
 const STATION_MARGIN: chrono::Duration = chrono::Duration::seconds(30);
-const PLATFORM_BUFFER_MINUTES: i64 = 1;
+const PLATFORM_BUFFER: chrono::Duration = chrono::Duration::seconds(30);
 const MAX_CONFLICTS: usize = 9999;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -156,15 +156,15 @@ pub fn detect_line_conflicts(
         station_crossings: Vec::new(),
     };
 
-    // Get ordered list of stations from the graph
+    // Get ordered list of all nodes (stations and junctions) from the graph
     #[cfg(not(target_arch = "wasm32"))]
     let setup_start = std::time::Instant::now();
 
-    let stations = graph.get_all_stations_ordered();
+    let all_nodes = graph.get_all_nodes_ordered();
 
     // Pre-compute NodeIndex to display index mapping for O(1) lookups
-    // This only includes stations, so conflicts are positioned between stations
-    let station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize> = stations
+    // Includes both stations and junctions
+    let station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize> = all_nodes
         .iter()
         .enumerate()
         .map(|(idx, (node_idx, _))| (*node_idx, idx))
@@ -912,7 +912,7 @@ fn extract_platform_occupancies(
     ctx: &ConflictContext,
 ) -> Vec<PlatformOccupancy> {
     let mut occupancies = Vec::new();
-    let buffer = chrono::Duration::minutes(PLATFORM_BUFFER_MINUTES);
+    let buffer = PLATFORM_BUFFER;
 
     for (i, (node_idx, arrival_time, departure_time)) in
         journey.station_times.iter().enumerate()
@@ -920,6 +920,11 @@ fn extract_platform_occupancies(
         let Some(&station_idx) = ctx.station_indices.get(node_idx) else {
             continue;
         };
+
+        // Skip junctions - they don't have platforms
+        if ctx.graph.is_junction(*node_idx) {
+            continue;
+        }
 
         // Determine which platform this journey uses at this station
         // A train can only occupy ONE platform at a time during a stop
