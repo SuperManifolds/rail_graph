@@ -786,6 +786,9 @@ fn build_routes(
             && group.departure_time_column.is_none()
             && group.offset_column.is_none();
 
+        // Track first departure time from CSV data
+        let mut first_time_of_day: Option<Duration> = None;
+
         // Get wait time for this line (fallback chain: per-line -> default)
         let default_wait_time = config.defaults.per_line_wait_times
             .get(&group.line_name)
@@ -818,6 +821,16 @@ fn build_routes(
             let Some(cumulative_time) = cumulative_time else {
                 continue;
             };
+
+            // Capture first time of day from arrival or departure time
+            if first_time_of_day.is_none() {
+                // For first station, use departure time if available, otherwise arrival time
+                if let Some(departure) = line_station_data.departure_time {
+                    first_time_of_day = Some(departure);
+                } else if let Some(arrival) = line_station_data.arrival_time {
+                    first_time_of_day = Some(arrival);
+                }
+            }
 
             // Check for passing loop and junction markers
             let is_passing_loop = station.name.ends_with("(P)");
@@ -983,6 +996,21 @@ fn build_routes(
             });
         }
         lines[line_idx].return_route = return_route;
+
+        // Set first_departure from CSV data if available
+        if let Some(time_of_day) = first_time_of_day {
+            use crate::constants::BASE_DATE;
+            let hours = time_of_day.num_hours();
+            let minutes = time_of_day.num_minutes() % 60;
+            let seconds = time_of_day.num_seconds() % 60;
+
+            #[allow(clippy::cast_possible_truncation)]
+            if let Some(first_departure) = BASE_DATE.and_hms_opt(hours as u32, minutes as u32, seconds as u32) {
+                lines[line_idx].first_departure = first_departure;
+                // Also set return_first_departure to 1 hour later by default
+                lines[line_idx].return_first_departure = first_departure + chrono::Duration::hours(1);
+            }
+        }
     }
 }
 
