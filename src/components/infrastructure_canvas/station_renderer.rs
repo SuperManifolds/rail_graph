@@ -327,6 +327,116 @@ fn draw_station_label(
     ctx.restore();
 }
 
+fn get_node_positions_and_radii(graph: &RailwayGraph) -> Vec<(NodeIndex, (f64, f64), f64)> {
+    let mut node_positions = Vec::new();
+
+    for idx in graph.graph.node_indices() {
+        let Some(pos) = graph.get_station_position(idx) else { continue };
+        let Some(node) = graph.graph.node_weight(idx) else { continue };
+
+        if let Some(station) = node.as_station() {
+            let radius = if station.passing_loop {
+                NODE_RADIUS * 0.6
+            } else {
+                NODE_RADIUS
+            };
+            node_positions.push((idx, pos, radius));
+        } else if graph.is_junction(idx) {
+            node_positions.push((idx, pos, JUNCTION_LABEL_RADIUS));
+        }
+    }
+
+    node_positions
+}
+
+#[must_use]
+pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeIndex, (f64, f64, f64, f64)> {
+    let font_size = 14.0 / zoom;
+    let mut track_segments = track_renderer::get_track_segments(graph);
+    track_segments.extend(junction_renderer::get_junction_segments(graph));
+
+    let node_positions = get_node_positions_and_radii(graph);
+
+    let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
+    let mut node_neighbors: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+
+    for edge in graph.graph.edge_references() {
+        node_neighbors.entry(edge.source()).or_insert_with(Vec::new).push(edge.target());
+        node_neighbors.entry(edge.target()).or_insert_with(Vec::new).push(edge.source());
+    }
+
+    let mut visited_for_traversal = std::collections::HashSet::new();
+    let mut queue = std::collections::VecDeque::new();
+    let mut bfs_parent: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+    let mut branch_positions: HashMap<NodeIndex, LabelPosition> = HashMap::new();
+
+    if let Some((first_idx, _, _)) = node_positions.first() {
+        queue.push_back(*first_idx);
+        visited_for_traversal.insert(*first_idx);
+    }
+
+    while let Some(idx) = queue.pop_front() {
+        let Some((_, pos, _radius)) = node_positions.iter().find(|(i, _, _)| *i == idx) else { continue };
+        let Some(node) = graph.graph.node_weight(idx) else { continue };
+        let name = node.display_name();
+        let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
+
+        let is_junction = graph.is_junction(idx);
+        let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
+
+        let preferred_position = bfs_parent.get(&idx)
+            .and_then(|parent| branch_positions.get(parent))
+            .copied();
+
+        if let Some(neighbors) = node_neighbors.get(&idx) {
+            for &neighbor in neighbors {
+                if visited_for_traversal.insert(neighbor) {
+                    queue.push_back(neighbor);
+                    bfs_parent.insert(neighbor, idx);
+                }
+            }
+        }
+
+        let positions_to_try: Vec<LabelPosition> = if let Some(pref_pos) = preferred_position {
+            let mut positions = vec![pref_pos];
+            positions.extend(LabelPosition::all().into_iter().filter(|p| *p != pref_pos));
+            positions
+        } else {
+            LabelPosition::all()
+        };
+
+        let mut best_position = LabelPosition::Right;
+        let mut best_overlaps = usize::MAX;
+
+        for position in positions_to_try {
+            let bounds = calculate_label_bounds(position, *pos, text_width, font_size, label_offset);
+            let overlaps = count_label_overlaps(&bounds, idx, &label_positions, &node_positions, &track_segments);
+
+            if overlaps < best_overlaps {
+                best_overlaps = overlaps;
+                best_position = position;
+                if overlaps == 0 {
+                    break;
+                }
+            }
+        }
+
+        let label_pos = best_position.calculate_label_pos_with_offset(*pos, text_width, font_size, label_offset);
+        let bounds = LabelBounds {
+            x: label_pos.0,
+            y: label_pos.1 - font_size,
+            width: text_width,
+            height: font_size * 1.2,
+        };
+        label_positions.insert(idx, (bounds, best_position));
+        branch_positions.insert(idx, best_position);
+    }
+
+    label_positions.into_iter()
+        .map(|(idx, (bounds, _))| (idx, (bounds.x, bounds.y, bounds.width, bounds.height)))
+        .collect()
+}
+
 #[allow(clippy::cast_precision_loss)]
 pub fn draw_stations(
     ctx: &CanvasRenderingContext2d,

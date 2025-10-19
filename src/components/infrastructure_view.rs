@@ -52,7 +52,12 @@ fn handle_mouse_move_hover_detection(
     let world_y = (y - viewport.pan_offset_y) / viewport.zoom_level;
 
     let current_graph = graph.get();
-    if let Some(hovered_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
+
+    // Check for label or station
+    let hovered_node = hit_detection::find_label_at_position(&current_graph, world_x, world_y, viewport.zoom_level)
+        .or_else(|| hit_detection::find_station_at_position(&current_graph, world_x, world_y));
+
+    if let Some(hovered_station) = hovered_node {
         let is_editing_this = Some(hovered_station) == editing_station.get();
         set_is_over_station.set(true);
         set_is_over_edited_station.set(is_editing_this);
@@ -689,11 +694,15 @@ fn create_event_handlers(
 
             let current_graph = graph.get();
 
-            if let Some(clicked_node) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
-                if current_graph.is_junction(clicked_node) {
-                    set_editing_junction.set(Some(clicked_node));
+            // Check for label click first, then node click
+            let clicked_node = hit_detection::find_label_at_position(&current_graph, world_x, world_y, zoom)
+                .or_else(|| hit_detection::find_station_at_position(&current_graph, world_x, world_y));
+
+            if let Some(node) = clicked_node {
+                if current_graph.is_junction(node) {
+                    set_editing_junction.set(Some(node));
                 } else {
-                    set_editing_station.set(Some(clicked_node));
+                    set_editing_station.set(Some(node));
                 }
             } else if matches!(edit_mode.get(), EditMode::None) {
                 // Only open track editor on double-click when not in a special edit mode
