@@ -250,14 +250,15 @@ fn layout_line(
     graph.set_station_position(current_node, position);
     visited.insert(current_node);
 
-    // Get all unvisited neighbors (both incoming and outgoing edges)
-    let mut neighbors = Vec::new();
+    // Get all unvisited neighbors with their track counts (both incoming and outgoing edges)
+    let mut neighbors_with_tracks: Vec<(NodeIndex, usize)> = Vec::new();
 
     // Outgoing edges
     for edge in graph.graph.edges(current_node) {
         let target = edge.target();
         if !visited.contains(&target) {
-            neighbors.push(target);
+            let track_count = edge.weight().tracks.len();
+            neighbors_with_tracks.push((target, track_count));
         }
     }
 
@@ -265,23 +266,27 @@ fn layout_line(
     for edge in graph.graph.edges_directed(current_node, Direction::Incoming) {
         let source = edge.source();
         if !visited.contains(&source) {
-            neighbors.push(source);
+            let track_count = edge.weight().tracks.len();
+            neighbors_with_tracks.push((source, track_count));
         }
     }
 
-    if neighbors.is_empty() {
+    if neighbors_with_tracks.is_empty() {
         return;
     }
 
+    // Sort neighbors by track count (descending) - edges with more tracks should continue straight
+    neighbors_with_tracks.sort_by(|a, b| b.1.cmp(&a.1));
+
     // Separate neighbors into those with saved angles and those without
     let mut neighbors_with_angles: Vec<(NodeIndex, f64)> = Vec::new();
-    let mut neighbors_without_angles: Vec<NodeIndex> = Vec::new();
+    let mut neighbors_without_angles: Vec<(NodeIndex, usize)> = Vec::new();
 
-    for &neighbor in &neighbors {
+    for &(neighbor, track_count) in &neighbors_with_tracks {
         if let Some(&saved_angle) = graph.branch_angles.get(&(current_node.index(), neighbor.index())) {
             neighbors_with_angles.push((neighbor, saved_angle));
         } else {
-            neighbors_without_angles.push(neighbor);
+            neighbors_without_angles.push((neighbor, track_count));
         }
     }
 
@@ -302,9 +307,9 @@ fn layout_line(
         );
     }
 
-    // For neighbors without saved angles, first continues in same direction (main line), rest are branches
+    // For neighbors without saved angles, first (highest track count) continues in same direction (main line), rest are branches
     if !neighbors_without_angles.is_empty() {
-        let main_neighbor = neighbors_without_angles[0];
+        let (main_neighbor, _) = neighbors_without_angles[0];
         let next_pos = (
             position.0 + direction.cos() * spacing,
             position.1 + direction.sin() * spacing,
@@ -320,7 +325,7 @@ fn layout_line(
         );
 
         // Additional neighbors are branches - pick from available directions
-        for &branch_neighbor in neighbors_without_angles.iter().skip(1) {
+        for &(branch_neighbor, _) in neighbors_without_angles.iter().skip(1) {
             if let Some(branch_dir) = available_directions.pop() {
                 let branch_pos = (
                     position.0 + branch_dir.cos() * spacing,
