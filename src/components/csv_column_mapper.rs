@@ -281,19 +281,64 @@ fn detect_line_ids(config: &CsvImportConfig) -> Vec<String> {
             .collect();
     }
 
-    // Otherwise, use column headers from time columns
-    config.columns.iter()
-        .filter(|c| matches!(c.column_type, ColumnType::ArrivalTime | ColumnType::DepartureTime | ColumnType::Offset))
-        .filter_map(|c| c.header.clone())
-        .filter(|h| !h.trim().is_empty())
-        .collect()
+    // Otherwise, find columns with numbers in headers and apply priority
+    let mut detected = Vec::new();
+    let mut line_idx = 0;
+
+    for c in &config.columns {
+        // Check if this column has a header with numbers
+        let has_number_in_header = c.header.as_ref()
+            .is_some_and(|h| !h.trim().is_empty() && h.chars().any(|ch| ch.is_ascii_digit()));
+
+        if has_number_in_header {
+            // Priority: user input > auto detection
+            let name = if let Some(user_name) = config.group_line_names.get(&line_idx) {
+                if !user_name.trim().is_empty() {
+                    user_name.clone()
+                } else {
+                    c.header.clone().unwrap()
+                }
+            } else {
+                c.header.clone().unwrap()
+            };
+
+            detected.push(name);
+            line_idx += 1;
+        }
+    }
+
+    if !detected.is_empty() {
+        detected
+    } else {
+        // Fallback when no columns have numbers in headers
+        vec![
+            config.group_line_names.get(&0)
+                .filter(|n| !n.trim().is_empty())
+                .cloned()
+                .unwrap_or_else(|| "Line 1".to_string())
+        ]
+    }
 }
 
 fn count_groups(config: &CsvImportConfig) -> usize {
-    config.columns.iter()
-        .filter_map(|c| c.group_index)
-        .max()
-        .map_or(0, |max| max + 1)
+    if config.pattern_repeat.is_some() {
+        // Grouped mode: count groups
+        config.columns.iter()
+            .filter_map(|c| c.group_index)
+            .max()
+            .map_or(0, |max| max + 1)
+    } else {
+        // Non-grouped mode: count columns with numbers in headers
+        let count = config.columns.iter()
+            .filter(|c| {
+                c.header.as_ref()
+                    .is_some_and(|h| !h.trim().is_empty() && h.chars().any(|c| c.is_ascii_digit()))
+            })
+            .count();
+
+        // At least 1 so the line name section shows
+        count.max(1)
+    }
 }
 
 #[component]
