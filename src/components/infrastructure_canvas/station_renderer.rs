@@ -78,6 +78,18 @@ impl LabelPosition {
             LabelPosition::BottomLeft
         )
     }
+
+    fn text_align(self) -> &'static str {
+        match self {
+            LabelPosition::Left | LabelPosition::TopLeft | LabelPosition::BottomLeft => "right",
+            LabelPosition::Right | LabelPosition::TopRight | LabelPosition::BottomRight
+                | LabelPosition::Top | LabelPosition::Bottom => "left",
+        }
+    }
+
+    fn text_baseline() -> &'static str {
+        "middle"
+    }
 }
 
 struct LabelBounds {
@@ -277,31 +289,42 @@ fn draw_station_label(
     ctx: &CanvasRenderingContext2d,
     station_name: &str,
     pos: (f64, f64),
-    bounds: &LabelBounds,
     position: LabelPosition,
-    font_size: f64,
+    radius: f64,
     offset: f64,
 ) {
+    ctx.save();
+    ctx.set_text_align(position.text_align());
+    ctx.set_text_baseline(LabelPosition::text_baseline());
+
+    let total_offset = radius + offset;
+
     if position.is_diagonal() {
-        ctx.save();
         let _ = ctx.translate(pos.0, pos.1);
         let _ = ctx.rotate(position.rotation_angle());
 
         let cos45 = std::f64::consts::FRAC_1_SQRT_2;
 
         let (x_offset, y_offset) = match position {
-            LabelPosition::Top => (offset * cos45, -offset * cos45),
-            LabelPosition::Bottom => (offset * cos45, offset * cos45),
-            LabelPosition::TopRight | LabelPosition::BottomRight => (offset, 0.0),
-            LabelPosition::TopLeft | LabelPosition::BottomLeft => (-offset, 0.0),
+            LabelPosition::Top => (total_offset * cos45, -total_offset * cos45),
+            LabelPosition::Bottom => (total_offset * cos45, total_offset * cos45),
+            LabelPosition::TopRight | LabelPosition::BottomRight => (total_offset, 0.0),
+            LabelPosition::TopLeft | LabelPosition::BottomLeft => (-total_offset, 0.0),
             _ => (0.0, 0.0),
         };
 
         let _ = ctx.fill_text(station_name, x_offset, y_offset);
-        ctx.restore();
     } else {
-        let _ = ctx.fill_text(station_name, bounds.x, bounds.y + font_size);
+        let (x, y) = pos;
+        let (x_pos, y_pos) = match position {
+            LabelPosition::Right => (x + total_offset, y),
+            LabelPosition::Left => (x - total_offset, y),
+            _ => (x, y),
+        };
+        let _ = ctx.fill_text(station_name, x_pos, y_pos);
     }
+
+    ctx.restore();
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -398,11 +421,11 @@ pub fn draw_stations(
     ctx.set_fill_style_str(LABEL_COLOR);
     ctx.set_font(&format!("{font_size}px sans-serif"));
 
-    for (idx, pos, _radius) in &node_positions {
+    for (idx, pos, radius) in &node_positions {
         let Some(node) = graph.graph.node_weight(*idx) else { continue };
-        let Some((bounds, position)) = label_positions.get(idx) else { continue };
+        let Some((_, position)) = label_positions.get(idx) else { continue };
         let is_junction = graph.is_junction(*idx);
         let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
-        draw_station_label(ctx, &node.display_name(), *pos, bounds, *position, font_size, label_offset);
+        draw_station_label(ctx, &node.display_name(), *pos, *position, *radius, label_offset);
     }
 }
