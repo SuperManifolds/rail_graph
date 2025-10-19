@@ -16,6 +16,41 @@ const TRACK_LINE_WIDTH: f64 = 2.0;
 const TRACK_COLOR: &str = "#444";
 const JUNCTION_STOP_DISTANCE: f64 = 14.0; // Stop drawing tracks this far from junction center
 
+/// Draw a track segment with optional avoidance transitions
+fn draw_track_segment_with_avoidance(
+    ctx: &CanvasRenderingContext2d,
+    pos1: (f64, f64),
+    pos2: (f64, f64),
+    segment_length: f64,
+    track_offset: (f64, f64),
+    avoidance_offset: (f64, f64),
+    transitions: (bool, bool),
+) {
+    let (ox, oy) = track_offset;
+    let (avoid_x, avoid_y) = avoidance_offset;
+    let (start_needs_transition, end_needs_transition) = transitions;
+
+    if start_needs_transition {
+        ctx.move_to(pos1.0 + ox, pos1.1 + oy);
+        let t1 = TRANSITION_LENGTH / segment_length;
+        let mid1_x = pos1.0 + (pos2.0 - pos1.0) * t1;
+        let mid1_y = pos1.1 + (pos2.1 - pos1.1) * t1;
+        ctx.line_to(mid1_x + ox + avoid_x, mid1_y + oy + avoid_y);
+    } else {
+        ctx.move_to(pos1.0 + ox + avoid_x, pos1.1 + oy + avoid_y);
+    }
+
+    if end_needs_transition {
+        let t2 = (segment_length - TRANSITION_LENGTH) / segment_length;
+        let mid2_x = pos1.0 + (pos2.0 - pos1.0) * t2;
+        let mid2_y = pos1.1 + (pos2.1 - pos1.1) * t2;
+        ctx.line_to(mid2_x + ox + avoid_x, mid2_y + oy + avoid_y);
+        ctx.line_to(pos2.0 + ox, pos2.1 + oy);
+    } else {
+        ctx.line_to(pos2.0 + ox + avoid_x, pos2.1 + oy + avoid_y);
+    }
+}
+
 /// Check if a line segment from pos1 to pos2 passes near any stations (excluding source and target)
 /// Returns a perpendicular offset to shift the track away from the station
 #[must_use]
@@ -211,28 +246,11 @@ pub fn draw_tracks(
                 let start_needs_transition = !source_is_junction;
                 let end_needs_transition = !target_is_junction;
 
-                if start_needs_transition {
-                    ctx.move_to(actual_pos1.0, actual_pos1.1);
-                    // Transition to offset
-                    let t1 = TRANSITION_LENGTH / segment_length;
-                    let mid1_x = actual_pos1.0 + (actual_pos2.0 - actual_pos1.0) * t1;
-                    let mid1_y = actual_pos1.1 + (actual_pos2.1 - actual_pos1.1) * t1;
-                    ctx.line_to(mid1_x + avoid_x, mid1_y + avoid_y);
-                } else {
-                    ctx.move_to(actual_pos1.0 + avoid_x, actual_pos1.1 + avoid_y);
-                }
-
-                if end_needs_transition {
-                    // Continue with offset
-                    let t2 = (segment_length - TRANSITION_LENGTH) / segment_length;
-                    let mid2_x = actual_pos1.0 + (actual_pos2.0 - actual_pos1.0) * t2;
-                    let mid2_y = actual_pos1.1 + (actual_pos2.1 - actual_pos1.1) * t2;
-                    ctx.line_to(mid2_x + avoid_x, mid2_y + avoid_y);
-                    // Transition back
-                    ctx.line_to(actual_pos2.0, actual_pos2.1);
-                } else {
-                    ctx.line_to(actual_pos2.0 + avoid_x, actual_pos2.1 + avoid_y);
-                }
+                draw_track_segment_with_avoidance(
+                    ctx, actual_pos1, actual_pos2, segment_length,
+                    (0.0, 0.0), (avoid_x, avoid_y),
+                    (start_needs_transition, end_needs_transition)
+                );
             } else {
                 ctx.move_to(actual_pos1.0, actual_pos1.1);
                 ctx.line_to(actual_pos2.0, actual_pos2.1);
@@ -260,25 +278,11 @@ pub fn draw_tracks(
                     let start_needs_transition = !source_is_junction;
                     let end_needs_transition = !target_is_junction;
 
-                    if start_needs_transition {
-                        ctx.move_to(actual_pos1.0 + ox, actual_pos1.1 + oy);
-                        let t1 = TRANSITION_LENGTH / segment_length;
-                        let mid1_x = actual_pos1.0 + (actual_pos2.0 - actual_pos1.0) * t1;
-                        let mid1_y = actual_pos1.1 + (actual_pos2.1 - actual_pos1.1) * t1;
-                        ctx.line_to(mid1_x + ox + avoid_x, mid1_y + oy + avoid_y);
-                    } else {
-                        ctx.move_to(actual_pos1.0 + ox + avoid_x, actual_pos1.1 + oy + avoid_y);
-                    }
-
-                    if end_needs_transition {
-                        let t2 = (segment_length - TRANSITION_LENGTH) / segment_length;
-                        let mid2_x = actual_pos1.0 + (actual_pos2.0 - actual_pos1.0) * t2;
-                        let mid2_y = actual_pos1.1 + (actual_pos2.1 - actual_pos1.1) * t2;
-                        ctx.line_to(mid2_x + ox + avoid_x, mid2_y + oy + avoid_y);
-                        ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);
-                    } else {
-                        ctx.line_to(actual_pos2.0 + ox + avoid_x, actual_pos2.1 + oy + avoid_y);
-                    }
+                    draw_track_segment_with_avoidance(
+                        ctx, actual_pos1, actual_pos2, segment_length,
+                        (ox, oy), (avoid_x, avoid_y),
+                        (start_needs_transition, end_needs_transition)
+                    );
                 } else {
                     ctx.move_to(actual_pos1.0 + ox, actual_pos1.1 + oy);
                     ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);

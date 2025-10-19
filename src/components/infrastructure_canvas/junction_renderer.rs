@@ -173,6 +173,7 @@ fn draw_junction_track_connections(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn draw_junction(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,

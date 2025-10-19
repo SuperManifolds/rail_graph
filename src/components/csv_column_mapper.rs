@@ -293,13 +293,13 @@ fn detect_line_ids(config: &CsvImportConfig) -> Vec<String> {
         if has_number_in_header {
             // Priority: user input > auto detection
             let name = if let Some(user_name) = config.group_line_names.get(&line_idx) {
-                if !user_name.trim().is_empty() {
-                    user_name.clone()
+                if user_name.trim().is_empty() {
+                    c.header.clone().expect("header should exist when has_number_in_header is true")
                 } else {
-                    c.header.clone().unwrap()
+                    user_name.clone()
                 }
             } else {
-                c.header.clone().unwrap()
+                c.header.clone().expect("header should exist when has_number_in_header is true")
             };
 
             detected.push(name);
@@ -307,9 +307,7 @@ fn detect_line_ids(config: &CsvImportConfig) -> Vec<String> {
         }
     }
 
-    if !detected.is_empty() {
-        detected
-    } else {
+    if detected.is_empty() {
         // Fallback when no columns have numbers in headers
         vec![
             config.group_line_names.get(&0)
@@ -317,6 +315,8 @@ fn detect_line_ids(config: &CsvImportConfig) -> Vec<String> {
                 .cloned()
                 .unwrap_or_else(|| "Line 1".to_string())
         ]
+    } else {
+        detected
     }
 }
 

@@ -379,6 +379,7 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
         let Some((_, pos, _radius)) = node_positions.iter().find(|(i, _, _)| *i == idx) else { continue };
         let Some(node) = graph.graph.node_weight(idx) else { continue };
         let name = node.display_name();
+        #[allow(clippy::cast_precision_loss)]
         let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
 
         let is_junction = graph.is_junction(idx);
@@ -473,6 +474,7 @@ pub fn draw_stations(
         let Some((_, pos, _radius)) = node_positions.iter().find(|(i, _, _)| *i == idx) else { continue };
         let Some(node) = graph.graph.node_weight(idx) else { continue };
         let name = node.display_name();
+        #[allow(clippy::cast_precision_loss)]
         let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
 
         // Use larger offset for junctions

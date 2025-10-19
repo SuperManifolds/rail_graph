@@ -765,6 +765,65 @@ fn find_junction_by_connection(
         })
 }
 
+/// Calculate cumulative time for a station
+fn calculate_station_cumulative_time(
+    uses_travel_time: bool,
+    prev_cumulative_time: Option<Duration>,
+    line_station_data: &LineStationData,
+    cumulative_time_tracker: &mut Duration,
+) -> Option<Duration> {
+    if uses_travel_time {
+        // For travel time format, accumulate durations
+        if prev_cumulative_time.is_none() {
+            *cumulative_time_tracker = Duration::zero();
+            Some(*cumulative_time_tracker)
+        } else if let Some(travel) = line_station_data.travel_time {
+            *cumulative_time_tracker += travel;
+            Some(*cumulative_time_tracker)
+        } else {
+            None
+        }
+    } else {
+        // Handle arrival time with midnight wraparound detection
+        line_station_data.arrival_time.map(|time| {
+            normalize_time_with_wraparound(time, prev_cumulative_time)
+        })
+    }
+}
+
+/// Generate return route from forward route
+fn generate_return_route(
+    forward_route: &[RouteSegment],
+    graph: &RailwayGraph,
+    default_wait_time: Duration,
+) -> Vec<RouteSegment> {
+    let mut return_route = Vec::new();
+    for i in (0..forward_route.len()).rev() {
+        let forward_segment = &forward_route[i];
+        let edge_idx = petgraph::graph::EdgeIndex::new(forward_segment.edge_index);
+
+        // Select track compatible with backward travel direction
+        let return_track_index = super::shared::select_track_for_direction(graph, edge_idx, true);
+
+        // Wait time should be from the previous forward segment (or default for last return segment)
+        let return_wait_time = if i > 0 {
+            forward_route[i - 1].wait_time
+        } else {
+            default_wait_time
+        };
+
+        return_route.push(RouteSegment {
+            edge_index: forward_segment.edge_index,
+            track_index: return_track_index,
+            origin_platform: forward_segment.destination_platform,
+            destination_platform: forward_segment.origin_platform,
+            duration: forward_segment.duration,
+            wait_time: return_wait_time,
+        });
+    }
+    return_route
+}
+
 /// Build routes and graph from station data
 fn build_routes(
     lines: &mut [Line],
@@ -799,24 +858,12 @@ fn build_routes(
             let line_station_data = &station.line_data[line_idx];
 
             // Determine cumulative time: either from time column or accumulated from travel times
-            let cumulative_time = if uses_travel_time {
-                // For travel time format, accumulate durations
-                // First station starts at 0:00:00, subsequent stations add travel time
-                if prev_station.is_none() {
-                    cumulative_time_tracker = Duration::zero();
-                    Some(cumulative_time_tracker)
-                } else if let Some(travel) = line_station_data.travel_time {
-                    cumulative_time_tracker += travel;
-                    Some(cumulative_time_tracker)
-                } else {
-                    None
-                }
-            } else {
-                // Handle arrival time with midnight wraparound detection
-                line_station_data.arrival_time.map(|time| {
-                    normalize_time_with_wraparound(time, prev_station.as_ref().map(|(_, t, _)| *t))
-                })
-            };
+            let cumulative_time = calculate_station_cumulative_time(
+                uses_travel_time,
+                prev_station.as_ref().map(|(_, t, _)| *t),
+                line_station_data,
+                &mut cumulative_time_tracker,
+            );
 
             let Some(cumulative_time) = cumulative_time else {
                 continue;
@@ -969,33 +1016,7 @@ fn build_routes(
         lines[line_idx].forward_route.clone_from(&route);
 
         // Generate return route
-        let mut return_route = Vec::new();
-        for i in (0..route.len()).rev() {
-            let forward_segment = &route[i];
-            let edge_idx = petgraph::graph::EdgeIndex::new(forward_segment.edge_index);
-
-            // Select track compatible with backward travel direction
-            let return_track_index = super::shared::select_track_for_direction(graph, edge_idx, true);
-
-            // Wait time should be from the previous forward segment (or default for last return segment)
-            // Forward segment i goes from station i to i+1 with wait at i+1
-            // Return segment should have wait at station i (from forward segment i-1)
-            let return_wait_time = if i > 0 {
-                route[i - 1].wait_time
-            } else {
-                default_wait_time
-            };
-
-            return_route.push(RouteSegment {
-                edge_index: forward_segment.edge_index,
-                track_index: return_track_index,
-                origin_platform: forward_segment.destination_platform,
-                destination_platform: forward_segment.origin_platform,
-                duration: forward_segment.duration,
-                wait_time: return_wait_time,
-            });
-        }
-        lines[line_idx].return_route = return_route;
+        lines[line_idx].return_route = generate_return_route(&route, graph, default_wait_time);
 
         // Set first_departure from CSV data if available
         if let Some(time_of_day) = first_time_of_day {
@@ -1004,7 +1025,7 @@ fn build_routes(
             let minutes = time_of_day.num_minutes() % 60;
             let seconds = time_of_day.num_seconds() % 60;
 
-            #[allow(clippy::cast_possible_truncation)]
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             if let Some(first_departure) = BASE_DATE.and_hms_opt(hours as u32, minutes as u32, seconds as u32) {
                 lines[line_idx].first_departure = first_departure;
                 // Also set return_first_departure to 1 hour later by default
