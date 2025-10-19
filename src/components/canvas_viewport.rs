@@ -99,7 +99,7 @@ pub fn handle_zoom(
     // Alt = horizontal zoom
     if shift_pressed && !alt_pressed {
         // Horizontal pan
-        let pan_amount = -delta * 0.5; // Invert and scale for smoother panning
+        let pan_amount = -delta * 0.5;
         let current_pan_x = viewport.pan_offset_x.get();
         viewport.set_pan_offset_x.set(current_pan_x + pan_amount);
     } else if alt_pressed && !shift_pressed && viewport.zoom_level_x.is_some() {
@@ -109,7 +109,7 @@ pub fn handle_zoom(
     } else if !shift_pressed && !alt_pressed {
         // Normal zoom
         let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
-        apply_normal_zoom(zoom_factor, mouse_x, mouse_y, viewport, min_zoom, canvas_dimensions);
+        apply_normal_zoom(zoom_factor, mouse_y, viewport, min_zoom, canvas_dimensions);
     }
 }
 
@@ -136,7 +136,6 @@ fn apply_horizontal_zoom(
 
 fn apply_normal_zoom(
     zoom_factor: f64,
-    mouse_x: f64,
     mouse_y: f64,
     viewport: &ViewportSignals,
     min_zoom: Option<f64>,
@@ -146,13 +145,11 @@ fn apply_normal_zoom(
     let min = min_zoom.unwrap_or(0.1);
     let new_zoom = (old_zoom * zoom_factor).clamp(min, 25.0);
 
-    let pan_x = viewport.pan_offset_x.get();
     let pan_y = viewport.pan_offset_y.get();
 
     // Check if we hit the minimum zoom cap
     let hit_min_cap = new_zoom == min && old_zoom * zoom_factor < min;
 
-    let new_pan_x = mouse_x - (mouse_x - pan_x) * (new_zoom / old_zoom);
     let new_pan_y = if let (true, Some((_, graph_height))) = (hit_min_cap, canvas_dimensions) {
         // When hitting the zoom cap, center the content vertically
         // At zoom < 1.0, content is smaller than viewport
@@ -165,7 +162,6 @@ fn apply_normal_zoom(
 
     batch(move || {
         viewport.set_zoom_level.set(new_zoom);
-        viewport.set_pan_offset_x.set(new_pan_x);
         viewport.set_pan_offset_y.set(new_pan_y);
     });
 }

@@ -199,13 +199,17 @@ pub fn GraphCanvas(
 
     let viewport = canvas_viewport::create_viewport_signals(true);
 
-    // Initialize viewport from saved state
-    viewport.set_zoom_level.set(initial_viewport.zoom_level);
-    if let Some((_, set_zoom_x)) = viewport.zoom_level_x {
-        set_zoom_x.set(initial_viewport.zoom_level_x.unwrap_or(1.0));
+    // Initialize viewport from saved state - only once on first mount
+    let initialized = leptos::store_value(false);
+    if !initialized.get_value() {
+        viewport.set_zoom_level.set(initial_viewport.zoom_level);
+        if let Some((_, set_zoom_x)) = viewport.zoom_level_x {
+            set_zoom_x.set(initial_viewport.zoom_level_x.unwrap_or(1.0));
+        }
+        viewport.set_pan_offset_x.set(initial_viewport.pan_offset_x);
+        viewport.set_pan_offset_y.set(initial_viewport.pan_offset_y);
+        initialized.set_value(true);
     }
-    viewport.set_pan_offset_x.set(initial_viewport.pan_offset_x);
-    viewport.set_pan_offset_y.set(initial_viewport.pan_offset_y);
     let zoom_level = viewport.zoom_level;
     let set_zoom_level = viewport.set_zoom_level;
     let (zoom_level_x, set_zoom_level_x) = viewport.zoom_level_x.expect("horizontal zoom enabled");
@@ -366,20 +370,17 @@ pub fn GraphCanvas(
                 let graph_mouse_x = mouse_x - LEFT_MARGIN;
                 let graph_mouse_y = mouse_y - TOP_MARGIN;
 
-                // Calculate minimum zoom to fit all stations in Y axis
-                // Stations are evenly spaced, so with N stations there are N-1 gaps
-                // At zoom=1.0, spacing between stations = graph_height / (N-1)
-                // At zoom=z, spacing = z * graph_height / (N-1)
-                // We want: z * graph_height / (N-1) >= min_station_spacing
-                // So: z >= min_station_spacing * (N-1) / graph_height
+                // Calculate minimum zoom where all stations fit and fill the screen vertically
+                // From station_labels.rs: station_height = graph_height / station_count
+                // Range from first to last station = (station_count - 1) * station_height * zoom
+                // For this to equal graph_height: (station_count - 1) * (graph_height / station_count) * zoom = graph_height
+                // Solving for zoom: zoom = station_count / (station_count - 1)
                 let current_graph = graph.get();
                 let station_count = current_graph.get_all_stations_ordered().len() as f64;
                 let min_zoom = if station_count > 1.0 {
-                    let min_station_spacing = 20.0; // Minimum pixels between stations
-                    let required_height = (station_count - 1.0) * min_station_spacing;
-                    Some((required_height / graph_height).max(0.1))
+                    Some(station_count / (station_count - 1.0))
                 } else {
-                    Some(0.1)
+                    None
                 };
 
                 canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport, min_zoom, Some((graph_width, graph_height)));
