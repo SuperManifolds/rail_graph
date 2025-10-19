@@ -173,9 +173,10 @@ pub fn LineControl(
                                         let line = line.clone();
                                         let current_graph = graph.get();
                                         move |_| {
-                                            let path = line.get_station_path(&current_graph);
-                                            if let (Some(&from), Some(&to)) = (path.first(), path.last()) {
-                                                if let Ok(view) = GraphView::from_station_range(line.id.clone(), from, to, &current_graph) {
+                                            // Use the line's forward route to create the view
+                                            let edge_path: Vec<usize> = line.forward_route.iter().map(|seg| seg.edge_index).collect();
+                                            if !edge_path.is_empty() {
+                                                if let Ok(view) = GraphView::from_edge_path(line.id.clone(), edge_path, &current_graph) {
                                                     on_create_view.call(view);
                                                 }
                                             }
