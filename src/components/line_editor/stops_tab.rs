@@ -77,6 +77,13 @@ fn RouteList(
         (endpoints.0, endpoints.1, start, end)
     });
 
+    let num_stations = stations.len();
+    let stations_with_index: Vec<_> = stations.into_iter().enumerate().collect();
+
+    let on_save_for_start = on_save.clone();
+    let on_save_for_list = on_save.clone();
+    let on_save_for_end = on_save;
+
     view! {
         <div class="stops-header">
             <span>"Station"</span>
@@ -94,28 +101,29 @@ fn RouteList(
             route_direction=route_direction.get()
             graph=graph
             edited_line=edited_line
-            on_save=on_save.clone()
+            on_save=on_save_for_start
         />
 
-        {
-            stations.iter().enumerate().map(|(i, (name, station_idx))| {
-                let num_stations = stations.len();
+        <For
+            each=move || stations_with_index.clone()
+            key=|(_, (_, station_idx))| station_idx.index()
+            children=move |(i, (name, station_idx))| {
                 view! {
                     <StopRow
                         index=i
-                        name=name.clone()
-                        station_idx=*station_idx
+                        name=name
+                        station_idx=station_idx
                         time_mode=mode
                         route_direction=dir
                         edited_line=edited_line
                         graph=graph
-                        on_save=on_save.clone()
+                        on_save=on_save_for_list.clone()
                         is_first={i == 0}
                         is_last={i == num_stations - 1}
                     />
                 }
-            }).collect::<Vec<_>>()
-        }
+            }
+        />
 
         <StationSelect
             available_stations=available_end
@@ -124,7 +132,7 @@ fn RouteList(
             route_direction=route_direction.get()
             graph=graph
             edited_line=edited_line
-            on_save=on_save.clone()
+            on_save=on_save_for_end
         />
     }
 }
