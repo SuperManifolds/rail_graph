@@ -2,7 +2,7 @@ use crate::components::{duration_input::{DurationInput, OptionalDurationInput}, 
 use crate::models::{Line, RailwayGraph, RouteDirection};
 use crate::constants::BASE_MIDNIGHT;
 use super::{PlatformSelect, PlatformField};
-use leptos::{component, view, ReadSignal, IntoView, Signal, SignalGetUntracked, event_target_value};
+use leptos::{component, view, ReadSignal, IntoView, Signal, SignalGetUntracked, SignalWithUntracked, SignalWith, create_memo, event_target_value};
 use chrono::Duration;
 use std::rc::Rc;
 
@@ -12,10 +12,10 @@ pub enum TimeDisplayMode {
     Absolute,    // Cumulative time from start
 }
 
-fn render_time_column(
+fn render_time_column_from_data(
     time_mode: TimeDisplayMode,
     index: usize,
-    route: &[crate::models::RouteSegment],
+    segment_duration: Option<Duration>,
     cumulative_seconds: i64,
     route_direction: RouteDirection,
     edited_line: ReadSignal<Option<Line>>,
@@ -23,50 +23,44 @@ fn render_time_column(
 ) -> leptos::View {
     match time_mode {
         TimeDisplayMode::Difference => {
-            if index < route.len() {
-                let segment_duration = route[index].duration;
-                let hours = cumulative_seconds / 3600;
-                let minutes = (cumulative_seconds % 3600) / 60;
-                let seconds = cumulative_seconds % 60;
-                let preview_text = format!("(Σ {hours:02}:{minutes:02}:{seconds:02})");
+            let hours = cumulative_seconds / 3600;
+            let minutes = (cumulative_seconds % 3600) / 60;
+            let seconds = cumulative_seconds % 60;
+            let preview_text = format!("(Σ {hours:02}:{minutes:02}:{seconds:02})");
 
-                view! {
-                    <div class="time-input-with-preview">
-                        <OptionalDurationInput
-                            duration=Signal::derive(move || segment_duration)
-                            on_change={
-                                let on_save = on_save.clone();
-                                move |new_duration| {
-                                    if let Some(mut updated_line) = edited_line.get_untracked() {
-                                        match route_direction {
-                                            RouteDirection::Forward => {
-                                                if index < updated_line.forward_route.len() {
-                                                    updated_line.forward_route[index].duration = new_duration;
-                                                }
-                                            }
-                                            RouteDirection::Return => {
-                                                if index < updated_line.return_route.len() {
-                                                    updated_line.return_route[index].duration = new_duration;
-                                                }
+            view! {
+                <div class="time-input-with-preview">
+                    <OptionalDurationInput
+                        duration=Signal::derive(move || segment_duration)
+                        on_change={
+                            let on_save = on_save.clone();
+                            move |new_duration| {
+                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                    match route_direction {
+                                        RouteDirection::Forward => {
+                                            if index < updated_line.forward_route.len() {
+                                                updated_line.forward_route[index].duration = new_duration;
                                             }
                                         }
-
-                                        // Sync return route if editing forward route and sync is enabled
-                                        if matches!(route_direction, RouteDirection::Forward) {
-                                            updated_line.apply_route_sync_if_enabled();
+                                        RouteDirection::Return => {
+                                            if index < updated_line.return_route.len() {
+                                                updated_line.return_route[index].duration = new_duration;
+                                            }
                                         }
-
-                                        on_save(updated_line);
                                     }
+
+                                    if matches!(route_direction, RouteDirection::Forward) {
+                                        updated_line.apply_route_sync_if_enabled();
+                                    }
+
+                                    on_save(updated_line);
                                 }
                             }
-                        />
-                        <span class="cumulative-preview">{preview_text}</span>
-                    </div>
-                }.into_view()
-            } else {
-                view! { <span class="travel-time">"-"</span> }.into_view()
-            }
+                        }
+                    />
+                    <span class="cumulative-preview">{preview_text}</span>
+                </div>
+            }.into_view()
         }
         TimeDisplayMode::Absolute => {
             if index > 0 {
@@ -123,15 +117,14 @@ fn render_time_column(
     }
 }
 
-fn render_wait_time(
+fn render_wait_time_from_data(
     index: usize,
-    route: &[crate::models::RouteSegment],
+    wait_duration: Duration,
     route_direction: RouteDirection,
     edited_line: ReadSignal<Option<Line>>,
     on_save: Rc<dyn Fn(Line)>,
 ) -> leptos::View {
-    if index > 0 && index - 1 < route.len() {
-        let wait_duration = route[index - 1].wait_time;
+    if index > 0 {
         view! {
             <DurationInput
                 duration=Signal::derive(move || wait_duration)
@@ -162,9 +155,11 @@ fn render_wait_time(
     }
 }
 
-fn render_platform_selector(
+#[allow(clippy::too_many_arguments)]
+fn render_platform_column(
     platforms: Vec<crate::models::Platform>,
-    route: &[crate::models::RouteSegment],
+    current_platform_origin: Option<usize>,
+    current_platform_dest: Option<usize>,
     index: usize,
     is_first: bool,
     is_last: bool,
@@ -172,68 +167,76 @@ fn render_platform_selector(
     edited_line: ReadSignal<Option<Line>>,
     on_save: Rc<dyn Fn(Line)>,
 ) -> leptos::View {
-    // If no platforms (junction), just show placeholder
     if platforms.is_empty() {
         return view! { <span class="platform-placeholder">"-"</span> }.into_view();
     }
 
-    if is_first && index < route.len() {
-        let current_platform = route[index].origin_platform;
-        view! {
-            <PlatformSelect
-                platforms=platforms
-                current_platform=current_platform
-                index=index
-                field=PlatformField::Origin
-                route_direction=route_direction
-                edited_line=edited_line
-                on_save=on_save
-            />
-        }.into_view()
-    } else if is_last && index > 0 && index - 1 < route.len() {
-        let current_platform = route[index - 1].destination_platform;
-        view! {
-            <PlatformSelect
-                platforms=platforms
-                current_platform=current_platform
-                index=index - 1
-                field=PlatformField::Destination
-                route_direction=route_direction
-                edited_line=edited_line
-                on_save=on_save
-            />
-        }.into_view()
-    } else if !is_first && !is_last && index > 0 && index - 1 < route.len() && index < route.len() {
-        let current_platform = route[index - 1].destination_platform;
-        view! {
-            <PlatformSelect
-                platforms=platforms
-                current_platform=current_platform
-                index=index
-                field=PlatformField::Both
-                route_direction=route_direction
-                edited_line=edited_line
-                on_save=on_save
-            />
-        }.into_view()
-    } else {
-        view! { <span class="platform-placeholder">"-"</span> }.into_view()
+    if is_first {
+        if let Some(current_platform) = current_platform_origin {
+            return view! {
+                <PlatformSelect
+                    platforms=platforms
+                    current_platform=current_platform
+                    index=index
+                    field=PlatformField::Origin
+                    route_direction=route_direction
+                    edited_line=edited_line
+                    on_save=on_save
+                />
+            }.into_view();
+        }
+    } else if is_last {
+        if let Some(current_platform) = current_platform_dest {
+            return view! {
+                <PlatformSelect
+                    platforms=platforms
+                    current_platform=current_platform
+                    index=index - 1
+                    field=PlatformField::Destination
+                    route_direction=route_direction
+                    edited_line=edited_line
+                    on_save=on_save
+                />
+            }.into_view();
+        }
+    } else if !is_first && !is_last {
+        if let Some(current_platform) = current_platform_dest {
+            return view! {
+                <PlatformSelect
+                    platforms=platforms
+                    current_platform=current_platform
+                    index=index
+                    field=PlatformField::Both
+                    route_direction=route_direction
+                    edited_line=edited_line
+                    on_save=on_save
+                />
+            }.into_view();
+        }
     }
+
+    view! { <span class="platform-placeholder">"-"</span> }.into_view()
 }
 
-fn render_track_selector(
-    graph: &RailwayGraph,
-    route: &[crate::models::RouteSegment],
+fn render_track_column(
+    graph: ReadSignal<RailwayGraph>,
+    edge_idx: Option<petgraph::graph::EdgeIndex>,
+    current_track: Option<usize>,
     index: usize,
     route_direction: RouteDirection,
     edited_line: ReadSignal<Option<Line>>,
     on_save: Rc<dyn Fn(Line)>,
 ) -> leptos::View {
-    if index < route.len() {
-        let current_track = route[index].track_index;
-        let edge_idx = petgraph::graph::EdgeIndex::new(route[index].edge_index);
+    let Some(edge_idx) = edge_idx else {
+        return view! { <span class="track-placeholder">"-"</span> }.into_view();
+    };
 
-        let available_tracks: Vec<(usize, String)> = if let Some(track_segment) = graph.graph.edge_weight(edge_idx) {
+    let Some(current_track) = current_track else {
+        return view! { <span class="track-placeholder">"-"</span> }.into_view();
+    };
+
+    let available_tracks: Vec<(usize, String)> = graph.with_untracked(|g| {
+        if let Some(track_segment) = g.graph.edge_weight(edge_idx) {
             track_segment.tracks.iter().enumerate()
                 .filter(|(_, track)| {
                     match route_direction {
@@ -256,52 +259,53 @@ fn render_track_selector(
                 .collect()
         } else {
             vec![]
-        };
+        }
+    });
 
-        if available_tracks.len() == 1 {
-            view! {
-                <span class="track-info">{available_tracks[0].1.clone()}</span>
-            }.into_view()
-        } else {
-            view! {
-                <select
-                    class="track-select"
-                    on:change={
-                        let on_save = on_save.clone();
-                        move |ev| {
-                            if let Ok(track_idx) = event_target_value(&ev).parse::<usize>() {
-                                if let Some(mut updated_line) = edited_line.get_untracked() {
-                                    match route_direction {
-                                        RouteDirection::Forward => {
-                                            if index < updated_line.forward_route.len() {
-                                                updated_line.forward_route[index].track_index = track_idx;
-                                            }
-                                        }
-                                        RouteDirection::Return => {
-                                            if index < updated_line.return_route.len() {
-                                                updated_line.return_route[index].track_index = track_idx;
-                                            }
+    if available_tracks.is_empty() {
+        return view! { <span class="track-placeholder">"-"</span> }.into_view();
+    }
+
+    if available_tracks.len() == 1 {
+        view! {
+            <span class="track-info">{available_tracks[0].1.clone()}</span>
+        }.into_view()
+    } else {
+        view! {
+            <select
+                class="track-select"
+                on:change={
+                    let on_save = on_save.clone();
+                    move |ev| {
+                        if let Ok(track_idx) = event_target_value(&ev).parse::<usize>() {
+                            if let Some(mut updated_line) = edited_line.get_untracked() {
+                                match route_direction {
+                                    RouteDirection::Forward => {
+                                        if index < updated_line.forward_route.len() {
+                                            updated_line.forward_route[index].track_index = track_idx;
                                         }
                                     }
-                                    // Note: We don't sync track indices, they are user-configured per direction
-                                    on_save(updated_line);
+                                    RouteDirection::Return => {
+                                        if index < updated_line.return_route.len() {
+                                            updated_line.return_route[index].track_index = track_idx;
+                                        }
+                                    }
                                 }
+                                on_save(updated_line);
                             }
                         }
                     }
-                >
-                    {available_tracks.iter().map(|(i, label)| {
-                        view! {
-                            <option value=i.to_string() selected=*i == current_track>
-                                {label.clone()}
-                            </option>
-                        }
-                    }).collect::<Vec<_>>()}
-                </select>
-            }.into_view()
-        }
-    } else {
-        view! { <span class="track-placeholder">"-"</span> }.into_view()
+                }
+            >
+                {available_tracks.iter().map(|(i, label)| {
+                    view! {
+                        <option value=i.to_string() selected=*i == current_track>
+                            {label.clone()}
+                        </option>
+                    }
+                }).collect::<Vec<_>>()}
+            </select>
+        }.into_view()
     }
 }
 
@@ -364,44 +368,120 @@ pub fn StopRow(
     index: usize,
     name: String,
     station_idx: petgraph::graph::NodeIndex,
-    #[prop(into)] line: Line,
-    #[prop(into)] graph: RailwayGraph,
     time_mode: TimeDisplayMode,
     route_direction: RouteDirection,
     edited_line: ReadSignal<Option<Line>>,
+    graph: ReadSignal<RailwayGraph>,
     on_save: Rc<dyn Fn(Line)>,
     is_first: bool,
     is_last: bool,
 ) -> impl IntoView {
-    let route = match route_direction {
-        RouteDirection::Forward => &line.forward_route,
-        RouteDirection::Return => &line.return_route,
-    };
+    // Extract platforms once (graph structure doesn't change reactively)
+    let platforms = graph.with_untracked(|g| {
+        g.graph.node_weight(station_idx)
+            .and_then(|node| node.as_station().map(|s| s.platforms.clone()))
+            .unwrap_or_default()
+    });
 
-    let cumulative_seconds: i64 = if index == 0 {
-        0
-    } else {
-        route.iter().take(index).map(|seg| (seg.duration.unwrap_or(Duration::zero()) + seg.wait_time).num_seconds()).sum()
-    };
+    // Create memos for row-specific data to minimize re-renders
+    let route_data = create_memo(move |_| {
+        edited_line.with(|line| {
+            line.as_ref().map(|l| {
+                let route = match route_direction {
+                    RouteDirection::Forward => &l.forward_route,
+                    RouteDirection::Return => &l.return_route,
+                };
 
-    let platforms = graph.graph.node_weight(station_idx)
-        .and_then(|node| node.as_station().map(|s| s.platforms.clone()))
-        .unwrap_or_default();
+                let segment = if index < route.len() {
+                    Some(route[index].clone())
+                } else {
+                    None
+                };
 
-    let column_content = render_time_column(time_mode, index, route, cumulative_seconds, route_direction, edited_line, on_save.clone());
-    let wait_time_content = render_wait_time(index, route, route_direction, edited_line, on_save.clone());
-    let platform_content = render_platform_selector(platforms, route, index, is_first, is_last, route_direction, edited_line, on_save.clone());
-    let track_content = render_track_selector(&graph, route, index, route_direction, edited_line, on_save.clone());
-    let delete_button = render_delete_button(is_first, is_last, route.len(), route_direction, edited_line, on_save);
+                let prev_segment = if index > 0 && index - 1 < route.len() {
+                    Some(route[index - 1].clone())
+                } else {
+                    None
+                };
+
+                let cumulative_seconds: i64 = if index == 0 {
+                    0
+                } else {
+                    route.iter()
+                        .take(index)
+                        .map(|seg| (seg.duration.unwrap_or(Duration::zero()) + seg.wait_time).num_seconds())
+                        .sum()
+                };
+
+                (segment, prev_segment, cumulative_seconds, route.len())
+            })
+        })
+    });
 
     view! {
         <div class="stop-row">
-            <span class="station-name">{name}</span>
-            {platform_content}
-            {track_content}
-            {column_content}
-            {wait_time_content}
-            {delete_button}
+            <span class="station-name">{name.clone()}</span>
+            {move || {
+                route_data.with(|data| {
+                    data.as_ref().map(|(segment, prev_segment, cumulative_seconds, route_len)| {
+                        let segment_duration = segment.as_ref().and_then(|s| s.duration);
+                        let wait_duration = prev_segment.as_ref().map_or(Duration::zero(), |s| s.wait_time);
+                        let current_platform_origin = segment.as_ref().map(|s| s.origin_platform);
+                        let current_platform_dest = prev_segment.as_ref().map(|s| s.destination_platform);
+                        let current_track = segment.as_ref().map(|s| s.track_index);
+                        let edge_idx = segment.as_ref().map(|s| petgraph::graph::EdgeIndex::new(s.edge_index));
+
+                        view! {
+                            <>
+                                {render_platform_column(
+                                    platforms.clone(),
+                                    current_platform_origin,
+                                    current_platform_dest,
+                                    index,
+                                    is_first,
+                                    is_last,
+                                    route_direction,
+                                    edited_line,
+                                    on_save.clone()
+                                )}
+                                {render_track_column(
+                                    graph,
+                                    edge_idx,
+                                    current_track,
+                                    index,
+                                    route_direction,
+                                    edited_line,
+                                    on_save.clone()
+                                )}
+                                {render_time_column_from_data(
+                                    time_mode,
+                                    index,
+                                    segment_duration,
+                                    *cumulative_seconds,
+                                    route_direction,
+                                    edited_line,
+                                    on_save.clone()
+                                )}
+                                {render_wait_time_from_data(
+                                    index,
+                                    wait_duration,
+                                    route_direction,
+                                    edited_line,
+                                    on_save.clone()
+                                )}
+                                {render_delete_button(
+                                    is_first,
+                                    is_last,
+                                    *route_len,
+                                    route_direction,
+                                    edited_line,
+                                    on_save.clone()
+                                )}
+                            </>
+                        }
+                    })
+                })
+            }}
         </div>
     }
 }
