@@ -2,8 +2,155 @@ use super::{
     empty_route_setup::EmptyRouteSetup, StationPosition, StationSelect, StopRow, TimeDisplayMode,
 };
 use crate::components::tab_view::TabPanel;
-use crate::models::{Line, RailwayGraph, RouteDirection, Routes};
+use crate::models::{Line, RailwayGraph, RouteDirection, RouteSegment, Routes};
 use leptos::*;
+use petgraph::stable_graph::NodeIndex;
+
+fn get_column_header(mode: TimeDisplayMode) -> &'static str {
+    match mode {
+        TimeDisplayMode::Difference => "Travel Time to Next",
+        TimeDisplayMode::Absolute => "Time from Start",
+    }
+}
+
+#[derive(Clone, PartialEq)]
+struct RouteMetadata {
+    first_station_idx: Option<NodeIndex>,
+    last_station_idx: Option<NodeIndex>,
+    available_start: Vec<String>,
+    available_end: Vec<String>,
+}
+
+fn get_route_metadata(
+    graph: &RailwayGraph,
+    route: &[RouteSegment],
+    direction: RouteDirection,
+) -> RouteMetadata {
+    let endpoints = graph.get_route_endpoints(route, direction);
+    let available_start = graph.get_available_start_stations(route, direction);
+    let available_end = graph.get_available_end_stations(route, direction);
+
+    RouteMetadata {
+        first_station_idx: endpoints.0,
+        last_station_idx: endpoints.1,
+        available_start,
+        available_end,
+    }
+}
+
+#[component]
+fn RouteStopsList(
+    route_direction: RwSignal<RouteDirection>,
+    edited_line: ReadSignal<Option<Line>>,
+    graph: ReadSignal<RailwayGraph>,
+    time_mode: RwSignal<TimeDisplayMode>,
+    on_save: std::rc::Rc<dyn Fn(Line)>,
+) -> impl IntoView {
+    let route_data = create_memo(move |_| {
+        edited_line.with(|line| {
+            line.as_ref().map(|l| {
+                let route = match route_direction.get() {
+                    RouteDirection::Forward => &l.forward_route,
+                    RouteDirection::Return => &l.return_route,
+                };
+                route.clone()
+            })
+        })
+    });
+
+    let dir = create_memo(move |_| route_direction.get());
+
+    let stations_data = create_memo(move |_| {
+        route_data.with(|route_opt| {
+            route_opt.as_ref().map(|route| {
+                graph.with_untracked(|g| g.get_stations_from_route(route, dir.get_untracked()))
+            })
+        })
+    });
+
+    let metadata = create_memo(move |_| {
+        route_data.with(|route_opt| {
+            route_opt.as_ref().map(|route| {
+                let current_dir = dir.get();
+                graph.with_untracked(|g| get_route_metadata(g, route, current_dir))
+            })
+        })
+    });
+
+    let on_save_stored = store_value(on_save);
+
+    let Some(stations) = stations_data.get() else {
+        return view! {}.into_view();
+    };
+
+    let Some(meta) = metadata.get() else {
+        return view! {}.into_view();
+    };
+
+    let mode = time_mode.get();
+    let column_header = get_column_header(mode);
+    let current_dir = dir.get();
+    let num_stations = stations.len();
+    let stations_with_index: Vec<_> = stations.into_iter().enumerate().collect();
+
+    let on_save = on_save_stored.get_value();
+    let on_save_for_start = on_save.clone();
+    let on_save_for_list = on_save.clone();
+    let on_save_for_end = on_save;
+
+    view! {
+        <div class="stops-header">
+            <span>"Station"</span>
+            <span>"Platform"</span>
+            <span>"Track"</span>
+            <span>{column_header}</span>
+            <span>"Wait Time"</span>
+            <span></span>
+        </div>
+
+        <StationSelect
+            available_stations=meta.available_start
+            station_idx=meta.first_station_idx
+            position=StationPosition::Start
+            route_direction=current_dir
+            graph=graph
+            edited_line=edited_line
+            on_save=on_save_for_start
+        />
+
+        <For
+            each=move || stations_with_index.clone()
+            key=|(_, (_, station_idx))| station_idx.index()
+            children=move |(i, (name, station_idx))| {
+                view! {
+                    <StopRow
+                        index=i
+                        name=name
+                        station_idx=station_idx
+                        time_mode=mode
+                        route_direction=current_dir
+                        edited_line=edited_line
+                        graph=graph
+                        on_save=on_save_for_list.clone()
+                        is_first={i == 0}
+                        is_last={i == num_stations - 1}
+                    />
+                }
+            }
+        />
+
+        <StationSelect
+            available_stations=meta.available_end
+            station_idx=meta.last_station_idx
+            position=StationPosition::End
+            route_direction=current_dir
+            graph=graph
+            edited_line=edited_line
+            on_save=on_save_for_end
+        />
+    }
+    .into()
+}
 
 #[component]
 #[allow(clippy::too_many_lines)]
@@ -86,106 +233,14 @@ pub fn StopsTab(
                 <div class="stops-list">
                     <Show
                         when=move || route_is_empty.get()
-                        fallback=move || {
-                            let route_data = create_memo(move |_| {
-                                edited_line.with(|line| {
-                                    line.as_ref().map(|l| {
-                                        let route = match route_direction.get() {
-                                            RouteDirection::Forward => &l.forward_route,
-                                            RouteDirection::Return => &l.return_route,
-                                        };
-                                        route.clone()
-                                    })
-                                })
-                            });
-
-                            let dir = create_memo(move |_| route_direction.get());
-                            let on_save = on_save_stored.get_value();
-
-                            view! {
-                                {move || {
-                                    route_data.with(|route_opt| {
-                                        route_opt.as_ref().map(|route| {
-                                            let stations = graph.with_untracked(|g| {
-                                                g.get_stations_from_route(route, dir.get_untracked())
-                                            });
-
-                                            let mode = time_mode.get();
-                                            let column_header = match mode {
-                                                TimeDisplayMode::Difference => "Travel Time to Next",
-                                                TimeDisplayMode::Absolute => "Time from Start",
-                                            };
-
-                                            let current_dir = dir.get();
-                                            let (first_station_idx, last_station_idx, available_start, available_end) = graph.with_untracked(|g| {
-                                                let endpoints = g.get_route_endpoints(route, current_dir);
-                                                let start = g.get_available_start_stations(route, current_dir);
-                                                let end = g.get_available_end_stations(route, current_dir);
-                                                (endpoints.0, endpoints.1, start, end)
-                                            });
-
-                                            let num_stations = stations.len();
-                                            let stations_with_index: Vec<_> = stations.into_iter().enumerate().collect();
-
-                                            let on_save_for_start = on_save.clone();
-                                            let on_save_for_list = on_save.clone();
-                                            let on_save_for_end = on_save.clone();
-
-                                            view! {
-                                                <div class="stops-header">
-                                                    <span>"Station"</span>
-                                                    <span>"Platform"</span>
-                                                    <span>"Track"</span>
-                                                    <span>{column_header}</span>
-                                                    <span>"Wait Time"</span>
-                                                    <span></span>
-                                                </div>
-
-                                                <StationSelect
-                                                    available_stations=available_start
-                                                    station_idx=first_station_idx
-                                                    position=StationPosition::Start
-                                                    route_direction=current_dir
-                                                    graph=graph
-                                                    edited_line=edited_line
-                                                    on_save=on_save_for_start
-                                                />
-
-                                                <For
-                                                    each=move || stations_with_index.clone()
-                                                    key=|(_, (_, station_idx))| station_idx.index()
-                                                    children=move |(i, (name, station_idx))| {
-                                                        view! {
-                                                            <StopRow
-                                                                index=i
-                                                                name=name
-                                                                station_idx=station_idx
-                                                                time_mode=mode
-                                                                route_direction=current_dir
-                                                                edited_line=edited_line
-                                                                graph=graph
-                                                                on_save=on_save_for_list.clone()
-                                                                is_first={i == 0}
-                                                                is_last={i == num_stations - 1}
-                                                            />
-                                                        }
-                                                    }
-                                                />
-
-                                                <StationSelect
-                                                    available_stations=available_end
-                                                    station_idx=last_station_idx
-                                                    position=StationPosition::End
-                                                    route_direction=current_dir
-                                                    graph=graph
-                                                    edited_line=edited_line
-                                                    on_save=on_save_for_end
-                                                />
-                                            }
-                                        })
-                                    })
-                                }}
-                            }
+                        fallback=move || view! {
+                            <RouteStopsList
+                                route_direction=route_direction
+                                edited_line=edited_line
+                                graph=graph
+                                time_mode=time_mode
+                                on_save=on_save_stored.get_value()
+                            />
                         }
                     >
                         <EmptyRouteSetup
