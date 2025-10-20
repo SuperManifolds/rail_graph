@@ -5,9 +5,13 @@ mod auto_schedule_form;
 mod manual_departure_editor;
 mod manual_departures_list;
 mod platform_select;
+mod platform_column;
 mod stop_row;
 mod station_select;
 mod empty_route_setup;
+mod time_column;
+mod track_column;
+mod wait_time_column;
 
 pub use general_tab::GeneralTab;
 pub use stops_tab::StopsTab;
@@ -15,8 +19,12 @@ pub use schedule_tab::ScheduleTab;
 pub use manual_departure_editor::ManualDepartureEditor;
 pub use manual_departures_list::ManualDeparturesList;
 pub use platform_select::{PlatformSelect, PlatformField};
-pub use stop_row::{StopRow, TimeDisplayMode};
+pub use platform_column::PlatformColumn;
+pub use stop_row::StopRow;
 pub use station_select::{StationSelect, StationPosition};
+pub use time_column::{TimeColumn, TimeDisplayMode};
+pub use track_column::TrackColumn;
+pub use wait_time_column::WaitTimeColumn;
 
 use crate::components::{tab_view::{Tab, TabView}, window::Window};
 use crate::models::{Line, RailwayGraph, RouteDirection};
