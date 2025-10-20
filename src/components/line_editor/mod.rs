@@ -7,6 +7,7 @@ mod manual_departures_list;
 mod platform_select;
 mod stop_row;
 mod station_select;
+mod empty_route_setup;
 
 pub use general_tab::GeneralTab;
 pub use stops_tab::StopsTab;

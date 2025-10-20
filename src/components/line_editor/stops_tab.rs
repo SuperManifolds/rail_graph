@@ -1,157 +1,65 @@
 use crate::components::tab_view::TabPanel;
-use crate::models::{Line, RailwayGraph, RouteDirection, Routes, Stations, RouteSegment, Tracks};
-use super::{StopRow, TimeDisplayMode, StationSelect, StationPosition};
+use crate::models::{Line, RailwayGraph, RouteDirection, Routes, RouteSegment};
+use super::{StopRow, TimeDisplayMode, StationSelect, StationPosition, empty_route_setup::EmptyRouteSetup};
 use leptos::*;
-use chrono::Duration;
 use petgraph::stable_graph::NodeIndex;
 
-fn render_no_stations_message() -> impl IntoView {
-    view! {
-        <p class="no-stops">"No stations defined. Create stations in the Infrastructure tab first."</p>
-    }
-}
-
-fn render_first_station_select(
-    all_stations: Vec<String>,
-    first_station: RwSignal<Option<String>>,
-) -> impl IntoView {
-    view! {
-        <div class="empty-route-setup">
-            <p class="no-stops">"No stops defined for this route yet. Select first stop:"</p>
-            <select
-                class="station-select"
-                on:change=move |ev| {
-                    let station_name = event_target_value(&ev);
-                    if !station_name.is_empty() {
-                        first_station.set(Some(station_name));
-                    }
-                }
-            >
-                <option value="">{"Select first stop..."}</option>
-                {all_stations.iter().map(|name| {
-                    view! {
-                        <option value=name.clone()>{name.clone()}</option>
-                    }
-                }).collect::<Vec<_>>()}
-            </select>
-        </div>
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn render_second_station_select(
-    first_name: String,
-    all_stations: Vec<String>,
-    first_station: RwSignal<Option<String>>,
+#[component]
+fn PopulatedRoute(
     route_direction: RwSignal<RouteDirection>,
     edited_line: ReadSignal<Option<Line>>,
     graph: ReadSignal<RailwayGraph>,
+    time_mode: RwSignal<TimeDisplayMode>,
     on_save: std::rc::Rc<dyn Fn(Line)>,
 ) -> impl IntoView {
-    let other_stations: Vec<String> = all_stations.iter()
-        .filter(|name| *name != &first_name)
-        .cloned()
-        .collect();
+    // Extract route data before the view
+    let route_data = create_memo(move |_| {
+        edited_line.with(|line| {
+            line.as_ref().map(|l| {
+                let route = match route_direction.get() {
+                    RouteDirection::Forward => &l.forward_route,
+                    RouteDirection::Return => &l.return_route,
+                };
+                route.clone()
+            })
+        })
+    });
+
+    let dir = create_memo(move |_| route_direction.get());
 
     view! {
-        <div class="empty-route-setup">
-            <p class="no-stops">"First stop: " {first_name.clone()} ". Select destination:"</p>
-            <select
-                class="station-select"
-                on:change={
-                    let on_save = on_save.clone();
-                    let first_name = first_name.clone();
-                    move |ev| {
-                        let second_name = event_target_value(&ev);
-                        if !second_name.is_empty() {
-                            if let Some(mut updated_line) = edited_line.get_untracked() {
-                                let graph = graph.get();
-                                if let (Some(first_idx), Some(second_idx)) = (
-                                    graph.get_station_index(&first_name),
-                                    graph.get_station_index(&second_name)
-                                ) {
-                                    if let Some(path) = graph.find_path_between_nodes(first_idx, second_idx) {
-                                        for (i, edge) in path.iter().enumerate() {
-                                            let Some((source, target)) = graph.graph.edge_endpoints(*edge) else {
-                                                continue;
-                                            };
+        {move || {
+            route_data.with(|route_opt| {
+                route_opt.as_ref().map(|route| {
+                    let stations = graph.with_untracked(|g| {
+                        g.get_stations_from_route(route, dir.get_untracked())
+                    });
 
-                                            let is_passing_loop = graph.graph.node_weight(source)
-                                                .and_then(|node| node.as_station())
-                                                .is_some_and(|s| s.passing_loop);
-                                            let default_wait = if is_passing_loop {
-                                                Duration::seconds(0)
-                                            } else {
-                                                Duration::seconds(30)
-                                            };
-
-                                            let source_platform_count = graph.graph.node_weight(source)
-                                                .and_then(|n| n.as_station())
-                                                .map_or(1, |s| s.platforms.len());
-
-                                            let target_platform_count = graph.graph.node_weight(target)
-                                                .and_then(|n| n.as_station())
-                                                .map_or(1, |s| s.platforms.len());
-
-                                            let origin_platform = graph.get_default_platform_for_arrival(*edge, false, source_platform_count);
-                                            let destination_platform = graph.get_default_platform_for_arrival(*edge, true, target_platform_count);
-
-                                            let segment = RouteSegment {
-                                                edge_index: edge.index(),
-                                                track_index: 0,
-                                                origin_platform,
-                                                destination_platform,
-                                                duration: None,
-                                                wait_time: if i == 0 { default_wait } else { Duration::zero() },
-                                            };
-
-                                            match route_direction.get() {
-                                                RouteDirection::Forward => {
-                                                    updated_line.forward_route.push(segment);
-                                                }
-                                                RouteDirection::Return => {
-                                                    updated_line.return_route.push(segment);
-                                                }
-                                            }
-                                        }
-
-                                        if matches!(route_direction.get(), RouteDirection::Forward) {
-                                            updated_line.apply_route_sync_if_enabled();
-                                        }
-
-                                        on_save(updated_line);
-                                        first_station.set(None);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            >
-                <option value="">{"Select destination..."}</option>
-                {other_stations.iter().map(|name| {
                     view! {
-                        <option value=name.clone()>{name.clone()}</option>
+                        <RouteList
+                            stations=stations
+                            mode=time_mode.get()
+                            dir=dir.get()
+                            current_route=route.clone()
+                            route_direction=route_direction
+                            edited_line=edited_line
+                            graph=graph
+                            on_save=on_save.clone()
+                        />
                     }
-                }).collect::<Vec<_>>()}
-            </select>
-            <button
-                class="cancel-button"
-                on:click=move |_| first_station.set(None)
-            >
-                "Cancel"
-            </button>
-        </div>
+                })
+            })
+        }}
     }
 }
 
+#[component]
 #[allow(clippy::too_many_arguments)]
-fn render_route_list(
+fn RouteList(
     stations: Vec<(String, NodeIndex)>,
     mode: TimeDisplayMode,
     dir: RouteDirection,
-    current_route: &[RouteSegment],
-    current_graph: &RailwayGraph,
+    current_route: Vec<RouteSegment>,
     route_direction: RwSignal<RouteDirection>,
     edited_line: ReadSignal<Option<Line>>,
     graph: ReadSignal<RailwayGraph>,
@@ -162,9 +70,12 @@ fn render_route_list(
         TimeDisplayMode::Absolute => "Time from Start",
     };
 
-    let (first_station_idx, last_station_idx) = current_graph.get_route_endpoints(current_route, dir);
-    let available_start = current_graph.get_available_start_stations(current_route, dir);
-    let available_end = current_graph.get_available_end_stations(current_route, dir);
+    let (first_station_idx, last_station_idx, available_start, available_end) = graph.with_untracked(|g| {
+        let endpoints = g.get_route_endpoints(&current_route, dir);
+        let start = g.get_available_start_stations(&current_route, dir);
+        let end = g.get_available_end_stations(&current_route, dir);
+        (endpoints.0, endpoints.1, start, end)
+    });
 
     view! {
         <div class="stops-header">
@@ -229,6 +140,22 @@ pub fn StopsTab(
     route_direction: RwSignal<RouteDirection>,
     first_station: RwSignal<Option<String>>,
 ) -> impl IntoView {
+    // Store on_save in a reactive context so it can be accessed from closures
+    let on_save_stored = store_value(on_save);
+
+    // Memo to check if current route is empty
+    let route_is_empty = create_memo(move |_| {
+        edited_line.with(|line| {
+            line.as_ref().is_none_or(|l| {
+                let route = match route_direction.get() {
+                    RouteDirection::Forward => &l.forward_route,
+                    RouteDirection::Return => &l.return_route,
+                };
+                route.is_empty()
+            })
+        })
+    });
+
     view! {
         <TabPanel when=Signal::derive(move || active_tab.get() == "stops")>
             <div class="line-editor-content">
@@ -281,56 +208,28 @@ pub fn StopsTab(
                     </span>
                 </div>
                 <div class="stops-list">
-                    {move || {
-                        edited_line.get().map(|line| {
-                            let current_graph = graph.get();
-
-                            let current_route = match route_direction.get() {
-                                RouteDirection::Forward => &line.forward_route,
-                                RouteDirection::Return => &line.return_route,
-                            };
-
-                            if current_route.is_empty() {
-                                let all_stations = current_graph.get_all_station_names();
-
-                                if all_stations.is_empty() {
-                                    render_no_stations_message().into_view()
-                                } else {
-                                    let first_selected = first_station.get();
-
-                                    if let Some(first_name) = first_selected {
-                                        render_second_station_select(
-                                            first_name,
-                                            all_stations,
-                                            first_station,
-                                            route_direction,
-                                            edited_line,
-                                            graph,
-                                            on_save.clone(),
-                                        ).into_view()
-                                    } else {
-                                        render_first_station_select(all_stations, first_station).into_view()
-                                    }
-                                }
-                            } else {
-                                let stations = current_graph.get_stations_from_route(current_route, route_direction.get());
-                                let mode = time_mode.get();
-                                let dir = route_direction.get();
-
-                                render_route_list(
-                                    stations,
-                                    mode,
-                                    dir,
-                                    current_route,
-                                    &current_graph,
-                                    route_direction,
-                                    edited_line,
-                                    graph,
-                                    on_save.clone(),
-                                ).into_view()
+                    <Show when=move || edited_line.get().is_some()>
+                        <Show
+                            when=move || route_is_empty.get()
+                            fallback=move || view! {
+                                <PopulatedRoute
+                                    route_direction=route_direction
+                                    edited_line=edited_line
+                                    graph=graph
+                                    time_mode=time_mode
+                                    on_save=on_save_stored.get_value()
+                                />
                             }
-                        })
-                    }}
+                        >
+                            <EmptyRouteSetup
+                                first_station=first_station
+                                route_direction=route_direction
+                                edited_line=edited_line
+                                graph=graph
+                                on_save=on_save_stored.get_value()
+                            />
+                        </Show>
+                    </Show>
                 </div>
             </div>
         </TabPanel>
