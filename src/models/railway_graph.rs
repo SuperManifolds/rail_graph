@@ -141,7 +141,7 @@ impl RailwayGraph {
                 edge.weight()
                     .distance
                     .filter(|&d| d > 0.0) // Only use valid positive distances
-                    .unwrap_or(1.0) // Default to 1.0 for missing distances (will be normalized later)
+                    .unwrap_or(1.0) // Default to 1.0 for missing distances (normalization is handled in calculate_distance_based_positions)
             },
         );
 
