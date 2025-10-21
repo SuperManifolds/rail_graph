@@ -120,33 +120,15 @@ pub fn draw_train_journeys(
             })
             .collect();
 
-        for (i, &(idx, arrival_x, departure_x)) in visible_nodes.iter().enumerate() {
+        for &(idx, arrival_x, departure_x) in &visible_nodes {
             // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
             let y = station_y_positions[idx] - super::canvas::TOP_MARGIN;
 
-            // Check if this node has a segment connecting to previous or next visible node
-            let has_prev_segment = if i > 0 {
-                let prev_idx = visible_nodes[i - 1].0;
-                idx == prev_idx + 1 || idx + 1 == prev_idx
-            } else {
-                false
-            };
-
-            let has_next_segment = if i + 1 < visible_nodes.len() {
-                let next_idx = visible_nodes[i + 1].0;
-                idx == next_idx + 1 || idx + 1 == next_idx
-            } else {
-                false
-            };
-
-            let has_segment = has_prev_segment || has_next_segment;
-
-            // Only draw dots if this node has at least one connecting segment
-            // or if it's a station (not junction) with wait time (horizontal segment)
+            // Only draw dots if this is a station (not junction) with wait time
             let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
             let has_wait_time = !is_junction && (arrival_x - departure_x).abs() > f64::EPSILON;
 
-            if has_segment || has_wait_time {
+            if has_wait_time {
                 // Add arrival dot to path (move_to starts a new subpath)
                 ctx.move_to(arrival_x + dot_radius / zoom_level, y);
                 let _ = ctx.arc(arrival_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
