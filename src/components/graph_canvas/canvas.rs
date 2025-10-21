@@ -6,7 +6,7 @@ use std::cell::Cell;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
-use crate::models::{RailwayGraph, Stations};
+use crate::models::RailwayGraph;
 use crate::conflict::Conflict;
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
@@ -293,14 +293,47 @@ pub fn GraphCanvas(
                     let dims = GraphDimensions::new(canvas_width, canvas_height);
 
                     let current_graph = graph.get();
-                    let station_count = current_graph.get_all_stations_ordered().len() as f64;
+                    let current_stations = display_stations.get();
+                    let current_spacing_mode = spacing_mode.get();
+
+                    // Calculate station positions to get accurate Y coordinate
+                    let station_y_positions = current_graph.calculate_station_positions(
+                        &current_stations,
+                        current_spacing_mode,
+                        dims.graph_height,
+                        dims.top_margin,
+                    );
 
                     let target_zoom = 8.0;
                     set_zoom_level.set(target_zoom);
                     set_zoom_level_x.set(target_zoom);
 
+                    // Calculate Y position using actual station positions
+                    #[allow(clippy::excessive_nesting)]
+                    let calculate_y_pos = |pos: f64, positions: &[f64]| -> f64 {
+                        if pos.fract() < f64::EPSILON {
+                            // Integer position - use direct lookup
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            let idx = pos as usize;
+                            positions.get(idx).copied().unwrap_or(0.0)
+                        } else {
+                            // Fractional position - interpolate between two stations
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            let idx1 = pos.floor() as usize;
+                            let idx2 = pos.ceil() as usize;
+                            let fraction = pos.fract();
+
+                            let y1 = positions.get(idx1).copied().unwrap_or(0.0);
+                            let y2 = positions.get(idx2).copied().unwrap_or(y1);
+                            y1 + (fraction * (y2 - y1))
+                        }
+                    };
+
+                    let y_pos = calculate_y_pos(station_pos, &station_y_positions);
+
                     let target_x = (time_fraction * dims.hour_width * target_zoom * target_zoom) - (canvas_width / 2.0);
-                    let target_y = (station_pos * (dims.graph_height / station_count.max(1.0)) * target_zoom) - (canvas_height / 2.0);
+                    // Subtract TOP_MARGIN since station_y_positions include it but we're in transformed coords
+                    let target_y = ((y_pos - TOP_MARGIN) * target_zoom) - (canvas_height / 2.0);
 
                     set_pan_offset_x.set(-target_x);
                     set_pan_offset_y.set(-target_y);

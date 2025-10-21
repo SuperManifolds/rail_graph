@@ -218,6 +218,7 @@ pub fn TimeGraph(
                             set_pan_to_conflict.set(Some((time_fraction, station_pos)));
                         }
                         graph=graph
+                        station_idx_map=station_idx_map
                     />
                 </div>
                 <LineControls lines=lines set_lines=set_lines graph=graph on_create_view=on_create_view />

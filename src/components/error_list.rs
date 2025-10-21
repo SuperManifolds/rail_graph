@@ -11,6 +11,7 @@ fn ErrorListPopover(
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
     nodes: Signal<Vec<(petgraph::stable_graph::NodeIndex, Node)>>,
     graph: ReadSignal<RailwayGraph>,
+    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
 ) -> impl IntoView {
     view! {
         <div class="error-list-popover">
@@ -26,19 +27,24 @@ fn ErrorListPopover(
                             <div class="error-items">
                                 {
                                     let current_nodes = nodes.get();
-                                    current_conflicts.into_iter().map(|conflict| {
+                                    let idx_map = station_idx_map.get();
+                                    current_conflicts.into_iter().filter_map(|conflict| {
                                         let conflict_type_text = conflict.type_name();
 
+                                        // Map conflict indices to display indices
+                                        let display_idx1 = *idx_map.get(&conflict.station1_idx)?;
+                                        let display_idx2 = *idx_map.get(&conflict.station2_idx)?;
+
                                         // Get node names
-                                        let station1_name = current_nodes.get(conflict.station1_idx)
+                                        let station1_name = current_nodes.get(display_idx1)
                                             .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
-                                        let station2_name = current_nodes.get(conflict.station2_idx)
+                                        let station2_name = current_nodes.get(display_idx2)
                                             .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
 
                                         let conflict_message = if conflict.conflict_type == crate::conflict::ConflictType::PlatformViolation {
                                             // Look up platform name directly from nodes to avoid expensive graph traversal
                                             let platform_name = conflict.platform_idx.and_then(|idx| {
-                                                current_nodes.get(conflict.station1_idx)
+                                                current_nodes.get(display_idx1)
                                                     .and_then(|(_, n)| n.as_station())
                                                     .and_then(|s| s.platforms.get(idx))
                                                     .map(|p| p.name.as_str())
@@ -49,11 +55,11 @@ fn ErrorListPopover(
                                         };
 
                                         let time_fraction = time_to_fraction(conflict.time);
-                                        // Direct usize to f64 conversion is safe for reasonable station counts
+                                        // Calculate display position using mapped indices
                                         #[allow(clippy::cast_precision_loss)]
-                                        let station_position = conflict.station1_idx as f64 + conflict.position;
+                                        let station_position = display_idx1 as f64 + (conflict.position * (display_idx2 as f64 - display_idx1 as f64));
 
-                                        view! {
+                                        Some(view! {
                                             <div
                                                 class="error-item clickable"
                                                 on:click=move |_| {
@@ -73,7 +79,7 @@ fn ErrorListPopover(
                                                     </div>
                                                 </div>
                                             </div>
-                                        }
+                                        })
                                     }).collect::<Vec<_>>()
                                 }
                             </div>
@@ -90,6 +96,7 @@ pub fn ErrorList(
     conflicts: Signal<Vec<Conflict>>,
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
     graph: ReadSignal<RailwayGraph>,
+    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
 
@@ -150,6 +157,7 @@ pub fn ErrorList(
                             on_conflict_click=on_conflict_click
                             nodes=nodes_signal
                             graph=graph
+                            station_idx_map=station_idx_map
                         />
                     }.into_view()
                 } else {
