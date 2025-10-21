@@ -1,4 +1,6 @@
 #![allow(clippy::implicit_hasher)]
+#![allow(unknown_lints)]
+#![allow(clippy::manual_is_multiple_of)]
 
 pub mod models;
 pub mod components;
