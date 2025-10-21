@@ -148,11 +148,11 @@ struct ConflictContext<'a> {
 /// Serializable context for conflict detection (no references, no complex graph types)
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SerializableConflictContext {
-    /// Maps station NodeIndex (as usize) to display index
+    /// Maps station `NodeIndex` (as usize) to display index
     pub station_indices: HashMap<usize, usize>,
-    /// Maps edge index -> (is_single_track_bidirectional, track_count)
+    /// Maps edge index -> (`is_single_track_bidirectional`, `track_count`)
     pub edge_info: HashMap<usize, (bool, usize)>,
-    /// Maps (edge_index, track_index) -> is_bidirectional
+    /// Maps (`edge_index`, `track_index`) -> `is_bidirectional`
     pub track_directions: HashMap<(usize, usize), bool>,
     /// Set of junction node indices (as usize)
     pub junctions: std::collections::HashSet<usize>,
@@ -160,7 +160,7 @@ pub struct SerializableConflictContext {
 }
 
 impl SerializableConflictContext {
-    /// Build serializable context from a RailwayGraph
+    /// Build serializable context from a `RailwayGraph`
     #[must_use]
     pub fn from_graph(graph: &RailwayGraph, station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize>) -> Self {
         use petgraph::visit::{EdgeRef, IntoEdgeReferences};
@@ -185,7 +185,7 @@ impl SerializableConflictContext {
         // Extract junction information
         let junctions = graph.graph.node_indices()
             .filter(|&idx| graph.is_junction(idx))
-            .map(|idx| idx.index())
+            .map(petgraph::prelude::NodeIndex::index)
             .collect();
 
         // Convert station_indices to use usize keys
@@ -402,19 +402,6 @@ fn detect_conflicts_sweep_line(
     let cache_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
     #[cfg(target_arch = "wasm32")]
-    let seg_map_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
-
-    let segment_maps: Vec<_> = train_journeys
-        .iter()
-        .map(|journey| build_segment_lookup_map(journey, ctx))
-        .collect();
-
-    #[cfg(target_arch = "wasm32")]
-    if let Some(elapsed) = seg_map_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        web_sys::console::log_1(&format!("      Segment maps: {:.2}ms", elapsed).into());
-    }
-
-    #[cfg(target_arch = "wasm32")]
     let plat_occ_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
     let platform_occupancies: Vec<_> = train_journeys
@@ -463,7 +450,6 @@ fn detect_conflicts_sweep_line(
 
         let (start_i, end_i, idx_i) = journey_times[i];
         let journey_i = &train_journeys[idx_i];
-        let seg_map_i = &segment_maps[idx_i];
         let plat_occ_i = &platform_occupancies[idx_i];
         let seg_list_i = &segment_lists[idx_i];
 
@@ -487,10 +473,9 @@ fn detect_conflicts_sweep_line(
             }
 
             let journey_j = &train_journeys[*idx_j];
-            let seg_map_j = &segment_maps[*idx_j];
             let plat_occ_j = &platform_occupancies[*idx_j];
             let seg_list_j = &segment_lists[*idx_j];
-            check_journey_pair_with_all_cached(journey_i, journey_j, ctx, results, seg_map_i, seg_map_j, plat_occ_i, plat_occ_j, seg_list_i, seg_list_j);
+            check_journey_pair_with_all_cached(journey_i, journey_j, ctx, results, plat_occ_i, plat_occ_j, seg_list_i, seg_list_j);
 
             if results.conflicts.len() >= MAX_CONFLICTS {
                 break;
@@ -542,8 +527,6 @@ fn check_journey_pair_with_all_cached(
     journey2: &TrainJourney,
     ctx: &ConflictContext,
     results: &mut ConflictResults,
-    seg1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
-    seg2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
     plat_occ1: &[PlatformOccupancy],
     plat_occ2: &[PlatformOccupancy],
     seg_list1: &[CachedSegment],
@@ -570,7 +553,7 @@ fn check_journey_pair_with_all_cached(
     #[cfg(target_arch = "wasm32")]
     let segment_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
-    check_segments_for_pair_cached(journey1, journey2, ctx, results, seg1_map, seg2_map, seg_list1, seg_list2);
+    check_segments_for_pair_cached(journey1, journey2, ctx, results, seg_list1, seg_list2);
 
     #[cfg(target_arch = "wasm32")]
     if let Some(elapsed) = segment_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
@@ -585,8 +568,6 @@ fn check_segments_for_pair_cached(
     journey2: &TrainJourney,
     ctx: &ConflictContext,
     results: &mut ConflictResults,
-    seg1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
-    seg2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
     segments1: &[CachedSegment],
     segments2: &[CachedSegment],
 ) {
@@ -610,8 +591,37 @@ fn check_segments_for_pair_cached(
                 break;
             }
 
+            // Quick spatial overlap check before calling expensive function
+            // This filters out ~50% of segment pairs that don't spatially overlap
+            if cached1.idx_max <= cached2.idx_min || cached2.idx_max <= cached1.idx_min {
+                continue;
+            }
+
+            // Early edge/track filtering - most segments are on different edges
+            // Check if they're on the same edge OR reverse edges
+            let same_edge = cached1.edge_index == cached2.edge_index;
+            let reverse_edges = are_reverse_bidirectional_edges(
+                ctx,
+                cached1.edge_index,
+                cached2.edge_index,
+                cached1.track_index,
+                cached2.track_index,
+                (seg1.idx_start, seg1.idx_end),
+                (seg2.idx_start, seg2.idx_end),
+            );
+
+            if !same_edge && !reverse_edges {
+                continue; // Different edges, no conflict possible
+            }
+
+            // If same edge, must be same track
+            if same_edge && cached1.track_index != cached2.track_index {
+                continue; // Different tracks on same edge, no conflict
+            }
+
             check_segment_pair(
-                seg1, seg2, cached1.idx_min, cached1.idx_max, journey1, journey2, ctx, results, seg1_map, seg2_map,
+                seg1, seg2, cached1.idx_min, cached1.idx_max, cached1.edge_index,
+                journey1, journey2, ctx, results,
             );
 
             if results.conflicts.len() >= MAX_CONFLICTS {
@@ -621,42 +631,21 @@ fn check_segments_for_pair_cached(
     }
 }
 
-/// Build a lookup map from (`start_idx`, `end_idx`) -> segment info for fast lookups
-fn build_segment_lookup_map<'a>(
-    journey: &'a TrainJourney,
-    ctx: &ConflictContext,
-) -> HashMap<(usize, usize), &'a crate::train_journey::JourneySegment> {
-    let mut map = HashMap::new();
-
-    for (i, _) in journey.station_times.iter().enumerate().skip(1) {
-        if i - 1 < journey.segments.len() {
-            let node_idx1 = &journey.station_times[i - 1].0;
-            let node_idx2 = &journey.station_times[i].0;
-
-            if let (Some(&s1_idx), Some(&s2_idx)) = (
-                ctx.station_indices.get(node_idx1),
-                ctx.station_indices.get(node_idx2),
-            ) {
-                map.insert((s1_idx, s2_idx), &journey.segments[i - 1]);
-            }
-        }
-    }
-
-    map
-}
-
-/// Segment with pre-computed spatial bounds for faster checking
+/// Segment with pre-computed spatial bounds and edge info for faster checking
 #[derive(Debug, Clone, Copy)]
 struct CachedSegment {
     segment: JourneySegment,
     idx_min: usize,
     idx_max: usize,
+    edge_index: usize,
+    track_index: usize,
 }
 
 /// Build a list of journey segments with resolved station indices and pre-computed bounds
 fn build_segment_list_with_bounds(journey: &TrainJourney, ctx: &ConflictContext) -> Vec<CachedSegment> {
     let mut segments = Vec::new();
     let mut prev: Option<(NaiveDateTime, usize)> = None;
+    let mut segment_idx = 0;
 
     for (node_idx, arrival_time, departure_time) in &journey.station_times {
         let Some(&station_idx) = ctx.station_indices.get(node_idx) else {
@@ -664,6 +653,14 @@ fn build_segment_list_with_bounds(journey: &TrainJourney, ctx: &ConflictContext)
         };
 
         if let Some((prev_departure_time, prev_idx)) = prev {
+            // Get edge and track info from the journey segment
+            let (edge_index, track_index) = if segment_idx < journey.segments.len() {
+                let seg_info = &journey.segments[segment_idx];
+                (seg_info.edge_index, seg_info.track_index)
+            } else {
+                (0, 0) // Fallback, should not happen in valid data
+            };
+
             let segment = JourneySegment {
                 time_start: prev_departure_time,
                 time_end: *arrival_time,
@@ -674,7 +671,10 @@ fn build_segment_list_with_bounds(journey: &TrainJourney, ctx: &ConflictContext)
                 segment,
                 idx_min: prev_idx.min(station_idx),
                 idx_max: prev_idx.max(station_idx),
+                edge_index,
+                track_index,
             });
+            segment_idx += 1;
         }
         prev = Some((*departure_time, station_idx));
     }
@@ -688,12 +688,11 @@ fn check_segment_pair(
     segment2: &JourneySegment,
     seg1_min: usize,
     seg1_max: usize,
+    edge_index: usize,
     journey1: &TrainJourney,
     journey2: &TrainJourney,
     ctx: &ConflictContext,
     results: &mut ConflictResults,
-    segment1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
-    segment2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -707,83 +706,6 @@ fn check_segment_pair(
     #[cfg(target_arch = "wasm32")]
     SEGMENT_PAIR_CALLS.fetch_add(1, Ordering::Relaxed);
 
-    // Check if the segments overlap in space
-    let seg2_min = segment2.idx_start.min(segment2.idx_end);
-    let seg2_max = segment2.idx_start.max(segment2.idx_end);
-
-    if seg1_max <= seg2_min || seg2_max <= seg1_min {
-        #[cfg(target_arch = "wasm32")]
-        if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-            SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
-        }
-        return;
-    }
-
-    // Get segment info from pre-built lookup maps - O(1) instead of O(n)
-    #[cfg(not(target_arch = "wasm32"))]
-    let lookup_start = std::time::Instant::now();
-
-    #[cfg(target_arch = "wasm32")]
-    let lookup_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
-
-    let seg1_info = segment1_map.get(&(segment1.idx_start, segment1.idx_end));
-    let seg2_info = segment2_map.get(&(segment2.idx_start, segment2.idx_end));
-
-    #[cfg(not(target_arch = "wasm32"))]
-    timing::add_duration(&timing::LOOKUP_TIME, lookup_start.elapsed());
-
-    #[cfg(target_arch = "wasm32")]
-    if let Some(elapsed) = lookup_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        SEGMENT_MAP_LOOKUP_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
-    }
-
-    // Both segments must have track info to check for conflicts
-    let (Some(info1), Some(info2)) = (seg1_info, seg2_info) else {
-        #[cfg(target_arch = "wasm32")]
-        if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-            SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
-        }
-        return;
-    };
-
-    // Check if they're on the same edge OR reverse edges on the same bidirectional track
-    let same_edge = info1.edge_index == info2.edge_index;
-
-    #[cfg(target_arch = "wasm32")]
-    let reverse_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
-
-    let reverse_edges = are_reverse_bidirectional_edges(
-        ctx,
-        info1.edge_index,
-        info2.edge_index,
-        info1.track_index,
-        info2.track_index,
-        (segment1.idx_start, segment1.idx_end),
-        (segment2.idx_start, segment2.idx_end),
-    );
-
-    #[cfg(target_arch = "wasm32")]
-    if let Some(elapsed) = reverse_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        REVERSE_EDGE_CHECK_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
-    }
-
-    if !same_edge && !reverse_edges {
-        #[cfg(target_arch = "wasm32")]
-        if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-            SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
-        }
-        return; // Different edges, no conflict
-    }
-
-    // Check if they're on the same track (only if same edge, reverse edges already checked track)
-    if same_edge && info1.track_index != info2.track_index {
-        #[cfg(target_arch = "wasm32")]
-        if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-            SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
-        }
-        return; // Different tracks on same edge, no conflict
-    }
-
     // Determine travel directions
     let same_direction = (segment1.idx_start < segment1.idx_end
         && segment2.idx_start < segment2.idx_end)
@@ -792,7 +714,7 @@ fn check_segment_pair(
     #[cfg(target_arch = "wasm32")]
     let single_track_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
-    let is_single_track = is_single_track_bidirectional(ctx, info1.edge_index);
+    let is_single_track = is_single_track_bidirectional(ctx, edge_index);
 
     #[cfg(target_arch = "wasm32")]
     if let Some(elapsed) = single_track_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
@@ -1007,7 +929,7 @@ fn are_reverse_bidirectional_edges(
 fn is_single_track_bidirectional(ctx: &ConflictContext, edge_index: usize) -> bool {
     ctx.serializable_ctx.edge_info
         .get(&edge_index)
-        .map_or(false, |&(is_single_bi, _)| is_single_bi)
+        .is_some_and(|&(is_single_bi, _)| is_single_bi)
 }
 
 fn is_near_station(
@@ -1323,7 +1245,9 @@ mod tests {
         let graph = RailwayGraph::new();
         let journeys = vec![];
 
-        let (conflicts, crossings) = detect_line_conflicts(&journeys, &graph);
+        let station_indices = HashMap::new();
+        let ctx = SerializableConflictContext::from_graph(&graph, station_indices);
+        let (conflicts, crossings) = detect_line_conflicts(&journeys, &ctx);
 
         assert_eq!(conflicts.len(), 0);
         assert_eq!(crossings.len(), 0);
@@ -1356,7 +1280,12 @@ mod tests {
             thickness: TEST_THICKNESS,
         };
 
-        let (conflicts, _) = detect_line_conflicts(&[journey], &graph);
+        let station_indices = graph.graph.node_indices()
+            .enumerate()
+            .map(|(idx, node_idx)| (node_idx, idx))
+            .collect();
+        let ctx = SerializableConflictContext::from_graph(&graph, station_indices);
+        let (conflicts, _) = detect_line_conflicts(&[journey], &ctx);
         assert_eq!(conflicts.len(), 0);
     }
 
@@ -1375,9 +1304,10 @@ mod tests {
             Track { direction: TrackDirection::Backward },
         ]);
 
+        let serializable_ctx = SerializableConflictContext::from_graph(&graph, HashMap::new());
         let ctx = ConflictContext {
             station_indices: HashMap::new(),
-            graph: &graph,
+            serializable_ctx: &serializable_ctx,
             station_margin: STATION_MARGIN,
         };
 
