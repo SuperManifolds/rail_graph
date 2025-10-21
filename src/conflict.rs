@@ -1144,9 +1144,10 @@ mod tests {
         let idx2 = graph.add_or_get_station("B".to_string());
         let edge = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
 
+        let line_id = uuid::Uuid::new_v4();
         let journey = TrainJourney {
             id: uuid::Uuid::new_v4(),
-            line_id: "Line 1".to_string(),
+            line_id,
             train_number: "Line 1 0001".to_string(),
             departure_time: BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"),
             station_times: vec![
