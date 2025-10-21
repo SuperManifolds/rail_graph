@@ -2,9 +2,8 @@ use super::{
     empty_route_setup::EmptyRouteSetup, StationPosition, StationSelect, StopRow, TimeDisplayMode,
 };
 use crate::components::tab_view::TabPanel;
-use crate::models::{Line, RailwayGraph, RouteDirection, RouteSegment, Routes};
+use crate::models::{Line, RailwayGraph, RouteDirection, Routes};
 use leptos::*;
-use petgraph::stable_graph::NodeIndex;
 
 fn get_column_header(mode: TimeDisplayMode) -> &'static str {
     match mode {
@@ -13,30 +12,6 @@ fn get_column_header(mode: TimeDisplayMode) -> &'static str {
     }
 }
 
-#[derive(Clone, PartialEq)]
-struct RouteMetadata {
-    first_station_idx: Option<NodeIndex>,
-    last_station_idx: Option<NodeIndex>,
-    available_start: Vec<String>,
-    available_end: Vec<String>,
-}
-
-fn get_route_metadata(
-    graph: &RailwayGraph,
-    route: &[RouteSegment],
-    direction: RouteDirection,
-) -> RouteMetadata {
-    let endpoints = graph.get_route_endpoints(route, direction);
-    let available_start = graph.get_available_start_stations(route, direction);
-    let available_end = graph.get_available_end_stations(route, direction);
-
-    RouteMetadata {
-        first_station_idx: endpoints.0,
-        last_station_idx: endpoints.1,
-        available_start,
-        available_end,
-    }
-}
 
 #[component]
 fn RouteStopsList(
@@ -68,33 +43,34 @@ fn RouteStopsList(
         })
     });
 
-    let metadata = create_memo(move |_| {
+    let endpoints = create_memo(move |_| {
         route_data.with(|route_opt| {
             route_opt.as_ref().map(|route| {
-                let current_dir = dir.get();
-                graph.with_untracked(|g| get_route_metadata(g, route, current_dir))
+                graph.with_untracked(|g| g.get_route_endpoints(route, dir.get()))
+            })
+        })
+    });
+
+    let available_start = create_memo(move |_| {
+        route_data.with(|route_opt| {
+            route_opt.as_ref().map(|route| {
+                graph.with_untracked(|g| g.get_available_start_stations(route, dir.get()))
+            })
+        })
+    });
+
+    let available_end = create_memo(move |_| {
+        route_data.with(|route_opt| {
+            route_opt.as_ref().map(|route| {
+                graph.with_untracked(|g| g.get_available_end_stations(route, dir.get()))
             })
         })
     });
 
     let on_save_stored = store_value(on_save);
-
-    let Some(stations) = stations_data.get() else {
-        return view! {}.into_view();
-    };
-
-    let Some(meta) = metadata.get() else {
-        return view! {}.into_view();
-    };
-
-
-
-
     let mode = time_mode.get();
     let column_header = get_column_header(mode);
     let current_dir = dir.get();
-    let num_stations = stations.len();
-    let stations_with_index: Vec<_> = stations.into_iter().enumerate().collect();
 
     let on_save = on_save_stored.get_value();
     let on_save_for_start = on_save.clone();
@@ -111,20 +87,31 @@ fn RouteStopsList(
             <span></span>
         </div>
 
-        <StationSelect
-            available_stations=meta.available_start
-            station_idx=meta.first_station_idx
-            position=StationPosition::Start
-            route_direction=current_dir
-            graph=graph
-            edited_line=edited_line
-            on_save=on_save_for_start
-        />
+        {move || {
+            let eps = endpoints.get()?;
+            let avail = available_start.get()?;
+            Some(view! {
+                <StationSelect
+                    available_stations=avail
+                    station_idx=eps.0
+                    position=StationPosition::Start
+                    route_direction=current_dir
+                    graph=graph
+                    edited_line=edited_line
+                    on_save=on_save_for_start.clone()
+                />
+            })
+        }}
 
         <For
-            each=move || stations_with_index.clone()
+            each=move || {
+                stations_data.get().map(|stations| {
+                    stations.into_iter().enumerate().collect::<Vec<_>>()
+                }).unwrap_or_default()
+            }
             key=|(_, (_, station_idx))| station_idx.index()
             children=move |(i, (name, station_idx))| {
+                let num_stations = stations_data.with(|s| s.as_ref().map_or(0, Vec::len));
                 view! {
                     <StopRow
                         index=i
@@ -142,17 +129,23 @@ fn RouteStopsList(
             }
         />
 
-        <StationSelect
-            available_stations=meta.available_end
-            station_idx=meta.last_station_idx
-            position=StationPosition::End
-            route_direction=current_dir
-            graph=graph
-            edited_line=edited_line
-            on_save=on_save_for_end
-        />
+        {move || {
+            let eps = endpoints.get()?;
+            let avail = available_end.get()?;
+            Some(view! {
+                <StationSelect
+                    available_stations=avail
+                    station_idx=eps.1
+                    position=StationPosition::End
+                    route_direction=current_dir
+                    graph=graph
+                    edited_line=edited_line
+                    on_save=on_save_for_end.clone()
+                />
+            })
+        }}
     }
-    .into()
+    .into_view()
 }
 
 #[component]
