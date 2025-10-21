@@ -29,11 +29,11 @@ pub fn draw_train_journeys(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     nodes: &[(NodeIndex, Node)],
+    station_y_positions: &[f64],
     train_journeys: &[&TrainJourney],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
-    let node_height = dims.graph_height / nodes.len() as f64;
     let node_positions = build_node_position_map(nodes);
 
     // Draw lines for each journey
@@ -65,9 +65,8 @@ pub fn draw_train_journeys(
                 continue;
             };
 
-            let y = dims.top_margin
-                + (idx as f64 * node_height)
-                + (node_height / 2.0);
+            // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
+            let y = station_y_positions[idx] - super::canvas::TOP_MARGIN;
 
             // Draw segment from previous point if applicable
             if let Some(last_visible_idx) = last_visible_point.map(|(_, _, idx)| idx) {
@@ -122,9 +121,8 @@ pub fn draw_train_journeys(
             .collect();
 
         for (i, &(idx, arrival_x, departure_x)) in visible_nodes.iter().enumerate() {
-            let y = dims.top_margin
-                + (idx as f64 * node_height)
-                + (node_height / 2.0);
+            // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
+            let y = station_y_positions[idx] - super::canvas::TOP_MARGIN;
 
             // Check if this node has a segment connecting to previous or next visible node
             let has_prev_segment = if i > 0 {
@@ -172,6 +170,7 @@ pub fn check_journey_hover(
     mouse_y: f64,
     train_journeys: &[&TrainJourney],
     nodes: &[(NodeIndex, Node)],
+    station_y_positions: &[f64],
     canvas_width: f64,
     canvas_height: f64,
     viewport: &super::types::ViewportState,
@@ -187,7 +186,6 @@ pub fn check_journey_hover(
         return None;
     }
 
-    let node_height = graph_height / nodes.len() as f64;
     let node_positions = build_node_position_map(nodes);
 
     train_journeys
@@ -198,7 +196,7 @@ pub fn check_journey_hover(
                 mouse_y,
                 journey,
                 graph_width,
-                node_height,
+                station_y_positions,
                 viewport,
                 &node_positions,
             )
@@ -211,7 +209,7 @@ fn check_single_journey_hover(
     mouse_y: f64,
     journey: &TrainJourney,
     graph_width: f64,
-    node_height: f64,
+    station_y_positions: &[f64],
     viewport: &super::types::ViewportState,
     node_positions: &HashMap<NodeIndex, usize>,
 ) -> Option<uuid::Uuid> {
@@ -241,7 +239,7 @@ fn check_single_journey_hover(
 
         // Only process hover detection for visible stations
         if let Some(&idx) = station_idx {
-            let y_in_zoomed = (idx as f64 * node_height) + (node_height / 2.0);
+            let y_in_zoomed = station_y_positions[idx] - TOP_MARGIN;
 
             // Transform to screen coordinates
             let arrival_screen_x = LEFT_MARGIN + (arrival_x_zoomed * viewport.zoom_level * viewport.zoom_level_x) + viewport.pan_offset_x;

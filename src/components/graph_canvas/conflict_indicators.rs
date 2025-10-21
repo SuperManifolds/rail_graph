@@ -22,7 +22,7 @@ pub fn draw_conflict_highlights(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     conflicts: &[&Conflict],
-    station_height: f64,
+    station_y_positions: &[f64],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
     station_idx_map: &std::collections::HashMap<usize, usize>,
@@ -63,12 +63,12 @@ pub fn draw_conflict_highlights(
         let time_fraction = time_to_fraction(conflict.time);
         let x = dims.left_margin + (time_fraction * dims.hour_width);
 
-        let y = dims.top_margin
-            + (display_idx1 as f64 * station_height)
-            + (station_height / 2.0)
-            + (conflict.position
-                * station_height
-                * (display_idx2 as f64 - display_idx1 as f64));
+        // Interpolate Y position between the two stations based on conflict.position
+        // Note: station_y_positions include the original TOP_MARGIN, but we're in a transformed
+        // coordinate system where the origin has been moved by TOP_MARGIN, so we need to subtract it
+        let y1 = station_y_positions[display_idx1] - super::canvas::TOP_MARGIN;
+        let y2 = station_y_positions[display_idx2] - super::canvas::TOP_MARGIN;
+        let y = y1 + (conflict.position * (y2 - y1));
 
         ctx.save();
         ctx.translate(x, y).ok();
@@ -114,12 +114,12 @@ pub fn draw_conflict_highlights(
 
             let time_fraction = time_to_fraction(conflict.time);
             let x = dims.left_margin + (time_fraction * dims.hour_width);
-            let y = dims.top_margin
-                + (display_idx1 as f64 * station_height)
-                + (station_height / 2.0)
-                + (conflict.position
-                    * station_height
-                    * (display_idx2 as f64 - display_idx1 as f64));
+
+            // Interpolate Y position between the two stations based on conflict.position
+            // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
+            let y1 = station_y_positions[display_idx1] - super::canvas::TOP_MARGIN;
+            let y2 = station_y_positions[display_idx2] - super::canvas::TOP_MARGIN;
+            let y = y1 + (conflict.position * (y2 - y1));
 
             let label = format!("{} × {}", conflict.journey1_id, conflict.journey2_id);
             let _ = ctx.fill_text(&label, x + size + CONFLICT_LABEL_OFFSET / zoom_level, y);
@@ -147,7 +147,8 @@ pub fn check_conflict_hover(
     mouse_x: f64,
     mouse_y: f64,
     conflicts: &[Conflict],
-    stations: &[(petgraph::stable_graph::NodeIndex, Node)],
+    _stations: &[(petgraph::stable_graph::NodeIndex, Node)],
+    station_y_positions: &[f64],
     canvas_width: f64,
     canvas_height: f64,
     zoom_level: f64,
@@ -189,12 +190,10 @@ pub fn check_conflict_hover(
         // Position in zoomed coordinate system (before translation)
         let x_in_zoomed = time_fraction * hour_width;
 
-        let station_height = graph_height / stations.len() as f64;
-        let y_in_zoomed = (display_idx1 as f64 * station_height)
-            + (station_height / 2.0)
-            + (conflict.position
-                * station_height
-                * (display_idx2 as f64 - display_idx1 as f64));
+        // Interpolate Y position between the two stations
+        let y1 = station_y_positions[display_idx1] - TOP_MARGIN;
+        let y2 = station_y_positions[display_idx2] - TOP_MARGIN;
+        let y_in_zoomed = y1 + (conflict.position * (y2 - y1));
 
         // Transform to screen coordinates
         let screen_x = LEFT_MARGIN + (x_in_zoomed * zoom_level * zoom_level_x) + pan_offset_x;
@@ -207,7 +206,8 @@ pub fn check_conflict_hover(
             && mouse_y >= screen_y - size
             && mouse_y <= screen_y + size
         {
-            return Some((conflict.clone(), mouse_x, mouse_y));
+            // Return the conflict marker's screen position, not the mouse position
+            return Some((conflict.clone(), screen_x, screen_y));
         }
     }
 
@@ -220,7 +220,7 @@ pub fn draw_block_violation_visualization(
     dims: &GraphDimensions,
     conflict: &Conflict,
     train_journeys: &[&crate::train_journey::TrainJourney],
-    station_height: f64,
+    station_y_positions: &[f64],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
     station_idx_map: &std::collections::HashMap<usize, usize>,
@@ -255,7 +255,7 @@ pub fn draw_block_violation_visualization(
             dims,
             (s1_start, s1_end),
             (display_idx1, display_idx2),
-            station_height,
+            station_y_positions,
             zoom_level,
             time_to_fraction,
             (&fill1, color1),
@@ -267,7 +267,7 @@ pub fn draw_block_violation_visualization(
             dims,
             (s2_start, s2_end),
             (display_idx1, display_idx2),
-            station_height,
+            station_y_positions,
             zoom_level,
             time_to_fraction,
             (&fill2, color2),
@@ -281,7 +281,7 @@ pub fn draw_journey_blocks(
     dims: &GraphDimensions,
     journey: &crate::train_journey::TrainJourney,
     stations: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)],
-    station_height: f64,
+    station_y_positions: &[f64],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
@@ -316,7 +316,7 @@ pub fn draw_journey_blocks(
             dims,
             (*departure_from, *arrival_to),
             (start_idx, end_idx),
-            station_height,
+            station_y_positions,
             zoom_level,
             time_to_fraction,
             (&fill_color, &stroke_color),
@@ -330,7 +330,7 @@ fn draw_block_rectangle(
     dims: &GraphDimensions,
     times: (chrono::NaiveDateTime, chrono::NaiveDateTime),
     stations: (usize, usize),
-    station_height: f64,
+    station_y_positions: &[f64],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
     colors: (&str, &str),
@@ -341,8 +341,9 @@ fn draw_block_rectangle(
 
     let x1 = dims.left_margin + (time_to_fraction(start_time) * dims.hour_width);
     let x2 = dims.left_margin + (time_to_fraction(end_time) * dims.hour_width);
-    let y1 = dims.top_margin + (start_station_idx as f64 * station_height) + (station_height / 2.0);
-    let y2 = dims.top_margin + (end_station_idx as f64 * station_height) + (station_height / 2.0);
+    // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
+    let y1 = station_y_positions[start_station_idx] - super::canvas::TOP_MARGIN;
+    let y2 = station_y_positions[end_station_idx] - super::canvas::TOP_MARGIN;
 
     let width = x2 - x1;
     let height = y2 - y1;

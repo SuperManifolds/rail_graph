@@ -19,7 +19,7 @@ pub fn draw_current_train_positions(
     dims: &GraphDimensions,
     stations: &[(NodeIndex, Node)],
     train_journeys: &[&TrainJourney],
-    station_height: f64,
+    station_y_positions: &[f64],
     visualization_time: NaiveDateTime,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
@@ -42,7 +42,8 @@ pub fn draw_current_train_positions(
                 if *arrival_time <= visualization_time && visualization_time <= *departure_time {
                     // Train is waiting at this station
                     let x = dims.left_margin + (time_to_fraction(visualization_time) * dims.hour_width);
-                    let y = dims.top_margin + (station_idx as f64 * station_height) + (station_height / 2.0);
+                    // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
+                    let y = station_y_positions[station_idx] - super::canvas::TOP_MARGIN;
 
                     // Draw train as a larger dot with an outline
                     ctx.set_fill_style_str(&journey.color);
@@ -80,12 +81,11 @@ pub fn draw_current_train_positions(
             let progress = (elapsed / segment_duration).clamp(0.0, 1.0);
 
             let prev_x = dims.left_margin + (time_to_fraction(prev_time) * dims.hour_width);
-            let prev_y =
-                dims.top_margin + (prev_idx as f64 * station_height) + (station_height / 2.0);
+            // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
+            let prev_y = station_y_positions[prev_idx] - super::canvas::TOP_MARGIN;
 
             let next_x = dims.left_margin + (time_to_fraction(next_time) * dims.hour_width);
-            let next_y =
-                dims.top_margin + (next_idx as f64 * station_height) + (station_height / 2.0);
+            let next_y = station_y_positions[next_idx] - super::canvas::TOP_MARGIN;
 
             let current_x = prev_x + (next_x - prev_x) * progress;
             let current_y = prev_y + (next_y - prev_y) * progress;

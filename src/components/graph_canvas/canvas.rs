@@ -32,6 +32,7 @@ fn setup_render_effect(
     conflicts_memo: Memo<Vec<Conflict>>,
     show_conflicts: Signal<bool>,
     show_line_blocks: Signal<bool>,
+    spacing_mode: Signal<crate::models::SpacingMode>,
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
     hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
     display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
@@ -67,6 +68,7 @@ fn setup_render_effect(
         let _ = hovered_conflict.get();
         let _ = show_line_blocks.get();
         let _ = hovered_journey_id.get();
+        let _ = spacing_mode.get();
 
         if !render_requested.get_untracked() {
             set_render_requested.set(true);
@@ -125,7 +127,8 @@ fn setup_render_effect(
                     show_line_blocks: show_line_blocks.get_untracked(),
                     hovered_journey_id: hovered_journey_value.as_ref(),
                 };
-                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph, &idx_map);
+                let current_spacing_mode = spacing_mode.get_untracked();
+                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph, &idx_map, current_spacing_mode);
             });
 
             let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
@@ -147,13 +150,29 @@ fn handle_mouse_move_hover(
     set_hovered_conflict: WriteSignal<Option<(Conflict, f64, f64)>>,
     set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
     station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
+    graph: ReadSignal<RailwayGraph>,
+    spacing_mode: Signal<crate::models::SpacingMode>,
 ) {
     let current_conflicts = conflicts_memo.get();
     let current_stations = display_stations.get();
     let idx_map = station_idx_map.get();
+    let current_graph = graph.get();
+    let current_spacing_mode = spacing_mode.get();
+
+    // Calculate station positions for accurate hover detection
+    let canvas_width = f64::from(canvas.width());
+    let canvas_height = f64::from(canvas.height());
+    let dimensions = GraphDimensions::new(canvas_width, canvas_height);
+    let station_y_positions = current_graph.calculate_station_positions(
+        &current_stations,
+        current_spacing_mode,
+        dimensions.graph_height,
+        dimensions.top_margin,
+    );
+
     let hovered = conflict_indicators::check_conflict_hover(
-        x, y, &current_conflicts, &current_stations,
-        f64::from(canvas.width()), f64::from(canvas.height()),
+        x, y, &current_conflicts, &current_stations, &station_y_positions,
+        canvas_width, canvas_height,
         viewport.zoom_level, viewport.zoom_level_x, viewport.pan_offset_x, viewport.pan_offset_y,
         &idx_map,
     );
@@ -164,8 +183,8 @@ fn handle_mouse_move_hover(
         let mut journeys_vec: Vec<_> = journeys.values().collect();
         journeys_vec.sort_by_key(|j| j.departure_time);
         let hovered_journey = train_journeys::check_journey_hover(
-            x, y, &journeys_vec, &current_stations,
-            f64::from(canvas.width()), f64::from(canvas.height()),
+            x, y, &journeys_vec, &current_stations, &station_y_positions,
+            canvas_width, canvas_height,
             &viewport
         );
         set_hovered_journey_id.set(hovered_journey);
@@ -184,6 +203,7 @@ pub fn GraphCanvas(
     set_visualization_time: WriteSignal<NaiveDateTime>,
     show_conflicts: Signal<bool>,
     show_line_blocks: Signal<bool>,
+    spacing_mode: Signal<crate::models::SpacingMode>,
     hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
     set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
     conflicts_memo: Memo<Vec<Conflict>>,
@@ -291,7 +311,7 @@ pub fn GraphCanvas(
 
     setup_render_effect(
         canvas_ref, train_journeys, visualization_time, graph, &viewport,
-        conflicts_memo, show_conflicts, show_line_blocks,
+        conflicts_memo, show_conflicts, show_line_blocks, spacing_mode,
         hovered_conflict, hovered_journey_id, display_stations, station_idx_map
     );
 
@@ -334,7 +354,7 @@ pub fn GraphCanvas(
                     pan_offset_x: pan_offset_x.get(),
                     pan_offset_y: pan_offset_y.get(),
                 };
-                handle_mouse_move_hover(x, y, canvas, viewport_state, conflicts_memo, display_stations, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id, station_idx_map);
+                handle_mouse_move_hover(x, y, canvas, viewport_state, conflicts_memo, display_stations, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id, station_idx_map, graph, spacing_mode);
             }
         }
     };
@@ -442,6 +462,7 @@ fn render_graph(
     hover_state: &HoverState,
     graph: &RailwayGraph,
     station_idx_map: &std::collections::HashMap<usize, usize>,
+    spacing_mode: crate::models::SpacingMode,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = canvas;
     let canvas_width = f64::from(canvas_element.width());
@@ -449,6 +470,14 @@ fn render_graph(
 
     // Create dimensions once for the entire render
     let dimensions = GraphDimensions::new(canvas_width, canvas_height);
+
+    // Calculate station Y positions based on spacing mode
+    let station_y_positions = graph.calculate_station_positions(
+        stations,
+        spacing_mode,
+        dimensions.graph_height,
+        dimensions.top_margin,
+    );
 
     // Filter journeys to only those visible in viewport (avoid cloning off-screen journeys)
     let visible_hour_width = viewport.zoom_level * viewport.zoom_level_x * dimensions.hour_width;
@@ -514,16 +543,15 @@ fn render_graph(
 
     // Draw grid and content in zoomed coordinate system
     time_labels::draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level, viewport.zoom_level_x, viewport.pan_offset_x);
-    graph_content::draw_station_grid(&ctx, &zoomed_dimensions, stations, viewport.zoom_level, viewport.pan_offset_x);
-    graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, graph, viewport.zoom_level, viewport.pan_offset_x);
+    graph_content::draw_station_grid(&ctx, &zoomed_dimensions, stations, &station_y_positions, viewport.zoom_level, viewport.pan_offset_x);
+    graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, &station_y_positions, graph, viewport.zoom_level, viewport.pan_offset_x);
 
     // Draw train journeys
-    #[allow(clippy::cast_precision_loss)]
-    let station_height = zoomed_dimensions.graph_height / (stations.len() as f64);
     train_journeys::draw_train_journeys(
         &ctx,
         &zoomed_dimensions,
         stations,
+        &station_y_positions,
         &journeys_vec,
         viewport.zoom_level,
         time_to_fraction,
@@ -544,7 +572,7 @@ fn render_graph(
             &ctx,
             &zoomed_dimensions,
             &visible_conflicts,
-            station_height,
+            &station_y_positions,
             viewport.zoom_level,
             time_to_fraction,
             station_idx_map,
@@ -558,7 +586,7 @@ fn render_graph(
                     &zoomed_dimensions,
                     conflict,
                     &journeys_vec,
-                    station_height,
+                    &station_y_positions,
                     viewport.zoom_level,
                     time_to_fraction,
                     station_idx_map,
@@ -576,7 +604,7 @@ fn render_graph(
                     &zoomed_dimensions,
                     journey,
                     stations,
-                    station_height,
+                    &station_y_positions,
                     viewport.zoom_level,
                     time_to_fraction,
                 );
@@ -590,7 +618,7 @@ fn render_graph(
         &zoomed_dimensions,
         stations,
         &journeys_vec,
-        station_height,
+        &station_y_positions,
         current_time,
         viewport.zoom_level,
         time_to_fraction,
@@ -611,6 +639,7 @@ fn render_graph(
         &ctx,
         &dimensions,
         stations,
+        &station_y_positions,
         viewport.zoom_level,
         viewport.pan_offset_y,
     );
