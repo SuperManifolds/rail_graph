@@ -14,11 +14,12 @@ pub mod train_journey;
 #[cfg(target_arch = "wasm32")]
 pub mod conflict_worker;
 
-#[cfg(target_arch = "wasm32")]
-#[path = "worker_bridge.rs"]
-pub mod worker_bridge;
+// Temporarily use sync version for debugging
+// #[cfg(target_arch = "wasm32")]
+// #[path = "worker_bridge.rs"]
+// pub mod worker_bridge;
 
-#[cfg(not(target_arch = "wasm32"))]
+// #[cfg(not(target_arch = "wasm32"))]
 #[path = "worker_bridge_sync.rs"]
 pub mod worker_bridge;
 

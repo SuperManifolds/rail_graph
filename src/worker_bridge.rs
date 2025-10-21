@@ -14,7 +14,12 @@ impl ConflictDetector {
         let worker = ConflictWorker::spawner()
             .encoding::<MsgPackCodec>()
             .callback(move |response: ConflictResponse| {
-                set_conflicts.set(response.conflicts);
+                let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
+                set_conflicts.set(response.conflicts.clone());
+                if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
+                    web_sys::console::log_1(&format!("Set conflicts signal took {:.2}ms ({} conflicts)",
+                        elapsed, response.conflicts.len()).into());
+                }
             })
             .spawn("conflict_worker.js");
 
@@ -22,7 +27,13 @@ impl ConflictDetector {
     }
 
     pub fn detect(&mut self, journeys: Vec<TrainJourney>, graph: RailwayGraph) {
+        web_sys::console::log_1(&format!("Sending to worker: {} journeys, {} nodes",
+            journeys.len(), graph.graph.node_count()).into());
+        let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
         self.worker.send(ConflictRequest { journeys, graph });
+        if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
+            web_sys::console::log_1(&format!("Worker.send() took {:.2}ms", elapsed).into());
+        }
     }
 }
 

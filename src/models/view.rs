@@ -317,9 +317,8 @@ impl GraphView {
 
     /// Filter conflicts to only those within this path
     #[must_use]
-    pub fn filter_conflicts(&self, conflicts: &[Conflict], graph: &RailwayGraph) -> Vec<Conflict> {
+    pub fn filter_conflicts(&self, conflicts: &[Conflict], graph: &RailwayGraph, all_nodes: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)]) -> Vec<Conflict> {
         let visible_nodes = self.visible_stations(graph);
-        let all_nodes = graph.get_all_nodes_ordered();
 
         conflicts.iter()
             .filter(|conflict| {

@@ -19,14 +19,23 @@ pub struct MsgPackCodec;
 
 impl Codec for MsgPackCodec {
     fn encode<I: Serialize>(input: I) -> wasm_bindgen::JsValue {
+        let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
         let bytes = rmp_serde::to_vec(&input).expect("MessagePack encode failed");
+        if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
+            web_sys::console::log_1(&format!("MessagePack encode took {:.2}ms ({} bytes)", elapsed, bytes.len()).into());
+        }
         js_sys::Uint8Array::from(&bytes[..]).into()
     }
 
     fn decode<O: for<'de> Deserialize<'de>>(input: wasm_bindgen::JsValue) -> O {
+        let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
         let array = js_sys::Uint8Array::new(&input);
         let bytes = array.to_vec();
-        rmp_serde::from_slice(&bytes).expect("MessagePack decode failed")
+        let result = rmp_serde::from_slice(&bytes).expect("MessagePack decode failed");
+        if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
+            web_sys::console::log_1(&format!("MessagePack decode took {:.2}ms ({} bytes)", elapsed, bytes.len()).into());
+        }
+        result
     }
 }
 
@@ -46,7 +55,12 @@ impl Worker for ConflictWorker {
     }
 
     fn received(&mut self, scope: &WorkerScope<Self>, msg: Self::Input, id: HandlerId) {
+        let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
         let (conflicts, _) = detect_line_conflicts(&msg.journeys, &msg.graph);
+        if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
+            web_sys::console::log_1(&format!("Worker conflict detection took {:.2}ms ({} conflicts from {} journeys)",
+                elapsed, conflicts.len(), msg.journeys.len()).into());
+        }
         scope.respond(id, ConflictResponse { conflicts });
     }
 }

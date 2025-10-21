@@ -12,6 +12,7 @@ use crate::models::{Line, RailwayGraph, GraphView, Stations};
 use crate::train_journey::TrainJourney;
 use crate::conflict::Conflict;
 use leptos::{component, view, Signal, IntoView, SignalGet, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect};
+use petgraph::visit::EdgeRef;
 
 #[inline]
 fn compute_display_nodes(
@@ -28,6 +29,60 @@ fn compute_display_nodes(
     })
 }
 
+fn build_station_index_mapping(graph: &RailwayGraph) -> std::collections::HashMap<usize, usize> {
+    // First pass: identify stations and their order
+    let mut station_node_to_idx = std::collections::HashMap::new();
+    let mut station_idx = 0;
+    for node_idx in graph.graph.node_indices() {
+        let Some(node) = graph.graph.node_weight(node_idx) else { continue };
+        if node.as_station().is_none() {
+            continue;
+        }
+        station_node_to_idx.insert(node_idx, station_idx);
+        station_idx += 1;
+    }
+
+    // Second pass: build display mapping via BFS without cloning nodes
+    let mut map = std::collections::HashMap::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut queue = std::collections::VecDeque::new();
+    let mut display_idx = 0;
+
+    let Some(start_node) = graph.graph.node_indices().next() else {
+        return map;
+    };
+
+    queue.push_back(start_node);
+    seen.insert(start_node);
+
+    while let Some(node_idx) = queue.pop_front() {
+        if let Some(&station_idx) = station_node_to_idx.get(&node_idx) {
+            map.insert(station_idx, display_idx);
+        }
+        display_idx += 1;
+
+        for edge in graph.graph.edges(node_idx) {
+            let target = edge.target();
+            if seen.insert(target) {
+                queue.push_back(target);
+            }
+        }
+    }
+
+    // Handle disconnected nodes
+    for node_idx in graph.graph.node_indices() {
+        if !seen.insert(node_idx) {
+            continue;
+        }
+        if let Some(&station_idx) = station_node_to_idx.get(&node_idx) {
+            map.insert(station_idx, display_idx);
+        }
+        display_idx += 1;
+    }
+
+    map
+}
+
 #[inline]
 fn compute_station_index_map(
     view: Option<GraphView>,
@@ -38,27 +93,7 @@ fn compute_station_index_map(
         if let Some(ref graph_view) = view {
             graph_view.build_station_index_map(&current_graph)
         } else {
-            // For full graph view, map station indices to display indices
-            // accounting for junctions that occupy display rows but aren't in the station list
-            let all_nodes = current_graph.get_all_nodes_ordered();
-            let all_stations = current_graph.get_all_stations_ordered();
-
-            // Create a mapping from station NodeIndex to station list index
-            let station_node_to_idx: std::collections::HashMap<_, _> = all_stations
-                .iter()
-                .enumerate()
-                .map(|(idx, (node_idx, _))| (*node_idx, idx))
-                .collect();
-
-            // Map each station's index to its display row position
-            let mut map = std::collections::HashMap::new();
-            for (display_idx, (node_idx, _)) in all_nodes.iter().enumerate() {
-                if let Some(&station_idx) = station_node_to_idx.get(node_idx) {
-                    map.insert(station_idx, display_idx);
-                }
-            }
-
-            map
+            build_station_index_mapping(&current_graph)
         }
     })
 }
@@ -123,14 +158,20 @@ pub fn TimeGraph(
         }
     });
 
-    // Filter conflicts for this view
+    // Get nodes (stations and junctions) to display based on view
+    let display_stations = compute_display_nodes(view.clone(), graph);
+    // Build station index mapping for conflict rendering
+    let station_idx_map = compute_station_index_map(view.clone(), graph);
+
+    // Filter conflicts for this view (use display_stations to avoid re-computing nodes)
     let conflicts = {
         let view = view.clone();
         Signal::derive(move || {
             let all_conflicts = raw_conflicts.get();
             if let Some(ref graph_view) = view {
                 let current_graph = graph.get();
-                graph_view.filter_conflicts(&all_conflicts, &current_graph)
+                let nodes = display_stations.get();
+                graph_view.filter_conflicts(&all_conflicts, &current_graph, &nodes)
             } else {
                 all_conflicts
             }
@@ -144,11 +185,6 @@ pub fn TimeGraph(
 
     let (new_line_dialog_open, set_new_line_dialog_open) = create_signal(false);
     let (next_line_number, set_next_line_number) = create_signal(1);
-
-    // Get nodes (stations and junctions) to display based on view
-    let display_stations = compute_display_nodes(view.clone(), graph);
-    // Build station index mapping for conflict rendering
-    let station_idx_map = compute_station_index_map(view.clone(), graph);
 
     view! {
         <div class="time-graph-container">

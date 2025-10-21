@@ -35,7 +35,18 @@ fn ErrorListPopover(
                                         let station2_name = current_nodes.get(conflict.station2_idx)
                                             .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
 
-                                        let conflict_message = conflict.format_message(&station1_name, &station2_name, &graph.get());
+                                        let conflict_message = if conflict.conflict_type == crate::conflict::ConflictType::PlatformViolation {
+                                            // Look up platform name directly from nodes to avoid expensive graph traversal
+                                            let platform_name = conflict.platform_idx.and_then(|idx| {
+                                                current_nodes.get(conflict.station1_idx)
+                                                    .and_then(|(_, n)| n.as_station())
+                                                    .and_then(|s| s.platforms.get(idx))
+                                                    .map(|p| p.name.as_str())
+                                            }).unwrap_or("?");
+                                            conflict.format_platform_message(&station1_name, platform_name)
+                                        } else {
+                                            conflict.format_message(&station1_name, &station2_name, &graph.get())
+                                        };
 
                                         let time_fraction = time_to_fraction(conflict.time);
                                         // Direct usize to f64 conversion is safe for reasonable station counts
@@ -130,11 +141,14 @@ pub fn ErrorList(
 
             {move || {
                 if is_open.get() {
+                    // Get nodes once when opening dialog to avoid repeated expensive calls
+                    let all_nodes = graph.get().get_all_nodes_ordered();
+                    let nodes_signal = Signal::derive(move || all_nodes.clone());
                     view! {
                         <ErrorListPopover
                             conflicts=conflicts
                             on_conflict_click=on_conflict_click
-                            nodes=Signal::derive(move || graph.get().get_all_nodes_ordered())
+                            nodes=nodes_signal
                             graph=graph
                         />
                     }.into_view()

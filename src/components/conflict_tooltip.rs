@@ -1,34 +1,36 @@
-use leptos::{component, IntoView, ReadSignal, SignalGet, view};
+use leptos::{component, IntoView, ReadSignal, SignalGet, Signal, view};
 use crate::conflict::Conflict;
-use crate::models::{RailwayGraph, Stations};
+use crate::models::RailwayGraph;
 
 #[component]
 #[must_use]
 pub fn ConflictTooltip(
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
     graph: ReadSignal<RailwayGraph>,
+    display_nodes: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
 ) -> impl IntoView {
     view! {
         {move || {
             if let Some((conflict, tooltip_x, tooltip_y)) = hovered_conflict.get() {
-                let current_graph = graph.get();
+                let nodes = display_nodes.get();
 
-                // Convert node indices to NodeIndex by looking up in full graph node list
-                let all_nodes = current_graph.get_all_nodes_ordered();
-                let station1_node_idx = all_nodes.get(conflict.station1_idx).map(|(idx, _)| *idx);
-                let station2_node_idx = all_nodes.get(conflict.station2_idx).map(|(idx, _)| *idx);
+                // Get station names directly from the nodes list (already memoized)
+                let station1_name = nodes.get(conflict.station1_idx)
+                    .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
+                let station2_name = nodes.get(conflict.station2_idx)
+                    .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
 
-                // Get node names from the graph
-                let station1_name = station1_node_idx
-                    .and_then(|idx| current_graph.get_station_name(idx))
-                    .unwrap_or("Unknown")
-                    .to_string();
-                let station2_name = station2_node_idx
-                    .and_then(|idx| current_graph.get_station_name(idx))
-                    .unwrap_or("Unknown")
-                    .to_string();
-
-                let message = conflict.format_message(&station1_name, &station2_name, &current_graph);
+                let message = if conflict.conflict_type == crate::conflict::ConflictType::PlatformViolation {
+                    let platform_name = conflict.platform_idx.and_then(|idx| {
+                        nodes.get(conflict.station1_idx)
+                            .and_then(|(_, n)| n.as_station())
+                            .and_then(|s| s.platforms.get(idx))
+                            .map(|p| p.name.as_str())
+                    }).unwrap_or("?");
+                    conflict.format_platform_message(&station1_name, platform_name)
+                } else {
+                    conflict.format_message(&station1_name, &station2_name, &graph.get())
+                };
                 let timestamp = conflict.time.format("%H:%M:%S");
                 let tooltip_text = format!("{timestamp} - {message}");
 
