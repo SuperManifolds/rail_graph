@@ -216,7 +216,7 @@ fn delete_station_handler(
     let affected: Vec<String> = current_lines
         .iter()
         .filter(|line| line.uses_any_edge(&station_edges))
-        .map(|line| line.id.clone())
+        .map(|line| line.name.clone())
         .collect();
 
     set_delete_affected_lines.set(affected);

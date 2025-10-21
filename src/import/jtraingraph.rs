@@ -661,12 +661,15 @@ pub fn import_jtraingraph(
         }
 
         // Create the line
+        let line_name = if existing_line_ids.contains(&line_id) {
+            format!("{line_id} ({pattern_idx})")
+        } else {
+            line_id
+        };
+
         let line = Line {
-            id: if existing_line_ids.contains(&line_id) {
-                format!("{line_id} ({pattern_idx})")
-            } else {
-                line_id
-            },
+            id: uuid::Uuid::new_v4(),
+            name: line_name,
             frequency: Duration::hours(1),
             color: generate_random_color(starting_line_count + pattern_idx),
             thickness: 2.0,
@@ -829,9 +832,9 @@ mod tests {
                 .any(|dep| dep.train_number.as_deref() == Some("BR 229-02")))
             .expect("No line found containing BR 229-02");
 
-        // Verify the line ID shows it's going in the return direction
-        assert!(br_line.id.starts_with("Dortmund"),
-            "Return train line should start with 'Dortmund', got: {}", br_line.id);
+        // Verify the line name shows it's going in the return direction
+        assert!(br_line.name.starts_with("Dortmund"),
+            "Return train line should start with 'Dortmund', got: {}", br_line.name);
 
         // Get the departure for BR 229-02
         let br_departure = br_line.manual_departures.iter()
@@ -856,10 +859,10 @@ mod tests {
 
         // Verify we have both forward and return lines
         let haag_to_dortmund = lines.iter()
-            .filter(|line| line.id.starts_with("Den Haag") && line.id.contains("Dortmund"))
+            .filter(|line| line.name.starts_with("Den Haag") && line.name.contains("Dortmund"))
             .count();
         let dortmund_to_haag = lines.iter()
-            .filter(|line| line.id.starts_with("Dortmund") && line.id.contains("Den Haag"))
+            .filter(|line| line.name.starts_with("Dortmund") && line.name.contains("Den Haag"))
             .count();
 
         assert!(haag_to_dortmund > 0, "Should have at least one forward line");

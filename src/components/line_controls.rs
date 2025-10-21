@@ -14,8 +14,8 @@ pub fn LineControls(
     graph: ReadSignal<RailwayGraph>,
     on_create_view: Callback<GraphView>,
 ) -> impl IntoView {
-    let (open_editors, set_open_editors) = create_signal(HashSet::<String>::new());
-    let (delete_pending, set_delete_pending) = create_signal(None::<String>);
+    let (open_editors, set_open_editors) = create_signal(HashSet::<uuid::Uuid>::new());
+    let (delete_pending, set_delete_pending) = create_signal(None::<uuid::Uuid>);
 
     let editors_list = move || {
         open_editors.get().into_iter().collect::<Vec<_>>()
@@ -27,19 +27,19 @@ pub fn LineControls(
             <div class="line-controls">
                 {move || {
                     lines.get().into_iter().map(|line| {
-                        let line_id = line.id.clone();
+                        let line_id = line.id;
                         view! {
                             <LineControl
-                                line_id=line_id.clone()
+                                line_id=line_id
                                 lines=lines
                                 set_lines=set_lines
                                 graph=graph
-                                on_edit=move |id: String| {
+                                on_edit=move |id: uuid::Uuid| {
                                     set_open_editors.update(|editors| {
                                         editors.insert(id);
                                     });
                                 }
-                                on_delete=move |id: String| {
+                                on_delete=move |id: uuid::Uuid| {
                                     set_delete_pending.set(Some(id));
                                 }
                                 on_create_view=on_create_view
@@ -52,17 +52,15 @@ pub fn LineControls(
 
         <For
             each=editors_list
-            key=|line_id| line_id.clone()
-            children=move |line_id: String| {
+            key=|line_id| *line_id
+            children=move |line_id: uuid::Uuid| {
                 let current_line = Signal::derive({
-                    let line_id = line_id.clone();
                     move || {
                         lines.get().into_iter().find(|l| l.id == line_id)
                     }
                 });
 
                 let is_open = Signal::derive({
-                    let line_id = line_id.clone();
                     move || open_editors.get().contains(&line_id)
                 });
 
@@ -71,7 +69,6 @@ pub fn LineControls(
                         initial_line=current_line
                         is_open=is_open
                         set_is_open={
-                            let line_id = line_id.clone();
                             move |open: bool| {
                                 if !open {
                                     set_open_editors.update(|editors| {
@@ -100,7 +97,8 @@ pub fn LineControls(
             title=Signal::derive(|| "Delete Line".to_string())
             message=Signal::derive(move || {
                 delete_pending.get()
-                    .map(|id| format!("Are you sure you want to delete line \"{id}\"? This action cannot be undone."))
+                    .and_then(|id| lines.get().into_iter().find(|l| l.id == id))
+                    .map(|line| format!("Are you sure you want to delete line \"{}\"? This action cannot be undone.", line.name))
                     .unwrap_or_default()
             })
             on_confirm=Rc::new(move || {
@@ -122,42 +120,38 @@ pub fn LineControls(
 
 #[component]
 pub fn LineControl(
-    line_id: String,
+    line_id: uuid::Uuid,
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
     graph: ReadSignal<RailwayGraph>,
-    on_edit: impl Fn(String) + 'static,
-    on_delete: impl Fn(String) + 'static,
+    on_edit: impl Fn(uuid::Uuid) + 'static,
+    on_delete: impl Fn(uuid::Uuid) + 'static,
     on_create_view: Callback<GraphView>,
 ) -> impl IntoView {
-    let id_for_derive = line_id.clone();
     let current_line = Signal::derive(move || {
-        lines.get().into_iter().find(|l| l.id == id_for_derive)
+        lines.get().into_iter().find(|l| l.id == line_id)
     });
 
-    let id_for_edit = line_id.clone();
     let on_edit = store_value(on_edit);
     let on_delete = store_value(on_delete);
 
     view! {
         {move || {
             current_line.get().map(|line| {
-                let id_for_edit = id_for_edit.clone();
                 view! {
                     <div
                         class="line-control"
                         style=format!("border-left: 4px solid {}", line.color)
                     >
                         <div class="line-header">
-                            <strong>{line_id.clone()}</strong>
+                            <strong>{line.name.clone()}</strong>
                             <div class="line-header-controls">
                                 <button
                                     class="visibility-toggle"
                                     on:click={
-                                        let id = line_id.clone();
                                         move |_| {
                                             set_lines.update(|lines_vec| {
-                                                if let Some(line) = lines_vec.iter_mut().find(|l| l.id == id) {
+                                                if let Some(line) = lines_vec.iter_mut().find(|l| l.id == line_id) {
                                                     line.visible = !line.visible;
                                                 }
                                             });
@@ -176,7 +170,7 @@ pub fn LineControl(
                                             // Use the line's forward route to create the view
                                             let edge_path: Vec<usize> = line.forward_route.iter().map(|seg| seg.edge_index).collect();
                                             if !edge_path.is_empty() {
-                                                if let Ok(view) = GraphView::from_edge_path(line.id.clone(), edge_path, &current_graph) {
+                                                if let Ok(view) = GraphView::from_edge_path(line.name.clone(), edge_path, &current_graph) {
                                                     on_create_view.call(view);
                                                 }
                                             }
@@ -188,7 +182,7 @@ pub fn LineControl(
                                 </button>
                                 <button
                                     class="edit-button"
-                                    on:click=move |_| on_edit.with_value(|f| f(id_for_edit.clone()))
+                                    on:click=move |_| on_edit.with_value(|f| f(line_id))
                                     title="Edit line"
                                 >
                                     <i class="fa-solid fa-pen"></i>
@@ -196,8 +190,7 @@ pub fn LineControl(
                                 <button
                                     class="delete-button"
                                     on:click={
-                                        let id = line_id.clone();
-                                        move |_| on_delete.with_value(|f| f(id.clone()))
+                                        move |_| on_delete.with_value(|f| f(line_id))
                                     }
                                     title="Delete line"
                                 >

@@ -241,7 +241,7 @@ mod tests {
         let (lines, graph) = parse_csv_string(csv_content, &wait_times);
 
         assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].id, "Line1");
+        assert_eq!(lines[0].name, "Line1");
         assert_eq!(graph.graph.node_count(), 2);
         assert_eq!(graph.graph.edge_count(), 1);
         assert_eq!(lines[0].forward_route.len(), 1);

@@ -19,7 +19,7 @@ fn handle_fpl_import(
 
     // Get current line info before updating
     let before_lines_count = lines.get().len();
-    let existing_line_ids: Vec<String> = lines.get().iter().map(|l| l.id.clone()).collect();
+    let existing_line_ids: Vec<String> = lines.get().iter().map(|l| l.name.clone()).collect();
 
     // Track results
     let mut new_lines = None;

@@ -229,7 +229,7 @@ pub fn TimeGraph(
                         let mut num = 1;
                         loop {
                             let candidate = format!("Line {num}");
-                            if !current_lines.iter().any(|l| l.id == candidate) {
+                            if !current_lines.iter().any(|l| l.name == candidate) {
                                 set_next_line_number.set(num);
                                 break;
                             }
