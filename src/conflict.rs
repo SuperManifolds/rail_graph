@@ -266,47 +266,7 @@ pub fn detect_line_conflicts(
         web_sys::console::log_1(&format!("  Setup (BFS mapping): {:.2}ms", elapsed).into());
     }
 
-    // For small datasets, use simple approach with early filtering
-    // Spatial partitioning only helps with larger datasets
-    if train_journeys.len() < 200 {
-        #[cfg(target_arch = "wasm32")]
-        web_sys::console::log_1(&"  Using simple O(n²) algorithm (< 200 journeys)".into());
-
-        // Simple O(n²) with early time filtering
-        for (i, journey1) in train_journeys.iter().enumerate() {
-            if results.conflicts.len() >= MAX_CONFLICTS {
-                break;
-            }
-
-            let j1_start = journey1.station_times.first().map(|(_, arr, _)| *arr);
-            let j1_end = journey1.station_times.last().map(|(_, _, dep)| *dep);
-
-            for journey2 in train_journeys.iter().skip(i + 1) {
-                // Early time-based filtering - skip if no overlap in time
-                let Some((start1, end1)) = j1_start.zip(j1_end) else {
-                    continue;
-                };
-
-                let Some((_, start2, _)) = journey2.station_times.first() else {
-                    continue;
-                };
-                let Some((_, _, end2)) = journey2.station_times.last() else {
-                    continue;
-                };
-
-                if end1 < *start2 || *end2 < start1 {
-                    continue; // No time overlap
-                }
-
-                check_journey_pair(journey1, journey2, &ctx, &mut results);
-                if results.conflicts.len() >= MAX_CONFLICTS {
-                    break;
-                }
-            }
-        }
-    } else {
-        detect_conflicts_sweep_line(train_journeys, &ctx, &mut results);
-    }
+    detect_conflicts_sweep_line(train_journeys, &ctx, &mut results);
 
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -545,39 +505,6 @@ fn detect_conflicts_sweep_line(
     }
 }
 
-fn check_journey_pair(
-    journey1: &TrainJourney,
-    journey2: &TrainJourney,
-    ctx: &ConflictContext,
-    results: &mut ConflictResults,
-) {
-    // Pre-build segment lookup maps for both journeys to avoid O(n) lookups in inner loops
-    let seg1_map = build_segment_lookup_map(journey1, ctx);
-    let seg2_map = build_segment_lookup_map(journey2, ctx);
-
-    check_journey_pair_with_maps(journey1, journey2, ctx, results, &seg1_map, &seg2_map);
-}
-
-fn check_journey_pair_with_maps(
-    journey1: &TrainJourney,
-    journey2: &TrainJourney,
-    ctx: &ConflictContext,
-    results: &mut ConflictResults,
-    seg1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
-    seg2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
-) {
-    // Check for platform conflicts first
-    #[cfg(not(target_arch = "wasm32"))]
-    let platform_start = std::time::Instant::now();
-
-    check_platform_conflicts(journey1, journey2, ctx, results);
-
-    #[cfg(not(target_arch = "wasm32"))]
-    timing::add_duration(&timing::PLATFORM_TIME, platform_start.elapsed());
-
-    check_segments_for_pair(journey1, journey2, ctx, results, seg1_map, seg2_map);
-}
-
 #[allow(clippy::too_many_arguments)]
 fn check_journey_pair_with_all_cached(
     journey1: &TrainJourney,
@@ -619,21 +546,6 @@ fn check_journey_pair_with_all_cached(
         // Store as microseconds to preserve decimal precision
         SEGMENT_CHECK_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
     }
-}
-
-#[allow(clippy::similar_names)]
-fn check_segments_for_pair(
-    journey1: &TrainJourney,
-    journey2: &TrainJourney,
-    ctx: &ConflictContext,
-    results: &mut ConflictResults,
-    seg1_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
-    seg2_map: &HashMap<(usize, usize), &crate::train_journey::JourneySegment>,
-) {
-    let segments1 = build_segment_list_with_bounds(journey1, ctx);
-    let segments2 = build_segment_list_with_bounds(journey2, ctx);
-
-    check_segments_for_pair_cached(journey1, journey2, ctx, results, seg1_map, seg2_map, &segments1, &segments2);
 }
 
 #[allow(clippy::similar_names)]
@@ -1236,25 +1148,6 @@ fn extract_platform_occupancies(
     }
 
     occupancies
-}
-
-/// Check for platform conflicts between two journeys
-fn check_platform_conflicts(
-    journey1: &TrainJourney,
-    journey2: &TrainJourney,
-    ctx: &ConflictContext,
-    results: &mut ConflictResults,
-) {
-    #[cfg(not(target_arch = "wasm32"))]
-    let extract_start = std::time::Instant::now();
-
-    let occupancies1 = extract_platform_occupancies(journey1, ctx);
-    let occupancies2 = extract_platform_occupancies(journey2, ctx);
-
-    #[cfg(not(target_arch = "wasm32"))]
-    timing::add_duration(&timing::PLATFORM_EXTRACT_TIME, extract_start.elapsed());
-
-    check_platform_conflicts_cached(journey1, journey2, results, &occupancies1, &occupancies2);
 }
 
 /// Check for platform conflicts using pre-cached occupancies
