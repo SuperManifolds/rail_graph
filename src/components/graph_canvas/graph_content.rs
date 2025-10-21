@@ -20,12 +20,19 @@ pub fn draw_background(ctx: &CanvasRenderingContext2d, width: f64, height: f64) 
     ctx.fill_rect(0.0, 0.0, width, height);
 }
 
-#[allow(clippy::cast_precision_loss)]
-pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[(NodeIndex, Node)], zoom_level: f64, pan_offset_x: f64) {
-    let station_height = dims.graph_height / stations.len() as f64;
+pub fn draw_station_grid(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    stations: &[(NodeIndex, Node)],
+    station_y_positions: &[f64],
+    zoom_level: f64,
+    pan_offset_x: f64,
+) {
+    use super::canvas::TOP_MARGIN;
 
     for (i, (_, station_node)) in stations.iter().enumerate() {
-        let y = calculate_station_y(dims, i, station_height);
+        // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
+        let y = station_y_positions[i] - TOP_MARGIN;
 
         // Use different color for single-platform stations
         let color = match station_node {
@@ -35,11 +42,6 @@ pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions,
 
         draw_horizontal_line(ctx, dims, y, zoom_level, pan_offset_x, color);
     }
-}
-
-#[allow(clippy::cast_precision_loss)]
-fn calculate_station_y(dims: &GraphDimensions, index: usize, station_height: f64) -> f64 {
-    dims.top_margin + (index as f64 * station_height) + (station_height / 2.0)
 }
 
 #[allow(clippy::cast_possible_truncation)]
@@ -69,12 +71,12 @@ pub fn draw_double_track_indicators(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     stations: &[(NodeIndex, Node)],
+    station_y_positions: &[f64],
     graph: &RailwayGraph,
     zoom_level: f64,
     pan_offset_x: f64,
 ) {
-    let station_height = dims.graph_height / stations.len() as f64;
-
+    use super::canvas::TOP_MARGIN;
     // Calculate visible range in the transformed coordinate system
     let x_min = -pan_offset_x / zoom_level;
     let x_max = (dims.graph_width - pan_offset_x) / zoom_level;
@@ -101,9 +103,10 @@ pub fn draw_double_track_indicators(
         };
 
         if has_multiple_tracks {
-            // Calculate the Y positions for the two stations
-            let station1_y = calculate_station_y(dims, segment_idx - 1, station_height);
-            let station2_y = calculate_station_y(dims, segment_idx, station_height);
+            // Get the Y positions for the two stations
+            // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
+            let station1_y = station_y_positions[segment_idx - 1] - TOP_MARGIN;
+            let station2_y = station_y_positions[segment_idx] - TOP_MARGIN;
 
             // Cover the entire area between the two stations
             let top_y = station1_y.min(station2_y);

@@ -89,12 +89,16 @@ pub fn TimeGraph(
     // Extract legend signals
     let show_conflicts = Signal::derive(move || legend.get().show_conflicts);
     let show_line_blocks = Signal::derive(move || legend.get().show_line_blocks);
+    let spacing_mode = Signal::derive(move || legend.get().spacing_mode);
 
     let set_show_conflicts = move |value: bool| {
         set_legend.update(|l| l.show_conflicts = value);
     };
     let set_show_line_blocks = move |value: bool| {
         set_legend.update(|l| l.show_line_blocks = value);
+    };
+    let set_spacing_mode = move |value: crate::models::SpacingMode| {
+        set_legend.update(|l| l.spacing_mode = value);
     };
 
     // Track hovered journey for block visualization
@@ -156,6 +160,7 @@ pub fn TimeGraph(
                     set_visualization_time=set_visualization_time
                     show_conflicts=show_conflicts
                     show_line_blocks=show_line_blocks
+                    spacing_mode=spacing_mode
                     hovered_journey_id=hovered_journey_id
                     set_hovered_journey_id=set_hovered_journey_id
                     conflicts_memo=conflicts_memo
@@ -205,6 +210,8 @@ pub fn TimeGraph(
                         set_show_conflicts=set_show_conflicts
                         show_line_blocks=show_line_blocks
                         set_show_line_blocks=set_show_line_blocks
+                        spacing_mode=spacing_mode
+                        set_spacing_mode=set_spacing_mode
                     />
                 </div>
             </div>

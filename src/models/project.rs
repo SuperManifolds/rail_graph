@@ -9,10 +9,24 @@ pub struct ProjectMetadata {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SpacingMode {
+    Equal,
+    DistanceBased,
+}
+
+impl Default for SpacingMode {
+    fn default() -> Self {
+        Self::Equal
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Legend {
     pub show_conflicts: bool,
     pub show_line_blocks: bool,
+    #[serde(default)]
+    pub spacing_mode: SpacingMode,
 }
 
 impl Default for Legend {
@@ -20,6 +34,7 @@ impl Default for Legend {
         Self {
             show_conflicts: true,
             show_line_blocks: false,
+            spacing_mode: SpacingMode::default(),
         }
     }
 }

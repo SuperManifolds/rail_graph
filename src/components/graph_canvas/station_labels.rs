@@ -21,14 +21,17 @@ pub fn draw_station_labels(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     stations: &[(NodeIndex, Node)],
+    station_y_positions: &[f64],
     zoom_level: f64,
     pan_offset_y: f64,
 ) {
-    let station_height = dims.graph_height / stations.len() as f64;
-
     // Draw labels for each node in the stations list (includes both stations and junctions)
+    use super::canvas::TOP_MARGIN as ORIGINAL_TOP_MARGIN;
+
     for (idx, (_, station_node)) in stations.iter().enumerate() {
-        let base_y = (idx as f64 * station_height) + (station_height / 2.0);
+        // station_y_positions include the original TOP_MARGIN, subtract it to get graph-relative coords
+        // Then apply zoom and pan transformations to get screen coordinates
+        let base_y = station_y_positions[idx] - ORIGINAL_TOP_MARGIN;
         let adjusted_y = dims.top_margin + (base_y * zoom_level) + pan_offset_y;
 
         // Only draw if visible

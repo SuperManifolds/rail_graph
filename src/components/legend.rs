@@ -6,6 +6,8 @@ pub fn Legend(
     set_show_conflicts: impl Fn(bool) + 'static + Copy,
     show_line_blocks: Signal<bool>,
     set_show_line_blocks: impl Fn(bool) + 'static + Copy,
+    spacing_mode: Signal<crate::models::SpacingMode>,
+    set_spacing_mode: impl Fn(crate::models::SpacingMode) + 'static + Copy,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
 
@@ -55,6 +57,26 @@ pub fn Legend(
                                 <span>"Block Occupancy on Hover"</span>
                             </label>
                             <p class="legend-description">"Show reservation block when hovering over train lines"</p>
+                        </div>
+
+                        <div class="legend-item">
+                            <label class="legend-label">
+                                <input
+                                    type="checkbox"
+                                    checked=move || matches!(spacing_mode.get(), crate::models::SpacingMode::DistanceBased)
+                                    on:change=move |ev| {
+                                        let is_checked = event_target_checked(&ev);
+                                        set_spacing_mode(if is_checked {
+                                            crate::models::SpacingMode::DistanceBased
+                                        } else {
+                                            crate::models::SpacingMode::Equal
+                                        });
+                                    }
+                                />
+                                <span class="legend-icon">"📏"</span>
+                                <span>"Distance-based Spacing"</span>
+                            </label>
+                            <p class="legend-description">"Scale vertical spacing by track distance (if available)"</p>
                         </div>
                     </div>
                 </div>
