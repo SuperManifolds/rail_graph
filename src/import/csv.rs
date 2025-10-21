@@ -308,18 +308,18 @@ pub fn extract_line_identifier(headers: &[Option<&str>]) -> Option<String> {
 
 /// Check if a row looks like a header
 fn looks_like_header(row: &csv::StringRecord) -> bool {
+    // If any field looks like time data, probably not a header
+    for field in row {
+        if is_time_format(field) || is_duration_format(field) {
+            return false;
+        }
+    }
+
     // Header heuristic: if first field contains "station" or "stop", likely a header
     if let Some(first) = row.get(0) {
         let lower = first.to_lowercase();
         if lower.contains("station") || lower.contains("stop") || lower.contains("name") {
             return true;
-        }
-    }
-
-    // If any field looks like time data, probably not a header
-    for field in row {
-        if is_time_format(field) || is_duration_format(field) {
-            return false;
         }
     }
 
@@ -1117,13 +1117,15 @@ mod tests {
 
     #[test]
     fn test_detect_column_type_from_samples() {
+        // Times >= 4 hours are detected as ArrivalTime
         let time_samples = vec!["5:00:00".to_string(), "6:10:00".to_string()];
         assert_eq!(
             detect_column_type(None, &time_samples, &[]),
             ColumnType::ArrivalTime
         );
 
-        let duration_samples = vec!["5min".to_string(), "10min".to_string()];
+        // Short times (< 1 hour, > 2 minutes) are detected as TravelTime
+        let duration_samples = vec!["0:05:00".to_string(), "0:10:00".to_string()];
         assert_eq!(
             detect_column_type(None, &duration_samples, &[]),
             ColumnType::TravelTime
@@ -1153,8 +1155,9 @@ mod tests {
         assert!(config.has_headers);
         assert_eq!(config.columns.len(), 3);
         assert_eq!(config.columns[0].column_type, ColumnType::StationName);
-        assert_eq!(config.columns[1].column_type, ColumnType::ArrivalTime);
-        assert_eq!(config.columns[2].column_type, ColumnType::ArrivalTime);
+        // Short times (< 1 hour) are detected as TravelTime
+        assert_eq!(config.columns[1].column_type, ColumnType::TravelTime);
+        assert_eq!(config.columns[2].column_type, ColumnType::TravelTime);
     }
 
     #[test]
