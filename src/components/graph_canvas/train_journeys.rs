@@ -85,7 +85,7 @@ pub fn draw_train_journeys(
 
             // Draw horizontal segment if there's wait time and this is a station (not a junction)
             let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
-            if !is_junction && (arrival_x - departure_x).abs() > f64::EPSILON {
+            if !is_junction && departure_x - arrival_x > f64::EPSILON {
                 ctx.line_to(departure_x, y);
             }
 
@@ -126,7 +126,7 @@ pub fn draw_train_journeys(
 
             // Only draw dots if this is a station (not junction) with wait time
             let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
-            let has_wait_time = !is_junction && (arrival_x - departure_x).abs() > f64::EPSILON;
+            let has_wait_time = !is_junction && departure_x - arrival_x > f64::EPSILON;
 
             if has_wait_time {
                 // Add arrival dot to path (move_to starts a new subpath)
@@ -237,7 +237,7 @@ fn check_single_journey_hover(
             }
 
             // Check horizontal segment from arrival to departure at this station
-            if (arrival_screen_x - departure_screen_x).abs() > f64::EPSILON {
+            if departure_screen_x - arrival_screen_x > f64::EPSILON {
                 let distance = point_to_line_distance(mouse_x, mouse_y, arrival_screen_x, screen_y, departure_screen_x, screen_y);
                 if distance < HOVER_DISTANCE_THRESHOLD {
                     return Some(journey.id);
