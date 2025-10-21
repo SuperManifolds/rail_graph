@@ -433,7 +433,7 @@ fn LineGroupingSection(
 
             <div class="group-names-form">
                 <For
-                    each=move || (0..num_groups())
+                    each=move || 0..num_groups()
                     key=|group_idx| *group_idx
                     let:group_idx
                 >

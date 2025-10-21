@@ -184,7 +184,7 @@ fn detect_column_grouping(columns: &[ColumnMapping]) -> (Option<usize>, HashMap<
     let max_pattern_len = data_columns.len() / 2;
 
     for pattern_len in 2..=max_pattern_len {
-        if data_columns.len() % pattern_len != 0 {
+        if !data_columns.len().is_multiple_of(pattern_len) {
             continue;
         }
 
