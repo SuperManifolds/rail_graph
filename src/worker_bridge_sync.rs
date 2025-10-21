@@ -1,5 +1,5 @@
 use leptos::{WriteSignal, SignalSet};
-use crate::conflict::Conflict;
+use crate::conflict::{Conflict, SerializableConflictContext};
 use crate::train_journey::TrainJourney;
 use crate::models::RailwayGraph;
 
@@ -16,7 +16,14 @@ impl ConflictDetector {
 
     #[allow(clippy::needless_pass_by_value)]
     pub fn detect(&mut self, journeys: Vec<TrainJourney>, graph: RailwayGraph) {
-        let (conflicts, _) = crate::conflict::detect_line_conflicts(&journeys, &graph);
+        // Build serializable context from graph
+        let station_indices = graph.graph.node_indices()
+            .enumerate()
+            .map(|(idx, node_idx)| (node_idx, idx))
+            .collect();
+        let context = SerializableConflictContext::from_graph(&graph, station_indices);
+
+        let (conflicts, _) = crate::conflict::detect_line_conflicts(&journeys, &context);
         self.set_conflicts.set(conflicts);
     }
 }

@@ -1,11 +1,11 @@
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    use nimby_graph::conflict_worker::{ConflictWorker, MsgPackCodec};
+    use nimby_graph::conflict_worker::{ConflictWorker, BincodeCodec};
     use gloo_worker::Registrable;
 
     console_error_panic_hook::set_once();
     ConflictWorker::registrar()
-        .encoding::<MsgPackCodec>()
+        .encoding::<BincodeCodec>()
         .register();
 }
 

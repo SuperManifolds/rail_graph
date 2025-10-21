@@ -1,5 +1,5 @@
 use nimby_graph::train_journey::TrainJourney;
-use nimby_graph::conflict::detect_line_conflicts;
+use nimby_graph::conflict::{detect_line_conflicts, SerializableConflictContext};
 use nimby_graph::import::csv::{analyze_csv, parse_csv_with_mapping};
 use nimby_graph::models::{RailwayGraph, Stations};
 use std::fs;
@@ -41,8 +41,15 @@ fn main() {
 
     println!("Generated {} journeys", journeys_vec.len());
 
+    // Build serializable context from graph
+    let station_indices = graph.graph.node_indices()
+        .enumerate()
+        .map(|(idx, node_idx)| (node_idx, idx))
+        .collect();
+    let context = SerializableConflictContext::from_graph(&graph, station_indices);
+
     // Run conflict detection (timing happens inside the function)
-    let (conflicts, crossings) = detect_line_conflicts(&journeys_vec, &graph);
+    let (conflicts, crossings) = detect_line_conflicts(&journeys_vec, &context);
 
     println!("\nResults:");
     println!("  Conflicts: {}", conflicts.len());

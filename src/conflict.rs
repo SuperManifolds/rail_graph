@@ -4,7 +4,6 @@ use crate::time::time_to_fraction;
 use crate::train_journey::TrainJourney;
 use chrono::NaiveDateTime;
 use std::collections::HashMap;
-use petgraph::visit::EdgeRef;
 
 // Conflict detection constants
 const STATION_MARGIN: chrono::Duration = chrono::Duration::seconds(30);
@@ -142,8 +141,66 @@ struct JourneySegment {
 
 struct ConflictContext<'a> {
     station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize>,
-    graph: &'a RailwayGraph,
+    serializable_ctx: &'a SerializableConflictContext,
     station_margin: chrono::Duration,
+}
+
+/// Serializable context for conflict detection (no references, no complex graph types)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SerializableConflictContext {
+    /// Maps station NodeIndex (as usize) to display index
+    pub station_indices: HashMap<usize, usize>,
+    /// Maps edge index -> (is_single_track_bidirectional, track_count)
+    pub edge_info: HashMap<usize, (bool, usize)>,
+    /// Maps (edge_index, track_index) -> is_bidirectional
+    pub track_directions: HashMap<(usize, usize), bool>,
+    /// Set of junction node indices (as usize)
+    pub junctions: std::collections::HashSet<usize>,
+    pub station_margin_secs: i64,
+}
+
+impl SerializableConflictContext {
+    /// Build serializable context from a RailwayGraph
+    #[must_use]
+    pub fn from_graph(graph: &RailwayGraph, station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize>) -> Self {
+        use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+
+        // Extract edge information and track directions
+        let mut edge_info = HashMap::new();
+        let mut track_directions = HashMap::new();
+        for edge in graph.graph.edge_references() {
+            let edge_idx = edge.id().index();
+            let track_segment = edge.weight();
+            let is_single_bidirectional = track_segment.tracks.len() == 1
+                && matches!(track_segment.tracks[0].direction, TrackDirection::Bidirectional);
+            edge_info.insert(edge_idx, (is_single_bidirectional, track_segment.tracks.len()));
+
+            // Store direction for each track
+            for (track_idx, track) in track_segment.tracks.iter().enumerate() {
+                let is_bidirectional = matches!(track.direction, TrackDirection::Bidirectional);
+                track_directions.insert((edge_idx, track_idx), is_bidirectional);
+            }
+        }
+
+        // Extract junction information
+        let junctions = graph.graph.node_indices()
+            .filter(|&idx| graph.is_junction(idx))
+            .map(|idx| idx.index())
+            .collect();
+
+        // Convert station_indices to use usize keys
+        let station_indices = station_indices.into_iter()
+            .map(|(k, v)| (k.index(), v))
+            .collect();
+
+        Self {
+            station_indices,
+            edge_info,
+            track_directions,
+            junctions,
+            station_margin_secs: STATION_MARGIN.num_seconds(),
+        }
+    }
 }
 
 struct PlatformOccupancy {
@@ -176,7 +233,7 @@ mod timing {
 #[must_use]
 pub fn detect_line_conflicts(
     train_journeys: &[TrainJourney],
-    graph: &RailwayGraph,
+    serializable_ctx: &SerializableConflictContext,
 ) -> (Vec<Conflict>, Vec<StationCrossing>) {
     #[cfg(not(target_arch = "wasm32"))]
     let total_start = std::time::Instant::now();
@@ -185,8 +242,8 @@ pub fn detect_line_conflicts(
     let total_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
     #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&format!("🔍 detect_line_conflicts START: {} journeys, {} nodes",
-        train_journeys.len(), graph.graph.node_count()).into());
+    web_sys::console::log_1(&format!("🔍 detect_line_conflicts START: {} journeys, {} stations",
+        train_journeys.len(), serializable_ctx.station_indices.len()).into());
 
     // Reset performance counters
     #[cfg(target_arch = "wasm32")]
@@ -211,48 +268,22 @@ pub fn detect_line_conflicts(
         station_crossings: Vec::new(),
     };
 
-    // Pre-compute NodeIndex to display index mapping for O(1) lookups
-    // Build mapping via BFS without cloning nodes (optimization for WASM)
+    // Convert serializable station_indices back to NodeIndex keys for internal use
     #[cfg(not(target_arch = "wasm32"))]
     let setup_start = std::time::Instant::now();
 
     #[cfg(target_arch = "wasm32")]
     let setup_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
-    let mut station_indices = HashMap::new();
-    let mut seen = std::collections::HashSet::new();
-    let mut queue = std::collections::VecDeque::new();
-    let mut display_idx = 0;
-
-    if let Some(start_node) = graph.graph.node_indices().next() {
-        queue.push_back(start_node);
-        seen.insert(start_node);
-
-        while let Some(node_idx) = queue.pop_front() {
-            station_indices.insert(node_idx, display_idx);
-            display_idx += 1;
-
-            for edge in graph.graph.edges(node_idx) {
-                let target = edge.target();
-                if seen.insert(target) {
-                    queue.push_back(target);
-                }
-            }
-        }
-
-        // Handle disconnected nodes
-        for node_idx in graph.graph.node_indices() {
-            if seen.insert(node_idx) {
-                station_indices.insert(node_idx, display_idx);
-                display_idx += 1;
-            }
-        }
-    }
+    let station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize> = serializable_ctx.station_indices
+        .iter()
+        .map(|(&k, &v)| (petgraph::stable_graph::NodeIndex::new(k), v))
+        .collect();
 
     let ctx = ConflictContext {
         station_indices,
-        graph,
-        station_margin: STATION_MARGIN,
+        serializable_ctx,
+        station_margin: chrono::Duration::seconds(serializable_ctx.station_margin_secs),
     };
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -263,7 +294,7 @@ pub fn detect_line_conflicts(
 
     #[cfg(target_arch = "wasm32")]
     if let Some(elapsed) = setup_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        web_sys::console::log_1(&format!("  Setup (BFS mapping): {:.2}ms", elapsed).into());
+        web_sys::console::log_1(&format!("  Setup (context conversion): {:.2}ms", elapsed).into());
     }
 
     detect_conflicts_sweep_line(train_journeys, &ctx, &mut results);
@@ -957,41 +988,26 @@ fn are_reverse_bidirectional_edges(
 
     // For reverse edges to conflict, they must be on tracks that allow bidirectional travel
     // This only applies to single-track bidirectional sections, not double-track sections
-    let edge1_idx = petgraph::graph::EdgeIndex::new(edge1_index);
-    let edge2_idx = petgraph::graph::EdgeIndex::new(edge2_index);
 
     // Check if both tracks are bidirectional (single-track case)
-    let edge1_bidir = ctx
-        .graph
-        .graph
-        .edge_weight(edge1_idx)
-        .and_then(|ts| ts.tracks.get(track1_index))
-        .is_some_and(|t| matches!(t.direction, TrackDirection::Bidirectional));
+    let edge1_bidir = ctx.serializable_ctx.track_directions
+        .get(&(edge1_index, track1_index))
+        .copied()
+        .unwrap_or(false);
 
-    let edge2_bidir = ctx
-        .graph
-        .graph
-        .edge_weight(edge2_idx)
-        .and_then(|ts| ts.tracks.get(track2_index))
-        .is_some_and(|t| matches!(t.direction, TrackDirection::Bidirectional));
+    let edge2_bidir = ctx.serializable_ctx.track_directions
+        .get(&(edge2_index, track2_index))
+        .copied()
+        .unwrap_or(false);
 
     edge1_bidir && edge2_bidir
 }
 
 /// Check if an edge has only 1 bidirectional track (single-track section)
 fn is_single_track_bidirectional(ctx: &ConflictContext, edge_index: usize) -> bool {
-    let edge_idx = petgraph::graph::EdgeIndex::new(edge_index);
-
-    if let Some(track_segment) = ctx.graph.graph.edge_weight(edge_idx) {
-        if track_segment.tracks.len() == 1 {
-            return matches!(
-                track_segment.tracks[0].direction,
-                TrackDirection::Bidirectional
-            );
-        }
-    }
-
-    false
+    ctx.serializable_ctx.edge_info
+        .get(&edge_index)
+        .map_or(false, |&(is_single_bi, _)| is_single_bi)
 }
 
 fn is_near_station(
@@ -1121,7 +1137,7 @@ fn extract_platform_occupancies(
         };
 
         // Skip junctions - they don't have platforms
-        if ctx.graph.is_junction(*node_idx) {
+        if ctx.serializable_ctx.junctions.contains(&node_idx.index()) {
             continue;
         }
 
