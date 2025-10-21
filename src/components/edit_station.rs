@@ -142,7 +142,6 @@ pub fn EditStation(
                         children={
                             let on_update = on_update_track_defaults.clone();
                             move |track: ConnectedTrack| {
-                                let platform_count = platforms.get().len();
                                 let edge_idx = track.edge_index;
                                 let is_incoming = track.is_incoming;
                                 let on_update = on_update.clone();
@@ -194,8 +193,9 @@ pub fn EditStation(
                                             }}
                                         </option>
                                         {move || {
-                                            (0..platform_count).map(|i| {
-                                                let platform = platforms.get()[i].clone();
+                                            let current_platforms = platforms.get();
+                                            (0..current_platforms.len()).map(|i| {
+                                                let platform = current_platforms[i].clone();
                                                 view! {
                                                     <option
                                                         value=i.to_string()
