@@ -61,6 +61,7 @@
             color: var(--color-primary);
             text-decoration: none;
             word-break: break-all;
+            cursor: pointer;
 
             &:hover {
                 text-decoration: underline;
