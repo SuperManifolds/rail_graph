@@ -1,5 +1,6 @@
 use leptos::{component, view, IntoView, create_signal, SignalGet, SignalSet, Signal};
 use crate::components::window::Window;
+use crate::components::report_issue_button::ReportIssueButton;
 
 const DISCLAIMER_KEY: &str = "rail_graph_disclaimer_accepted";
 
@@ -23,20 +24,17 @@ pub fn AlphaDisclaimer() -> impl IntoView {
                         on_close=move || {}
                     >
                         <div class="disclaimer-content">
-                            <p>"This is an alpha version of the Railway Time Graph application."</p>
-                            <p class="disclaimer-warning">
-                                <strong>"Important: "</strong>
-                                "You may lose project data. Project file compatibility is not guaranteed between versions."
-                            </p>
-                            <p>"Please save backups of your work regularly using the export functionality."</p>
+                            <div class="disclaimer-warning">
+                                <p><strong>"This is an alpha version of the Railway Time Graph application."</strong></p>
+                                <p>"You may lose project data. Project file compatibility is not guaranteed between versions."</p>
+                                <p>"Please save backups of your work regularly using the export functionality."</p>
+                            </div>
                             <div class="disclaimer-feedback">
                                 <p><strong>"Issues and Feedback:"</strong></p>
                                 <ul>
                                     <li>
-                                        "Report issues at: "
-                                        <a href="https://github.com/SuperManifolds/rail_graph/issues" target="_blank" rel="noopener noreferrer">
-                                            "github.com/SuperManifolds/rail_graph/issues"
-                                        </a>
+                                        "Make an issue on Github: "
+                                        <ReportIssueButton />
                                     </li>
                                     <li>
                                         "DM Alex (supermanifolds) in the NIMBY Rails Discord"

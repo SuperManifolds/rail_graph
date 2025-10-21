@@ -6,6 +6,7 @@ use crate::components::time_graph::TimeGraph;
 use crate::components::infrastructure_view::InfrastructureView;
 use crate::components::project_manager::ProjectManager;
 use crate::components::alpha_disclaimer::AlphaDisclaimer;
+use crate::components::report_issue_button::ReportIssueButton;
 use crate::models::{Project, RailwayGraph, Legend, GraphView, ViewportState};
 use crate::storage::{IndexedDbStorage, Storage};
 use crate::train_journey::TrainJourney;
@@ -297,7 +298,8 @@ pub fn App() -> impl IntoView {
 
         <div class="app">
             <div class="app-header">
-                <div class="app-tabs">
+                <div class="app-header-content">
+                    <div class="app-tabs">
                     <button
                         class=move || if active_tab.get() == AppTab::Infrastructure { "tab-button active" } else { "tab-button" }
                         on:click=move |_| set_active_tab.set(AppTab::Infrastructure)
@@ -367,6 +369,10 @@ pub fn App() -> impl IntoView {
                             }
                         }).collect::<Vec<_>>()
                     }}
+                    </div>
+                    <div class="app-header-actions">
+                        <ReportIssueButton />
+                    </div>
                 </div>
             </div>
 
