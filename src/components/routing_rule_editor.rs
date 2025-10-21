@@ -1,4 +1,4 @@
-use crate::models::{RailwayGraph, Stations};
+use crate::models::RailwayGraph;
 use leptos::{component, view, For, IntoView, ReadSignal, SignalGet};
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
@@ -45,14 +45,11 @@ pub fn RoutingRuleEditor(
             .cloned()
     };
 
-    // Helper to get station name from node
+    // Helper to get node name (station or junction)
     let get_node_label = move |node_idx: NodeIndex| {
         let current_graph = graph.get();
-        if let Some(name) = current_graph.get_station_name(node_idx) {
-            name.to_string()
-        } else {
-            format!("Node {node_idx:?}")
-        }
+        current_graph.get_node_name(node_idx)
+            .unwrap_or_else(|| format!("Node {node_idx:?}"))
     };
 
     view! {

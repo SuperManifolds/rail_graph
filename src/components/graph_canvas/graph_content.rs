@@ -9,6 +9,7 @@ const BACKGROUND_COLOR: &str = "#0a0a0a";
 
 // Station grid constants
 const STATION_GRID_COLOR: &str = "#1a1a1a";
+const SINGLE_PLATFORM_GRID_COLOR: &str = "#141414";
 const GRID_PADDING_HOURS: i32 = 5;
 
 // Double track indicator constants
@@ -23,9 +24,16 @@ pub fn draw_background(ctx: &CanvasRenderingContext2d, width: f64, height: f64) 
 pub fn draw_station_grid(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, stations: &[(NodeIndex, Node)], zoom_level: f64, pan_offset_x: f64) {
     let station_height = dims.graph_height / stations.len() as f64;
 
-    for (i, _) in stations.iter().enumerate() {
+    for (i, (_, station_node)) in stations.iter().enumerate() {
         let y = calculate_station_y(dims, i, station_height);
-        draw_horizontal_line(ctx, dims, y, zoom_level, pan_offset_x);
+
+        // Use different color for single-platform stations
+        let color = match station_node {
+            Node::Station(station) if station.platforms.len() == 1 => SINGLE_PLATFORM_GRID_COLOR,
+            _ => STATION_GRID_COLOR,
+        };
+
+        draw_horizontal_line(ctx, dims, y, zoom_level, pan_offset_x, color);
     }
 }
 
@@ -35,8 +43,8 @@ fn calculate_station_y(dims: &GraphDimensions, index: usize, station_height: f64
 }
 
 #[allow(clippy::cast_possible_truncation)]
-fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, y: f64, zoom_level: f64, pan_offset_x: f64) {
-    ctx.set_stroke_style_str(STATION_GRID_COLOR);
+fn draw_horizontal_line(ctx: &CanvasRenderingContext2d, dims: &GraphDimensions, y: f64, zoom_level: f64, pan_offset_x: f64, color: &str) {
+    ctx.set_stroke_style_str(color);
     ctx.set_line_width(1.0 / zoom_level);
     ctx.begin_path();
 

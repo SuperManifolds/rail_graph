@@ -99,7 +99,7 @@ pub fn handle_zoom(
     // Alt = horizontal zoom
     if shift_pressed && !alt_pressed {
         // Horizontal pan
-        let pan_amount = -delta * 0.5; // Invert and scale for smoother panning
+        let pan_amount = -delta * 0.5;
         let current_pan_x = viewport.pan_offset_x.get();
         viewport.set_pan_offset_x.set(current_pan_x + pan_amount);
     } else if alt_pressed && !shift_pressed && viewport.zoom_level_x.is_some() {

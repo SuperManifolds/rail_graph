@@ -50,7 +50,7 @@ pub fn EditTrack(
             let affected: Vec<String> = current_lines
                 .iter()
                 .filter(|line| line.uses_edge(edge_index))
-                .map(|line| line.id.clone())
+                .map(|line| line.name.clone())
                 .collect();
             set_affected_lines.set(affected);
         }

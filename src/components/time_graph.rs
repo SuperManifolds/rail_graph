@@ -1,4 +1,5 @@
 use crate::components::{
+    button::Button,
     day_selector::DaySelector,
     error_list::ErrorList,
     graph_canvas::GraphCanvas,
@@ -9,7 +10,7 @@ use crate::components::{
 };
 use crate::models::{Line, RailwayGraph, GraphView, Stations};
 use crate::train_journey::TrainJourney;
-use crate::conflict::{Conflict, StationCrossing};
+use crate::conflict::Conflict;
 use leptos::{component, view, Signal, IntoView, SignalGet, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect};
 
 #[inline]
@@ -37,9 +38,27 @@ fn compute_station_index_map(
         if let Some(ref graph_view) = view {
             graph_view.build_station_index_map(&current_graph)
         } else {
-            // For full graph view, it's a 1:1 identity mapping
+            // For full graph view, map station indices to display indices
+            // accounting for junctions that occupy display rows but aren't in the station list
+            let all_nodes = current_graph.get_all_nodes_ordered();
             let all_stations = current_graph.get_all_stations_ordered();
-            (0..all_stations.len()).map(|i| (i, i)).collect()
+
+            // Create a mapping from station NodeIndex to station list index
+            let station_node_to_idx: std::collections::HashMap<_, _> = all_stations
+                .iter()
+                .enumerate()
+                .map(|(idx, (node_idx, _))| (*node_idx, idx))
+                .collect();
+
+            // Map each station's index to its display row position
+            let mut map = std::collections::HashMap::new();
+            for (display_idx, (node_idx, _)) in all_nodes.iter().enumerate() {
+                if let Some(&station_idx) = station_node_to_idx.get(node_idx) {
+                    map.insert(station_idx, display_idx);
+                }
+            }
+
+            map
         }
     })
 }
@@ -60,7 +79,6 @@ pub fn TimeGraph(
     selected_day: ReadSignal<Option<chrono::Weekday>>,
     set_selected_day: WriteSignal<Option<chrono::Weekday>>,
     raw_conflicts: Signal<Vec<Conflict>>,
-    raw_crossings: Signal<Vec<StationCrossing>>,
     on_create_view: leptos::Callback<GraphView>,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
     set_show_project_manager: WriteSignal<bool>,
@@ -69,13 +87,9 @@ pub fn TimeGraph(
         create_signal(chrono::Local::now().naive_local());
 
     // Extract legend signals
-    let show_station_crossings = Signal::derive(move || legend.get().show_station_crossings);
     let show_conflicts = Signal::derive(move || legend.get().show_conflicts);
     let show_line_blocks = Signal::derive(move || legend.get().show_line_blocks);
 
-    let set_show_station_crossings = move |value: bool| {
-        set_legend.update(|l| l.show_station_crossings = value);
-    };
     let set_show_conflicts = move |value: bool| {
         set_legend.update(|l| l.show_conflicts = value);
     };
@@ -119,8 +133,7 @@ pub fn TimeGraph(
         })
     };
 
-    let conflicts_and_crossings = create_memo(move |_| (conflicts.get(), raw_crossings.get()));
-    let conflicts_only = Signal::derive(move || conflicts.get());
+    let conflicts_memo = create_memo(move |_| conflicts.get());
 
     // Signal for panning to conflicts
     let (pan_to_conflict, set_pan_to_conflict) = create_signal(None::<(f64, f64)>);
@@ -141,12 +154,11 @@ pub fn TimeGraph(
                     train_journeys=filtered_journeys
                     visualization_time=visualization_time
                     set_visualization_time=set_visualization_time
-                    show_station_crossings=show_station_crossings
                     show_conflicts=show_conflicts
                     show_line_blocks=show_line_blocks
                     hovered_journey_id=hovered_journey_id
                     set_hovered_journey_id=set_hovered_journey_id
-                    conflicts_and_crossings=conflicts_and_crossings
+                    conflicts_memo=conflicts_memo
                     pan_to_conflict_signal=pan_to_conflict
                     display_stations=display_stations
                     station_idx_map=station_idx_map
@@ -162,7 +174,7 @@ pub fn TimeGraph(
                         set_selected_day=set_selected_day
                     />
                     <ErrorList
-                        conflicts=conflicts_only
+                        conflicts=conflicts
                         on_conflict_click=move |time_fraction, station_pos| {
                             set_pan_to_conflict.set(Some((time_fraction, station_pos)));
                         }
@@ -171,24 +183,24 @@ pub fn TimeGraph(
                 </div>
                 <LineControls lines=lines set_lines=set_lines graph=graph on_create_view=on_create_view />
                 <div class="sidebar-footer">
-                    <button
+                    <Button
                         class="import-button"
-                        on:click=move |_| set_show_project_manager.set(true)
+                        on_click=leptos::Callback::new(move |_| set_show_project_manager.set(true))
+                        shortcut="P"
                         title="Manage Projects"
                     >
                         <i class="fa-solid fa-folder"></i>
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                         class="import-button"
-                        on:click=move |_| set_new_line_dialog_open.set(true)
+                        on_click=leptos::Callback::new(move |_| set_new_line_dialog_open.set(true))
+                        shortcut="L"
                         title="Create new line"
                     >
                         <i class="fa-solid fa-plus"></i>
-                    </button>
+                    </Button>
                     <Importer lines=lines set_lines=set_lines set_graph=set_graph />
                     <Legend
-                        show_station_crossings=show_station_crossings
-                        set_show_station_crossings=set_show_station_crossings
                         show_conflicts=show_conflicts
                         set_show_conflicts=set_show_conflicts
                         show_line_blocks=show_line_blocks
@@ -202,8 +214,9 @@ pub fn TimeGraph(
                     if new_line_dialog_open.get() {
                         let line_num = next_line_number.get();
                         let line_id = format!("Line {line_num}");
+                        let existing_line_count = lines.get().len();
 
-                        Some(Line::create_from_ids(&[line_id])[0].clone())
+                        Some(Line::create_from_ids(&[line_id], existing_line_count)[0].clone())
                     } else {
                         None
                     }
@@ -216,7 +229,7 @@ pub fn TimeGraph(
                         let mut num = 1;
                         loop {
                             let candidate = format!("Line {num}");
-                            if !current_lines.iter().any(|l| l.id == candidate) {
+                            if !current_lines.iter().any(|l| l.name == candidate) {
                                 set_next_line_number.set(num);
                                 break;
                             }

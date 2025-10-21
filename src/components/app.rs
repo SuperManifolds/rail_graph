@@ -1,14 +1,16 @@
-use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value, SignalWith, Signal, store_value};
+use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value, Signal, store_value};
 use std::collections::HashMap;
 use leptos_meta::{provide_meta_context, Stylesheet, Title};
 use uuid::Uuid;
 use crate::components::time_graph::TimeGraph;
 use crate::components::infrastructure_view::InfrastructureView;
 use crate::components::project_manager::ProjectManager;
+use crate::components::alpha_disclaimer::AlphaDisclaimer;
+use crate::components::report_issue_button::ReportIssueButton;
 use crate::models::{Project, RailwayGraph, Legend, GraphView, ViewportState};
 use crate::storage::{IndexedDbStorage, Storage};
 use crate::train_journey::TrainJourney;
-use crate::conflict::{Conflict, StationCrossing};
+use crate::conflict::Conflict;
 use crate::worker_bridge::ConflictDetector;
 
 #[derive(Clone, PartialEq)]
@@ -180,14 +182,10 @@ pub fn App() -> impl IntoView {
         set_train_journeys.set(new_journeys);
     });
 
-    // Compute conflicts and station crossings at app level using worker
+    // Compute conflicts at app level using worker
     let (conflicts, set_conflicts) = create_signal(Vec::new());
-    let (crossings, set_crossings) = create_signal(Vec::new());
 
-    let detector = store_value(ConflictDetector::new(
-        set_conflicts,
-        set_crossings,
-    ));
+    let detector = store_value(ConflictDetector::new(set_conflicts));
 
     create_effect(move |_| {
         let journeys = train_journeys.get();
@@ -200,7 +198,6 @@ pub fn App() -> impl IntoView {
     });
 
     let raw_conflicts: Signal<Vec<Conflict>> = conflicts.into();
-    let raw_crossings: Signal<Vec<StationCrossing>> = crossings.into();
 
     // Callback for creating a new view
     let on_create_view = Callback::new(move |new_view: GraphView| {
@@ -301,7 +298,8 @@ pub fn App() -> impl IntoView {
 
         <div class="app">
             <div class="app-header">
-                <div class="app-tabs">
+                <div class="app-header-content">
+                    <div class="app-tabs">
                     <button
                         class=move || if active_tab.get() == AppTab::Infrastructure { "tab-button active" } else { "tab-button" }
                         on:click=move |_| set_active_tab.set(AppTab::Infrastructure)
@@ -371,6 +369,10 @@ pub fn App() -> impl IntoView {
                             }
                         }).collect::<Vec<_>>()
                     }}
+                    </div>
+                    <div class="app-header-actions">
+                        <ReportIssueButton />
+                    </div>
                 </div>
             </div>
 
@@ -395,12 +397,7 @@ pub fn App() -> impl IntoView {
                     }.into_view(),
                     AppTab::GraphView(view_id) => {
                         // Find the view with matching ID
-                        if let Some(mut view) = views.get().iter().find(|v| v.id == view_id).cloned() {
-                            // Inject current viewport state from separate signal
-                            view.viewport_state = viewport_states.with(|vs| {
-                                vs.get(&view_id).cloned().unwrap_or_default()
-                            });
-
+                        if let Some(view) = views.get().iter().find(|v| v.id == view_id).cloned() {
                             view! {
                                 <TimeGraph
                                     lines=lines
@@ -414,7 +411,6 @@ pub fn App() -> impl IntoView {
                                     selected_day=selected_day
                                     set_selected_day=set_selected_day
                                     raw_conflicts=raw_conflicts
-                                    raw_crossings=raw_crossings
                                     on_create_view=on_create_view
                                     on_viewport_change=Callback::new(move |viewport_state: ViewportState| {
                                         on_viewport_change(view_id, viewport_state);
@@ -439,6 +435,8 @@ pub fn App() -> impl IntoView {
                 on_load_project=on_load_project
                 current_project=current_project.into()
             />
+
+            <AlphaDisclaimer />
         </div>
     }
 }

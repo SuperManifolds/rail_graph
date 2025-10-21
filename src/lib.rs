@@ -1,14 +1,15 @@
 #![allow(clippy::implicit_hasher)]
+#![allow(unknown_lints)]
+#![allow(clippy::manual_is_multiple_of)]
 
 pub mod models;
 pub mod components;
 pub mod storage;
-pub mod data;
+pub mod import;
 pub mod constants;
 pub mod time;
 pub mod conflict;
 pub mod train_journey;
-pub mod jtraingraph;
 
 #[cfg(target_arch = "wasm32")]
 pub mod conflict_worker;

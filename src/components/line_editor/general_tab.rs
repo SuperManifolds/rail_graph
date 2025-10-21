@@ -18,13 +18,13 @@ pub fn GeneralTab(
                     <label>"Name"</label>
                     <input
                         type="text"
-                        value=move || edited_line.get().map(|l| l.id.clone()).unwrap_or_default()
+                        value=move || edited_line.get().map(|l| l.name.clone()).unwrap_or_default()
                         on:change={
                             let on_save = on_save.get_value();
                             move |ev| {
                                 let name = event_target_value(&ev);
                                 if let Some(mut updated_line) = edited_line.get_untracked() {
-                                    updated_line.id = name;
+                                    updated_line.name = name;
                                     set_edited_line.set(Some(updated_line.clone()));
                                     on_save(updated_line);
                                 }

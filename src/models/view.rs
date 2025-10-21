@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use petgraph::stable_graph::NodeIndex;
+use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use uuid::Uuid;
 use std::collections::HashSet;
 use super::RailwayGraph;
@@ -16,6 +16,9 @@ pub struct GraphView {
     pub viewport_state: ViewportState,
     /// Start and end stations for station range views
     pub station_range: Option<(NodeIndex, NodeIndex)>,
+    /// Optional specific edge path to follow (for line views)
+    #[serde(default)]
+    pub edge_path: Option<Vec<usize>>,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -112,6 +115,7 @@ impl GraphView {
             name: "Main Line".to_string(),
             viewport_state: ViewportState::default(),
             station_range,
+            edge_path: None,
         }
     }
 
@@ -134,6 +138,60 @@ impl GraphView {
             name,
             viewport_state: ViewportState::default(),
             station_range: Some((from, to)),
+            edge_path: None,
+        })
+    }
+
+    /// Create a view from a specific edge path (e.g., following a line's route)
+    ///
+    /// # Errors
+    /// Returns an error if the edge path is empty or invalid
+    pub fn from_edge_path(
+        name: String,
+        edge_path: Vec<usize>,
+        graph: &RailwayGraph,
+    ) -> Result<Self, String> {
+        if edge_path.is_empty() {
+            return Err("Edge path cannot be empty".to_string());
+        }
+
+        // Verify all edges exist and construct the node path
+        let mut current: Option<NodeIndex> = None;
+        let mut from: Option<NodeIndex> = None;
+        let mut to: Option<NodeIndex> = None;
+
+        for &edge_idx in &edge_path {
+            let edge_index = EdgeIndex::new(edge_idx);
+            let Some(endpoints) = graph.graph.edge_endpoints(edge_index) else {
+                return Err(format!("Edge {edge_idx} does not exist"));
+            };
+
+            if let Some(curr) = current {
+                // Determine which endpoint is next
+                current = if endpoints.0 == curr {
+                    Some(endpoints.1)
+                } else if endpoints.1 == curr {
+                    Some(endpoints.0)
+                } else {
+                    return Err("Edge path is not continuous".to_string());
+                };
+            } else {
+                // First edge - start from first endpoint
+                from = Some(endpoints.0);
+                current = Some(endpoints.1);
+            }
+
+            to = current;
+        }
+
+        let (from, to) = from.zip(to).ok_or_else(|| "Could not determine start/end nodes".to_string())?;
+
+        Ok(Self {
+            id: Uuid::new_v4(),
+            name,
+            viewport_state: ViewportState::default(),
+            station_range: Some((from, to)),
+            edge_path: Some(edge_path),
         })
     }
 
@@ -143,14 +201,20 @@ impl GraphView {
     pub fn calculate_path(&self, graph: &RailwayGraph) -> Option<Vec<NodeIndex>> {
         let (from, to) = self.station_range?;
 
-        // Use existing pathfinding that respects track directions
-        let edge_path = graph.find_path_between_nodes(from, to)?;
+        // Use stored edge path if available, otherwise find any path
+        let edge_indices = if let Some(ref stored_path) = self.edge_path {
+            // Convert stored usize indices to EdgeIndex
+            stored_path.iter().map(|&idx| EdgeIndex::new(idx)).collect()
+        } else {
+            // Use existing pathfinding that respects track directions
+            graph.find_path_between_nodes(from, to)?
+        };
 
         // Convert edge path to node path
         let mut path = vec![from];
         let mut current = from;
 
-        for edge_idx in edge_path {
+        for edge_idx in edge_indices {
             let edge = graph.graph.edge_endpoints(edge_idx)?;
             let next = if edge.0 == current {
                 edge.1
@@ -198,32 +262,31 @@ impl GraphView {
         }
     }
 
-    /// Build a mapping from full-graph station indices to view display indices
+    /// Build a mapping from full-graph node indices to view display indices
     /// This is used for rendering conflicts/crossings which store indices from the full graph
     /// The display index accounts for ALL nodes (stations and junctions) in the view
     #[must_use]
     pub fn build_station_index_map(&self, graph: &RailwayGraph) -> std::collections::HashMap<usize, usize> {
-        let all_stations = graph.get_all_stations_ordered();
+        let all_nodes = graph.get_all_nodes_ordered();
 
-        // Build a reverse map: NodeIndex -> station index in full graph
-        let node_to_station_idx: std::collections::HashMap<NodeIndex, usize> = all_stations
+        // Build a reverse map: NodeIndex -> node index in full graph
+        let node_to_idx: std::collections::HashMap<NodeIndex, usize> = all_nodes
             .iter()
             .enumerate()
             .map(|(idx, (node_idx, _))| (*node_idx, idx))
             .collect();
 
         if let Some(path) = self.calculate_path(graph) {
-            // Map station indices to display positions (which include junctions)
+            // Map node indices to display positions
             path.iter()
                 .enumerate()
                 .filter_map(|(display_idx, &node_idx)| {
-                    // Only map if this node is a station
-                    node_to_station_idx.get(&node_idx).map(|&station_idx| (station_idx, display_idx))
+                    node_to_idx.get(&node_idx).map(|&full_idx| (full_idx, display_idx))
                 })
                 .collect()
         } else {
-            // No station range means identity mapping (show all stations)
-            (0..all_stations.len()).map(|i| (i, i)).collect()
+            // No station range means show all nodes - direct 1:1 mapping
+            (0..all_nodes.len()).map(|idx| (idx, idx)).collect()
         }
     }
 
@@ -255,13 +318,20 @@ impl GraphView {
     /// Filter conflicts to only those within this path
     #[must_use]
     pub fn filter_conflicts(&self, conflicts: &[Conflict], graph: &RailwayGraph) -> Vec<Conflict> {
-        let visible_stations = self.visible_stations(graph);
+        let visible_nodes = self.visible_stations(graph);
+        let all_nodes = graph.get_all_nodes_ordered();
 
         conflicts.iter()
             .filter(|conflict| {
-                // Include if both stations involved are in the visible set
-                visible_stations.contains(&NodeIndex::new(conflict.station1_idx)) &&
-                visible_stations.contains(&NodeIndex::new(conflict.station2_idx))
+                // Convert conflict indices to NodeIndex values
+                let node1 = all_nodes.get(conflict.station1_idx).map(|(node_idx, _)| node_idx);
+                let node2 = all_nodes.get(conflict.station2_idx).map(|(node_idx, _)| node_idx);
+
+                // Include if both nodes involved are in the visible set
+                match (node1, node2) {
+                    (Some(n1), Some(n2)) => visible_nodes.contains(n1) && visible_nodes.contains(n2),
+                    _ => false,
+                }
             })
             .cloned()
             .collect()
@@ -281,6 +351,7 @@ mod tests {
             name: "Test".to_string(),
             viewport_state: ViewportState::default(),
             station_range: Some((NodeIndex::new(0), NodeIndex::new(2))),
+            edge_path: None,
         };
 
         assert_eq!(view.name, "Test");
@@ -327,6 +398,7 @@ mod tests {
             name: "Test".to_string(),
             viewport_state: ViewportState::default(),
             station_range: Some((s1, s3)),
+            edge_path: None,
         };
 
         let path = view.calculate_path(&graph);
@@ -346,6 +418,7 @@ mod tests {
             name: "Test".to_string(),
             viewport_state: ViewportState::default(),
             station_range: None,
+            edge_path: None,
         };
 
         let path = view.calculate_path(&graph);

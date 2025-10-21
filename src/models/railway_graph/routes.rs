@@ -357,7 +357,8 @@ impl RailwayGraph {
     }
 
     /// Get the name of a node (station or junction)
-    fn get_node_name(&self, node_idx: NodeIndex) -> Option<String> {
+    #[must_use]
+    pub fn get_node_name(&self, node_idx: NodeIndex) -> Option<String> {
         use super::stations::Stations;
         use crate::models::Node;
 

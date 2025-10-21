@@ -3,11 +3,84 @@ use web_sys::CanvasRenderingContext2d;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::Direction;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+use super::track_renderer;
 
 const JUNCTION_TRACK_DISTANCE: f64 = 14.0; // Match JUNCTION_STOP_DISTANCE from track_renderer
 const TRACK_SPACING: f64 = 3.0; // Match track_renderer
 const TRACK_COLOR: &str = "#444";
 const TRACK_LINE_WIDTH: f64 = 2.0;
+
+/// Get all junction connection line segments for label overlap detection
+#[must_use]
+pub fn get_junction_segments(graph: &RailwayGraph) -> Vec<((f64, f64), (f64, f64))> {
+    let mut segments = Vec::new();
+
+    for idx in graph.graph.node_indices() {
+        if !graph.is_junction(idx) {
+            continue;
+        }
+
+        let Some(pos) = graph.get_station_position(idx) else { continue };
+
+        // Collect all connected edges
+        let mut all_edges: Vec<(EdgeIndex, (f64, f64))> = Vec::new();
+        let mut seen_edges = std::collections::HashSet::new();
+
+        for edge in graph.graph.edges_directed(idx, Direction::Incoming) {
+            if seen_edges.insert(edge.id()) {
+                if let Some(source_pos) = graph.get_station_position(edge.source()) {
+                    all_edges.push((edge.id(), source_pos));
+                }
+            }
+        }
+
+        for edge in graph.graph.edges(idx) {
+            if seen_edges.insert(edge.id()) {
+                if let Some(target_pos) = graph.get_station_position(edge.target()) {
+                    all_edges.push((edge.id(), target_pos));
+                }
+            }
+        }
+
+        let Some(junction) = graph.get_junction(idx) else { continue };
+
+        // Generate actual connection segments between entry and exit points
+        for (i, (from_edge, from_node_pos)) in all_edges.iter().enumerate() {
+            for (j, (to_edge, to_node_pos)) in all_edges.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+
+                // Check if routing is allowed
+                if !junction.is_routing_allowed(*from_edge, *to_edge) {
+                    continue;
+                }
+
+                // Calculate entry and exit base points (simplified - doesn't need track-level detail)
+                let entry_delta = (from_node_pos.0 - pos.0, from_node_pos.1 - pos.1);
+                let entry_distance = (entry_delta.0 * entry_delta.0 + entry_delta.1 * entry_delta.1).sqrt();
+
+                let exit_delta = (to_node_pos.0 - pos.0, to_node_pos.1 - pos.1);
+                let exit_distance = (exit_delta.0 * exit_delta.0 + exit_delta.1 * exit_delta.1).sqrt();
+
+                if entry_distance > 0.0 && exit_distance > 0.0 {
+                    let entry_base = (
+                        pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_TRACK_DISTANCE,
+                        pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_TRACK_DISTANCE,
+                    );
+                    let exit_base = (
+                        pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_TRACK_DISTANCE,
+                        pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_TRACK_DISTANCE,
+                    );
+
+                    segments.push((entry_base, exit_base));
+                }
+            }
+        }
+    }
+
+    segments
+}
 
 /// Check if a specific track allows arrival at the junction
 fn track_allows_arrival(
@@ -100,6 +173,7 @@ fn draw_junction_track_connections(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn draw_junction(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
@@ -222,9 +296,10 @@ pub fn draw_junction(
             // Calculate entry base point
             let entry_delta = (from_node_pos.0 - pos.0, from_node_pos.1 - pos.1);
             let entry_distance = (entry_delta.0 * entry_delta.0 + entry_delta.1 * entry_delta.1).sqrt();
-            let entry_base = (
-                pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_TRACK_DISTANCE,
-                pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_TRACK_DISTANCE,
+
+            // Calculate avoidance offset for this edge
+            let (avoid_from_x, avoid_from_y) = track_renderer::calculate_avoidance_offset(
+                graph, from_source_pos, from_target_pos, from_source, from_target
             );
 
             // Get the to edge details to calculate proper perpendicular
@@ -248,10 +323,39 @@ pub fn draw_junction(
             // Calculate exit base point
             let exit_delta = (to_node_pos.0 - pos.0, to_node_pos.1 - pos.1);
             let exit_distance = (exit_delta.0 * exit_delta.0 + exit_delta.1 * exit_delta.1).sqrt();
-            let exit_base = (
-                pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_TRACK_DISTANCE,
-                pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_TRACK_DISTANCE,
+
+            // Calculate avoidance offset for this edge
+            let (avoid_to_x, avoid_to_y) = track_renderer::calculate_avoidance_offset(
+                graph, to_source_pos, to_target_pos, to_source, to_target
             );
+
+            // For edges with avoidance offset, use half perimeter distance
+            let from_has_avoidance = avoid_from_x.abs() > 0.1 || avoid_from_y.abs() > 0.1;
+            let to_has_avoidance = avoid_to_x.abs() > 0.1 || avoid_to_y.abs() > 0.1;
+
+            let entry_base = if from_has_avoidance {
+                (
+                    pos.0 + (entry_delta.0 / entry_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_from_x,
+                    pos.1 + (entry_delta.1 / entry_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_from_y,
+                )
+            } else {
+                (
+                    pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_TRACK_DISTANCE,
+                    pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_TRACK_DISTANCE,
+                )
+            };
+
+            let exit_base = if to_has_avoidance {
+                (
+                    pos.0 + (exit_delta.0 / exit_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_to_x,
+                    pos.1 + (exit_delta.1 / exit_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_to_y,
+                )
+            } else {
+                (
+                    pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_TRACK_DISTANCE,
+                    pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_TRACK_DISTANCE,
+                )
+            };
 
             if arriving_tracks.len() == 1 && departing_tracks.len() == 1 {
                 // Single track to single track - draw simple connection

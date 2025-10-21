@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 const STATION_CLICK_THRESHOLD: f64 = 15.0;
 const TRACK_CLICK_THRESHOLD: f64 = 8.0;
+const LABEL_CLICK_PADDING: f64 = 4.0;
 
 type TrackSegments = Vec<((f64, f64), (f64, f64))>;
 
@@ -79,6 +80,29 @@ pub fn find_track_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<Ed
             if dist <= TRACK_CLICK_THRESHOLD {
                 return Some(edge_id);
             }
+        }
+    }
+
+    None
+}
+
+#[must_use]
+pub fn find_label_at_position(graph: &RailwayGraph, x: f64, y: f64, zoom: f64) -> Option<NodeIndex> {
+    use super::station_renderer::compute_label_positions;
+
+    let label_positions = compute_label_positions(graph, zoom);
+
+    for (idx, bounds) in label_positions {
+        let expanded_bounds = (
+            bounds.0 - LABEL_CLICK_PADDING,
+            bounds.1 - LABEL_CLICK_PADDING,
+            bounds.2 + LABEL_CLICK_PADDING * 2.0,
+            bounds.3 + LABEL_CLICK_PADDING * 2.0,
+        );
+
+        if x >= expanded_bounds.0 && x <= expanded_bounds.0 + expanded_bounds.2 &&
+           y >= expanded_bounds.1 && y <= expanded_bounds.1 + expanded_bounds.3 {
+            return Some(idx);
         }
     }
 

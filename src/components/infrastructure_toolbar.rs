@@ -1,5 +1,6 @@
-use leptos::{component, view, IntoView, ReadSignal, WriteSignal, SignalGet, SignalSet};
+use leptos::{component, view, IntoView, ReadSignal, WriteSignal, SignalGet, SignalSet, Callback, Signal};
 use petgraph::stable_graph::NodeIndex;
+use crate::components::button::Button;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum EditMode {
@@ -27,16 +28,19 @@ pub fn InfrastructureToolbar(
                 <i class="fa-solid fa-diagram-project"></i>
                 {move || if auto_layout_enabled.get() { " Auto Layout: On" } else { " Auto Layout: Off" }}
             </button>
-            <button
+            <Button
                 class="toolbar-button"
-                on:click=move |_| set_show_add_station.set(true)
+                on_click=Callback::new(move |_| set_show_add_station.set(true))
+                shortcut="S"
+                title="Add Station"
             >
                 <i class="fa-solid fa-circle-plus"></i>
                 " Add Station"
-            </button>
-            <button
-                class=move || if edit_mode.get() == EditMode::AddingTrack { "toolbar-button active" } else { "toolbar-button" }
-                on:click=move |_| {
+            </Button>
+            <Button
+                class="toolbar-button"
+                active=Signal::derive(move || edit_mode.get() == EditMode::AddingTrack)
+                on_click=Callback::new(move |_| {
                     if edit_mode.get() == EditMode::AddingTrack {
                         set_edit_mode.set(EditMode::None);
                         set_selected_station.set(None);
@@ -44,37 +48,45 @@ pub fn InfrastructureToolbar(
                         set_edit_mode.set(EditMode::AddingTrack);
                         set_selected_station.set(None);
                     }
-                }
+                })
+                shortcut="T"
+                title="Add Track"
             >
                 <i class="fa-solid fa-link"></i>
                 " Add Track"
-            </button>
-            <button
-                class=move || if edit_mode.get() == EditMode::AddingJunction { "toolbar-button active" } else { "toolbar-button" }
-                on:click=move |_| {
+            </Button>
+            <Button
+                class="toolbar-button"
+                active=Signal::derive(move || edit_mode.get() == EditMode::AddingJunction)
+                on_click=Callback::new(move |_| {
                     if edit_mode.get() == EditMode::AddingJunction {
                         set_edit_mode.set(EditMode::None);
                     } else {
                         set_edit_mode.set(EditMode::AddingJunction);
                     }
-                }
+                })
+                shortcut="J"
+                title="Add Junction"
             >
                 <i class="fa-solid fa-diamond"></i>
                 " Add Junction"
-            </button>
-            <button
-                class=move || if edit_mode.get() == EditMode::CreatingView { "toolbar-button active" } else { "toolbar-button" }
-                on:click=move |_| {
+            </Button>
+            <Button
+                class="toolbar-button"
+                active=Signal::derive(move || edit_mode.get() == EditMode::CreatingView)
+                on_click=Callback::new(move |_| {
                     if edit_mode.get() == EditMode::CreatingView {
                         set_edit_mode.set(EditMode::None);
                     } else {
                         set_edit_mode.set(EditMode::CreatingView);
                     }
-                }
+                })
+                shortcut="N"
+                title="Create View"
             >
                 <i class="fa-solid fa-eye"></i>
                 " Create View"
-            </button>
+            </Button>
         </div>
     }
 }

@@ -45,7 +45,7 @@ pub struct JourneySegment {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrainJourney {
     pub id: uuid::Uuid,
-    pub line_id: String,
+    pub line_id: uuid::Uuid,
     pub train_number: String,
     pub departure_time: NaiveDateTime,
     pub station_times: Vec<(petgraph::stable_graph::NodeIndex, NaiveDateTime, NaiveDateTime)>, // (station_node, arrival_time, departure_time)
@@ -280,7 +280,8 @@ impl TrainJourney {
 
 
         let mut journey_count = 0;
-        let line_id = line.id.clone();
+        let line_id = line.id;
+        let line_name = line.name.clone();
         let color = line.color.clone();
         let thickness = line.thickness;
 
@@ -331,10 +332,10 @@ impl TrainJourney {
 
             if station_times.len() >= 2 {
                 let id = uuid::Uuid::new_v4();
-                let train_number = generate_train_number(&line.auto_train_number_format, &line_id, journey_count + 1);
+                let train_number = generate_train_number(&line.auto_train_number_format, &line_name, journey_count + 1);
                 journeys.insert(id, TrainJourney {
                     id,
-                    line_id: line_id.clone(),
+                    line_id,
                     train_number,
                     departure_time,
                     station_times,
@@ -381,7 +382,7 @@ impl TrainJourney {
 
             // Use custom train number if provided, otherwise generate one
             let train_number = manual_dep.train_number.clone()
-                .unwrap_or_else(|| generate_train_number(&line.auto_train_number_format, &line.id, sequence));
+                .unwrap_or_else(|| generate_train_number(&line.auto_train_number_format, &line.name, sequence));
 
             // Try forward route first
             if let Some(journey) = Self::generate_manual_journey_for_route(
@@ -488,7 +489,7 @@ impl TrainJourney {
         if station_times.len() >= 2 {
             Some(TrainJourney {
                 id: uuid::Uuid::new_v4(),
-                line_id: line.id.clone(),
+                line_id: line.id,
                 train_number: train_number.to_string(),
                 departure_time,
                 station_times,
@@ -522,7 +523,8 @@ impl TrainJourney {
 
 
         let mut return_journey_count = 0;
-        let line_id = line.id.clone();
+        let line_id = line.id;
+        let line_name = line.name.clone();
         let color = line.color.clone();
         let thickness = line.thickness;
 
@@ -571,10 +573,10 @@ impl TrainJourney {
 
             if station_times.len() >= 2 {
                 let id = uuid::Uuid::new_v4();
-                let train_number = generate_train_number(&line.auto_train_number_format, &line_id, return_journey_count + 1);
+                let train_number = generate_train_number(&line.auto_train_number_format, &line_name, return_journey_count + 1);
                 journeys.insert(id, TrainJourney {
                     id,
-                    line_id: line_id.clone(),
+                    line_id,
                     train_number,
                     departure_time: return_departure_time,
                     station_times,
@@ -627,7 +629,8 @@ mod tests {
         let edge2 = graph.graph.find_edge(idx2, idx3).expect("edge exists");
 
         Line {
-            id: "Test Line".to_string(),
+            id: uuid::Uuid::new_v4(),
+            name: "Test Line".to_string(),
             color: TEST_COLOR.to_string(),
             thickness: TEST_THICKNESS,
             visible: true,
@@ -703,13 +706,14 @@ mod tests {
     fn test_generate_forward_journeys() {
         let graph = create_test_graph();
         let line = create_test_line(&graph);
+        let line_id = line.id;
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
 
         assert!(!journeys.is_empty());
 
         let first_journey = journeys.values().next().expect("has journey");
-        assert_eq!(first_journey.line_id, "Test Line");
+        assert_eq!(first_journey.line_id, line_id);
         assert_eq!(first_journey.color, TEST_COLOR);
         assert_eq!(first_journey.thickness, TEST_THICKNESS);
         assert_eq!(first_journey.station_times.len(), 3);
@@ -957,7 +961,8 @@ mod tests {
         let edge2 = graph.add_track(idx_junction, idx_b, vec![Track { direction: TrackDirection::Bidirectional }]);
 
         let line = Line {
-            id: "Test Line with Junction".to_string(),
+            id: uuid::Uuid::new_v4(),
+            name: "Test Line with Junction".to_string(),
             color: TEST_COLOR.to_string(),
             thickness: TEST_THICKNESS,
             visible: true,

@@ -3,13 +3,13 @@ use leptos::leptos_dom::helpers::window_event_listener;
 use wasm_bindgen::JsCast;
 use crate::conflict::Conflict;
 use crate::time::time_to_fraction;
-use crate::models::{RailwayGraph, StationNode, Stations};
+use crate::models::{RailwayGraph, Node, Stations};
 
 #[component]
 fn ErrorListPopover(
     conflicts: Signal<Vec<Conflict>>,
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
-    stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, StationNode)>>,
+    nodes: Signal<Vec<(petgraph::stable_graph::NodeIndex, Node)>>,
     graph: ReadSignal<RailwayGraph>,
 ) -> impl IntoView {
     view! {
@@ -25,17 +25,17 @@ fn ErrorListPopover(
                         view! {
                             <div class="error-items">
                                 {
-                                    let current_stations = stations.get();
+                                    let current_nodes = nodes.get();
                                     current_conflicts.into_iter().map(|conflict| {
                                         let conflict_type_text = conflict.type_name();
 
-                                        // Get station names
-                                        let station1_name = current_stations.get(conflict.station1_idx)
-                                            .map_or("Unknown", |(_, s)| s.name.as_str());
-                                        let station2_name = current_stations.get(conflict.station2_idx)
-                                            .map_or("Unknown", |(_, s)| s.name.as_str());
+                                        // Get node names
+                                        let station1_name = current_nodes.get(conflict.station1_idx)
+                                            .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
+                                        let station2_name = current_nodes.get(conflict.station2_idx)
+                                            .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
 
-                                        let conflict_message = conflict.format_message(station1_name, station2_name, &graph.get());
+                                        let conflict_message = conflict.format_message(&station1_name, &station2_name, &graph.get());
 
                                         let time_fraction = time_to_fraction(conflict.time);
                                         // Direct usize to f64 conversion is safe for reasonable station counts
@@ -134,7 +134,7 @@ pub fn ErrorList(
                         <ErrorListPopover
                             conflicts=conflicts
                             on_conflict_click=on_conflict_click
-                            stations=Signal::derive(move || graph.get().get_all_stations_ordered())
+                            nodes=Signal::derive(move || graph.get().get_all_nodes_ordered())
                             graph=graph
                         />
                     }.into_view()

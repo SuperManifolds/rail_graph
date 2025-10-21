@@ -59,9 +59,23 @@ body {
     padding: 0;
 }
 
+.app-header-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.app-header-actions {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    gap: var(--spacing-md);
+}
+
 .app-tabs {
     display: flex;
     gap: 0;
+    flex: 1;
 }
 
 .tab-button-container {

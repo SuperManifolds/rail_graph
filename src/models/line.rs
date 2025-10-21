@@ -79,7 +79,9 @@ pub struct ManualDeparture {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Line {
-    pub id: String,
+    #[serde(default = "uuid::Uuid::new_v4")]
+    pub id: uuid::Uuid,
+    pub name: String,
     #[serde(with = "duration_serde")]
     pub frequency: Duration,
     pub color: String,
@@ -135,18 +137,20 @@ impl RouteSegment {
 }
 
 impl Line {
-    /// Create lines from IDs with default settings
+    /// Create lines from names with default settings
+    /// `color_offset` is added to the color seed to avoid duplicate colors when adding lines to existing project
     #[must_use]
-    pub fn create_from_ids(line_ids: &[String]) -> Vec<Line> {
-        line_ids
+    pub fn create_from_ids(line_names: &[String], color_offset: usize) -> Vec<Line> {
+        line_names
             .iter()
             .enumerate()
-            .map(|(i, id)| {
+            .map(|(i, name)| {
                 let offset_minutes = u32::try_from(i).unwrap_or(0).saturating_mul(15);
                 Line {
-                    id: id.clone(),
+                    id: uuid::Uuid::new_v4(),
+                    name: name.clone(),
                     frequency: Duration::hours(1), // Default, configurable by user
-                    color: generate_random_color(i),
+                    color: generate_random_color(i + color_offset),
                     thickness: 2.0,
                     first_departure: BASE_DATE.and_hms_opt(5, offset_minutes, 0).unwrap_or(BASE_MIDNIGHT),
                     return_first_departure: BASE_DATE.and_hms_opt(6, offset_minutes, 0).unwrap_or(BASE_MIDNIGHT),
@@ -636,12 +640,12 @@ mod tests {
 
     #[test]
     fn test_create_from_ids() {
-        let ids = vec!["Line 1".to_string(), "Line 2".to_string()];
-        let lines = Line::create_from_ids(&ids);
+        let names = vec!["Line 1".to_string(), "Line 2".to_string()];
+        let lines = Line::create_from_ids(&names, 0);
 
         assert_eq!(lines.len(), 2);
-        assert_eq!(lines[0].id, "Line 1");
-        assert_eq!(lines[1].id, "Line 2");
+        assert_eq!(lines[0].name, "Line 1");
+        assert_eq!(lines[1].name, "Line 2");
         assert_eq!(lines[0].frequency, Duration::hours(1));
         assert!(lines[0].visible);
         assert_eq!(lines[0].schedule_mode, ScheduleMode::Auto);
@@ -650,7 +654,8 @@ mod tests {
     #[test]
     fn test_uses_edge() {
         let line = Line {
-            id: "Test".to_string(),
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
             frequency: Duration::hours(1),
             color: "#FF0000".to_string(),
             thickness: 2.0,
@@ -676,7 +681,8 @@ mod tests {
     #[test]
     fn test_uses_any_edge() {
         let line = Line {
-            id: "Test".to_string(),
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
             frequency: Duration::hours(1),
             color: "#FF0000".to_string(),
             thickness: 2.0,
@@ -701,7 +707,8 @@ mod tests {
     #[test]
     fn test_update_route_after_deletion_with_bypass() {
         let mut line = Line {
-            id: "Test".to_string(),
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
             frequency: Duration::hours(1),
             color: "#FF0000".to_string(),
             thickness: 2.0,
@@ -742,7 +749,8 @@ mod tests {
     #[test]
     fn test_update_route_after_deletion_without_bypass() {
         let mut line = Line {
-            id: "Test".to_string(),
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
             frequency: Duration::hours(1),
             color: "#FF0000".to_string(),
             thickness: 2.0,
@@ -786,7 +794,8 @@ mod tests {
         ]);
 
         let mut line = Line {
-            id: "Test".to_string(),
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
             frequency: Duration::hours(1),
             color: "#FF0000".to_string(),
             thickness: 2.0,
@@ -874,7 +883,8 @@ mod tests {
     #[test]
     fn test_replace_split_edge() {
         let mut line = Line {
-            id: "Test".to_string(),
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
             frequency: Duration::hours(1),
             color: "#FF0000".to_string(),
             thickness: 2.0,
@@ -946,7 +956,8 @@ mod tests {
         let _e4 = graph.add_track(j, c, vec![Track { direction: TrackDirection::Bidirectional }]);
 
         let mut line = Line {
-            id: "Test".to_string(),
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
             frequency: Duration::hours(1),
             color: "#FF0000".to_string(),
             thickness: 2.0,
@@ -991,7 +1002,8 @@ mod tests {
         let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }]);
 
         let mut line = Line {
-            id: "Test".to_string(),
+            id: uuid::Uuid::new_v4(),
+            name: "Test".to_string(),
             frequency: Duration::hours(1),
             color: "#FF0000".to_string(),
             thickness: 2.0,

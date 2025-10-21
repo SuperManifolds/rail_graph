@@ -1,6 +1,6 @@
 use crate::components::window::Window;
 use crate::components::platform_editor::PlatformEditor;
-use crate::models::{RailwayGraph, Platform, Stations};
+use crate::models::{RailwayGraph, Platform};
 use leptos::{component, create_effect, create_signal, event_target_checked, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalGetUntracked, view, For};
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::EdgeRef;
@@ -25,7 +25,7 @@ fn load_connected_tracks(station_idx: NodeIndex, graph: &RailwayGraph) -> Vec<Co
         let edge_idx = edge_ref.id();
         let track_segment = edge_ref.weight();
 
-        if let Some(other_name) = graph.get_station_name(target) {
+        if let Some(other_name) = graph.get_node_name(target) {
             tracks.push(ConnectedTrack {
                 edge_index: edge_idx,
                 other_station_name: format!("→ {other_name}"),
@@ -41,7 +41,7 @@ fn load_connected_tracks(station_idx: NodeIndex, graph: &RailwayGraph) -> Vec<Co
         let edge_idx = edge_ref.id();
         let track_segment = edge_ref.weight();
 
-        if let Some(other_name) = graph.get_station_name(source) {
+        if let Some(other_name) = graph.get_node_name(source) {
             tracks.push(ConnectedTrack {
                 edge_index: edge_idx,
                 other_station_name: format!("← {other_name}"),

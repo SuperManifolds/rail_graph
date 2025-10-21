@@ -1,6 +1,6 @@
 use gloo_worker::{HandlerId, Worker, WorkerScope, Codec};
 use serde::{Deserialize, Serialize};
-use crate::conflict::{detect_line_conflicts, Conflict, StationCrossing};
+use crate::conflict::{detect_line_conflicts, Conflict};
 use crate::train_journey::TrainJourney;
 use crate::models::RailwayGraph;
 
@@ -13,7 +13,6 @@ pub struct ConflictRequest {
 #[derive(Serialize, Deserialize)]
 pub struct ConflictResponse {
     pub conflicts: Vec<Conflict>,
-    pub crossings: Vec<StationCrossing>,
 }
 
 pub struct MsgPackCodec;
@@ -47,7 +46,7 @@ impl Worker for ConflictWorker {
     }
 
     fn received(&mut self, scope: &WorkerScope<Self>, msg: Self::Input, id: HandlerId) {
-        let (conflicts, crossings) = detect_line_conflicts(&msg.journeys, &msg.graph);
-        scope.respond(id, ConflictResponse { conflicts, crossings });
+        let (conflicts, _) = detect_line_conflicts(&msg.journeys, &msg.graph);
+        scope.respond(id, ConflictResponse { conflicts });
     }
 }

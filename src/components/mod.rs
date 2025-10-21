@@ -1,6 +1,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 pub mod add_station;
+pub mod alpha_disclaimer;
 pub mod canvas_viewport;
 pub mod confirmation_dialog;
 pub mod create_view_dialog;
@@ -10,7 +11,9 @@ pub mod edit_station;
 pub mod edit_track;
 pub mod track_editor;
 pub mod app;
+pub mod button;
 pub mod conflict_tooltip;
+pub mod csv_column_mapper;
 pub mod day_selector;
 pub mod days_of_week_selector;
 pub mod duration_input;
@@ -25,6 +28,7 @@ pub mod line_controls;
 pub mod line_editor;
 pub mod platform_editor;
 pub mod project_manager;
+pub mod report_issue_button;
 pub mod routing_rule_editor;
 pub mod tab_view;
 pub mod text_input_dialog;

@@ -7,10 +7,11 @@ use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
 const NODE_RADIUS: f64 = 8.0;
 const LABEL_OFFSET: f64 = 12.0;
+const JUNCTION_LABEL_OFFSET: f64 = 28.0; // Larger offset for junctions to clear connection lines
 const CHAR_WIDTH_ESTIMATE: f64 = 7.5;
 const STATION_COLOR: &str = "#4a9eff";
 const PASSING_LOOP_COLOR: &str = "#888";
-const JUNCTION_SIZE: f64 = 8.4;
+const JUNCTION_LABEL_RADIUS: f64 = 22.0; // Match junction connection distance (14.0) + padding for label clearance
 const NODE_FILL_COLOR: &str = "#2a2a2a";
 const LABEL_COLOR: &str = "#fff";
 const SELECTION_RING_COLOR: &str = "#ffaa00";
@@ -45,17 +46,17 @@ impl LabelPosition {
         ]
     }
 
-    fn calculate_label_pos(self, node_pos: (f64, f64), text_width: f64, font_size: f64) -> (f64, f64) {
+    fn calculate_label_pos_with_offset(self, node_pos: (f64, f64), text_width: f64, font_size: f64, offset: f64) -> (f64, f64) {
         let (x, y) = node_pos;
         match self {
-            LabelPosition::Right => (x + LABEL_OFFSET, y + font_size / 3.0),
-            LabelPosition::Left => (x - LABEL_OFFSET - text_width, y + font_size / 3.0),
-            LabelPosition::Top => (x - text_width / 2.0, y - LABEL_OFFSET),
-            LabelPosition::Bottom => (x - text_width / 2.0, y + LABEL_OFFSET + font_size),
-            LabelPosition::TopRight => (x + LABEL_OFFSET * 0.7, y - LABEL_OFFSET * 0.7),
-            LabelPosition::TopLeft => (x - LABEL_OFFSET * 0.7 - text_width, y - LABEL_OFFSET * 0.7),
-            LabelPosition::BottomRight => (x + LABEL_OFFSET * 0.7, y + LABEL_OFFSET * 0.7 + font_size),
-            LabelPosition::BottomLeft => (x - LABEL_OFFSET * 0.7 - text_width, y + LABEL_OFFSET * 0.7 + font_size),
+            LabelPosition::Right => (x + offset, y + font_size / 3.0),
+            LabelPosition::Left => (x - offset - text_width, y + font_size / 3.0),
+            LabelPosition::Top => (x - text_width / 2.0, y - offset),
+            LabelPosition::Bottom => (x - text_width / 2.0, y + offset + font_size),
+            LabelPosition::TopRight => (x + offset * 0.7, y - offset * 0.7),
+            LabelPosition::TopLeft => (x - offset * 0.7 - text_width, y - offset * 0.7),
+            LabelPosition::BottomRight => (x + offset * 0.7, y + offset * 0.7 + font_size),
+            LabelPosition::BottomLeft => (x - offset * 0.7 - text_width, y + offset * 0.7 + font_size),
         }
     }
 
@@ -76,6 +77,18 @@ impl LabelPosition {
             LabelPosition::BottomRight |
             LabelPosition::BottomLeft
         )
+    }
+
+    fn text_align(self) -> &'static str {
+        match self {
+            LabelPosition::Left | LabelPosition::TopLeft | LabelPosition::BottomLeft => "right",
+            LabelPosition::Right | LabelPosition::TopRight | LabelPosition::BottomRight
+                | LabelPosition::Top | LabelPosition::Bottom => "left",
+        }
+    }
+
+    fn text_baseline() -> &'static str {
+        "middle"
     }
 }
 
@@ -187,7 +200,8 @@ fn draw_station_nodes(
         } else if graph.is_junction(idx) {
             // Draw junction
             junction_renderer::draw_junction(ctx, graph, idx, pos, zoom);
-            node_positions.push((idx, pos, JUNCTION_SIZE));
+            // Use larger radius for label overlap to account for junction connection lines
+            node_positions.push((idx, pos, JUNCTION_LABEL_RADIUS));
         }
     }
 
@@ -199,8 +213,9 @@ fn calculate_label_bounds(
     pos: (f64, f64),
     text_width: f64,
     font_size: f64,
+    offset: f64,
 ) -> LabelBounds {
-    let label_pos = position.calculate_label_pos(pos, text_width, font_size);
+    let label_pos = position.calculate_label_pos_with_offset(pos, text_width, font_size, offset);
 
     if position.is_diagonal() {
         let cos45 = std::f64::consts::FRAC_1_SQRT_2;
@@ -208,7 +223,6 @@ fn calculate_label_bounds(
         let rotated_width = text_width * cos45 + text_height * cos45;
         let rotated_height = text_width * cos45 + text_height * cos45;
 
-        let offset = LABEL_OFFSET;
         let angle = position.rotation_angle();
 
         let (x_offset_rotated, y_offset_rotated) = match position {
@@ -275,46 +289,74 @@ fn draw_station_label(
     ctx: &CanvasRenderingContext2d,
     station_name: &str,
     pos: (f64, f64),
-    bounds: &LabelBounds,
     position: LabelPosition,
-    font_size: f64,
+    radius: f64,
+    offset: f64,
 ) {
+    ctx.save();
+    ctx.set_text_align(position.text_align());
+    ctx.set_text_baseline(LabelPosition::text_baseline());
+
+    let total_offset = radius + offset;
+
     if position.is_diagonal() {
-        ctx.save();
         let _ = ctx.translate(pos.0, pos.1);
         let _ = ctx.rotate(position.rotation_angle());
 
-        let offset = LABEL_OFFSET;
         let cos45 = std::f64::consts::FRAC_1_SQRT_2;
 
         let (x_offset, y_offset) = match position {
-            LabelPosition::Top => (offset * cos45, -offset * cos45),
-            LabelPosition::Bottom => (offset * cos45, offset * cos45),
-            LabelPosition::TopRight | LabelPosition::BottomRight => (offset, 0.0),
-            LabelPosition::TopLeft | LabelPosition::BottomLeft => (-offset, 0.0),
+            LabelPosition::Top => (total_offset * cos45, -total_offset * cos45),
+            LabelPosition::Bottom => (total_offset * cos45, total_offset * cos45),
+            LabelPosition::TopRight | LabelPosition::BottomRight => (total_offset, 0.0),
+            LabelPosition::TopLeft | LabelPosition::BottomLeft => (-total_offset, 0.0),
             _ => (0.0, 0.0),
         };
 
         let _ = ctx.fill_text(station_name, x_offset, y_offset);
-        ctx.restore();
     } else {
-        let _ = ctx.fill_text(station_name, bounds.x, bounds.y + font_size);
+        let (x, y) = pos;
+        let (x_pos, y_pos) = match position {
+            LabelPosition::Right => (x + total_offset, y),
+            LabelPosition::Left => (x - total_offset, y),
+            _ => (x, y),
+        };
+        let _ = ctx.fill_text(station_name, x_pos, y_pos);
     }
+
+    ctx.restore();
 }
 
-#[allow(clippy::cast_precision_loss)]
-pub fn draw_stations(
-    ctx: &CanvasRenderingContext2d,
-    graph: &RailwayGraph,
-    zoom: f64,
-    selected_stations: &[NodeIndex],
-) {
+fn get_node_positions_and_radii(graph: &RailwayGraph) -> Vec<(NodeIndex, (f64, f64), f64)> {
+    let mut node_positions = Vec::new();
+
+    for idx in graph.graph.node_indices() {
+        let Some(pos) = graph.get_station_position(idx) else { continue };
+        let Some(node) = graph.graph.node_weight(idx) else { continue };
+
+        if let Some(station) = node.as_station() {
+            let radius = if station.passing_loop {
+                NODE_RADIUS * 0.6
+            } else {
+                NODE_RADIUS
+            };
+            node_positions.push((idx, pos, radius));
+        } else if graph.is_junction(idx) {
+            node_positions.push((idx, pos, JUNCTION_LABEL_RADIUS));
+        }
+    }
+
+    node_positions
+}
+
+#[must_use]
+pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeIndex, (f64, f64, f64, f64)> {
     let font_size = 14.0 / zoom;
-    let track_segments = track_renderer::get_track_segments(graph);
+    let mut track_segments = track_renderer::get_track_segments(graph);
+    track_segments.extend(junction_renderer::get_junction_segments(graph));
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations);
+    let node_positions = get_node_positions_and_radii(graph);
 
-    // Calculate optimal label positions using BFS traversal
     let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
     let mut node_neighbors: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
 
@@ -337,7 +379,11 @@ pub fn draw_stations(
         let Some((_, pos, _radius)) = node_positions.iter().find(|(i, _, _)| *i == idx) else { continue };
         let Some(node) = graph.graph.node_weight(idx) else { continue };
         let name = node.display_name();
+        #[allow(clippy::cast_precision_loss)]
         let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
+
+        let is_junction = graph.is_junction(idx);
+        let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
 
         let preferred_position = bfs_parent.get(&idx)
             .and_then(|parent| branch_positions.get(parent))
@@ -364,7 +410,7 @@ pub fn draw_stations(
         let mut best_overlaps = usize::MAX;
 
         for position in positions_to_try {
-            let bounds = calculate_label_bounds(position, *pos, text_width, font_size);
+            let bounds = calculate_label_bounds(position, *pos, text_width, font_size, label_offset);
             let overlaps = count_label_overlaps(&bounds, idx, &label_positions, &node_positions, &track_segments);
 
             if overlaps < best_overlaps {
@@ -376,7 +422,103 @@ pub fn draw_stations(
             }
         }
 
-        let label_pos = best_position.calculate_label_pos(*pos, text_width, font_size);
+        let label_pos = best_position.calculate_label_pos_with_offset(*pos, text_width, font_size, label_offset);
+        let bounds = LabelBounds {
+            x: label_pos.0,
+            y: label_pos.1 - font_size,
+            width: text_width,
+            height: font_size * 1.2,
+        };
+        label_positions.insert(idx, (bounds, best_position));
+        branch_positions.insert(idx, best_position);
+    }
+
+    label_positions.into_iter()
+        .map(|(idx, (bounds, _))| (idx, (bounds.x, bounds.y, bounds.width, bounds.height)))
+        .collect()
+}
+
+#[allow(clippy::cast_precision_loss)]
+pub fn draw_stations(
+    ctx: &CanvasRenderingContext2d,
+    graph: &RailwayGraph,
+    zoom: f64,
+    selected_stations: &[NodeIndex],
+) {
+    let font_size = 14.0 / zoom;
+    let mut track_segments = track_renderer::get_track_segments(graph);
+    track_segments.extend(junction_renderer::get_junction_segments(graph));
+
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations);
+
+    // Calculate optimal label positions using BFS traversal
+    let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
+    let mut node_neighbors: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+
+    for edge in graph.graph.edge_references() {
+        node_neighbors.entry(edge.source()).or_insert_with(Vec::new).push(edge.target());
+        node_neighbors.entry(edge.target()).or_insert_with(Vec::new).push(edge.source());
+    }
+
+    let mut visited_for_traversal = std::collections::HashSet::new();
+    let mut queue = std::collections::VecDeque::new();
+    let mut bfs_parent: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+    let mut branch_positions: HashMap<NodeIndex, LabelPosition> = HashMap::new();
+
+    if let Some((first_idx, _, _)) = node_positions.first() {
+        queue.push_back(*first_idx);
+        visited_for_traversal.insert(*first_idx);
+    }
+
+    while let Some(idx) = queue.pop_front() {
+        let Some((_, pos, _radius)) = node_positions.iter().find(|(i, _, _)| *i == idx) else { continue };
+        let Some(node) = graph.graph.node_weight(idx) else { continue };
+        let name = node.display_name();
+        #[allow(clippy::cast_precision_loss)]
+        let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
+
+        // Use larger offset for junctions
+        let is_junction = graph.is_junction(idx);
+        let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
+
+        let preferred_position = bfs_parent.get(&idx)
+            .and_then(|parent| branch_positions.get(parent))
+            .copied();
+
+        if let Some(neighbors) = node_neighbors.get(&idx) {
+            for &neighbor in neighbors {
+                if visited_for_traversal.insert(neighbor) {
+                    queue.push_back(neighbor);
+                    bfs_parent.insert(neighbor, idx);
+                }
+            }
+        }
+
+        let positions_to_try: Vec<LabelPosition> = if let Some(pref_pos) = preferred_position {
+            let mut positions = vec![pref_pos];
+            positions.extend(LabelPosition::all().into_iter().filter(|p| *p != pref_pos));
+            positions
+        } else {
+            LabelPosition::all()
+        };
+
+        let mut best_position = LabelPosition::Right;
+        let mut best_overlaps = usize::MAX;
+
+        for position in positions_to_try {
+            let bounds = calculate_label_bounds(position, *pos, text_width, font_size, label_offset);
+            let overlaps = count_label_overlaps(&bounds, idx, &label_positions, &node_positions, &track_segments);
+
+            if overlaps < best_overlaps {
+                best_overlaps = overlaps;
+                best_position = position;
+                if overlaps == 0 {
+                    break;
+                }
+            }
+        }
+
+        let label_pos = best_position.calculate_label_pos_with_offset(*pos, text_width, font_size, label_offset);
         let bounds = LabelBounds {
             x: label_pos.0,
             y: label_pos.1 - font_size,
@@ -391,9 +533,11 @@ pub fn draw_stations(
     ctx.set_fill_style_str(LABEL_COLOR);
     ctx.set_font(&format!("{font_size}px sans-serif"));
 
-    for (idx, pos, _radius) in &node_positions {
+    for (idx, pos, radius) in &node_positions {
         let Some(node) = graph.graph.node_weight(*idx) else { continue };
-        let Some((bounds, position)) = label_positions.get(idx) else { continue };
-        draw_station_label(ctx, &node.display_name(), *pos, bounds, *position, font_size);
+        let Some((_, position)) = label_positions.get(idx) else { continue };
+        let is_junction = graph.is_junction(*idx);
+        let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
+        draw_station_label(ctx, &node.display_name(), *pos, *position, *radius, label_offset);
     }
 }
