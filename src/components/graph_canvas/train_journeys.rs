@@ -85,12 +85,15 @@ pub fn draw_train_journeys(
 
             // Draw horizontal segment if there's wait time and this is a station (not a junction)
             let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
-            if !is_junction && departure_x - arrival_x > f64::EPSILON {
+            let has_wait_time = !is_junction && departure_x - arrival_x > f64::EPSILON;
+
+            if has_wait_time {
                 ctx.line_to(departure_x, y);
             }
 
-            // Update last visible point to departure position
-            last_visible_point = Some((departure_x, y, idx));
+            // Update last visible point to the actual position we drew to
+            let last_x = if has_wait_time { departure_x } else { arrival_x };
+            last_visible_point = Some((last_x, y, idx));
         }
 
         ctx.stroke();
@@ -237,14 +240,18 @@ fn check_single_journey_hover(
             }
 
             // Check horizontal segment from arrival to departure at this station
-            if departure_screen_x - arrival_screen_x > f64::EPSILON {
+            let has_wait_time = departure_screen_x - arrival_screen_x > f64::EPSILON;
+
+            if has_wait_time {
                 let distance = point_to_line_distance(mouse_x, mouse_y, arrival_screen_x, screen_y, departure_screen_x, screen_y);
                 if distance < HOVER_DISTANCE_THRESHOLD {
                     return Some(journey.id);
                 }
             }
 
-            prev_departure_point = Some((departure_screen_x, screen_y));
+            // Update prev point to the actual position we drew to
+            let last_x = if has_wait_time { departure_screen_x } else { arrival_screen_x };
+            prev_departure_point = Some((last_x, screen_y));
             first_point = false;
         }
 

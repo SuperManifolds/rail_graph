@@ -30,19 +30,17 @@ fn compute_display_nodes(
 }
 
 fn build_station_index_mapping(graph: &RailwayGraph) -> std::collections::HashMap<usize, usize> {
-    // First pass: identify stations and their order
-    let mut station_node_to_idx = std::collections::HashMap::new();
-    let mut station_idx = 0;
-    for node_idx in graph.graph.node_indices() {
-        let Some(node) = graph.graph.node_weight(node_idx) else { continue };
-        if node.as_station().is_none() {
-            continue;
-        }
-        station_node_to_idx.insert(node_idx, station_idx);
-        station_idx += 1;
-    }
+    // Build a map from conflict detection indices (enumeration of all nodes)
+    // to display indices (BFS order of all nodes)
+    // This matches how conflicts are created in worker_bridge.rs
 
-    // Second pass: build display mapping via BFS without cloning nodes
+    // First, create NodeIndex -> enumeration index (what conflicts use)
+    let node_to_enum_idx: std::collections::HashMap<_, _> = graph.graph.node_indices()
+        .enumerate()
+        .map(|(enum_idx, node_idx)| (node_idx, enum_idx))
+        .collect();
+
+    // Second, map enumeration indices to display indices via BFS
     let mut map = std::collections::HashMap::new();
     let mut seen = std::collections::HashSet::new();
     let mut queue = std::collections::VecDeque::new();
@@ -56,8 +54,8 @@ fn build_station_index_mapping(graph: &RailwayGraph) -> std::collections::HashMa
     seen.insert(start_node);
 
     while let Some(node_idx) = queue.pop_front() {
-        if let Some(&station_idx) = station_node_to_idx.get(&node_idx) {
-            map.insert(station_idx, display_idx);
+        if let Some(&enum_idx) = node_to_enum_idx.get(&node_idx) {
+            map.insert(enum_idx, display_idx);
         }
         display_idx += 1;
 
@@ -74,8 +72,8 @@ fn build_station_index_mapping(graph: &RailwayGraph) -> std::collections::HashMa
         if !seen.insert(node_idx) {
             continue;
         }
-        if let Some(&station_idx) = station_node_to_idx.get(&node_idx) {
-            map.insert(station_idx, display_idx);
+        if let Some(&enum_idx) = node_to_enum_idx.get(&node_idx) {
+            map.insert(enum_idx, display_idx);
         }
         display_idx += 1;
     }

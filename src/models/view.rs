@@ -267,26 +267,33 @@ impl GraphView {
     /// The display index accounts for ALL nodes (stations and junctions) in the view
     #[must_use]
     pub fn build_station_index_map(&self, graph: &RailwayGraph) -> std::collections::HashMap<usize, usize> {
-        let all_nodes = graph.get_all_nodes_ordered();
+        // Build a map from conflict detection indices (enumeration of node_indices())
+        // to display indices (view order)
+        // This matches how conflicts are created in worker_bridge.rs
 
-        // Build a reverse map: NodeIndex -> node index in full graph
-        let node_to_idx: std::collections::HashMap<NodeIndex, usize> = all_nodes
-            .iter()
+        // First, create NodeIndex -> enumeration index (what conflicts use)
+        let node_to_enum_idx: std::collections::HashMap<_, _> = graph.graph.node_indices()
             .enumerate()
-            .map(|(idx, (node_idx, _))| (*node_idx, idx))
+            .map(|(enum_idx, node_idx)| (node_idx, enum_idx))
             .collect();
 
         if let Some(path) = self.calculate_path(graph) {
-            // Map node indices to display positions
+            // Map enumeration indices to display positions in the view
             path.iter()
                 .enumerate()
                 .filter_map(|(display_idx, &node_idx)| {
-                    node_to_idx.get(&node_idx).map(|&full_idx| (full_idx, display_idx))
+                    node_to_enum_idx.get(&node_idx).map(|&enum_idx| (enum_idx, display_idx))
                 })
                 .collect()
         } else {
-            // No station range means show all nodes - direct 1:1 mapping
-            (0..all_nodes.len()).map(|idx| (idx, idx)).collect()
+            // No station range - get all nodes in BFS order
+            let all_nodes = graph.get_all_nodes_ordered();
+            all_nodes.iter()
+                .enumerate()
+                .filter_map(|(display_idx, (node_idx, _))| {
+                    node_to_enum_idx.get(node_idx).map(|&enum_idx| (enum_idx, display_idx))
+                })
+                .collect()
         }
     }
 
