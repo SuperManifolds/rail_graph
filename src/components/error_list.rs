@@ -1,9 +1,12 @@
-use leptos::{component, create_node_ref, create_signal, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalUpdate, view};
+use leptos::{component, create_node_ref, create_signal, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalUpdate, view, SignalWith};
 use leptos::leptos_dom::helpers::window_event_listener;
+use leptos_use::{use_infinite_scroll_with_options, UseInfiniteScrollOptions};
 use wasm_bindgen::JsCast;
 use crate::conflict::Conflict;
 use crate::time::time_to_fraction;
 use crate::models::{RailwayGraph, Node, Stations};
+
+const CONFLICTS_PER_PAGE: usize = 50;
 
 #[component]
 fn ErrorListPopover(
@@ -13,22 +16,44 @@ fn ErrorListPopover(
     graph: ReadSignal<RailwayGraph>,
     station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
 ) -> impl IntoView {
+    let scroll_container_ref = create_node_ref::<leptos::html::Div>();
+    let (displayed_count, set_displayed_count) = create_signal(CONFLICTS_PER_PAGE);
+
+    // Set up infinite scroll
+    let _ = use_infinite_scroll_with_options(
+        scroll_container_ref,
+        move |_| async move {
+            // Load more conflicts when scrolling to bottom
+            set_displayed_count.update(|count| {
+                let total = conflicts.with(Vec::len);
+                *count = (*count + CONFLICTS_PER_PAGE).min(total);
+            });
+        },
+        UseInfiniteScrollOptions::default()
+            .distance(10.0)
+    );
+
     view! {
         <div class="error-list-popover">
-            <div class="error-list-content">
+            <div class="error-list-content" node_ref=scroll_container_ref>
                 {move || {
                     let current_conflicts = conflicts.get();
-                    if current_conflicts.is_empty() {
+                    let total_count = current_conflicts.len();
+
+                    if total_count == 0 {
                         view! {
                             <p class="no-errors">"No conflicts detected"</p>
                         }.into_view()
                     } else {
+                        let display_count = displayed_count.get();
+                        let visible_conflicts = current_conflicts.into_iter().take(display_count);
+
                         view! {
                             <div class="error-items">
                                 {
                                     let current_nodes = nodes.get();
                                     let idx_map = station_idx_map.get();
-                                    current_conflicts.into_iter().filter_map(|conflict| {
+                                    visible_conflicts.filter_map(|conflict| {
                                         let conflict_type_text = conflict.type_name();
 
                                         // Map conflict indices to display indices
@@ -83,6 +108,23 @@ fn ErrorListPopover(
                                     }).collect::<Vec<_>>()
                                 }
                             </div>
+                            {
+                                if display_count < total_count {
+                                    view! {
+                                        <div class="scroll-status">
+                                            "Showing " {display_count} " of " {total_count} " conflicts (scroll for more)"
+                                        </div>
+                                    }.into_view()
+                                } else if total_count > CONFLICTS_PER_PAGE {
+                                    view! {
+                                        <div class="scroll-status">
+                                            "Showing all " {total_count} " conflicts"
+                                        </div>
+                                    }.into_view()
+                                } else {
+                                    view! {}.into_view()
+                                }
+                            }
                         }.into_view()
                     }
                 }}
