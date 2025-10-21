@@ -1,8 +1,15 @@
-use crate::models::{Line, RailwayGraph, RouteDirection};
 use super::{PlatformColumn, TimeColumn, TimeDisplayMode, TrackColumn, WaitTimeColumn};
-use leptos::{component, view, ReadSignal, IntoView, SignalGetUntracked, SignalWith, SignalWithUntracked, create_memo};
+use crate::models::{Line, RailwayGraph, RouteDirection, RouteSegment};
 use chrono::Duration;
+use leptos::{
+    component, create_memo, view, IntoView, ReadSignal, SignalGetUntracked, SignalWith,
+    SignalWithUntracked,
+};
 use std::rc::Rc;
+
+fn segment_total_seconds(seg: &RouteSegment) -> i64 {
+    (seg.duration.unwrap_or(Duration::zero()) + seg.wait_time).num_seconds()
+}
 
 fn delete_stop(
     edited_line: ReadSignal<Option<Line>>,
@@ -62,7 +69,8 @@ fn DeleteButton(
             >
                 <i class="fa-solid fa-circle-minus"></i>
             </button>
-        }.into_view()
+        }
+        .into_view()
     } else {
         view! { <span></span> }.into_view()
     }
@@ -83,7 +91,8 @@ pub fn StopRow(
 ) -> impl IntoView {
     // Extract platforms once (graph structure doesn't change reactively)
     let platforms = graph.with_untracked(|g| {
-        g.graph.node_weight(station_idx)
+        g.graph
+            .node_weight(station_idx)
             .and_then(|node| node.as_station().map(|s| s.platforms.clone()))
             .unwrap_or_default()
     });
@@ -112,16 +121,14 @@ pub fn StopRow(
                 let cumulative_seconds: i64 = if index == 0 {
                     0
                 } else {
-                    route.iter()
-                        .take(index)
-                        .map(|seg| (seg.duration.unwrap_or(Duration::zero()) + seg.wait_time).num_seconds())
-                        .sum()
+                    route.iter().take(index).map(segment_total_seconds).sum()
                 };
 
                 (segment, prev_segment, cumulative_seconds, route.len())
             })
         })
     });
+
 
     view! {
         <div class="stop-row">

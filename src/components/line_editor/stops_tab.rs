@@ -87,6 +87,9 @@ fn RouteStopsList(
         return view! {}.into_view();
     };
 
+
+
+
     let mode = time_mode.get();
     let column_header = get_column_header(mode);
     let current_dir = dir.get();

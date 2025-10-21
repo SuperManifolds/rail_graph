@@ -293,6 +293,7 @@ fn detect_conflicts_sweep_line(
         eprintln!("Sort time: {sort_time:?}");
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     let mut comparisons = 0;
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -343,7 +344,10 @@ fn detect_conflicts_sweep_line(
                 continue;
             }
 
-            comparisons += 1;
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                comparisons += 1;
+            }
 
             let journey_j = &train_journeys[*idx_j];
             let seg_map_j = &segment_maps[*idx_j];
