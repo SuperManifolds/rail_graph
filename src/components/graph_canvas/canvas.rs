@@ -370,18 +370,9 @@ pub fn GraphCanvas(
                 let graph_mouse_x = mouse_x - LEFT_MARGIN;
                 let graph_mouse_y = mouse_y - TOP_MARGIN;
 
-                // Calculate minimum zoom where all stations fit and fill the screen vertically
-                // From station_labels.rs: station_height = graph_height / station_count
-                // Range from first to last station = (station_count - 1) * station_height * zoom
-                // For this to equal graph_height: (station_count - 1) * (graph_height / station_count) * zoom = graph_height
-                // Solving for zoom: zoom = station_count / (station_count - 1)
-                let current_graph = graph.get();
-                let station_count = current_graph.get_all_stations_ordered().len() as f64;
-                let min_zoom = if station_count > 1.0 {
-                    Some(station_count / (station_count - 1.0))
-                } else {
-                    None
-                };
+                // Minimum zoom matches the default viewport zoom level of 1.0
+                // At this zoom, stations are positioned to fit the screen perfectly
+                let min_zoom = Some(1.0);
 
                 canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport, min_zoom, Some((graph_width, graph_height)));
             }
