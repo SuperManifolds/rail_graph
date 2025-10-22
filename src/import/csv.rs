@@ -785,9 +785,17 @@ fn calculate_station_cumulative_time(
         }
     } else {
         // Handle arrival time with midnight wraparound detection
-        line_station_data.arrival_time.map(|time| {
-            normalize_time_with_wraparound(time, prev_cumulative_time)
-        })
+        // For first station, allow departure_time or default to zero if arrival_time is missing
+        if prev_cumulative_time.is_none() {
+            line_station_data.arrival_time
+                .or(line_station_data.departure_time)
+                .or(Some(Duration::zero()))
+                .map(|time| normalize_time_with_wraparound(time, prev_cumulative_time))
+        } else {
+            line_station_data.arrival_time.map(|time| {
+                normalize_time_with_wraparound(time, prev_cumulative_time)
+            })
+        }
     }
 }
 
