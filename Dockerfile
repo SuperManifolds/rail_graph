@@ -2,9 +2,8 @@
 
 FROM rust:1.83
 
-# Install trunk from binary release (much faster than cargo install)
-RUN wget -qO- https://github.com/trunk-rs/trunk/releases/download/v0.21.4/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xzf- && \
-    mv trunk /usr/local/bin/
+# Install trunk via cargo
+RUN cargo install --locked trunk
 
 # Add wasm target
 RUN rustup target add wasm32-unknown-unknown
@@ -40,5 +39,8 @@ RUN trunk build --release
 # Expose port
 EXPOSE 8080
 
-# Run trunk serve in release mode
-CMD ["trunk", "serve", "--release", "--address", "0.0.0.0", "--port", "8080"]
+# Set default PORT if not provided
+ENV PORT=8080
+
+# Run trunk serve in release mode with configurable port
+CMD sh -c "trunk serve --release --address 0.0.0.0 --port ${PORT}"
