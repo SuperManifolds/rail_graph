@@ -79,7 +79,7 @@ pub fn LineEditor(
     let window_title = Signal::derive(move || {
         edited_line.get().map_or_else(
             || "Edit Line".to_string(),
-            |line| format!("Edit Line: {}", line.id),
+            |line| format!("Edit Line: {}", line.name),
         )
     });
 
