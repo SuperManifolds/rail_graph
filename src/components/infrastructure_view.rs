@@ -618,9 +618,8 @@ fn create_event_handlers(
 
                     if is_editing_clicked_station {
                         set_dragging_station.set(clicked_station);
-                    } else if clicked_station.is_none() && space_pressed.get() {
-                        canvas_viewport::handle_pan_start(screen_x, screen_y, &viewport_copy);
                     }
+                    // Space+move panning is handled in mouse_move, no click needed
                 }
                 _ => {}
             }
@@ -633,6 +632,11 @@ fn create_event_handlers(
             let rect = canvas.get_bounding_client_rect();
             let x = f64::from(ev.client_x()) - rect.left();
             let y = f64::from(ev.client_y()) - rect.top();
+
+            // If space is pressed and not yet panning, start panning
+            if space_pressed.get() && !is_panning.get() {
+                canvas_viewport::handle_pan_start(x, y, &viewport_copy);
+            }
 
             if is_panning.get() {
                 canvas_viewport::handle_pan_move(x, y, &viewport_copy);
@@ -768,15 +772,6 @@ pub fn InfrastructureView(
     let (s_pressed, set_s_pressed) = create_signal(false);
     let (d_pressed, set_d_pressed) = create_signal(false);
 
-    // Setup keyboard listeners for Space and WASD
-    canvas_viewport::setup_keyboard_listeners(
-        set_space_pressed,
-        set_w_pressed,
-        set_a_pressed,
-        set_s_pressed,
-        set_d_pressed,
-    );
-
     // View creation state
     let (view_start_station, set_view_start_station) = create_signal(None::<NodeIndex>);
     let (view_end_station, set_view_end_station) = create_signal(None::<NodeIndex>);
@@ -809,6 +804,16 @@ pub fn InfrastructureView(
     let pan_offset_y = viewport.pan_offset_y;
     let set_pan_offset_y = viewport.set_pan_offset_y;
     let is_panning = viewport.is_panning;
+
+    // Setup keyboard listeners for Space and WASD
+    canvas_viewport::setup_keyboard_listeners(
+        set_space_pressed,
+        set_w_pressed,
+        set_a_pressed,
+        set_s_pressed,
+        set_d_pressed,
+        &viewport,
+    );
 
     // WASD continuous panning
     canvas_viewport::setup_wasd_panning(

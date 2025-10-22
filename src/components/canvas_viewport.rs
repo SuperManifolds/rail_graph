@@ -250,7 +250,10 @@ pub fn setup_keyboard_listeners(
     set_a_pressed: WriteSignal<bool>,
     set_s_pressed: WriteSignal<bool>,
     set_d_pressed: WriteSignal<bool>,
+    viewport: &ViewportSignals,
 ) {
+    let viewport_for_keyup = *viewport;
+
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
         if ev.repeat() {
             return;
@@ -270,7 +273,10 @@ pub fn setup_keyboard_listeners(
 
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keyup, move |ev| {
         match ev.code().as_str() {
-            "Space" => set_space_pressed.set(false),
+            "Space" => {
+                set_space_pressed.set(false);
+                handle_pan_end(&viewport_for_keyup);
+            }
             "KeyW" => set_w_pressed.set(false),
             "KeyA" => set_a_pressed.set(false),
             "KeyS" => set_s_pressed.set(false),

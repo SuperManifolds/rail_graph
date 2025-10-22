@@ -224,6 +224,8 @@ pub fn GraphCanvas(
     let (s_pressed, set_s_pressed) = create_signal(false);
     let (d_pressed, set_d_pressed) = create_signal(false);
 
+    let viewport = canvas_viewport::create_viewport_signals(true);
+
     // Setup keyboard listeners for Space and WASD
     canvas_viewport::setup_keyboard_listeners(
         set_space_pressed,
@@ -231,9 +233,8 @@ pub fn GraphCanvas(
         set_a_pressed,
         set_s_pressed,
         set_d_pressed,
+        &viewport,
     );
-
-    let viewport = canvas_viewport::create_viewport_signals(true);
 
     // Initialize viewport from saved state - only once on first mount
     let initialized = leptos::store_value(false);
@@ -376,11 +377,9 @@ pub fn GraphCanvas(
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
             let x = f64::from(ev.client_x()) - rect.left();
-            let y = f64::from(ev.client_y()) - rect.top();
 
-            if space_pressed.get() {
-                canvas_viewport::handle_pan_start(x, y, &viewport);
-            } else {
+            // Only handle time scrubbing if space is not pressed
+            if !space_pressed.get() {
                 let canvas_width = f64::from(canvas.width());
                 handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
             }
@@ -393,6 +392,11 @@ pub fn GraphCanvas(
             let rect = canvas.get_bounding_client_rect();
             let x = f64::from(ev.client_x()) - rect.left();
             let y = f64::from(ev.client_y()) - rect.top();
+
+            // If space is pressed and not yet panning, start panning
+            if space_pressed.get() && !is_panning.get() {
+                canvas_viewport::handle_pan_start(x, y, &viewport);
+            }
 
             if is_panning.get() {
                 canvas_viewport::handle_pan_move(x, y, &viewport);
