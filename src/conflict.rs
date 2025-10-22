@@ -487,7 +487,9 @@ fn detect_conflicts_sweep_line(
     {
         let comparison_time = comparison_start.elapsed();
         eprintln!("Comparison loop time: {comparison_time:?}");
-        eprintln!("Made {comparisons} comparisons (vs {} for naive O(n²))", train_journeys.len() * (train_journeys.len() - 1) / 2);
+        let n = train_journeys.len();
+        let naive_comparisons = n.saturating_mul(n.saturating_sub(1)) / 2;
+        eprintln!("Made {comparisons} comparisons (vs {naive_comparisons} for naive O(n²))");
     }
 
     #[cfg(target_arch = "wasm32")]
