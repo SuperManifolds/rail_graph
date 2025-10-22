@@ -14,7 +14,7 @@ fn ErrorListPopover(
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
     nodes: Signal<Vec<(petgraph::stable_graph::NodeIndex, Node)>>,
     graph: ReadSignal<RailwayGraph>,
-    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
+    station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
 ) -> impl IntoView {
     let scroll_container_ref = create_node_ref::<leptos::html::Div>();
     let (displayed_count, set_displayed_count) = create_signal(CONFLICTS_PER_PAGE);
@@ -138,7 +138,7 @@ pub fn ErrorList(
     conflicts: Signal<Vec<Conflict>>,
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
     graph: ReadSignal<RailwayGraph>,
-    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
+    station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
 

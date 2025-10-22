@@ -85,8 +85,8 @@ fn build_station_index_mapping(graph: &RailwayGraph) -> std::collections::HashMa
 fn compute_station_index_map(
     view: Option<GraphView>,
     graph: ReadSignal<RailwayGraph>,
-) -> Signal<std::collections::HashMap<usize, usize>> {
-    Signal::derive(move || {
+) -> leptos::Memo<std::collections::HashMap<usize, usize>> {
+    leptos::create_memo(move |_| {
         let current_graph = graph.get();
         if let Some(ref graph_view) = view {
             graph_view.build_station_index_map(&current_graph)

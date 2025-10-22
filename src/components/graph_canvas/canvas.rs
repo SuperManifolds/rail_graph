@@ -36,7 +36,7 @@ fn setup_render_effect(
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
     hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
     display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
-    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
+    station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
 ) {
     let (render_requested, set_render_requested) = create_signal(false);
     let is_disposed = Rc::new(Cell::new(false));
@@ -149,7 +149,7 @@ fn handle_mouse_move_hover(
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     set_hovered_conflict: WriteSignal<Option<(Conflict, f64, f64)>>,
     set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
-    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
+    station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
     graph: ReadSignal<RailwayGraph>,
     spacing_mode: Signal<crate::models::SpacingMode>,
 ) {
@@ -209,13 +209,29 @@ pub fn GraphCanvas(
     conflicts_memo: Memo<Vec<Conflict>>,
     #[prop(optional)] pan_to_conflict_signal: Option<ReadSignal<Option<(f64, f64)>>>,
     display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
-    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
+    station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
     initial_viewport: crate::models::ViewportState,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
+    let (space_pressed, set_space_pressed) = create_signal(false);
+
+    // Track WASD keys for panning
+    let (w_pressed, set_w_pressed) = create_signal(false);
+    let (a_pressed, set_a_pressed) = create_signal(false);
+    let (s_pressed, set_s_pressed) = create_signal(false);
+    let (d_pressed, set_d_pressed) = create_signal(false);
+
+    // Setup keyboard listeners for Space and WASD
+    canvas_viewport::setup_keyboard_listeners(
+        set_space_pressed,
+        set_w_pressed,
+        set_a_pressed,
+        set_s_pressed,
+        set_d_pressed,
+    );
 
     let viewport = canvas_viewport::create_viewport_signals(true);
 
@@ -238,6 +254,13 @@ pub fn GraphCanvas(
     let pan_offset_y = viewport.pan_offset_y;
     let set_pan_offset_y = viewport.set_pan_offset_y;
     let is_panning = viewport.is_panning;
+
+    // WASD continuous panning
+    canvas_viewport::setup_wasd_panning(
+        w_pressed, a_pressed, s_pressed, d_pressed,
+        set_pan_offset_x, set_pan_offset_y,
+        pan_offset_x, pan_offset_y,
+    );
 
     // Save viewport changes to the view (debounced)
     let debounce_handle = store_value(None::<leptos::leptos_dom::helpers::TimeoutHandle>);
@@ -355,7 +378,7 @@ pub fn GraphCanvas(
             let x = f64::from(ev.client_x()) - rect.left();
             let y = f64::from(ev.client_y()) - rect.top();
 
-            if ev.button() == 2 || ev.ctrl_key() {
+            if space_pressed.get() {
                 canvas_viewport::handle_pan_start(x, y, &viewport);
             } else {
                 let canvas_width = f64::from(canvas.width());
@@ -432,6 +455,16 @@ pub fn GraphCanvas(
         }
     };
 
+    let cursor_style = move || {
+        if is_panning.get() {
+            "cursor: grabbing;"
+        } else if space_pressed.get() {
+            "cursor: grab;"
+        } else {
+            "cursor: crosshair;"
+        }
+    };
+
     view! {
         <div class="canvas-container" style="position: relative;">
             <canvas
@@ -442,7 +475,7 @@ pub fn GraphCanvas(
                 on:mouseleave=handle_mouse_leave
                 on:wheel=handle_wheel
                 on:contextmenu=|ev| ev.prevent_default()
-                style="cursor: crosshair;"
+                style=cursor_style
             ></canvas>
 
             <ConflictTooltip hovered_conflict=hovered_conflict graph=graph display_nodes=display_stations />

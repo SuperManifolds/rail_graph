@@ -429,9 +429,13 @@ fn get_canvas_cursor_style(
     is_over_edited_station: ReadSignal<bool>,
     is_over_station: ReadSignal<bool>,
     is_over_track: ReadSignal<bool>,
+    is_panning: ReadSignal<bool>,
+    space_pressed: ReadSignal<bool>,
 ) -> &'static str {
-    if dragging_station.get().is_some() {
+    if dragging_station.get().is_some() || is_panning.get() {
         "cursor: grabbing;"
+    } else if space_pressed.get() {
+        "cursor: grab;"
     } else {
         match edit_mode.get() {
             EditMode::AddingTrack | EditMode::AddingJunction | EditMode::CreatingView => "cursor: pointer;",
@@ -441,7 +445,7 @@ fn get_canvas_cursor_style(
                 } else if is_over_station.get() || is_over_track.get() {
                     "cursor: pointer;"
                 } else {
-                    "cursor: grab;"
+                    "cursor: default;"
                 }
             }
         }
@@ -552,6 +556,7 @@ fn create_event_handlers(
     set_is_over_edited_station: WriteSignal<bool>,
     set_is_over_track: WriteSignal<bool>,
     auto_layout_enabled: ReadSignal<bool>,
+    space_pressed: ReadSignal<bool>,
     viewport: &canvas_viewport::ViewportSignals,
 ) -> (impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(WheelEvent)) {
     let zoom_level = viewport.zoom_level;
@@ -607,14 +612,14 @@ fn create_event_handlers(
                 }
                 EditMode::None => {
                     let current_graph = graph.get();
-                    match hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
-                        Some(clicked_station) if Some(clicked_station) == editing_station.get() => {
-                            set_dragging_station.set(Some(clicked_station));
-                        }
-                        None if ev.button() == 2 || ev.ctrl_key() || ev.button() == 0 => {
-                            canvas_viewport::handle_pan_start(screen_x, screen_y, &viewport_copy);
-                        }
-                        _ => {}
+                    let clicked_station = hit_detection::find_station_at_position(&current_graph, world_x, world_y);
+
+                    let is_editing_clicked_station = clicked_station.is_some() && clicked_station == editing_station.get();
+
+                    if is_editing_clicked_station {
+                        set_dragging_station.set(clicked_station);
+                    } else if clicked_station.is_none() && space_pressed.get() {
+                        canvas_viewport::handle_pan_start(screen_x, screen_y, &viewport_copy);
                     }
                 }
                 _ => {}
@@ -756,6 +761,22 @@ pub fn InfrastructureView(
     let (is_over_track, set_is_over_track) = create_signal(false);
     let (dragging_station, set_dragging_station) = create_signal(None::<NodeIndex>);
 
+    // Panning keyboard state
+    let (space_pressed, set_space_pressed) = create_signal(false);
+    let (w_pressed, set_w_pressed) = create_signal(false);
+    let (a_pressed, set_a_pressed) = create_signal(false);
+    let (s_pressed, set_s_pressed) = create_signal(false);
+    let (d_pressed, set_d_pressed) = create_signal(false);
+
+    // Setup keyboard listeners for Space and WASD
+    canvas_viewport::setup_keyboard_listeners(
+        set_space_pressed,
+        set_w_pressed,
+        set_a_pressed,
+        set_s_pressed,
+        set_d_pressed,
+    );
+
     // View creation state
     let (view_start_station, set_view_start_station) = create_signal(None::<NodeIndex>);
     let (view_end_station, set_view_end_station) = create_signal(None::<NodeIndex>);
@@ -784,7 +805,17 @@ pub fn InfrastructureView(
     let viewport = canvas_viewport::create_viewport_signals(false);
     let zoom_level = viewport.zoom_level;
     let pan_offset_x = viewport.pan_offset_x;
+    let set_pan_offset_x = viewport.set_pan_offset_x;
     let pan_offset_y = viewport.pan_offset_y;
+    let set_pan_offset_y = viewport.set_pan_offset_y;
+    let is_panning = viewport.is_panning;
+
+    // WASD continuous panning
+    canvas_viewport::setup_wasd_panning(
+        w_pressed, a_pressed, s_pressed, d_pressed,
+        set_pan_offset_x, set_pan_offset_y,
+        pan_offset_x, pan_offset_y,
+    );
 
     setup_auto_layout_effect(auto_layout_enabled, graph, set_graph, canvas_ref);
 
@@ -818,7 +849,7 @@ pub fn InfrastructureView(
         lines, set_lines,
         editing_station, set_editing_station, set_editing_junction, set_editing_track,
         dragging_station, set_dragging_station, set_is_over_station, set_is_over_edited_station, set_is_over_track,
-        auto_layout_enabled, &viewport
+        auto_layout_enabled, space_pressed, &viewport
     );
 
     let handle_mouse_leave = move |_: MouseEvent| {
@@ -865,7 +896,7 @@ pub fn InfrastructureView(
                     on:dblclick=handle_double_click
                     on:wheel=handle_wheel
                     on:contextmenu=|ev| ev.prevent_default()
-                    style=move || get_canvas_cursor_style(dragging_station, edit_mode, is_over_edited_station, is_over_station, is_over_track)
+                    style=move || get_canvas_cursor_style(dragging_station, edit_mode, is_over_edited_station, is_over_station, is_over_track, is_panning, space_pressed)
                 />
             </div>
 
