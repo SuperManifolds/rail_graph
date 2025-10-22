@@ -4,6 +4,49 @@ use wasm_bindgen::{prelude::*, JsCast};
 // Global window z-index counter
 static NEXT_Z_INDEX: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(2000);
 
+fn calculate_window_size(
+    content_el: &web_sys::HtmlElement,
+    max_size: (f64, f64),
+) -> (f64, f64) {
+    let style = content_el.style();
+
+    // Temporarily allow content to expand to natural size for measurement
+    let _ = style.set_property("flex", "0 0 auto");
+    let _ = style.set_property("height", "auto");
+    let _ = style.set_property("width", "max-content");
+
+    let content_width = f64::from(content_el.scroll_width());
+    let content_height = f64::from(content_el.scroll_height());
+
+    // Restore flex layout
+    let _ = style.set_property("flex", "1");
+    let _ = style.remove_property("height");
+    let _ = style.remove_property("width");
+
+    let header_height = 45.0;
+    let extra_padding = 20.0; // Extra space to prevent scrollbars
+
+    // Get viewport dimensions to ensure window fits on screen
+    let viewport_width = web_sys::window()
+        .and_then(|w| w.inner_width().ok())
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1920.0);
+    let viewport_height = web_sys::window()
+        .and_then(|w| w.inner_height().ok())
+        .and_then(|v| v.as_f64())
+        .unwrap_or(1080.0);
+
+    // Reserve space for window chrome and positioning (200px margin)
+    let max_window_width = (viewport_width - 200.0).min(max_size.0);
+    let max_window_height = (viewport_height - 200.0).min(max_size.1);
+
+    // Clamp width: minimum 250, maximum available space, prefer content_width + padding
+    let target_width = (content_width + extra_padding).clamp(250.0, max_window_width);
+    let target_height = (content_height + header_height + extra_padding).clamp(200.0, max_window_height);
+
+    (target_width, target_height)
+}
+
 #[component]
 pub fn Window(
     #[prop(into)] is_open: MaybeSignal<bool>,
@@ -49,30 +92,8 @@ pub fn Window(
             let callback1 = Closure::once(move || {
                 let Some(window) = web_sys::window() else { return };
                 let callback2 = Closure::once(move || {
-                    // Get the underlying web_sys element
                     let web_el: &web_sys::HtmlElement = &content_el_clone;
-                    let style = web_el.style();
-
-                    // Temporarily allow content to expand to natural size for measurement
-                    let _ = style.set_property("flex", "0 0 auto");
-                    let _ = style.set_property("height", "auto");
-                    let _ = style.set_property("width", "max-content");
-
-                    let content_width = f64::from(web_el.scroll_width());
-                    let content_height = f64::from(web_el.scroll_height());
-
-                    // Restore flex layout
-                    let _ = style.set_property("flex", "1");
-                    let _ = style.remove_property("height");
-                    let _ = style.remove_property("width");
-
-                    let header_height = 45.0;
-                    let extra_padding = 20.0; // Extra space to prevent scrollbars
-
-                    // Clamp width: minimum 250, maximum max_size.0, prefer content_width + padding
-                    let target_width = (content_width + extra_padding).clamp(250.0, max_size.0);
-                    let target_height = (content_height + header_height + extra_padding).clamp(200.0, max_size.1);
-
+                    let (target_width, target_height) = calculate_window_size(web_el, max_size);
                     set_size.set((target_width, target_height));
                 });
                 let _ = window.request_animation_frame(callback2.as_ref().unchecked_ref());
