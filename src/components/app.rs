@@ -6,6 +6,7 @@ use crate::components::time_graph::TimeGraph;
 use crate::components::infrastructure_view::InfrastructureView;
 use crate::components::project_manager::ProjectManager;
 use crate::components::alpha_disclaimer::AlphaDisclaimer;
+use crate::components::changelog_popup::ChangelogPopup;
 use crate::components::report_issue_button::ReportIssueButton;
 use crate::models::{Project, RailwayGraph, Legend, GraphView, ViewportState};
 use crate::storage::{IndexedDbStorage, Storage};
@@ -437,6 +438,7 @@ pub fn App() -> impl IntoView {
             />
 
             <AlphaDisclaimer />
+            <ChangelogPopup />
         </div>
     }
 }

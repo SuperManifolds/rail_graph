@@ -1,0 +1,106 @@
+// Changelog popup content styles
+.changelog-content {
+    padding: var(--spacing-xl);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    max-width: 600px;
+
+    .changelog-header {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+        padding-bottom: var(--spacing-md);
+        border-bottom: 1px solid var(--color-border);
+
+        .changelog-version {
+            font-size: 0.9em;
+            font-weight: 500;
+            color: var(--color-primary);
+        }
+
+        .changelog-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: var(--color-text-primary);
+        }
+
+        .changelog-date {
+            font-size: 0.85em;
+            color: var(--color-text-tertiary);
+        }
+    }
+
+    .changelog-body {
+        padding: var(--spacing-md);
+        background-color: var(--color-background-primary);
+        border-radius: 4px;
+        color: var(--color-text-secondary);
+        line-height: 1.6;
+        max-height: 400px;
+        overflow-y: auto;
+
+        h1, h2, h3 {
+            color: var(--color-text-primary);
+            margin-top: var(--spacing-md);
+            margin-bottom: var(--spacing-sm);
+
+            &:first-child {
+                margin-top: 0;
+            }
+        }
+
+        h1 {
+            font-size: 1.5em;
+        }
+
+        h2 {
+            font-size: 1.3em;
+        }
+
+        h3 {
+            font-size: 1.1em;
+        }
+
+        p {
+            margin: var(--spacing-sm) 0;
+        }
+
+        ul {
+            margin: var(--spacing-sm) 0;
+            padding-left: var(--spacing-xl);
+
+            li {
+                margin: var(--spacing-xs) 0;
+            }
+        }
+
+        br {
+            display: block;
+            content: "";
+            margin: var(--spacing-sm) 0;
+        }
+
+        code {
+            background-color: var(--color-background-secondary);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+    }
+
+    .changelog-buttons {
+        display: flex;
+        justify-content: flex-end;
+        padding-top: var(--spacing-md);
+
+        button {
+            @include button-default;
+
+            &.primary {
+                @include button-primary;
+            }
+        }
+    }
+}
