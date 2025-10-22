@@ -147,6 +147,7 @@ fn add_station_handler(
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     set_show_add_station: WriteSignal<bool>,
+    set_last_added_station: WriteSignal<Option<NodeIndex>>,
 ) {
     use crate::models::{Track, TrackDirection};
 
@@ -168,6 +169,7 @@ fn add_station_handler(
     }
 
     set_graph.set(current_graph);
+    set_last_added_station.set(Some(node_idx));
     set_show_add_station.set(false);
 }
 
@@ -370,6 +372,7 @@ fn create_handler_callbacks(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
     set_show_add_station: WriteSignal<bool>,
+    set_last_added_station: WriteSignal<Option<NodeIndex>>,
     set_editing_station: WriteSignal<Option<NodeIndex>>,
     set_editing_junction: WriteSignal<Option<NodeIndex>>,
     set_editing_track: WriteSignal<Option<EdgeIndex>>,
@@ -389,7 +392,7 @@ fn create_handler_callbacks(
     Rc<dyn Fn(NodeIndex)>,
 ) {
     let handle_add_station = Rc::new(move |name: String, passing_loop: bool, connect_to: Option<NodeIndex>, platforms: Vec<crate::models::Platform>| {
-        add_station_handler(name, passing_loop, connect_to, platforms, graph, set_graph, set_show_add_station);
+        add_station_handler(name, passing_loop, connect_to, platforms, graph, set_graph, set_show_add_station, set_last_added_station);
     });
 
     let handle_edit_station = Rc::new(move |station_idx: NodeIndex, new_name: String, passing_loop: bool, platforms: Vec<crate::models::Platform>| {
@@ -753,6 +756,7 @@ pub fn InfrastructureView(
     let (edit_mode, set_edit_mode) = create_signal(EditMode::None);
     let (selected_station, set_selected_station) = create_signal(None::<NodeIndex>);
     let (show_add_station, set_show_add_station) = create_signal(false);
+    let (last_added_station, set_last_added_station) = create_signal(None::<NodeIndex>);
     let (editing_station, set_editing_station) = create_signal(None::<NodeIndex>);
     let (editing_junction, set_editing_junction) = create_signal(None::<NodeIndex>);
     let (editing_track, set_editing_track) = create_signal(None::<EdgeIndex>);
@@ -845,7 +849,7 @@ pub fn InfrastructureView(
     };
 
     let (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
-        create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, station_to_delete);
+        create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, station_to_delete);
 
     setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station);
 
@@ -910,6 +914,7 @@ pub fn InfrastructureView(
                 on_close=Rc::new(move || set_show_add_station.set(false))
                 on_add=handle_add_station
                 graph=graph
+                last_added_station=last_added_station
             />
 
             <EditStation

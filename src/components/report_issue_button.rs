@@ -1,6 +1,6 @@
 use leptos::{component, view, IntoView};
 
-const GITHUB_ISSUES_URL: &str = "https://github.com/SuperManifolds/rail_graph/issues/new";
+const GITHUB_ISSUES_URL: &str = "https://github.com/SuperManifolds/rail_graph/issues/new/choose";
 
 #[component]
 #[must_use]

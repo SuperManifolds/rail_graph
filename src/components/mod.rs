@@ -3,6 +3,8 @@
 pub mod add_station;
 pub mod alpha_disclaimer;
 pub mod canvas_viewport;
+pub mod changelog_popup;
+pub mod modal_overlay;
 pub mod confirmation_dialog;
 pub mod create_view_dialog;
 pub mod delete_station_confirmation;

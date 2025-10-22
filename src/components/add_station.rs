@@ -1,6 +1,6 @@
 use crate::components::window::Window;
 use crate::components::platform_editor::PlatformEditor;
-use crate::models::{RailwayGraph, Platform, Stations};
+use crate::models::{RailwayGraph, Platform};
 use leptos::{component, create_effect, create_signal, event_target_checked, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, view};
 use petgraph::stable_graph::NodeIndex;
 use std::rc::Rc;
@@ -13,6 +13,7 @@ pub fn AddStation(
     on_close: Rc<dyn Fn()>,
     on_add: AddStationCallback,
     graph: ReadSignal<RailwayGraph>,
+    last_added_station: ReadSignal<Option<NodeIndex>>,
 ) -> impl IntoView {
     let (station_name, set_station_name) = create_signal(String::new());
     let (is_passing_loop, set_is_passing_loop) = create_signal(false);
@@ -27,7 +28,8 @@ pub fn AddStation(
         if is_open.get() {
             set_station_name.set(format!("Station {}", graph.get().graph.node_count() + 1));
             set_is_passing_loop.set(false);
-            set_connect_to_station.set(None);
+            // Default to last added station if available
+            set_connect_to_station.set(last_added_station.get());
             set_platforms.set(vec![
                 Platform { name: "1".to_string() },
                 Platform { name: "2".to_string() },
@@ -77,6 +79,15 @@ pub fn AddStation(
                 <div class="form-field">
                     <label>"Connect to (optional)"</label>
                     <select
+                        prop:value=move || {
+                            connect_to_station.get().and_then(|selected_idx| {
+                                let current_graph = graph.get();
+                                current_graph.graph.node_indices()
+                                    .enumerate()
+                                    .find(|(_, idx)| *idx == selected_idx)
+                                    .map(|(i, _)| i.to_string())
+                            }).unwrap_or_default()
+                        }
                         on:change=move |ev| {
                             let value = event_target_value(&ev);
                             if value.is_empty() {
@@ -93,11 +104,13 @@ pub fn AddStation(
                         <option value="">"None"</option>
                         {move || {
                             let current_graph = graph.get();
-                            current_graph.graph.node_indices().enumerate().map(|(i, idx)| {
-                                let name = current_graph.get_station_name(idx).unwrap_or("").to_string();
-                                view! {
-                                    <option value=i.to_string()>{name}</option>
-                                }
+                            current_graph.graph.node_indices().enumerate().filter_map(|(i, idx)| {
+                                current_graph.graph.node_weight(idx).map(|node| {
+                                    let name = node.display_name();
+                                    view! {
+                                        <option value=i.to_string()>{name}</option>
+                                    }
+                                })
                             }).collect::<Vec<_>>()
                         }}
                     </select>

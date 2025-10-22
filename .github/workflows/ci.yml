@@ -97,18 +97,18 @@ jobs:
       - name: Test Docker container
         run: |
           docker run -d -p 8080:8080 --name rail-graph-test rail-graph:test
-          echo "Waiting for trunk serve to build and start..."
-          for i in {1..30}; do
+          echo "Waiting for static server to start..."
+          for i in {1..10}; do
             if curl -f http://localhost:8080 2>/dev/null; then
               echo "Server is ready!"
               break
             fi
-            if [ $i -eq 30 ]; then
-              echo "Server failed to start after 60 seconds"
+            if [ $i -eq 10 ]; then
+              echo "Server failed to start after 20 seconds"
               docker logs rail-graph-test
               exit 1
             fi
-            echo "Attempt $i/30 - waiting 2 seconds..."
+            echo "Attempt $i/10 - waiting 2 seconds..."
             sleep 2
           done
           docker stop rail-graph-test

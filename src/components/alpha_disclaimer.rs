@@ -1,4 +1,5 @@
 use leptos::{component, view, IntoView, create_signal, SignalGet, SignalSet, Signal};
+use crate::components::modal_overlay::ModalOverlay;
 use crate::components::window::Window;
 use crate::components::report_issue_button::ReportIssueButton;
 
@@ -15,44 +16,38 @@ pub fn AlphaDisclaimer() -> impl IntoView {
     };
 
     view! {
-        {move || if is_open.get() {
-            view! {
-                <div class="disclaimer-overlay">
-                    <Window
-                        is_open=Signal::derive(|| true)
-                        title=Signal::derive(|| "Alpha Version Disclaimer".to_string())
-                        on_close=move || {}
-                    >
-                        <div class="disclaimer-content">
-                            <div class="disclaimer-warning">
-                                <p><strong>"This is an alpha version of the Railway Time Graph application."</strong></p>
-                                <p>"You may lose project data. Project file compatibility is not guaranteed between versions."</p>
-                                <p>"Please save backups of your work regularly using the export functionality."</p>
-                            </div>
-                            <div class="disclaimer-feedback">
-                                <p><strong>"Issues and Feedback:"</strong></p>
-                                <ul>
-                                    <li>
-                                        "Make an issue on Github: "
-                                        <ReportIssueButton />
-                                    </li>
-                                    <li>
-                                        "DM Alex (supermanifolds) in the NIMBY Rails Discord"
-                                    </li>
-                                </ul>
-                            </div>
-                            <div class="disclaimer-buttons">
-                                <button class="primary" on:click=move |_| on_accept()>
-                                    "I Understand"
-                                </button>
-                            </div>
-                        </div>
-                    </Window>
+        <ModalOverlay is_open=Signal::derive(move || is_open.get())>
+            <Window
+                is_open=Signal::derive(|| true)
+                title=Signal::derive(|| "Alpha Version Disclaimer".to_string())
+                on_close=move || {}
+            >
+                <div class="disclaimer-content">
+                    <div class="disclaimer-warning">
+                        <p><strong>"This is an alpha version of the Railway Time Graph application."</strong></p>
+                        <p>"You may lose project data. Project file compatibility is not guaranteed between versions."</p>
+                        <p>"Please save backups of your work regularly using the export functionality."</p>
+                    </div>
+                    <div class="disclaimer-feedback">
+                        <p><strong>"Issues and Feedback:"</strong></p>
+                        <ul>
+                            <li>
+                                "Make an issue on Github: "
+                                <ReportIssueButton />
+                            </li>
+                            <li>
+                                "DM Alex (supermanifolds) in the NIMBY Rails Discord"
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="disclaimer-buttons">
+                        <button class="primary" on:click=move |_| on_accept()>
+                            "I Understand"
+                        </button>
+                    </div>
                 </div>
-            }.into_view()
-        } else {
-            ().into_view()
-        }}
+            </Window>
+        </ModalOverlay>
     }
 }
 
