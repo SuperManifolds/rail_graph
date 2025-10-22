@@ -30,7 +30,7 @@ If applicable, add screenshots or a screen recording to help explain the problem
 - OS: [e.g., Windows 11, macOS 14.2, Ubuntu 22.04]
 
 ## Project Data
-If the bug is related to specific project data, please export your project (File → Export Project) and share a link to the file (e.g., via Google Drive, Dropbox, or GitHub gist).
+If the bug is related to specific project data, please export your project (File → Export Project) compress it in a zip file and upload it here or share a link to the file (e.g., via Google Drive, Dropbox, or GitHub gist).
 
 Link: [paste link here or attach file]
 
