@@ -68,9 +68,6 @@ fn RouteStopsList(
     });
 
     let on_save_stored = store_value(on_save);
-    let mode = time_mode.get();
-    let column_header = get_column_header(mode);
-    let current_dir = dir.get();
 
     let on_save = on_save_stored.get_value();
     let on_save_for_start = on_save.clone();
@@ -82,7 +79,7 @@ fn RouteStopsList(
             <span>"Station"</span>
             <span>"Platform"</span>
             <span>"Track"</span>
-            <span>{column_header}</span>
+            <span>{move || get_column_header(time_mode.get())}</span>
             <span>"Wait Time"</span>
             <span></span>
         </div>
@@ -90,6 +87,7 @@ fn RouteStopsList(
         {move || {
             let eps = endpoints.get()?;
             let avail = available_start.get()?;
+            let current_dir = dir.get();
             Some(view! {
                 <StationSelect
                     available_stations=avail
@@ -105,19 +103,23 @@ fn RouteStopsList(
 
         <For
             each=move || {
+                let current_dir = dir.get();
+                let current_mode = time_mode.get();
                 stations_data.get().map(|stations| {
-                    stations.into_iter().enumerate().collect::<Vec<_>>()
+                    stations.into_iter().enumerate().map(|(i, (name, station_idx))| {
+                        (i, name, station_idx, current_dir, current_mode)
+                    }).collect::<Vec<_>>()
                 }).unwrap_or_default()
             }
-            key=|(_, (_, station_idx))| station_idx.index()
-            children=move |(i, (name, station_idx))| {
+            key=|(i, _, station_idx, current_dir, current_mode)| (station_idx.index(), *i, *current_dir as u8, *current_mode as u8)
+            children=move |(i, name, station_idx, current_dir, current_mode)| {
                 let num_stations = stations_data.with(|s| s.as_ref().map_or(0, Vec::len));
                 view! {
                     <StopRow
                         index=i
                         name=name
                         station_idx=station_idx
-                        time_mode=mode
+                        time_mode=current_mode
                         route_direction=current_dir
                         edited_line=edited_line
                         graph=graph
@@ -132,6 +134,7 @@ fn RouteStopsList(
         {move || {
             let eps = endpoints.get()?;
             let avail = available_end.get()?;
+            let current_dir = dir.get();
             Some(view! {
                 <StationSelect
                     available_stations=avail
