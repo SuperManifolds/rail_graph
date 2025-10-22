@@ -1278,6 +1278,8 @@ mod tests {
             }],
             color: TEST_COLOR.to_string(),
             thickness: TEST_THICKNESS,
+            route_start_node: Some(idx1),
+            route_end_node: Some(idx2),
         };
 
         let station_indices = graph.graph.node_indices()

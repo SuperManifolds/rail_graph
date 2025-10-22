@@ -316,6 +316,9 @@ impl GraphView {
                 } else {
                     let mut filtered_journey = journey.clone();
                     filtered_journey.station_times = filtered_times;
+                    // Preserve original route start/end nodes so we know true endpoints
+                    filtered_journey.route_start_node = journey.route_start_node;
+                    filtered_journey.route_end_node = journey.route_end_node;
                     Some(filtered_journey)
                 }
             })

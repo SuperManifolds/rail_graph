@@ -52,6 +52,8 @@ pub struct TrainJourney {
     pub segments: Vec<JourneySegment>, // Track and platform info for each segment
     pub color: String,
     pub thickness: f64,
+    pub route_start_node: Option<petgraph::stable_graph::NodeIndex>, // First node of the complete route
+    pub route_end_node: Option<petgraph::stable_graph::NodeIndex>, // Last node of the complete route
 }
 
 impl TrainJourney {
@@ -333,6 +335,8 @@ impl TrainJourney {
             if station_times.len() >= 2 {
                 let id = uuid::Uuid::new_v4();
                 let train_number = generate_train_number(&line.auto_train_number_format, &line_name, journey_count + 1);
+                let route_start_node = station_times.first().map(|(node_idx, _, _)| *node_idx);
+                let route_end_node = station_times.last().map(|(node_idx, _, _)| *node_idx);
                 journeys.insert(id, TrainJourney {
                     id,
                     line_id,
@@ -342,6 +346,8 @@ impl TrainJourney {
                     segments,
                     color: color.clone(),
                     thickness,
+                    route_start_node,
+                    route_end_node,
                 });
                 journey_count += 1;
             }
@@ -487,6 +493,8 @@ impl TrainJourney {
         }
 
         if station_times.len() >= 2 {
+            let route_start_node = station_times.first().map(|(node_idx, _, _)| *node_idx);
+            let route_end_node = station_times.last().map(|(node_idx, _, _)| *node_idx);
             Some(TrainJourney {
                 id: uuid::Uuid::new_v4(),
                 line_id: line.id,
@@ -496,6 +504,8 @@ impl TrainJourney {
                 segments,
                 color: line.color.clone(),
                 thickness: line.thickness,
+                route_start_node,
+                route_end_node,
             })
         } else {
             None
@@ -574,6 +584,8 @@ impl TrainJourney {
             if station_times.len() >= 2 {
                 let id = uuid::Uuid::new_v4();
                 let train_number = generate_train_number(&line.auto_train_number_format, &line_name, return_journey_count + 1);
+                let route_start_node = station_times.first().map(|(node_idx, _, _)| *node_idx);
+                let route_end_node = station_times.last().map(|(node_idx, _, _)| *node_idx);
                 journeys.insert(id, TrainJourney {
                     id,
                     line_id,
@@ -583,6 +595,8 @@ impl TrainJourney {
                     segments,
                     color: color.clone(),
                     thickness,
+                    route_start_node,
+                    route_end_node,
                 });
                 return_journey_count += 1;
             }
