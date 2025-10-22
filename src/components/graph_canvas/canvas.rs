@@ -482,7 +482,7 @@ pub fn GraphCanvas(
                 style=cursor_style
             ></canvas>
 
-            <ConflictTooltip hovered_conflict=hovered_conflict graph=graph display_nodes=display_stations />
+            <ConflictTooltip hovered_conflict=hovered_conflict display_nodes=display_stations />
         </div>
     }
 }

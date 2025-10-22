@@ -33,6 +33,10 @@ fn build_station_index_mapping(graph: &RailwayGraph) -> std::collections::HashMa
     // Build a map from conflict detection indices (enumeration of all nodes)
     // to display indices (BFS order of all nodes)
     // This matches how conflicts are created in worker_bridge.rs
+    //
+    // Note: This duplicates BFS logic from get_all_nodes_ordered() because we need
+    // the mapping from enumeration indices to BFS positions, not just the BFS order itself.
+    // Conflicts store station indices as node_indices().enumerate(), but rendering uses BFS order.
 
     // First, create NodeIndex -> enumeration index (what conflicts use)
     let node_to_enum_idx: std::collections::HashMap<_, _> = graph.graph.node_indices()

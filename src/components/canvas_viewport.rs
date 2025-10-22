@@ -97,8 +97,11 @@ pub fn handle_zoom(
     let delta = ev.delta_y();
     let alt_pressed = ev.alt_key();
 
-    // No modifier = normal zoom
-    // Alt = horizontal zoom
+    // Scroll wheel zoom controls:
+    // - No modifier = vertical zoom (Y-axis only)
+    // - Alt = horizontal zoom (X-axis only, time-based views)
+    // Note: Shift+scroll horizontal panning was removed due to momentum scrolling conflicts.
+    // Use Space+mouse or WASD keys for panning instead.
     if alt_pressed && viewport.zoom_level_x.is_some() {
         // Horizontal zoom
         let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
@@ -206,13 +209,16 @@ pub fn setup_wasd_panning(
     let interval_handle = store_value(None::<IntervalHandle>);
 
     create_effect(move |_| {
+        // Check key states and only create interval if at least one key is pressed.
+        // This avoids unnecessary timer overhead when no keys are active.
         let any_key_pressed = w_pressed.get() || a_pressed.get() || s_pressed.get() || d_pressed.get();
 
         if any_key_pressed && interval_handle.get_value().is_none() {
-            // Start interval
+            // Start interval for continuous panning
             let update_pan = move || {
                 let (dx, dy) = calculate_wasd_pan_delta(w_pressed, a_pressed, s_pressed, d_pressed);
 
+                // Safety check: skip update if no movement (e.g., key released mid-frame)
                 if dx.abs() <= f64::EPSILON && dy.abs() <= f64::EPSILON {
                     return;
                 }

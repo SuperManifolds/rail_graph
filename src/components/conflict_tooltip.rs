@@ -1,12 +1,10 @@
 use leptos::{component, IntoView, ReadSignal, SignalGet, Signal, view};
 use crate::conflict::Conflict;
-use crate::models::RailwayGraph;
 
 #[component]
 #[must_use]
 pub fn ConflictTooltip(
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
-    graph: ReadSignal<RailwayGraph>,
     display_nodes: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
 ) -> impl IntoView {
     view! {
@@ -29,7 +27,7 @@ pub fn ConflictTooltip(
                     }).unwrap_or("?");
                     conflict.format_platform_message(&station1_name, platform_name)
                 } else {
-                    conflict.format_message(&station1_name, &station2_name, &graph.get())
+                    conflict.format_message(&station1_name, &station2_name)
                 };
                 let timestamp = conflict.time.format("%H:%M:%S");
                 let tooltip_text = format!("{timestamp} - {message}");

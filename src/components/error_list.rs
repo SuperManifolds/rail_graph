@@ -13,7 +13,6 @@ fn ErrorListPopover(
     conflicts: Signal<Vec<Conflict>>,
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
     nodes: Signal<Vec<(petgraph::stable_graph::NodeIndex, Node)>>,
-    graph: ReadSignal<RailwayGraph>,
     station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
 ) -> impl IntoView {
     let scroll_container_ref = create_node_ref::<leptos::html::Div>();
@@ -57,8 +56,22 @@ fn ErrorListPopover(
                                         let conflict_type_text = conflict.type_name();
 
                                         // Map conflict indices to display indices
-                                        let display_idx1 = *idx_map.get(&conflict.station1_idx)?;
-                                        let display_idx2 = *idx_map.get(&conflict.station2_idx)?;
+                                        let Some(&display_idx1) = idx_map.get(&conflict.station1_idx) else {
+                                            #[cfg(debug_assertions)]
+                                            leptos::logging::warn!(
+                                                "Conflict station1_idx {} not found in index map for conflict: {} at {}",
+                                                conflict.station1_idx, conflict.journey1_id, conflict.time
+                                            );
+                                            return None;
+                                        };
+                                        let Some(&display_idx2) = idx_map.get(&conflict.station2_idx) else {
+                                            #[cfg(debug_assertions)]
+                                            leptos::logging::warn!(
+                                                "Conflict station2_idx {} not found in index map for conflict: {} at {}",
+                                                conflict.station2_idx, conflict.journey1_id, conflict.time
+                                            );
+                                            return None;
+                                        };
 
                                         // Get node names
                                         let station1_name = current_nodes.get(display_idx1)
@@ -76,13 +89,15 @@ fn ErrorListPopover(
                                             }).unwrap_or("?");
                                             conflict.format_platform_message(&station1_name, platform_name)
                                         } else {
-                                            conflict.format_message(&station1_name, &station2_name, &graph.get())
+                                            conflict.format_message(&station1_name, &station2_name)
                                         };
 
                                         let time_fraction = time_to_fraction(conflict.time);
                                         // Calculate display position using mapped indices
+                                        // Handle bidirectional travel by using min/max to ensure valid range
+                                        let (min_idx, max_idx) = (display_idx1.min(display_idx2), display_idx1.max(display_idx2));
                                         #[allow(clippy::cast_precision_loss)]
-                                        let station_position = display_idx1 as f64 + (conflict.position * (display_idx2 as f64 - display_idx1 as f64));
+                                        let station_position = min_idx as f64 + (conflict.position * (max_idx as f64 - min_idx as f64));
 
                                         Some(view! {
                                             <div
@@ -198,7 +213,6 @@ pub fn ErrorList(
                             conflicts=conflicts
                             on_conflict_click=on_conflict_click
                             nodes=nodes_signal
-                            graph=graph
                             station_idx_map=station_idx_map
                         />
                     }.into_view()

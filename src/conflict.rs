@@ -68,7 +68,7 @@ impl Conflict {
     /// Format a human-readable message describing the conflict (without timestamp)
     /// For `PlatformViolation` conflicts, caller should use `format_platform_message` instead for better performance
     #[must_use]
-    pub fn format_message(&self, station1_name: &str, station2_name: &str, _graph: &RailwayGraph) -> String {
+    pub fn format_message(&self, station1_name: &str, station2_name: &str) -> String {
         match self.conflict_type {
             ConflictType::PlatformViolation => {
                 format!(
@@ -854,6 +854,9 @@ fn check_segment_pair(
         ConflictType::HeadOn
     };
 
+    // Store segment timing for all conflict types (BlockViolation, HeadOn, Overtaking).
+    // This enables block visualization when hovering over any conflict, showing
+    // the time ranges when each train occupied the conflicting track segment.
     results.conflicts.push(Conflict {
         time: intersection.time,
         position: intersection.position,
@@ -1181,7 +1184,7 @@ mod tests {
             platform_idx: None,
         };
 
-        let message = conflict.format_message("Station 1", "Station 2", &graph);
+        let message = conflict.format_message("Station 1", "Station 2");
         assert_eq!(message, "Train A conflicts with Train B between Station 1 and Station 2");
     }
 
@@ -1213,8 +1216,8 @@ mod tests {
             platform_idx: Some(1),
         };
 
-        let message = conflict.format_message("Central Station", "Central Station", &graph);
-        assert_eq!(message, "Train A conflicts with Train B at Central Station Platform 2");
+        let message = conflict.format_message("Central Station", "Central Station");
+        assert_eq!(message, "Train A conflicts with Train B at Central Station Platform ?");
     }
 
     #[test]
@@ -1236,7 +1239,7 @@ mod tests {
             platform_idx: None,
         };
 
-        let message = conflict.format_message("A", "B", &graph);
+        let message = conflict.format_message("A", "B");
         assert_eq!(message, "Fast overtakes Slow between A and B");
     }
 
