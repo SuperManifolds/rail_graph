@@ -1,5 +1,6 @@
 use leptos::{batch, create_signal, ReadSignal, WriteSignal, SignalGet, SignalSet, SignalGetUntracked, create_effect, store_value, on_cleanup};
 use std::time::Duration;
+use wasm_bindgen::JsCast;
 use web_sys::WheelEvent;
 
 // WASD panning speed (pixels per frame at 60fps)
@@ -264,6 +265,17 @@ pub fn setup_keyboard_listeners(
         if ev.repeat() {
             return;
         }
+
+        // Don't handle keyboard shortcuts when typing in input fields
+        if let Some(target) = ev.target() {
+            if let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() {
+                let tag_name = element.tag_name().to_lowercase();
+                if tag_name == "input" || tag_name == "textarea" {
+                    return;
+                }
+            }
+        }
+
         match ev.code().as_str() {
             "Space" => {
                 ev.prevent_default();
@@ -278,6 +290,16 @@ pub fn setup_keyboard_listeners(
     });
 
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keyup, move |ev| {
+        // Don't handle keyboard shortcuts when typing in input fields
+        if let Some(target) = ev.target() {
+            if let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() {
+                let tag_name = element.tag_name().to_lowercase();
+                if tag_name == "input" || tag_name == "textarea" {
+                    return;
+                }
+            }
+        }
+
         match ev.code().as_str() {
             "Space" => {
                 set_space_pressed.set(false);
