@@ -6,7 +6,7 @@ use std::cell::Cell;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
-use crate::models::{RailwayGraph, Stations};
+use crate::models::RailwayGraph;
 use crate::conflict::Conflict;
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
@@ -36,7 +36,7 @@ fn setup_render_effect(
     hovered_conflict: ReadSignal<Option<(Conflict, f64, f64)>>,
     hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
     display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
-    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
+    station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
 ) {
     let (render_requested, set_render_requested) = create_signal(false);
     let is_disposed = Rc::new(Cell::new(false));
@@ -149,7 +149,7 @@ fn handle_mouse_move_hover(
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     set_hovered_conflict: WriteSignal<Option<(Conflict, f64, f64)>>,
     set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
-    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
+    station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
     graph: ReadSignal<RailwayGraph>,
     spacing_mode: Signal<crate::models::SpacingMode>,
 ) {
@@ -209,15 +209,32 @@ pub fn GraphCanvas(
     conflicts_memo: Memo<Vec<Conflict>>,
     #[prop(optional)] pan_to_conflict_signal: Option<ReadSignal<Option<(f64, f64)>>>,
     display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
-    station_idx_map: Signal<std::collections::HashMap<usize, usize>>,
+    station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
     initial_viewport: crate::models::ViewportState,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
+    let (space_pressed, set_space_pressed) = create_signal(false);
+
+    // Track WASD keys for panning
+    let (w_pressed, set_w_pressed) = create_signal(false);
+    let (a_pressed, set_a_pressed) = create_signal(false);
+    let (s_pressed, set_s_pressed) = create_signal(false);
+    let (d_pressed, set_d_pressed) = create_signal(false);
 
     let viewport = canvas_viewport::create_viewport_signals(true);
+
+    // Setup keyboard listeners for Space and WASD
+    canvas_viewport::setup_keyboard_listeners(
+        set_space_pressed,
+        set_w_pressed,
+        set_a_pressed,
+        set_s_pressed,
+        set_d_pressed,
+        &viewport,
+    );
 
     // Initialize viewport from saved state - only once on first mount
     let initialized = leptos::store_value(false);
@@ -238,6 +255,13 @@ pub fn GraphCanvas(
     let pan_offset_y = viewport.pan_offset_y;
     let set_pan_offset_y = viewport.set_pan_offset_y;
     let is_panning = viewport.is_panning;
+
+    // WASD continuous panning
+    canvas_viewport::setup_wasd_panning(
+        w_pressed, a_pressed, s_pressed, d_pressed,
+        set_pan_offset_x, set_pan_offset_y,
+        pan_offset_x, pan_offset_y,
+    );
 
     // Save viewport changes to the view (debounced)
     let debounce_handle = store_value(None::<leptos::leptos_dom::helpers::TimeoutHandle>);
@@ -293,14 +317,47 @@ pub fn GraphCanvas(
                     let dims = GraphDimensions::new(canvas_width, canvas_height);
 
                     let current_graph = graph.get();
-                    let station_count = current_graph.get_all_stations_ordered().len() as f64;
+                    let current_stations = display_stations.get();
+                    let current_spacing_mode = spacing_mode.get();
+
+                    // Calculate station positions to get accurate Y coordinate
+                    let station_y_positions = current_graph.calculate_station_positions(
+                        &current_stations,
+                        current_spacing_mode,
+                        dims.graph_height,
+                        dims.top_margin,
+                    );
 
                     let target_zoom = 8.0;
                     set_zoom_level.set(target_zoom);
                     set_zoom_level_x.set(target_zoom);
 
+                    // Calculate Y position using actual station positions
+                    #[allow(clippy::excessive_nesting)]
+                    let calculate_y_pos = |pos: f64, positions: &[f64]| -> f64 {
+                        if pos.fract() < f64::EPSILON {
+                            // Integer position - use direct lookup
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            let idx = pos as usize;
+                            positions.get(idx).copied().unwrap_or(0.0)
+                        } else {
+                            // Fractional position - interpolate between two stations
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            let idx1 = pos.floor() as usize;
+                            let idx2 = pos.ceil() as usize;
+                            let fraction = pos.fract();
+
+                            let y1 = positions.get(idx1).copied().unwrap_or(0.0);
+                            let y2 = positions.get(idx2).copied().unwrap_or(y1);
+                            y1 + (fraction * (y2 - y1))
+                        }
+                    };
+
+                    let y_pos = calculate_y_pos(station_pos, &station_y_positions);
+
                     let target_x = (time_fraction * dims.hour_width * target_zoom * target_zoom) - (canvas_width / 2.0);
-                    let target_y = (station_pos * (dims.graph_height / station_count.max(1.0)) * target_zoom) - (canvas_height / 2.0);
+                    // Subtract TOP_MARGIN since station_y_positions include it but we're in transformed coords
+                    let target_y = ((y_pos - TOP_MARGIN) * target_zoom) - (canvas_height / 2.0);
 
                     set_pan_offset_x.set(-target_x);
                     set_pan_offset_y.set(-target_y);
@@ -320,11 +377,9 @@ pub fn GraphCanvas(
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
             let x = f64::from(ev.client_x()) - rect.left();
-            let y = f64::from(ev.client_y()) - rect.top();
 
-            if ev.button() == 2 || ev.ctrl_key() {
-                canvas_viewport::handle_pan_start(x, y, &viewport);
-            } else {
+            // Only handle time scrubbing if space is not pressed
+            if !space_pressed.get() {
                 let canvas_width = f64::from(canvas.width());
                 handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
             }
@@ -337,6 +392,11 @@ pub fn GraphCanvas(
             let rect = canvas.get_bounding_client_rect();
             let x = f64::from(ev.client_x()) - rect.left();
             let y = f64::from(ev.client_y()) - rect.top();
+
+            // If space is pressed and not yet panning, start panning
+            if space_pressed.get() && !is_panning.get() {
+                canvas_viewport::handle_pan_start(x, y, &viewport);
+            }
 
             if is_panning.get() {
                 canvas_viewport::handle_pan_move(x, y, &viewport);
@@ -399,6 +459,16 @@ pub fn GraphCanvas(
         }
     };
 
+    let cursor_style = move || {
+        if is_panning.get() {
+            "cursor: grabbing;"
+        } else if space_pressed.get() {
+            "cursor: grab;"
+        } else {
+            "cursor: crosshair;"
+        }
+    };
+
     view! {
         <div class="canvas-container" style="position: relative;">
             <canvas
@@ -409,10 +479,10 @@ pub fn GraphCanvas(
                 on:mouseleave=handle_mouse_leave
                 on:wheel=handle_wheel
                 on:contextmenu=|ev| ev.prevent_default()
-                style="cursor: crosshair;"
+                style=cursor_style
             ></canvas>
 
-            <ConflictTooltip hovered_conflict=hovered_conflict graph=graph />
+            <ConflictTooltip hovered_conflict=hovered_conflict display_nodes=display_stations />
         </div>
     }
 }
@@ -578,9 +648,10 @@ fn render_graph(
             station_idx_map,
         );
 
-        // Draw block violation visualization for hovered block violation
+        // Draw block visualization for hovered conflicts (BlockViolation, HeadOn, Overtaking)
         if let Some(conflict) = hover_state.hovered_conflict {
-            if conflict.conflict_type == crate::conflict::ConflictType::BlockViolation {
+            // Show blocks for any conflict type that has segment timing information
+            if conflict.segment1_times.is_some() && conflict.segment2_times.is_some() {
                 conflict_indicators::draw_block_violation_visualization(
                     &ctx,
                     &zoomed_dimensions,

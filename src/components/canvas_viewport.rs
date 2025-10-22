@@ -1,5 +1,9 @@
-use leptos::{batch, create_signal, ReadSignal, WriteSignal, SignalGet, SignalSet};
+use leptos::{batch, create_signal, ReadSignal, WriteSignal, SignalGet, SignalSet, SignalGetUntracked, create_effect, store_value, on_cleanup};
+use std::time::Duration;
 use web_sys::WheelEvent;
+
+// WASD panning speed (pixels per frame at 60fps)
+const WASD_PAN_SPEED: f64 = 10.0;
 
 #[derive(Clone, Copy)]
 pub struct ViewportSignals {
@@ -91,22 +95,18 @@ pub fn handle_zoom(
     canvas_dimensions: Option<(f64, f64)>,
 ) {
     let delta = ev.delta_y();
-    let shift_pressed = ev.shift_key();
     let alt_pressed = ev.alt_key();
 
-    // No modifier = normal zoom
-    // Shift = horizontal pan
-    // Alt = horizontal zoom
-    if shift_pressed && !alt_pressed {
-        // Horizontal pan
-        let pan_amount = -delta * 0.5;
-        let current_pan_x = viewport.pan_offset_x.get();
-        viewport.set_pan_offset_x.set(current_pan_x + pan_amount);
-    } else if alt_pressed && !shift_pressed && viewport.zoom_level_x.is_some() {
+    // Scroll wheel zoom controls:
+    // - No modifier = vertical zoom (Y-axis only)
+    // - Alt = horizontal zoom (X-axis only, time-based views)
+    // Note: Shift+scroll horizontal panning was removed due to momentum scrolling conflicts.
+    // Use Space+mouse or WASD keys for panning instead.
+    if alt_pressed && viewport.zoom_level_x.is_some() {
         // Horizontal zoom
         let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
         apply_horizontal_zoom(zoom_factor, mouse_x, viewport);
-    } else if !shift_pressed && !alt_pressed {
+    } else if !alt_pressed {
         // Normal zoom
         let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
         apply_normal_zoom(zoom_factor, mouse_x, mouse_y, viewport, min_zoom, canvas_dimensions);
@@ -167,5 +167,127 @@ fn apply_normal_zoom(
         viewport.set_zoom_level.set(new_zoom);
         viewport.set_pan_offset_x.set(new_pan_x);
         viewport.set_pan_offset_y.set(new_pan_y);
+    });
+}
+
+fn calculate_wasd_pan_delta(
+    w_pressed: ReadSignal<bool>,
+    a_pressed: ReadSignal<bool>,
+    s_pressed: ReadSignal<bool>,
+    d_pressed: ReadSignal<bool>,
+) -> (f64, f64) {
+    let mut dx = 0.0;
+    let mut dy = 0.0;
+
+    if w_pressed.get_untracked() {
+        dy += WASD_PAN_SPEED;
+    }
+    if s_pressed.get_untracked() {
+        dy -= WASD_PAN_SPEED;
+    }
+    if a_pressed.get_untracked() {
+        dx += WASD_PAN_SPEED;
+    }
+    if d_pressed.get_untracked() {
+        dx -= WASD_PAN_SPEED;
+    }
+
+    (dx, dy)
+}
+
+pub fn setup_wasd_panning(
+    w_pressed: ReadSignal<bool>,
+    a_pressed: ReadSignal<bool>,
+    s_pressed: ReadSignal<bool>,
+    d_pressed: ReadSignal<bool>,
+    set_pan_offset_x: WriteSignal<f64>,
+    set_pan_offset_y: WriteSignal<f64>,
+    pan_offset_x: ReadSignal<f64>,
+    pan_offset_y: ReadSignal<f64>,
+) {
+    use leptos::leptos_dom::helpers::IntervalHandle;
+    let interval_handle = store_value(None::<IntervalHandle>);
+
+    create_effect(move |_| {
+        // Check key states and only create interval if at least one key is pressed.
+        // This avoids unnecessary timer overhead when no keys are active.
+        let any_key_pressed = w_pressed.get() || a_pressed.get() || s_pressed.get() || d_pressed.get();
+
+        if any_key_pressed && interval_handle.get_value().is_none() {
+            // Start interval for continuous panning
+            let update_pan = move || {
+                let (dx, dy) = calculate_wasd_pan_delta(w_pressed, a_pressed, s_pressed, d_pressed);
+
+                // Safety check: skip update if no movement (e.g., key released mid-frame)
+                if dx.abs() <= f64::EPSILON && dy.abs() <= f64::EPSILON {
+                    return;
+                }
+
+                batch(move || {
+                    set_pan_offset_x.set(pan_offset_x.get_untracked() + dx);
+                    set_pan_offset_y.set(pan_offset_y.get_untracked() + dy);
+                });
+            };
+
+            let handle = leptos::leptos_dom::helpers::set_interval_with_handle(
+                update_pan,
+                Duration::from_millis(16) // ~60fps
+            ).ok();
+            interval_handle.set_value(handle);
+        } else if !any_key_pressed {
+            // Clear interval when no keys are pressed
+            if let Some(handle) = interval_handle.get_value() {
+                handle.clear();
+                interval_handle.set_value(None);
+            }
+        }
+    });
+
+    on_cleanup(move || {
+        if let Some(handle) = interval_handle.get_value() {
+            handle.clear();
+        }
+    });
+}
+
+pub fn setup_keyboard_listeners(
+    set_space_pressed: WriteSignal<bool>,
+    set_w_pressed: WriteSignal<bool>,
+    set_a_pressed: WriteSignal<bool>,
+    set_s_pressed: WriteSignal<bool>,
+    set_d_pressed: WriteSignal<bool>,
+    viewport: &ViewportSignals,
+) {
+    let viewport_for_keyup = *viewport;
+
+    leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
+        if ev.repeat() {
+            return;
+        }
+        match ev.code().as_str() {
+            "Space" => {
+                ev.prevent_default();
+                set_space_pressed.set(true);
+            }
+            "KeyW" => set_w_pressed.set(true),
+            "KeyA" => set_a_pressed.set(true),
+            "KeyS" => set_s_pressed.set(true),
+            "KeyD" => set_d_pressed.set(true),
+            _ => {}
+        }
+    });
+
+    leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keyup, move |ev| {
+        match ev.code().as_str() {
+            "Space" => {
+                set_space_pressed.set(false);
+                handle_pan_end(&viewport_for_keyup);
+            }
+            "KeyW" => set_w_pressed.set(false),
+            "KeyA" => set_a_pressed.set(false),
+            "KeyS" => set_s_pressed.set(false),
+            "KeyD" => set_d_pressed.set(false),
+            _ => {}
+        }
     });
 }

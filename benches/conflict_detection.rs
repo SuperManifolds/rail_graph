@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use nimby_graph::train_journey::TrainJourney;
-use nimby_graph::conflict::detect_line_conflicts;
+use nimby_graph::conflict::{detect_line_conflicts, SerializableConflictContext};
 use nimby_graph::import::csv::{analyze_csv, parse_csv_with_mapping};
 use nimby_graph::models::RailwayGraph;
 
@@ -16,6 +16,13 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
     let journeys = TrainJourney::generate_journeys(&lines, &graph, None);
     let journeys_vec: Vec<_> = journeys.values().cloned().collect();
 
+    // Build serializable context
+    let station_indices = graph.graph.node_indices()
+        .enumerate()
+        .map(|(idx, node_idx)| (node_idx, idx))
+        .collect();
+    let context = SerializableConflictContext::from_graph(&graph, station_indices);
+
     // Benchmark journey generation
     c.bench_function("generate_journeys", |b| {
         b.iter(|| {
@@ -28,7 +35,7 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
         b.iter(|| {
             detect_line_conflicts(
                 black_box(&journeys_vec),
-                black_box(&graph),
+                black_box(&context),
             )
         });
     });
@@ -38,9 +45,16 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
         b.iter(|| {
             let journeys = TrainJourney::generate_journeys(black_box(&lines), black_box(&graph), None);
             let journeys_vec: Vec<_> = journeys.values().cloned().collect();
+
+            let station_indices = graph.graph.node_indices()
+                .enumerate()
+                .map(|(idx, node_idx)| (node_idx, idx))
+                .collect();
+            let context = SerializableConflictContext::from_graph(&graph, station_indices);
+
             detect_line_conflicts(
                 black_box(&journeys_vec),
-                black_box(&graph),
+                black_box(&context),
             )
         });
     });

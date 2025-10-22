@@ -85,12 +85,15 @@ pub fn draw_train_journeys(
 
             // Draw horizontal segment if there's wait time and this is a station (not a junction)
             let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
-            if !is_junction && departure_x - arrival_x > f64::EPSILON {
+            let has_wait_time = !is_junction && departure_x - arrival_x > f64::EPSILON;
+
+            if has_wait_time {
                 ctx.line_to(departure_x, y);
             }
 
-            // Update last visible point to departure position
-            last_visible_point = Some((departure_x, y, idx));
+            // Update last visible point to the actual position we drew to
+            let last_x = if has_wait_time { departure_x } else { arrival_x };
+            last_visible_point = Some((last_x, y, idx));
         }
 
         ctx.stroke();
@@ -106,7 +109,7 @@ pub fn draw_train_journeys(
         let dot_radius = (journey.thickness * DOT_RADIUS_MULTIPLIER).max(MIN_DOT_RADIUS);
         ctx.begin_path();
 
-        // Collect visible node info
+        // Collect visible node info with original node_idx
         let visible_nodes: Vec<_> = journey.station_times.iter()
             .filter_map(|(node_idx, arrival_time, departure_time)| {
                 let idx = *node_positions.get(node_idx)?;
@@ -116,19 +119,26 @@ pub fn draw_train_journeys(
                 let arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
                 let departure_x = dims.left_margin + (departure_fraction * dims.hour_width);
 
-                Some((idx, arrival_x, departure_x))
+                Some((*node_idx, idx, arrival_x, departure_x))
             })
             .collect();
 
-        for &(idx, arrival_x, departure_x) in &visible_nodes {
+        for &(node_idx, idx, arrival_x, departure_x) in &visible_nodes {
             // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
             let y = station_y_positions[idx] - super::canvas::TOP_MARGIN;
 
-            // Only draw dots if this is a station (not junction) with wait time
+            // Check if this is a station (not junction) with wait time
             let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
             let has_wait_time = !is_junction && departure_x - arrival_x > f64::EPSILON;
 
-            if has_wait_time {
+            // Check if this is the actual start or end of the entire journey using stored route endpoints
+            let is_route_start = Some(node_idx) == journey.route_start_node;
+            let is_route_end = Some(node_idx) == journey.route_end_node;
+
+            // Draw dots if: has wait time, OR (is actual start/end of route AND not a junction)
+            let should_draw_endpoint = (is_route_start || is_route_end) && !is_junction;
+
+            if has_wait_time || should_draw_endpoint {
                 // Add arrival dot to path (move_to starts a new subpath)
                 ctx.move_to(arrival_x + dot_radius / zoom_level, y);
                 let _ = ctx.arc(arrival_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
@@ -237,14 +247,18 @@ fn check_single_journey_hover(
             }
 
             // Check horizontal segment from arrival to departure at this station
-            if departure_screen_x - arrival_screen_x > f64::EPSILON {
+            let has_wait_time = departure_screen_x - arrival_screen_x > f64::EPSILON;
+
+            if has_wait_time {
                 let distance = point_to_line_distance(mouse_x, mouse_y, arrival_screen_x, screen_y, departure_screen_x, screen_y);
                 if distance < HOVER_DISTANCE_THRESHOLD {
                     return Some(journey.id);
                 }
             }
 
-            prev_departure_point = Some((departure_screen_x, screen_y));
+            // Update prev point to the actual position we drew to
+            let last_x = if has_wait_time { departure_screen_x } else { arrival_screen_x };
+            prev_departure_point = Some((last_x, screen_y));
             first_point = false;
         }
 

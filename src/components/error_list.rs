@@ -1,48 +1,105 @@
-use leptos::{component, create_node_ref, create_signal, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalUpdate, view};
+use leptos::{component, create_node_ref, create_signal, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalUpdate, view, SignalWith};
 use leptos::leptos_dom::helpers::window_event_listener;
+use leptos_use::{use_infinite_scroll_with_options, UseInfiniteScrollOptions};
 use wasm_bindgen::JsCast;
 use crate::conflict::Conflict;
 use crate::time::time_to_fraction;
 use crate::models::{RailwayGraph, Node, Stations};
+
+const CONFLICTS_PER_PAGE: usize = 50;
 
 #[component]
 fn ErrorListPopover(
     conflicts: Signal<Vec<Conflict>>,
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
     nodes: Signal<Vec<(petgraph::stable_graph::NodeIndex, Node)>>,
-    graph: ReadSignal<RailwayGraph>,
+    station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
 ) -> impl IntoView {
+    let scroll_container_ref = create_node_ref::<leptos::html::Div>();
+    let (displayed_count, set_displayed_count) = create_signal(CONFLICTS_PER_PAGE);
+
+    // Set up infinite scroll
+    let _ = use_infinite_scroll_with_options(
+        scroll_container_ref,
+        move |_| async move {
+            // Load more conflicts when scrolling to bottom
+            set_displayed_count.update(|count| {
+                let total = conflicts.with(Vec::len);
+                *count = (*count + CONFLICTS_PER_PAGE).min(total);
+            });
+        },
+        UseInfiniteScrollOptions::default()
+            .distance(10.0)
+    );
+
     view! {
         <div class="error-list-popover">
-            <div class="error-list-content">
+            <div class="error-list-content" node_ref=scroll_container_ref>
                 {move || {
                     let current_conflicts = conflicts.get();
-                    if current_conflicts.is_empty() {
+                    let total_count = current_conflicts.len();
+
+                    if total_count == 0 {
                         view! {
                             <p class="no-errors">"No conflicts detected"</p>
                         }.into_view()
                     } else {
+                        let display_count = displayed_count.get();
+                        let visible_conflicts = current_conflicts.into_iter().take(display_count);
+
                         view! {
                             <div class="error-items">
                                 {
                                     let current_nodes = nodes.get();
-                                    current_conflicts.into_iter().map(|conflict| {
+                                    let idx_map = station_idx_map.get();
+                                    visible_conflicts.filter_map(|conflict| {
                                         let conflict_type_text = conflict.type_name();
 
+                                        // Map conflict indices to display indices
+                                        let Some(&display_idx1) = idx_map.get(&conflict.station1_idx) else {
+                                            #[cfg(debug_assertions)]
+                                            leptos::logging::warn!(
+                                                "Conflict station1_idx {} not found in index map for conflict: {} at {}",
+                                                conflict.station1_idx, conflict.journey1_id, conflict.time
+                                            );
+                                            return None;
+                                        };
+                                        let Some(&display_idx2) = idx_map.get(&conflict.station2_idx) else {
+                                            #[cfg(debug_assertions)]
+                                            leptos::logging::warn!(
+                                                "Conflict station2_idx {} not found in index map for conflict: {} at {}",
+                                                conflict.station2_idx, conflict.journey1_id, conflict.time
+                                            );
+                                            return None;
+                                        };
+
                                         // Get node names
-                                        let station1_name = current_nodes.get(conflict.station1_idx)
+                                        let station1_name = current_nodes.get(display_idx1)
                                             .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
-                                        let station2_name = current_nodes.get(conflict.station2_idx)
+                                        let station2_name = current_nodes.get(display_idx2)
                                             .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
 
-                                        let conflict_message = conflict.format_message(&station1_name, &station2_name, &graph.get());
+                                        let conflict_message = if conflict.conflict_type == crate::conflict::ConflictType::PlatformViolation {
+                                            // Look up platform name directly from nodes to avoid expensive graph traversal
+                                            let platform_name = conflict.platform_idx.and_then(|idx| {
+                                                current_nodes.get(display_idx1)
+                                                    .and_then(|(_, n)| n.as_station())
+                                                    .and_then(|s| s.platforms.get(idx))
+                                                    .map(|p| p.name.as_str())
+                                            }).unwrap_or("?");
+                                            conflict.format_platform_message(&station1_name, platform_name)
+                                        } else {
+                                            conflict.format_message(&station1_name, &station2_name)
+                                        };
 
                                         let time_fraction = time_to_fraction(conflict.time);
-                                        // Direct usize to f64 conversion is safe for reasonable station counts
+                                        // Calculate display position using mapped indices
+                                        // Handle bidirectional travel by using min/max to ensure valid range
+                                        let (min_idx, max_idx) = (display_idx1.min(display_idx2), display_idx1.max(display_idx2));
                                         #[allow(clippy::cast_precision_loss)]
-                                        let station_position = conflict.station1_idx as f64 + conflict.position;
+                                        let station_position = min_idx as f64 + (conflict.position * (max_idx as f64 - min_idx as f64));
 
-                                        view! {
+                                        Some(view! {
                                             <div
                                                 class="error-item clickable"
                                                 on:click=move |_| {
@@ -62,10 +119,27 @@ fn ErrorListPopover(
                                                     </div>
                                                 </div>
                                             </div>
-                                        }
+                                        })
                                     }).collect::<Vec<_>>()
                                 }
                             </div>
+                            {
+                                if display_count < total_count {
+                                    view! {
+                                        <div class="scroll-status">
+                                            "Showing " {display_count} " of " {total_count} " conflicts (scroll for more)"
+                                        </div>
+                                    }.into_view()
+                                } else if total_count > CONFLICTS_PER_PAGE {
+                                    view! {
+                                        <div class="scroll-status">
+                                            "Showing all " {total_count} " conflicts"
+                                        </div>
+                                    }.into_view()
+                                } else {
+                                    view! {}.into_view()
+                                }
+                            }
                         }.into_view()
                     }
                 }}
@@ -79,6 +153,7 @@ pub fn ErrorList(
     conflicts: Signal<Vec<Conflict>>,
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
     graph: ReadSignal<RailwayGraph>,
+    station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
 
@@ -130,12 +205,15 @@ pub fn ErrorList(
 
             {move || {
                 if is_open.get() {
+                    // Get nodes once when opening dialog to avoid repeated expensive calls
+                    let all_nodes = graph.get().get_all_nodes_ordered();
+                    let nodes_signal = Signal::derive(move || all_nodes.clone());
                     view! {
                         <ErrorListPopover
                             conflicts=conflicts
                             on_conflict_click=on_conflict_click
-                            nodes=Signal::derive(move || graph.get().get_all_nodes_ordered())
-                            graph=graph
+                            nodes=nodes_signal
+                            station_idx_map=station_idx_map
                         />
                     }.into_view()
                 } else {

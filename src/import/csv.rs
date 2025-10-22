@@ -1172,7 +1172,7 @@ mod tests {
 
     #[test]
     fn test_r70_double_track_no_conflict() {
-        use crate::conflict::detect_line_conflicts;
+        use crate::conflict::{detect_line_conflicts, SerializableConflictContext};
         use crate::train_journey::TrainJourney;
         use crate::constants::BASE_DATE;
 
@@ -1201,8 +1201,15 @@ mod tests {
 
         assert!(journeys.len() >= 4, "Should have generated at least 4 journeys (2 forward, 2 return), got {}", journeys.len());
 
+        // Build serializable context from graph
+        let station_indices = graph.graph.node_indices()
+            .enumerate()
+            .map(|(idx, node_idx)| (node_idx, idx))
+            .collect();
+        let context = SerializableConflictContext::from_graph(&graph, station_indices);
+
         // Run conflict detection
-        let (conflicts, _) = detect_line_conflicts(&journeys, &graph);
+        let (conflicts, _) = detect_line_conflicts(&journeys, &context);
 
         // Filter conflicts between Hommelvik and Hell specifically
         let stations = graph.get_all_stations_ordered();
