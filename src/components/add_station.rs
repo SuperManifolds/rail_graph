@@ -1,6 +1,6 @@
 use crate::components::window::Window;
 use crate::components::platform_editor::PlatformEditor;
-use crate::models::{RailwayGraph, Platform, Stations};
+use crate::models::{RailwayGraph, Platform};
 use leptos::{component, create_effect, create_signal, event_target_checked, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, view};
 use petgraph::stable_graph::NodeIndex;
 use std::rc::Rc;
@@ -104,11 +104,13 @@ pub fn AddStation(
                         <option value="">"None"</option>
                         {move || {
                             let current_graph = graph.get();
-                            current_graph.graph.node_indices().enumerate().map(|(i, idx)| {
-                                let name = current_graph.get_station_name(idx).unwrap_or("").to_string();
-                                view! {
-                                    <option value=i.to_string()>{name}</option>
-                                }
+                            current_graph.graph.node_indices().enumerate().filter_map(|(i, idx)| {
+                                current_graph.graph.node_weight(idx).map(|node| {
+                                    let name = node.display_name();
+                                    view! {
+                                        <option value=i.to_string()>{name}</option>
+                                    }
+                                })
                             }).collect::<Vec<_>>()
                         }}
                     </select>
