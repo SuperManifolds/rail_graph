@@ -862,8 +862,8 @@ fn check_segment_pair(
         journey1_id: journey1.train_number.clone(),
         journey2_id: journey2.train_number.clone(),
         conflict_type,
-        segment1_times: None,
-        segment2_times: None,
+        segment1_times: Some((segment1.time_start, segment1.time_end)),
+        segment2_times: Some((segment2.time_start, segment2.time_end)),
         platform_idx: None,
     });
 

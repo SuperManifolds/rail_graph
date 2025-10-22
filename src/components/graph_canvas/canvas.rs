@@ -644,9 +644,10 @@ fn render_graph(
             station_idx_map,
         );
 
-        // Draw block violation visualization for hovered block violation
+        // Draw block visualization for hovered conflicts (BlockViolation, HeadOn, Overtaking)
         if let Some(conflict) = hover_state.hovered_conflict {
-            if conflict.conflict_type == crate::conflict::ConflictType::BlockViolation {
+            // Show blocks for any conflict type that has segment timing information
+            if conflict.segment1_times.is_some() && conflict.segment2_times.is_some() {
                 conflict_indicators::draw_block_violation_visualization(
                     &ctx,
                     &zoomed_dimensions,
