@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "server"]
+
 [package]
 name = "nimby_graph"
 version = "0.1.0"
