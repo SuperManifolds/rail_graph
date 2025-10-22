@@ -1,6 +1,6 @@
 use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value, Signal, store_value};
 use std::collections::HashMap;
-use leptos_meta::{provide_meta_context, Stylesheet, Title};
+use leptos_meta::{provide_meta_context, Title};
 use uuid::Uuid;
 use crate::components::time_graph::TimeGraph;
 use crate::components::infrastructure_view::InfrastructureView;
@@ -294,7 +294,6 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <Stylesheet id="leptos" href="/pkg/nimby_graph.css"/>
         <Title text="Railway Time Graph"/>
 
         <div class="app">

@@ -102,14 +102,18 @@ pub fn CsvColumnMapper(
     let (local_config, set_local_config) = create_signal(config.get());
     let (error_message, set_error_message) = create_signal(None::<String>);
 
-    // Update local config when prop changes (only track the number of columns as a proxy for "new file loaded")
-    let (prev_column_count, set_prev_column_count) = create_signal(config.get().columns.len());
+    // Update local config when prop changes (detect new file by comparing all sample values)
+    let extract_samples = |cfg: &CsvImportConfig| -> Vec<Vec<String>> {
+        cfg.columns.iter().map(|c| c.sample_values.clone()).collect()
+    };
+
+    let (prev_samples, set_prev_samples) = create_signal(extract_samples(&config.get()));
     leptos::create_effect(move |_| {
         let new_config = config.get();
-        let new_count = new_config.columns.len();
-        if new_count != prev_column_count.get() {
+        let new_samples = extract_samples(&new_config);
+        if new_samples != prev_samples.get() {
             set_local_config.set(new_config);
-            set_prev_column_count.set(new_count);
+            set_prev_samples.set(new_samples);
             set_error_message.set(None);
         }
     });

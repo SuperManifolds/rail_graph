@@ -1,4 +1,4 @@
-use chrono::Duration;
+use chrono::{Duration, NaiveDateTime};
 use std::collections::HashMap;
 use crate::models::{Line, RailwayGraph, RouteSegment, Stations, Tracks};
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
@@ -785,10 +785,44 @@ fn calculate_station_cumulative_time(
         }
     } else {
         // Handle arrival time with midnight wraparound detection
-        line_station_data.arrival_time.map(|time| {
-            normalize_time_with_wraparound(time, prev_cumulative_time)
-        })
+        // For first station, allow departure_time or default to zero if arrival_time is missing
+        if prev_cumulative_time.is_none() {
+            line_station_data.arrival_time
+                .or(line_station_data.departure_time)
+                .or(Some(Duration::zero()))
+                .map(|time| normalize_time_with_wraparound(time, prev_cumulative_time))
+        } else {
+            line_station_data.arrival_time.map(|time| {
+                normalize_time_with_wraparound(time, prev_cumulative_time)
+            })
+        }
     }
+}
+
+/// Create manual departure from route and departure time
+fn create_manual_departure(
+    route: &[RouteSegment],
+    graph: &RailwayGraph,
+    departure_time: NaiveDateTime,
+) -> Option<crate::models::ManualDeparture> {
+    use crate::models::{ManualDeparture, DaysOfWeek};
+
+    let first_segment = route.first()?;
+    let last_segment = route.last()?;
+
+    let from_station = graph.graph.edge_endpoints(EdgeIndex::new(first_segment.edge_index))
+        .map(|(from, _)| from)?;
+    let to_station = graph.graph.edge_endpoints(EdgeIndex::new(last_segment.edge_index))
+        .map(|(_, to)| to)?;
+
+    Some(ManualDeparture {
+        id: uuid::Uuid::new_v4(),
+        time: departure_time,
+        from_station,
+        to_station,
+        days_of_week: DaysOfWeek::default(),
+        train_number: None,
+    })
 }
 
 /// Generate return route from forward route
@@ -1018,7 +1052,7 @@ fn build_routes(
         // Generate return route
         lines[line_idx].return_route = generate_return_route(&route, graph, default_wait_time);
 
-        // Set first_departure from CSV data if available
+        // Set departure from CSV data if available
         if let Some(time_of_day) = first_time_of_day {
             use crate::constants::BASE_DATE;
             let hours = time_of_day.num_hours();
@@ -1027,8 +1061,18 @@ fn build_routes(
 
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             if let Some(first_departure) = BASE_DATE.and_hms_opt(hours as u32, minutes as u32, seconds as u32) {
+                // If using arrival/departure time columns (not travel time), set manual departure
+                let should_use_manual = !uses_travel_time
+                    && (group.arrival_time_column.is_some() || group.departure_time_column.is_some());
+
+                if should_use_manual {
+                    lines[line_idx].schedule_mode = crate::models::ScheduleMode::Manual;
+                    let manual_dep = create_manual_departure(&route, graph, first_departure);
+                    lines[line_idx].manual_departures.extend(manual_dep);
+                }
+
+                // Still set first_departure for backward compatibility
                 lines[line_idx].first_departure = first_departure;
-                // Also set return_first_departure to 1 hour later by default
                 lines[line_idx].return_first_departure = first_departure + chrono::Duration::hours(1);
             }
         }

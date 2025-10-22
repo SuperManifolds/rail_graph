@@ -130,12 +130,6 @@ fn ErrorListPopover(
                                             "Showing " {display_count} " of " {total_count} " conflicts (scroll for more)"
                                         </div>
                                     }.into_view()
-                                } else if total_count > CONFLICTS_PER_PAGE {
-                                    view! {
-                                        <div class="scroll-status">
-                                            "Showing all " {total_count} " conflicts"
-                                        </div>
-                                    }.into_view()
                                 } else {
                                     view! {}.into_view()
                                 }
