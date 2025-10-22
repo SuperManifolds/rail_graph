@@ -249,7 +249,7 @@ pub fn GraphCanvas(
     }
     let zoom_level = viewport.zoom_level;
     let set_zoom_level = viewport.set_zoom_level;
-    let (zoom_level_x, set_zoom_level_x) = viewport.zoom_level_x.expect("horizontal zoom enabled");
+    let zoom_level_x = viewport.zoom_level_x.expect("horizontal zoom enabled").0;
     let pan_offset_x = viewport.pan_offset_x;
     let set_pan_offset_x = viewport.set_pan_offset_x;
     let pan_offset_y = viewport.pan_offset_y;
@@ -330,7 +330,6 @@ pub fn GraphCanvas(
 
                     let target_zoom = 8.0;
                     set_zoom_level.set(target_zoom);
-                    set_zoom_level_x.set(target_zoom);
 
                     // Calculate Y position using actual station positions
                     #[allow(clippy::excessive_nesting)]
