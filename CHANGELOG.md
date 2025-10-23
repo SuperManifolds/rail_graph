@@ -1,4 +1,6 @@
-# Unreleased
+# v0.1.3 - 2025-10-23
+
+Improvements have been made to the autolayout however it still exhibits some problematic behaviour, I will continue working on it but I did not wish to hold up all the other changes in this release.  
 
 ## Bug Fixes
 - Fixed view creation from lines ignoring disabled junction connections (pathfinding now respects junction routing rules)
