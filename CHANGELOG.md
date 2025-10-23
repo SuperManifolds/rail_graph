@@ -20,6 +20,7 @@
 ## Improvements
 - Infrastructure autolayout now produces clearer network layouts with less overlapping lines and better visual separation between different routes
 - Infrastructure view now remembers your pan and zoom position when switching between tabs
+- Dragged stations now snap to grid even when autolayout is disabled
 - Line thickness slider now adjusts in increments of 0.25
 - Replaced custom markdown parser with pulldown-cmark for proper CommonMark support in changelog
 - Added proper styling for tables, code blocks, links, and blockquotes in changelog display

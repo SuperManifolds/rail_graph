@@ -801,19 +801,25 @@ fn create_event_handlers(
         canvas_viewport::handle_pan_end(&viewport_copy);
 
         if let Some(station_idx) = dragging_station.get() {
-            if auto_layout_enabled.get() {
-                if let Some(canvas_elem) = canvas_ref.get() {
-                    let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
-                    let rect = canvas.get_bounding_client_rect();
-                    let x = f64::from(ev.client_x()) - rect.left();
-                    let y = f64::from(ev.client_y()) - rect.top();
+            if let Some(canvas_elem) = canvas_ref.get() {
+                let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
+                let rect = canvas.get_bounding_client_rect();
+                let x = f64::from(ev.client_x()) - rect.left();
+                let y = f64::from(ev.client_y()) - rect.top();
 
-                    let zoom = zoom_level.get();
-                    let pan_x = pan_offset_x.get();
-                    let pan_y = pan_offset_y.get();
-                    let (world_x, world_y) = screen_to_world(x, y, zoom, pan_x, pan_y);
+                let zoom = zoom_level.get();
+                let pan_x = pan_offset_x.get();
+                let pan_y = pan_offset_y.get();
+                let (world_x, world_y) = screen_to_world(x, y, zoom, pan_x, pan_y);
 
+                if auto_layout_enabled.get() {
                     apply_drag_snap(graph, set_graph, station_idx, world_x, world_y);
+                } else {
+                    // When autolayout is off, just snap to grid without branch reorientation
+                    let mut current_graph = graph.get();
+                    let snapped = auto_layout::snap_to_grid(world_x, world_y);
+                    current_graph.set_station_position(station_idx, snapped);
+                    set_graph.set(current_graph);
                 }
             }
             set_dragging_station.set(None);
