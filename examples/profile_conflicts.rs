@@ -29,7 +29,7 @@ fn main() {
         let config = analyze_csv(&csv_content, None)
             .unwrap_or_else(|| panic!("Failed to analyze {}", filename.to_string_lossy()));
 
-        let lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, all_lines.len());
+        let lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, all_lines.len(), nimby_graph::models::TrackHandedness::RightHand);
         all_lines.extend(lines);
     }
 

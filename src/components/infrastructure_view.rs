@@ -919,6 +919,7 @@ pub fn InfrastructureView(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
     on_create_view: leptos::Callback<crate::models::GraphView>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
     #[prop(optional)]
     initial_viewport: Option<crate::models::ViewportState>,
     #[prop(optional)]
@@ -1149,6 +1150,7 @@ pub fn InfrastructureView(
                 on_delete=handle_delete_track
                 graph=graph
                 lines=lines
+                settings=settings
             />
 
             <DeleteStationConfirmation

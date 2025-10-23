@@ -45,6 +45,7 @@ pub fn LineEditor(
     set_is_open: impl Fn(bool) + 'static,
     graph: ReadSignal<RailwayGraph>,
     on_save: impl Fn(Line) + 'static,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
     let (edited_line, set_edited_line) = create_signal(None::<Line>);
     let active_tab = create_rw_signal("general".to_string());
@@ -125,6 +126,7 @@ pub fn LineEditor(
                         time_mode=time_mode
                         route_direction=route_direction
                         first_station=first_station
+                        settings=settings
                     />
                     <ScheduleTab
                         edited_line=edited_line

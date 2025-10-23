@@ -43,6 +43,7 @@ fn create_route_between_stations(
     mut line: Line,
     graph: &RailwayGraph,
     direction: RouteDirection,
+    handedness: crate::models::TrackHandedness,
 ) -> Option<Line> {
     let first_idx = graph.get_station_index(first_name)?;
     let second_idx = graph.get_station_index(second_name)?;
@@ -70,8 +71,8 @@ fn create_route_between_stations(
             .and_then(|n| n.as_station())
             .map_or(1, |s| s.platforms.len());
 
-        let origin_platform = graph.get_default_platform_for_arrival(*edge, false, source_platform_count);
-        let destination_platform = graph.get_default_platform_for_arrival(*edge, true, target_platform_count);
+        let origin_platform = graph.get_default_platform_for_arrival(*edge, false, source_platform_count, handedness);
+        let destination_platform = graph.get_default_platform_for_arrival(*edge, true, target_platform_count, handedness);
 
         let segment = RouteSegment {
             edge_index: edge.index(),
@@ -110,6 +111,7 @@ fn SecondStationSelect(
     edited_line: ReadSignal<Option<Line>>,
     graph: ReadSignal<RailwayGraph>,
     on_save: std::rc::Rc<dyn Fn(Line)>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
     let other_stations: Vec<String> = all_stations.iter()
         .filter(|name| *name != &first_name)
@@ -126,8 +128,9 @@ fn SecondStationSelect(
         let Some(line) = edited_line.get_untracked() else { return };
         let graph_data = graph.get();
         let direction = route_direction.get();
+        let handedness = settings.get().track_handedness;
 
-        if let Some(updated_line) = create_route_between_stations(&first_name_for_handler, &second_name, line, &graph_data, direction) {
+        if let Some(updated_line) = create_route_between_stations(&first_name_for_handler, &second_name, line, &graph_data, direction, handedness) {
             on_save(updated_line);
             first_station.set(None);
         }
@@ -164,6 +167,7 @@ pub fn EmptyRouteSetup(
     edited_line: ReadSignal<Option<Line>>,
     graph: ReadSignal<RailwayGraph>,
     on_save: std::rc::Rc<dyn Fn(Line)>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
     // Extract data before the view
     let all_stations = create_memo(move |_| {
@@ -189,6 +193,7 @@ pub fn EmptyRouteSetup(
                             edited_line=edited_line
                             graph=graph
                             on_save=on_save.clone()
+                            settings=settings
                         />
                     }.into_view()
                 } else {

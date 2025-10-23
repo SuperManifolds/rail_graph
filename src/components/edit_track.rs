@@ -16,6 +16,7 @@ pub fn EditTrack(
     on_delete: Rc<dyn Fn(EdgeIndex)>,
     graph: ReadSignal<RailwayGraph>,
     lines: ReadSignal<Vec<Line>>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
     let (tracks, set_tracks) = create_signal(Vec::<Track>::new());
     let (distance, set_distance) = create_signal(String::new());
@@ -90,7 +91,8 @@ pub fn EditTrack(
     let handle_add_track = move || {
         set_tracks.update(|t| {
             let new_count = t.len() + 1;
-            *t = create_tracks_with_count(new_count);
+            let handedness = settings.get().track_handedness;
+            *t = create_tracks_with_count(new_count, handedness);
         });
     };
 
@@ -98,7 +100,8 @@ pub fn EditTrack(
         set_tracks.update(|t| {
             if t.len() > 1 {
                 let new_count = t.len() - 1;
-                *t = create_tracks_with_count(new_count);
+                let handedness = settings.get().track_handedness;
+                *t = create_tracks_with_count(new_count, handedness);
             }
         });
     };

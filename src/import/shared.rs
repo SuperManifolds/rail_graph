@@ -1,19 +1,26 @@
-use crate::models::{RailwayGraph, Track, TrackDirection, Platform};
+use crate::models::{RailwayGraph, Track, TrackDirection, Platform, TrackHandedness};
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use chrono::NaiveTime;
 
-/// Create tracks based on count, using consistent direction assignment
+/// Create tracks based on count, using consistent direction assignment based on handedness
 ///
 /// Direction assignment logic:
 /// - 1 track: Bidirectional
+/// - 2+ tracks with right-hand traffic: Left tracks Forward, right tracks Backward
+/// - 2+ tracks with left-hand traffic: Left tracks Backward, right tracks Forward
+/// - Odd counts: Middle track is always Bidirectional
+///
+/// Examples for right-hand traffic:
 /// - 2 tracks: Forward, Backward
 /// - 3 tracks: Forward, Bidirectional, Backward
 /// - 4 tracks: Forward, Forward, Backward, Backward
-/// - 5 tracks: Forward, Forward, Bidirectional, Backward, Backward
 ///
-/// Pattern: outer tracks are directional, middle track(s) bidirectional for odd counts
+/// Examples for left-hand traffic:
+/// - 2 tracks: Backward, Forward
+/// - 3 tracks: Backward, Bidirectional, Forward
+/// - 4 tracks: Backward, Backward, Forward, Forward
 #[must_use]
-pub fn create_tracks_with_count(track_count: usize) -> Vec<Track> {
+pub fn create_tracks_with_count(track_count: usize, handedness: TrackHandedness) -> Vec<Track> {
     (0..track_count)
         .map(|i| {
             let direction = if track_count == 1 {
@@ -21,12 +28,23 @@ pub fn create_tracks_with_count(track_count: usize) -> Vec<Track> {
             } else if track_count % 2 == 1 && i == track_count / 2 {
                 // Middle track in odd count is bidirectional
                 TrackDirection::Bidirectional
-            } else if i < track_count / 2 {
-                // First half: Forward
-                TrackDirection::Forward
             } else {
-                // Second half: Backward
-                TrackDirection::Backward
+                match handedness {
+                    TrackHandedness::RightHand => {
+                        if i < track_count / 2 {
+                            TrackDirection::Forward  // Left tracks go forward
+                        } else {
+                            TrackDirection::Backward  // Right tracks go backward
+                        }
+                    }
+                    TrackHandedness::LeftHand => {
+                        if i < track_count / 2 {
+                            TrackDirection::Backward  // Left tracks go backward
+                        } else {
+                            TrackDirection::Forward  // Right tracks go forward
+                        }
+                    }
+                }
             };
             Track { direction }
         })
@@ -121,7 +139,7 @@ pub fn select_track_for_direction(
 /// Ensure an edge has enough tracks for the given track number (1-indexed)
 /// If `track_number` is Some(N), ensures at least N tracks exist
 /// Recreates tracks using `create_tracks_with_count` if expansion is needed
-pub fn ensure_track_count(graph: &mut RailwayGraph, edge_idx: EdgeIndex, track_number: Option<usize>) {
+pub fn ensure_track_count(graph: &mut RailwayGraph, edge_idx: EdgeIndex, track_number: Option<usize>, handedness: TrackHandedness) {
     let Some(track_num) = track_number else { return };
     if track_num == 0 { return; } // Invalid track number
 
@@ -130,7 +148,7 @@ pub fn ensure_track_count(graph: &mut RailwayGraph, edge_idx: EdgeIndex, track_n
     let Some(track_segment) = graph.graph.edge_weight_mut(edge_idx) else { return };
     if track_segment.tracks.len() < required_track_count {
         // Need to add more tracks - recreate with the new count
-        track_segment.tracks = create_tracks_with_count(required_track_count);
+        track_segment.tracks = create_tracks_with_count(required_track_count, handedness);
     }
 }
 

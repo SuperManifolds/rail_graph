@@ -11,7 +11,7 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
 
     let config = analyze_csv(&csv_content, None).expect("Failed to analyze CSV");
     let mut graph = RailwayGraph::new();
-    let lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0);
+    let lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0, nimby_graph::models::TrackHandedness::RightHand);
 
     let journeys = TrainJourney::generate_journeys(&lines, &graph, None);
     let journeys_vec: Vec<_> = journeys.values().cloned().collect();

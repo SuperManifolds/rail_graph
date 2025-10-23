@@ -18,6 +18,7 @@
 - Fixed checkbox and help text layout in line editor to have proper spacing and alignment
 
 ## Improvements
+- Added project settings dialog with track handedness configuration (right-hand or left-hand traffic) affecting default platform and track direction assignments during imports and route creation
 - Infrastructure autolayout now produces clearer network layouts with less overlapping lines and better visual separation between different routes
 - Infrastructure view now remembers your pan and zoom position when switching between tabs
 - Dragged stations now snap to grid even when autolayout is disabled

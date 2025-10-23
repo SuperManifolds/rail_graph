@@ -161,6 +161,7 @@ pub fn StopsTab(
     time_mode: RwSignal<TimeDisplayMode>,
     route_direction: RwSignal<RouteDirection>,
     first_station: RwSignal<Option<String>>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
     // Store on_save in a reactive context so it can be accessed from closures
     let on_save_stored = store_value(on_save);
@@ -248,6 +249,7 @@ pub fn StopsTab(
                             edited_line=edited_line
                             graph=graph
                             on_save=on_save_stored.get_value()
+                            settings=settings
                         />
                     </Show>
                 </div>

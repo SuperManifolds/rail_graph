@@ -320,6 +320,7 @@ fn create_route_segments(
     edge_map: &HashMap<(NodeIndex, NodeIndex), EdgeIndex>,
     graph: &RailwayGraph,
     is_return: bool,
+    handedness: crate::models::TrackHandedness,
 ) -> Result<Vec<RouteSegment>, String> {
     let mut route_segments = Vec::new();
 
@@ -399,7 +400,7 @@ fn create_route_segments(
                 let platform = graph.graph.node_weight(from_node)
                     .and_then(|n| n.as_station())
                     .and_then(|s| super::shared::find_platform_by_name(&s.platforms, departure_track))
-                    .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, false, origin_platforms));
+                    .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, false, origin_platforms, handedness));
                 current_platform = Some(platform);
                 platform
             } else if !arrival_track.is_empty() {
@@ -407,16 +408,16 @@ fn create_route_segments(
                 let platform = graph.graph.node_weight(from_node)
                     .and_then(|n| n.as_station())
                     .and_then(|s| super::shared::find_platform_by_name(&s.platforms, arrival_track))
-                    .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, false, origin_platforms));
+                    .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, false, origin_platforms, handedness));
                 current_platform = Some(platform);
                 platform
             } else {
                 // No platform specified, use current or default
-                current_platform.unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, false, origin_platforms))
+                current_platform.unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, false, origin_platforms, handedness))
             }
         } else {
             // Pass-through station - use current platform or default
-            current_platform.unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, false, origin_platforms))
+            current_platform.unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, false, origin_platforms, handedness))
         };
 
         // Determine destination platform
@@ -428,7 +429,7 @@ fn create_route_segments(
                 let platform = graph.graph.node_weight(to_node)
                     .and_then(|n| n.as_station())
                     .and_then(|s| super::shared::find_platform_by_name(&s.platforms, arrival_track))
-                    .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, true, dest_platforms));
+                    .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, true, dest_platforms, handedness));
                 current_platform = Some(platform);
                 platform
             } else if !departure_track.is_empty() {
@@ -436,16 +437,16 @@ fn create_route_segments(
                 let platform = graph.graph.node_weight(to_node)
                     .and_then(|n| n.as_station())
                     .and_then(|s| super::shared::find_platform_by_name(&s.platforms, departure_track))
-                    .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, true, dest_platforms));
+                    .unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, true, dest_platforms, handedness));
                 current_platform = Some(platform);
                 platform
             } else {
                 // No platform specified, use current or default
-                current_platform.unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, true, dest_platforms))
+                current_platform.unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, true, dest_platforms, handedness))
             }
         } else {
             // Pass-through station - use current platform or default
-            current_platform.unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, true, dest_platforms))
+            current_platform.unwrap_or_else(|| graph.get_default_platform_for_arrival(*edge, true, dest_platforms, handedness))
         };
 
         // Use duration if we have timing data starting from this station, otherwise None
@@ -482,6 +483,7 @@ pub fn import_jtraingraph(
     graph: &mut RailwayGraph,
     starting_line_count: usize,
     existing_line_ids: &[String],
+    handedness: crate::models::TrackHandedness,
 ) -> Result<Vec<Line>, String> {
     // Step 1: Create or match stations
     let station_node_indices: Vec<NodeIndex> = timetable.stations.stations
@@ -511,7 +513,7 @@ pub fn import_jtraingraph(
                 .unwrap_or(1);
 
             // Use shared track creation logic
-            let tracks = super::shared::create_tracks_with_count(track_count);
+            let tracks = super::shared::create_tracks_with_count(track_count, handedness);
 
             // Parse default platforms
             // dTa (default platform away) = platform when departing from source station
@@ -613,6 +615,7 @@ pub fn import_jtraingraph(
             &edge_map,
             graph,
             is_return,
+            handedness,
         )?;
 
         // Create manual departures for each train
@@ -726,7 +729,7 @@ mod tests {
 
         let mut graph = RailwayGraph::new();
 
-        let result = import_jtraingraph(&timetable, &mut graph, 0, &[]);
+        let result = import_jtraingraph(&timetable, &mut graph, 0, &[], crate::models::TrackHandedness::RightHand);
         assert!(result.is_ok(), "Failed to import: {:?}", result.err());
 
         let lines = result.expect("Import should succeed");
@@ -748,7 +751,7 @@ mod tests {
 
         let mut graph = RailwayGraph::new();
 
-        let result = import_jtraingraph(&timetable, &mut graph, 0, &[]);
+        let result = import_jtraingraph(&timetable, &mut graph, 0, &[], crate::models::TrackHandedness::RightHand);
         assert!(result.is_ok(), "Failed to import: {:?}", result.err());
 
         let lines = result.expect("Import should succeed");
@@ -771,7 +774,7 @@ mod tests {
 
         let mut graph = RailwayGraph::new();
 
-        let result = import_jtraingraph(&timetable, &mut graph, 0, &[]);
+        let result = import_jtraingraph(&timetable, &mut graph, 0, &[], crate::models::TrackHandedness::RightHand);
         assert!(result.is_ok(), "Failed to import: {:?}", result.err());
 
         let lines = result.expect("Import should succeed");
@@ -825,7 +828,7 @@ mod tests {
 
         // Import and verify line was created
         let mut graph = RailwayGraph::new();
-        let result = import_jtraingraph(&timetable, &mut graph, 0, &[]);
+        let result = import_jtraingraph(&timetable, &mut graph, 0, &[], crate::models::TrackHandedness::RightHand);
         assert!(result.is_ok(), "Failed to import: {:?}", result.err());
 
         let lines = result.expect("Import should succeed");
@@ -919,7 +922,7 @@ mod tests {
 
         let mut graph = RailwayGraph::new();
 
-        let result = import_jtraingraph(&timetable, &mut graph, 0, &[]);
+        let result = import_jtraingraph(&timetable, &mut graph, 0, &[], crate::models::TrackHandedness::RightHand);
         assert!(result.is_ok(), "Failed to import: {:?}", result.err());
 
         // Get station nodes in order - they are created in the same order as in the timetable

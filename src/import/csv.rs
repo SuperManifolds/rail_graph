@@ -563,7 +563,7 @@ fn is_duration_format(s: &str) -> bool {
 /// Merges stations and tracks into the existing graph
 /// `existing_line_count` is used to offset colors to avoid duplicates
 #[must_use]
-pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &mut RailwayGraph, existing_line_count: usize) -> Vec<Line> {
+pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &mut RailwayGraph, existing_line_count: usize, handedness: crate::models::TrackHandedness) -> Vec<Line> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(content.as_bytes());
@@ -585,7 +585,7 @@ pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &m
 
     let station_data = collect_station_data(&mut records, config, &line_groups);
 
-    build_routes(&mut lines, graph, &station_data, &line_groups, config);
+    build_routes(&mut lines, graph, &station_data, &line_groups, config, handedness);
 
     lines
 }
@@ -886,6 +886,7 @@ fn build_routes(
     station_data: &[StationRowData],
     line_groups: &[LineGroupData],
     config: &CsvImportConfig,
+    handedness: crate::models::TrackHandedness,
 ) {
     let mut edge_map: HashMap<(NodeIndex, NodeIndex), EdgeIndex> = HashMap::new();
 
@@ -998,13 +999,13 @@ fn build_routes(
                     } else {
                         // Create new edge, using track count from CSV if available
                         let track_count = prev_line_data.track_number.unwrap_or(1);
-                        let tracks = super::shared::create_tracks_with_count(track_count);
+                        let tracks = super::shared::create_tracks_with_count(track_count, handedness);
                         graph.add_track(prev_idx, station_idx, tracks)
                     }
                 });
 
             // Ensure edge has enough tracks for the requested track index (from origin station)
-            super::shared::ensure_track_count(graph, edge_idx, prev_line_data.track_number);
+            super::shared::ensure_track_count(graph, edge_idx, prev_line_data.track_number, handedness);
 
             // Set distance on edge if provided (from origin station)
             if let Some(distance) = prev_line_data.track_distance {
@@ -1029,7 +1030,7 @@ fn build_routes(
                 let origin_platforms = graph.graph.node_weight(prev_idx)
                     .and_then(|n| n.as_station())
                     .map_or(1, |s| s.platforms.len());
-                let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms);
+                let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms, handedness);
 
                 (origin_platform_idx, dest_platform_idx)
             } else {
@@ -1042,8 +1043,8 @@ fn build_routes(
                     .and_then(|n| n.as_station())
                     .map_or(1, |s| s.platforms.len());
 
-                let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms);
-                let dest_platform_idx = graph.get_default_platform_for_arrival(edge_idx, true, dest_platforms);
+                let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms, handedness);
+                let dest_platform_idx = graph.get_default_platform_for_arrival(edge_idx, true, dest_platforms, handedness);
 
                 (origin_platform_idx, dest_platform_idx)
             };
@@ -1253,7 +1254,7 @@ mod tests {
         let config = analyze_csv(&csv_content, Some("R70".to_string())).expect("Should parse R70.csv");
 
         let mut graph = RailwayGraph::new();
-        let mut lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0);
+        let mut lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0, crate::models::TrackHandedness::RightHand);
 
         assert!(!lines.is_empty(), "Should have imported at least one line");
 

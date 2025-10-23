@@ -1,0 +1,68 @@
+// Settings content styling
+.settings-content {
+    padding: 1rem;
+
+    .settings-section {
+        margin-bottom: 1.5rem;
+
+        &:last-child {
+            margin-bottom: 0;
+        }
+
+        h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+        }
+
+        .section-description {
+            margin: 0 0 0.75rem 0;
+            font-size: 0.875rem;
+            color: var(--color-text-muted);
+        }
+    }
+
+    .radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+
+        .radio-label {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            border: 1px solid var(--color-border-medium);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+
+            &:hover {
+                background-color: var(--color-bg-hover);
+            }
+
+            input[type="radio"] {
+                margin-top: 2px;
+                cursor: pointer;
+            }
+
+            .radio-text {
+                display: flex;
+                flex-direction: column;
+                gap: 0.25rem;
+                flex: 1;
+
+                strong {
+                    color: var(--color-text-primary);
+                    font-size: 0.875rem;
+                }
+
+                .radio-description {
+                    color: var(--color-text-muted);
+                    font-size: 0.8125rem;
+                }
+            }
+        }
+    }
+}

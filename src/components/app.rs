@@ -52,6 +52,7 @@ pub fn App() -> impl IntoView {
     let (lines, set_lines) = create_signal(Vec::new());
     let (graph, set_graph) = create_signal(RailwayGraph::new());
     let (legend, set_legend) = create_signal(Legend::default());
+    let (settings, set_settings) = create_signal(crate::models::ProjectSettings::default());
     let (views, set_views) = create_signal(Vec::new());
     let (is_loading, set_is_loading) = create_signal(true);
     let (initial_load_complete, set_initial_load_complete) = create_signal(false);
@@ -100,6 +101,7 @@ pub fn App() -> impl IntoView {
             set_lines.set(project.lines.clone());
             set_graph.set(project.graph.clone());
             set_legend.set(project.legend);
+            set_settings.set(project.settings);
 
             // Ensure we have at least one view (create default "Main Line" view)
             let mut views = project.views.clone();
@@ -164,11 +166,12 @@ pub fn App() -> impl IntoView {
         (node_count, edge_count)
     });
 
-    // Auto-save project whenever lines, graph, legend, views, viewport states, or active tab change
+    // Auto-save project whenever lines, graph, legend, settings, views, viewport states, or active tab change
     create_effect(move |_| {
         let current_lines = lines.get();
         let current_graph = graph.get();
         let current_legend = legend.get();
+        let current_settings = settings.get();
         let current_views = views.get();
         let current_viewports = viewport_states.get();
         let current_infrastructure_viewport = infrastructure_viewport.get();
@@ -196,6 +199,7 @@ pub fn App() -> impl IntoView {
             proj.lines = current_lines;
             proj.graph = current_graph;
             proj.legend = current_legend;
+            proj.settings = current_settings;
             proj.views = views_with_viewports;
             proj.active_tab_id = active_tab_id;
             proj.infrastructure_viewport = current_infrastructure_viewport;
@@ -321,6 +325,7 @@ pub fn App() -> impl IntoView {
         set_lines.set(project.lines.clone());
         set_graph.set(project.graph.clone());
         set_legend.set(project.legend.clone());
+        set_settings.set(project.settings.clone());
 
         // Handle views
         let mut project_views = project.views.clone();
@@ -451,6 +456,7 @@ pub fn App() -> impl IntoView {
                             lines=lines
                             set_lines=set_lines
                             on_create_view=on_create_view
+                            settings=settings
                             initial_viewport=infrastructure_viewport.get_untracked()
                             on_viewport_change=Callback::new(move |viewport_state: ViewportState| {
                                 set_infrastructure_viewport.set(viewport_state);
@@ -468,6 +474,8 @@ pub fn App() -> impl IntoView {
                                     set_graph=set_graph
                                     legend=legend
                                     set_legend=set_legend
+                                    settings=settings
+                                    set_settings=set_settings
                                     view=view
                                     train_journeys=train_journeys
                                     selected_day=selected_day

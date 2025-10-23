@@ -1,6 +1,7 @@
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use super::RailwayGraph;
 use crate::models::track::{Track, TrackSegment};
+use crate::models::TrackHandedness;
 
 /// Extension trait for track-related operations on `RailwayGraph`
 pub trait Tracks {
@@ -18,13 +19,14 @@ pub trait Tracks {
     fn toggle_segment_double_track(&mut self, station1_name: &str, station2_name: &str) -> Vec<(usize, usize)>;
 
     /// Get the default platform index for arriving at a station via an edge
-    /// Returns configured default or falls back to first (0) or last platform based on direction
+    /// Returns configured default or falls back to first (0) or last platform based on direction and handedness
     ///
     /// # Arguments
     /// * `edge_idx` - The edge being traveled on
     /// * `arriving_at_target` - true if arriving at target node, false if arriving at source node
     /// * `platform_count` - Number of platforms at the arrival station
-    fn get_default_platform_for_arrival(&self, edge_idx: EdgeIndex, arriving_at_target: bool, platform_count: usize) -> usize;
+    /// * `handedness` - Track handedness (right-hand or left-hand traffic)
+    fn get_default_platform_for_arrival(&self, edge_idx: EdgeIndex, arriving_at_target: bool, platform_count: usize, handedness: TrackHandedness) -> usize;
 }
 
 impl Tracks for RailwayGraph {
@@ -88,23 +90,33 @@ impl Tracks for RailwayGraph {
         changed_edges
     }
 
-    fn get_default_platform_for_arrival(&self, edge_idx: EdgeIndex, arriving_at_target: bool, platform_count: usize) -> usize {
+    fn get_default_platform_for_arrival(&self, edge_idx: EdgeIndex, arriving_at_target: bool, platform_count: usize, handedness: TrackHandedness) -> usize {
         if platform_count == 0 {
             return 0;
         }
 
         let track_segment = self.get_track(edge_idx);
 
-        if arriving_at_target {
-            // Arriving at target station (traveling forward)
-            track_segment
-                .and_then(|seg| seg.default_platform_target)
-                .unwrap_or(platform_count - 1) // Default to last platform
+        // Get configured default if available
+        let configured_default = if arriving_at_target {
+            track_segment.and_then(|seg| seg.default_platform_target)
         } else {
-            // Arriving at source station (traveling backward)
-            track_segment
-                .and_then(|seg| seg.default_platform_source)
-                .unwrap_or(0) // Default to first platform
+            track_segment.and_then(|seg| seg.default_platform_source)
+        };
+
+        if let Some(platform) = configured_default {
+            return platform;
+        }
+
+        // Fall back to handedness-based default
+        match (handedness, arriving_at_target) {
+            // Right-hand: forward trains use right (last) platform, backward trains use left (first) platform
+            // Left-hand: backward trains use right (last) platform
+            (TrackHandedness::RightHand, true) | (TrackHandedness::LeftHand, false) => platform_count - 1,
+
+            // Right-hand: backward trains use left (first) platform
+            // Left-hand: forward trains use left (first) platform
+            (TrackHandedness::RightHand, false) | (TrackHandedness::LeftHand, true) => 0,
         }
     }
 }

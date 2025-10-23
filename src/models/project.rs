@@ -10,6 +10,24 @@ pub struct ProjectMetadata {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TrackHandedness {
+    RightHand,
+    LeftHand,
+}
+
+impl Default for TrackHandedness {
+    fn default() -> Self {
+        Self::RightHand
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProjectSettings {
+    #[serde(default)]
+    pub track_handedness: TrackHandedness,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SpacingMode {
     Equal,
     DistanceBased,
@@ -48,6 +66,8 @@ pub struct Project {
     #[serde(default)]
     pub legend: Legend,
     #[serde(default)]
+    pub settings: ProjectSettings,
+    #[serde(default)]
     pub views: Vec<GraphView>,
     #[serde(default)]
     pub active_tab_id: Option<String>,
@@ -69,6 +89,7 @@ impl Project {
             lines: Vec::new(),
             graph: RailwayGraph::new(),
             legend: Legend::default(),
+            settings: ProjectSettings::default(),
             views: Vec::new(),
             active_tab_id: None,
             infrastructure_viewport: ViewportState::default(),
@@ -88,6 +109,7 @@ impl Project {
             lines,
             graph,
             legend,
+            settings: ProjectSettings::default(),
             views: Vec::new(),
             active_tab_id: None,
             infrastructure_viewport: ViewportState::default(),
@@ -107,6 +129,7 @@ impl Project {
             lines: Vec::new(),
             graph: RailwayGraph::new(),
             legend: Legend::default(),
+            settings: ProjectSettings::default(),
             views: Vec::new(),
             active_tab_id: None,
             infrastructure_viewport: ViewportState::default(),
@@ -130,6 +153,7 @@ impl Project {
             lines: self.lines.clone(),
             graph: self.graph.clone(),
             legend: self.legend.clone(),
+            settings: self.settings.clone(),
             views: self.views.clone(),
             active_tab_id: self.active_tab_id.clone(),
             infrastructure_viewport: self.infrastructure_viewport.clone(),
