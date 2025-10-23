@@ -11,6 +11,7 @@
 - Fixed track editor distance field retaining value from previously edited track when switching between tracks
 - Fixed station editor default platform selection resetting to "Auto" when trying to select a specific platform
 - Fixed junction labels not being clickable
+- Fixed junction names not appearing in track editor when editing tracks connected to junctions
 
 ## Improvements
 - Line thickness slider now adjusts in increments of 0.25

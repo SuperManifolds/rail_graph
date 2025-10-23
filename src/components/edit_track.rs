@@ -1,6 +1,6 @@
 use crate::components::window::Window;
 use crate::components::track_editor::TrackEditor;
-use crate::models::{RailwayGraph, Track, TrackDirection, Line, Stations};
+use crate::models::{RailwayGraph, Track, TrackDirection, Line};
 use crate::import::shared::create_tracks_with_count;
 use leptos::{component, create_effect, create_signal, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalUpdate, view};
 use petgraph::stable_graph::EdgeIndex;
@@ -36,13 +36,13 @@ pub fn EditTrack(
                 set_distance.set(track_segment.distance.map(|d| d.to_string()).unwrap_or_default());
             }
 
-            // Get station names
+            // Get station/junction names
             if let Some((from, to)) = current_graph.graph.edge_endpoints(edge_idx) {
-                if let Some(from_name) = current_graph.get_station_name(from) {
-                    set_from_station_name.set(from_name.to_string());
+                if let Some(from_node) = current_graph.graph.node_weight(from) {
+                    set_from_station_name.set(from_node.display_name());
                 }
-                if let Some(to_name) = current_graph.get_station_name(to) {
-                    set_to_station_name.set(to_name.to_string());
+                if let Some(to_node) = current_graph.graph.node_weight(to) {
+                    set_to_station_name.set(to_node.display_name());
                 }
             }
 
