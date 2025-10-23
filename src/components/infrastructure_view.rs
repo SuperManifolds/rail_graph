@@ -71,6 +71,106 @@ fn screen_to_world(screen_x: f64, screen_y: f64, zoom: f64, pan_x: f64, pan_y: f
     ((screen_x - pan_x) / zoom, (screen_y - pan_y) / zoom)
 }
 
+/// Apply autolayout snapping after dragging a station
+fn apply_drag_snap(
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    station_idx: NodeIndex,
+    world_x: f64,
+    world_y: f64,
+) {
+    let mut current_graph = graph.get();
+
+    if should_reorient_branch(&current_graph, station_idx, world_x, world_y) {
+        // Significant angle change - reorient entire branch
+        auto_layout::snap_to_angle(&mut current_graph, station_idx, world_x, world_y);
+    } else {
+        // Moving along branch - just reposition this station
+        auto_layout::snap_station_along_branch(&mut current_graph, station_idx, world_x, world_y);
+    }
+
+    set_graph.set(current_graph);
+}
+
+/// Determine if a station drag should reorient the branch or just reposition along it
+#[allow(clippy::similar_names)]
+fn should_reorient_branch(graph: &RailwayGraph, station_idx: NodeIndex, target_x: f64, target_y: f64) -> bool {
+    use crate::models::Stations;
+    use petgraph::Direction;
+
+    let Some(current_pos) = graph.get_station_position(station_idx) else {
+        return false;
+    };
+
+    // Get neighbors to determine current branch direction
+    let neighbors: Vec<_> = graph.graph.edges(station_idx)
+        .filter_map(|e| {
+            let target = e.target();
+            graph.get_station_position(target).map(|pos| (target, pos))
+        })
+        .chain(graph.graph.edges_directed(station_idx, Direction::Incoming)
+            .filter_map(|e| {
+                let source = e.source();
+                graph.get_station_position(source).map(|pos| (source, pos))
+            }))
+        .collect();
+
+    if neighbors.is_empty() {
+        return false; // No neighbors, no branch to reorient
+    }
+
+    // Calculate average branch direction
+    let mut total_dx = 0.0;
+    let mut total_dy = 0.0;
+    let mut count = 0;
+
+    for (_, neighbor_pos) in &neighbors {
+        let dx = neighbor_pos.0 - current_pos.0;
+        let dy = neighbor_pos.1 - current_pos.1;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist > 0.01 {
+            total_dx += dx / dist;
+            total_dy += dy / dist;
+            count += 1;
+        }
+    }
+
+    if count == 0 {
+        return false; // No meaningful direction
+    }
+
+    let avg_dx = total_dx / f64::from(count);
+    let avg_dy = total_dy / f64::from(count);
+    let branch_len = (avg_dx * avg_dx + avg_dy * avg_dy).sqrt();
+
+    if branch_len < 0.01 {
+        return false; // No clear branch direction
+    }
+
+    let branch_dir_x = avg_dx / branch_len;
+    let branch_dir_y = avg_dy / branch_len;
+
+    // Calculate drag direction
+    let drag_dx = target_x - current_pos.0;
+    let drag_dy = target_y - current_pos.1;
+    let drag_dist = (drag_dx * drag_dx + drag_dy * drag_dy).sqrt();
+
+    if drag_dist < 20.0 {
+        return false; // Very small drag, don't reorient
+    }
+
+    let drag_dir_x = drag_dx / drag_dist;
+    let drag_dir_y = drag_dy / drag_dist;
+
+    // Calculate angle between branch direction and drag direction
+    let dot_product = branch_dir_x * drag_dir_x + branch_dir_y * drag_dir_y;
+    let angle = dot_product.acos();
+
+    // If angle is more than 30 degrees (π/6), consider it a reorientation
+    angle.abs() > std::f64::consts::PI / 6.0
+}
+
+#[allow(clippy::too_many_arguments)]
 fn handle_adding_junction(
     world_x: f64,
     world_y: f64,
@@ -80,6 +180,7 @@ fn handle_adding_junction(
     set_lines: WriteSignal<Vec<Line>>,
     set_editing_junction: WriteSignal<Option<NodeIndex>>,
     set_edit_mode: WriteSignal<EditMode>,
+    auto_layout_enabled: ReadSignal<bool>,
 ) {
     use crate::models::{Junction, Junctions, Tracks};
 
@@ -101,10 +202,17 @@ fn handle_adding_junction(
     let mut updated_graph = current_graph;
     let mut current_lines = lines.get();
 
+    // Snap to grid if autolayout is enabled
+    let position = if auto_layout_enabled.get() {
+        auto_layout::snap_to_grid(world_x, world_y)
+    } else {
+        (world_x, world_y)
+    };
+
     // Create junction at clicked position
     let junction = Junction {
         name: None,
-        position: Some((world_x, world_y)),
+        position: Some(position),
         routing_rules: vec![],
     };
     let junction_idx = updated_graph.add_junction(junction);
@@ -459,25 +567,49 @@ fn setup_auto_layout_effect(
     set_graph: WriteSignal<RailwayGraph>,
     canvas_ref: leptos::NodeRef<leptos::html::Canvas>,
 ) {
-    create_effect(move |_| {
+    create_effect(move |prev_topology: Option<(usize, usize)>| {
         if !auto_layout_enabled.get() {
-            return;
+            return (0, 0);
         }
 
-        let mut current_graph = graph.get();
+        let current_graph = graph.get();
+        let node_count = current_graph.graph.node_count();
+        let edge_count = current_graph.graph.edge_references().count();
+        let current_topology = (node_count, edge_count);
 
-        let has_unpositioned = current_graph
-            .graph
-            .node_indices()
-            .any(|idx| current_graph.get_station_position(idx).is_none());
+        // Check if topology changed (node or edge count changed)
+        // Skip on first run (prev_topology is None) to preserve loaded positions
+        let topology_changed = prev_topology.is_some() && prev_topology != Some(current_topology);
 
-        if has_unpositioned && current_graph.graph.node_count() > 0 {
-            let Some(canvas) = canvas_ref.get() else { return };
-            let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
-            let height = f64::from(canvas_elem.client_height());
-            auto_layout::apply_layout(&mut current_graph, height);
-            set_graph.set(current_graph);
+        if topology_changed && node_count > 0 {
+            let mut current_graph = current_graph.clone();
+
+            let has_unpositioned = current_graph
+                .graph
+                .node_indices()
+                .any(|idx| current_graph.get_station_position(idx).is_none());
+
+            let has_positioned_nodes = current_graph.graph.node_indices()
+                .any(|idx| {
+                    current_graph.get_station_position(idx)
+                        .is_some_and(|pos| pos != (0.0, 0.0))
+                });
+
+            if has_unpositioned {
+                // New nodes without positions - use full layout
+                let Some(canvas) = canvas_ref.get() else { return current_topology };
+                let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+                let height = f64::from(canvas_elem.client_height());
+                auto_layout::apply_layout(&mut current_graph, height);
+                set_graph.set(current_graph);
+            } else if has_positioned_nodes {
+                // Topology changed but all nodes positioned - smart adjustment
+                auto_layout::adjust_layout(&mut current_graph);
+                set_graph.set(current_graph);
+            }
         }
+
+        current_topology
     });
 }
 
@@ -591,7 +723,7 @@ fn create_event_handlers(
                     handle_mouse_down_adding_track(clicked_station, selected_station, set_selected_station, graph, set_graph);
                 }
                 EditMode::AddingJunction if is_single_click => {
-                    handle_adding_junction(world_x, world_y, graph, set_graph, lines, set_lines, set_editing_junction, set_edit_mode);
+                    handle_adding_junction(world_x, world_y, graph, set_graph, lines, set_lines, set_editing_junction, set_edit_mode, auto_layout_enabled);
                 }
                 EditMode::CreatingView if is_single_click => {
                     let current_graph = graph.get();
@@ -647,7 +779,15 @@ fn create_event_handlers(
                 let (world_x, world_y) = screen_to_world(x, y, zoom, pan_x, pan_y);
 
                 let mut current_graph = graph.get();
-                current_graph.set_station_position(station_idx, (world_x, world_y));
+
+                // Snap to grid if autolayout is enabled
+                let position = if auto_layout_enabled.get() {
+                    auto_layout::snap_to_grid(world_x, world_y)
+                } else {
+                    (world_x, world_y)
+                };
+
+                current_graph.set_station_position(station_idx, position);
                 set_graph.set(current_graph);
             } else {
                 let viewport_state = ViewportState {
@@ -680,9 +820,7 @@ fn create_event_handlers(
                     let pan_y = pan_offset_y.get();
                     let (world_x, world_y) = screen_to_world(x, y, zoom, pan_x, pan_y);
 
-                    let mut current_graph = graph.get();
-                    auto_layout::snap_to_angle(&mut current_graph, station_idx, world_x, world_y);
-                    set_graph.set(current_graph);
+                    apply_drag_snap(graph, set_graph, station_idx, world_x, world_y);
                 }
             }
             set_dragging_station.set(None);
@@ -865,17 +1003,25 @@ pub fn InfrastructureView(
 
         if new_state {
             let mut current_graph = graph.get();
-            let node_indices: Vec<_> = current_graph.graph.node_indices().collect();
-            for idx in node_indices {
-                current_graph.set_station_position(idx, (0.0, 0.0));
-            }
 
-            if let Some(canvas) = canvas_ref.get() {
+            // Check if any nodes have positions
+            let has_positioned_nodes = current_graph.graph.node_indices()
+                .any(|idx| {
+                    current_graph.get_station_position(idx)
+                        .is_some_and(|pos| pos != (0.0, 0.0))
+                });
+
+            if has_positioned_nodes {
+                // Smart adjustment: preserve structure but fix spacing/angles
+                auto_layout::adjust_layout(&mut current_graph);
+            } else if let Some(canvas) = canvas_ref.get() {
+                // No positions yet, do full layout
                 let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
                 let height = f64::from(canvas_elem.client_height());
                 auto_layout::apply_layout(&mut current_graph, height);
-                set_graph.set(current_graph);
             }
+
+            set_graph.set(current_graph);
         }
     };
 
