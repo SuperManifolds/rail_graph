@@ -53,6 +53,13 @@ pub fn EditTrack(
                 .map(|line| line.name.clone())
                 .collect();
             set_affected_lines.set(affected);
+        } else {
+            // Reset signals when dialog closes to prevent stale values
+            set_tracks.set(Vec::new());
+            set_distance.set(String::new());
+            set_from_station_name.set(String::new());
+            set_to_station_name.set(String::new());
+            set_affected_lines.set(Vec::new());
         }
     });
 

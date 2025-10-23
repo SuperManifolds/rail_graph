@@ -8,6 +8,8 @@
 - Fixed project timestamps displaying in UTC instead of user's local time
 - Fixed "Save As" with an existing project name not prompting for overwrite confirmation (now shows a confirmation dialog)
 - Fixed "Save As" not including recent changes (new lines, stations, etc.) made before opening the project dialog
+- Fixed track editor distance field retaining value from previously edited track when switching between tracks
+- Fixed station editor default platform selection resetting to "Auto" when trying to select a specific platform
 
 ## Improvements
 - Line thickness slider now adjusts in increments of 0.25
