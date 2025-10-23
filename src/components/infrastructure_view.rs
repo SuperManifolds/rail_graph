@@ -903,7 +903,7 @@ fn create_event_handlers(
             let mouse_x = f64::from(ev.client_x()) - rect.left();
             let mouse_y = f64::from(ev.client_y()) - rect.top();
 
-            canvas_viewport::handle_zoom(&ev, mouse_x, mouse_y, &viewport_copy, None, None);
+            canvas_viewport::handle_zoom(&ev, mouse_x, mouse_y, &viewport_copy, None, None, false);
         }
     };
 

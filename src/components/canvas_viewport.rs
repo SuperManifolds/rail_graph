@@ -125,20 +125,20 @@ pub fn handle_zoom(
     viewport: &ViewportSignals,
     min_zoom: Option<f64>,
     canvas_dimensions: Option<(f64, f64)>,
+    horizontal_zoom: bool,
 ) {
     let delta = ev.delta_y();
-    let alt_pressed = ev.alt_key();
 
     // Scroll wheel zoom controls:
-    // - No modifier = vertical zoom (Y-axis only)
-    // - Alt = horizontal zoom (X-axis only, time-based views)
+    // - Cursor over time labels = horizontal zoom (X-axis only, time-based views)
+    // - Cursor elsewhere = vertical zoom (Y-axis only)
     // Note: Shift+scroll horizontal panning was removed due to momentum scrolling conflicts.
     // Use Space+mouse or WASD keys for panning instead.
-    if alt_pressed && viewport.zoom_level_x.is_some() {
+    if horizontal_zoom && viewport.zoom_level_x.is_some() {
         // Horizontal zoom
         let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
         apply_horizontal_zoom(zoom_factor, mouse_x, viewport);
-    } else if !alt_pressed {
+    } else if !horizontal_zoom {
         // Normal zoom
         let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
         apply_normal_zoom(zoom_factor, mouse_x, mouse_y, viewport, min_zoom, canvas_dimensions);
