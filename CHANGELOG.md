@@ -5,6 +5,7 @@
 - Fixed help text in train number format to show correct single brace syntax
 - Fixed time inputs displaying in 12-hour format for some users (now always shows 24-hour format)
 - Fixed default wait time only being applied to first stop when creating new routes
+- Fixed project timestamps displaying in UTC instead of user's local time
 
 ## Improvements
 - Line thickness slider now adjusts in increments of 0.25

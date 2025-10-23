@@ -1,5 +1,6 @@
 use chrono::{NaiveDateTime, NaiveTime};
 use crate::constants::BASE_DATE;
+use wasm_bindgen::JsValue;
 
 /// Convert a `NaiveDateTime` to a fraction of hours since `BASE_DATE`
 #[must_use]
@@ -102,6 +103,36 @@ pub fn parse_time_hms(s: &str) -> Result<NaiveTime, chrono::ParseError> {
 
     // Fall back to strict format
     NaiveTime::parse_from_str(s, "%H:%M:%S")
+}
+
+/// Format an RFC3339 timestamp string to local time using the user's locale
+///
+/// Uses Intl.DateTimeFormat with the user's locale for proper localized formatting.
+/// Falls back to the original string if parsing or formatting fails.
+#[must_use]
+pub fn format_rfc3339_local(rfc3339: &str) -> String {
+    let Ok(dt) = chrono::DateTime::parse_from_rfc3339(rfc3339) else {
+        return rfc3339.to_string();
+    };
+
+    let timestamp_millis = dt.timestamp_millis();
+    #[allow(clippy::cast_precision_loss)]
+    let js_date = js_sys::Date::new(&JsValue::from_f64(timestamp_millis as f64));
+
+    let options = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&options, &"dateStyle".into(), &"medium".into());
+    let _ = js_sys::Reflect::set(&options, &"timeStyle".into(), &"short".into());
+
+    let formatter = js_sys::Intl::DateTimeFormat::new(&js_sys::Array::new(), &options);
+
+    // Call the format function with the date
+    let format_fn = formatter.format();
+    let result = format_fn.call1(&JsValue::NULL, &js_date);
+
+    result
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| rfc3339.to_string())
 }
 
 #[cfg(test)]
