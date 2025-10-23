@@ -604,7 +604,7 @@ impl TrainJourney {
             return_departure_time += line.frequency;
 
             // Check if next departure would be after the last departure time
-            let Some(last_departure_on_date) = time_on_date(line.last_departure, current_date) else {
+            let Some(last_departure_on_date) = time_on_date(line.return_last_departure, current_date) else {
                 break;
             };
             if return_departure_time > last_departure_on_date {
@@ -676,6 +676,7 @@ mod tests {
             sync_routes: true,
             auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         }
     }
 
@@ -770,6 +771,7 @@ mod tests {
         line.first_departure = BASE_DATE.and_hms_opt(20, 0, 0).expect("valid time");
         line.return_first_departure = BASE_DATE.and_hms_opt(20, 0, 0).expect("valid time");
         line.last_departure = BASE_DATE.and_hms_opt(21, 0, 0).expect("valid time");
+        line.return_last_departure = BASE_DATE.and_hms_opt(21, 0, 0).expect("valid time");
         line.frequency = Duration::minutes(30);
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, Some(Weekday::Mon));
@@ -1008,6 +1010,7 @@ mod tests {
             sync_routes: true,
             auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);

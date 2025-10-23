@@ -100,5 +100,20 @@ pub fn AutoScheduleForm(
                 })
             />
         </div>
+
+        <div class="form-group">
+            <label>"Return Last Departure"</label>
+            <TimeInput
+                label=""
+                value=Signal::derive(move || edited_line.get().map(|l| l.return_last_departure).unwrap_or_default())
+                default_time="22:00"
+                on_change=Box::new(move |time| {
+                    if let Some(mut updated_line) = edited_line.get_untracked() {
+                        updated_line.return_last_departure = time;
+                        on_update.call(updated_line);
+                    }
+                })
+            />
+        </div>
     }
 }

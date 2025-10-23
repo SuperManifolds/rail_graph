@@ -109,6 +109,8 @@ pub struct Line {
     pub auto_train_number_format: String,
     #[serde(with = "naive_datetime_serde")]
     pub last_departure: NaiveDateTime,
+    #[serde(with = "naive_datetime_serde", default = "default_return_last_departure")]
+    pub return_last_departure: NaiveDateTime,
 }
 
 fn default_visible() -> bool {
@@ -125,6 +127,10 @@ fn default_sync_routes() -> bool {
 
 fn default_train_number_format() -> String {
     "{line} {seq:04}".to_string()
+}
+
+fn default_return_last_departure() -> NaiveDateTime {
+    BASE_DATE.and_hms_opt(22, 0, 0).unwrap_or(BASE_MIDNIGHT)
 }
 
 impl RouteSegment {
@@ -163,6 +169,7 @@ impl Line {
                     sync_routes: true,
                     auto_train_number_format: default_train_number_format(),
                     last_departure: BASE_DATE.and_hms_opt(22, 0, 0).unwrap_or(BASE_MIDNIGHT),
+                    return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).unwrap_or(BASE_MIDNIGHT),
                 }
             })
             .collect()
@@ -670,6 +677,7 @@ mod tests {
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         assert!(line.uses_edge(1));
@@ -697,6 +705,7 @@ mod tests {
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         assert!(line.uses_any_edge(&[1, 5, 6]));
@@ -727,6 +736,7 @@ mod tests {
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
@@ -768,6 +778,7 @@ mod tests {
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         // Remove edge 1 but no bypass mapping
@@ -817,6 +828,7 @@ mod tests {
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         line.fix_track_indices_after_change(edge.index(), 2, &graph);
@@ -907,6 +919,7 @@ mod tests {
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         // Split edge 10 into edges 20 and 21
@@ -975,6 +988,7 @@ mod tests {
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         // Delete the direct edge B -> C
@@ -1018,6 +1032,7 @@ mod tests {
             sync_routes: true,
                 auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
         };
 
         // Delete the edge

@@ -1236,6 +1236,7 @@ mod tests {
         lines[0].return_first_departure = BASE_DATE.and_hms_opt(5, 45, 0).expect("valid time");
         // Set last departure at 07:00:00 to allow multiple departures
         lines[0].last_departure = BASE_DATE.and_hms_opt(7, 0, 0).expect("valid time");
+        lines[0].return_last_departure = BASE_DATE.and_hms_opt(7, 0, 0).expect("valid time");
         // Set frequency to 1 hour to generate 2 forward (05:00, 06:00) and 2 return (05:45, 06:45)
         lines[0].frequency = chrono::Duration::hours(1);
 
