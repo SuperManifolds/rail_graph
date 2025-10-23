@@ -15,6 +15,7 @@
 - Updated last departure labels to "Last Departure Before" for clarity
 - Added configurable default wait time per line (used when creating new stops)
 - First stop can now have a wait time (train departs after waiting at the first station)
+- Time and duration inputs now support NIMBY Rails quick entry format (e.g., "45" for 45 seconds, "3.30" for 3 minutes 30 seconds, "5.15." for 5 hours 15 minutes, with support for . , : ; separators)
 
 # v0.1.2 - 2025-10-22
 

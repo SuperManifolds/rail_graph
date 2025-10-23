@@ -33,12 +33,74 @@ pub fn time_to_fraction(time: NaiveDateTime) -> f64 {
     hours_f64 + minutes_f64 / 60.0 + seconds_f64 / 3600.0 + millis_f64 / 3_600_000.0
 }
 
-/// Parse a time string in HH:MM:SS format
+/// Parse a flexible time string that accepts NIMBY Rails format
+///
+/// Supports:
+/// - Single number: seconds (e.g., "45" = 00:00:45)
+/// - Two numbers: minutes, seconds (e.g., "3.30" = 00:03:30)
+/// - Three numbers: hours, minutes, seconds (e.g., "5.15." = 05:15:00)
+/// - Separators: . , : ; (e.g., "1:2:3" or "1.2.3" or "1,2,3" or "1;2;3")
+/// - Empty parts treated as zero (e.g., "6.." = 06:00:00)
+#[must_use]
+pub fn parse_flexible_time(input: &str) -> Option<(i64, i64, i64)> {
+    // Reject empty or whitespace-only strings
+    if input.trim().is_empty() {
+        return None;
+    }
+
+    let parts: Vec<&str> = input.split(['.', ',', ':', ';']).collect();
+
+    let parse_or_zero = |s: &str| -> Option<i64> {
+        if s.is_empty() {
+            Some(0)
+        } else {
+            s.parse().ok()
+        }
+    };
+
+    match parts.len() {
+        1 => {
+            // Single part must not be empty
+            if parts[0].is_empty() {
+                return None;
+            }
+            let seconds = parse_or_zero(parts[0])?;
+            Some((0, 0, seconds))
+        }
+        2 => {
+            let minutes = parse_or_zero(parts[0])?;
+            let seconds = parse_or_zero(parts[1])?;
+            Some((0, minutes, seconds))
+        }
+        3 => {
+            let hours = parse_or_zero(parts[0])?;
+            let minutes = parse_or_zero(parts[1])?;
+            let seconds = parse_or_zero(parts[2])?;
+            Some((hours, minutes, seconds))
+        }
+        _ => None,
+    }
+}
+
+/// Parse a time string in HH:MM:SS format or NIMBY Rails format
 ///
 /// # Errors
 ///
-/// Returns an error if the string cannot be parsed as a valid time in HH:MM:SS format.
+/// Returns an error if the string cannot be parsed as a valid time.
 pub fn parse_time_hms(s: &str) -> Result<NaiveTime, chrono::ParseError> {
+    // Try flexible format first
+    if let Some((hours, minutes, seconds)) = parse_flexible_time(s) {
+        // Validate ranges
+        if (0..24).contains(&hours) && (0..60).contains(&minutes) && (0..60).contains(&seconds) {
+            // Safe to cast: we just validated the ranges
+            #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+            if let Some(time) = NaiveTime::from_hms_opt(hours as u32, minutes as u32, seconds as u32) {
+                return Ok(time);
+            }
+        }
+    }
+
+    // Fall back to strict format
     NaiveTime::parse_from_str(s, "%H:%M:%S")
 }
 
@@ -104,9 +166,14 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_time_hms_invalid_format() {
+    fn test_parse_time_hms_two_parts_as_minutes_seconds() {
+        // With flexible format, two parts are treated as MM:SS
         let result = parse_time_hms("08:30");
-        assert!(result.is_err());
+        assert!(result.is_ok());
+        let time = result.expect("should parse");
+        assert_eq!(time.hour(), 0);
+        assert_eq!(time.minute(), 8);
+        assert_eq!(time.second(), 30);
     }
 
     #[test]
@@ -124,6 +191,101 @@ mod tests {
     #[test]
     fn test_parse_time_hms_empty_string() {
         let result = parse_time_hms("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_nimby_format_seconds_only() {
+        let result = parse_time_hms("45");
+        assert!(result.is_ok());
+        let time = result.expect("should parse");
+        assert_eq!(time.hour(), 0);
+        assert_eq!(time.minute(), 0);
+        assert_eq!(time.second(), 45);
+    }
+
+    #[test]
+    fn test_nimby_format_minutes_seconds() {
+        let result = parse_time_hms("3.30");
+        assert!(result.is_ok());
+        let time = result.expect("should parse");
+        assert_eq!(time.hour(), 0);
+        assert_eq!(time.minute(), 3);
+        assert_eq!(time.second(), 30);
+    }
+
+    #[test]
+    fn test_nimby_format_hours_minutes_seconds() {
+        let result = parse_time_hms("5.15.");
+        assert!(result.is_ok());
+        let time = result.expect("should parse");
+        assert_eq!(time.hour(), 5);
+        assert_eq!(time.minute(), 15);
+        assert_eq!(time.second(), 0);
+    }
+
+    #[test]
+    fn test_nimby_format_empty_parts() {
+        let result = parse_time_hms("6..");
+        assert!(result.is_ok());
+        let time = result.expect("should parse");
+        assert_eq!(time.hour(), 6);
+        assert_eq!(time.minute(), 0);
+        assert_eq!(time.second(), 0);
+    }
+
+    #[test]
+    fn test_nimby_format_colon_separator() {
+        let result = parse_time_hms("1:2:3");
+        assert!(result.is_ok());
+        let time = result.expect("should parse");
+        assert_eq!(time.hour(), 1);
+        assert_eq!(time.minute(), 2);
+        assert_eq!(time.second(), 3);
+    }
+
+    #[test]
+    fn test_nimby_format_comma_separator() {
+        let result = parse_time_hms("1,2,3");
+        assert!(result.is_ok());
+        let time = result.expect("should parse");
+        assert_eq!(time.hour(), 1);
+        assert_eq!(time.minute(), 2);
+        assert_eq!(time.second(), 3);
+    }
+
+    #[test]
+    fn test_nimby_format_semicolon_separator() {
+        let result = parse_time_hms("1;2;3");
+        assert!(result.is_ok());
+        let time = result.expect("should parse");
+        assert_eq!(time.hour(), 1);
+        assert_eq!(time.minute(), 2);
+        assert_eq!(time.second(), 3);
+    }
+
+    #[test]
+    fn test_nimby_format_full_example() {
+        let result = parse_time_hms("05.15.00");
+        assert!(result.is_ok());
+        let time = result.expect("should parse");
+        assert_eq!(time.hour(), 5);
+        assert_eq!(time.minute(), 15);
+        assert_eq!(time.second(), 0);
+    }
+
+    #[test]
+    fn test_nimby_format_invalid_range() {
+        // 25 hours is invalid
+        let result = parse_time_hms("25.0.0");
+        assert!(result.is_err());
+
+        // 61 minutes is invalid
+        let result = parse_time_hms("1.61.0");
+        assert!(result.is_err());
+
+        // 61 seconds is invalid
+        let result = parse_time_hms("1.2.61");
         assert!(result.is_err());
     }
 }
