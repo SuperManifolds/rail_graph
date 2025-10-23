@@ -87,7 +87,7 @@ pub fn AutoScheduleForm(
         </div>
 
         <div class="form-group">
-            <label>"Last Departure"</label>
+            <label>"Last Departure Before"</label>
             <TimeInput
                 label=""
                 value=Signal::derive(move || edited_line.get().map(|l| l.last_departure).unwrap_or_default())
@@ -102,7 +102,7 @@ pub fn AutoScheduleForm(
         </div>
 
         <div class="form-group">
-            <label>"Return Last Departure"</label>
+            <label>"Return Last Departure Before"</label>
             <TimeInput
                 label=""
                 value=Signal::derive(move || edited_line.get().map(|l| l.return_last_departure).unwrap_or_default())

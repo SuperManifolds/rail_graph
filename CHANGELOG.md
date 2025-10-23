@@ -10,7 +10,8 @@
 - Replaced custom markdown parser with pulldown-cmark for proper CommonMark support in changelog
 - Added proper styling for tables, code blocks, links, and blockquotes in changelog display
 - Increased train number format input width for better visibility
-- Added separate 'Return Last Departure' field for return journeys in auto schedule mode
+- Added separate 'Return Last Departure Before' field for return journeys in auto schedule mode
+- Updated last departure labels to "Last Departure Before" for clarity
 
 # v0.1.2 - 2025-10-22
 
