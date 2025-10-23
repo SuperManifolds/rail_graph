@@ -686,6 +686,8 @@ pub fn import_jtraingraph(
             last_departure: BASE_DATE.and_hms_opt(23, 59, 0).ok_or_else(|| "Invalid last departure time".to_string())?,
             return_last_departure: BASE_DATE.and_hms_opt(23, 59, 0).ok_or_else(|| "Invalid last departure time".to_string())?,
             default_wait_time: Duration::seconds(30),
+            first_stop_wait_time: Duration::zero(),
+            return_first_stop_wait_time: Duration::zero(),
         };
 
         new_lines.push(line);

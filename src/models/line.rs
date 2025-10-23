@@ -52,6 +52,10 @@ fn default_wait_time() -> Duration {
     Duration::seconds(30)
 }
 
+fn default_first_stop_wait_time() -> Duration {
+    Duration::zero()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[derive(Default)]
 pub enum ScheduleMode {
@@ -113,6 +117,10 @@ pub struct Line {
     pub return_last_departure: NaiveDateTime,
     #[serde(with = "duration_serde", default = "default_wait_time")]
     pub default_wait_time: Duration,
+    #[serde(with = "duration_serde", default = "default_first_stop_wait_time")]
+    pub first_stop_wait_time: Duration,
+    #[serde(with = "duration_serde", default = "default_first_stop_wait_time")]
+    pub return_first_stop_wait_time: Duration,
 }
 
 fn default_visible() -> bool {
@@ -173,6 +181,8 @@ impl Line {
                     last_departure: BASE_DATE.and_hms_opt(22, 0, 0).unwrap_or(BASE_MIDNIGHT),
                     return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).unwrap_or(BASE_MIDNIGHT),
                     default_wait_time: default_wait_time(),
+                    first_stop_wait_time: default_first_stop_wait_time(),
+                    return_first_stop_wait_time: default_first_stop_wait_time(),
                 }
             })
             .collect()
@@ -682,6 +692,8 @@ mod tests {
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 default_wait_time: default_wait_time(),
+                first_stop_wait_time: default_first_stop_wait_time(),
+                return_first_stop_wait_time: default_first_stop_wait_time(),
         };
 
         assert!(line.uses_edge(1));
@@ -711,6 +723,8 @@ mod tests {
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 default_wait_time: default_wait_time(),
+                first_stop_wait_time: default_first_stop_wait_time(),
+                return_first_stop_wait_time: default_first_stop_wait_time(),
         };
 
         assert!(line.uses_any_edge(&[1, 5, 6]));
@@ -743,6 +757,8 @@ mod tests {
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 default_wait_time: default_wait_time(),
+                first_stop_wait_time: default_first_stop_wait_time(),
+                return_first_stop_wait_time: default_first_stop_wait_time(),
         };
 
         // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
@@ -786,6 +802,8 @@ mod tests {
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 default_wait_time: default_wait_time(),
+                first_stop_wait_time: default_first_stop_wait_time(),
+                return_first_stop_wait_time: default_first_stop_wait_time(),
         };
 
         // Remove edge 1 but no bypass mapping
@@ -837,6 +855,8 @@ mod tests {
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 default_wait_time: default_wait_time(),
+                first_stop_wait_time: default_first_stop_wait_time(),
+                return_first_stop_wait_time: default_first_stop_wait_time(),
         };
 
         line.fix_track_indices_after_change(edge.index(), 2, &graph);
@@ -929,6 +949,8 @@ mod tests {
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 default_wait_time: default_wait_time(),
+                first_stop_wait_time: default_first_stop_wait_time(),
+                return_first_stop_wait_time: default_first_stop_wait_time(),
         };
 
         // Split edge 10 into edges 20 and 21
@@ -999,6 +1021,8 @@ mod tests {
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 default_wait_time: default_wait_time(),
+                first_stop_wait_time: default_first_stop_wait_time(),
+                return_first_stop_wait_time: default_first_stop_wait_time(),
         };
 
         // Delete the direct edge B -> C
@@ -1044,6 +1068,8 @@ mod tests {
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 default_wait_time: default_wait_time(),
+                first_stop_wait_time: default_first_stop_wait_time(),
+                return_first_stop_wait_time: default_first_stop_wait_time(),
         };
 
         // Delete the edge

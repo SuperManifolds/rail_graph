@@ -290,11 +290,14 @@ impl TrainJourney {
         while departure_time <= day_end && journey_count < MAX_JOURNEYS_PER_LINE {
             let mut station_times = Vec::with_capacity(route_nodes.len());
             let mut segments = Vec::with_capacity(line.forward_route.len());
-            let mut cumulative_time = Duration::zero();
 
-            // Add first node (station or junction)
+            // Apply first stop wait time to the first station
+            let first_wait_time = line.first_stop_wait_time;
+            let mut cumulative_time = first_wait_time;
+
+            // Add first node (station or junction) with wait time
             if let Some(node_idx) = route_nodes[0] {
-                station_times.push((node_idx, departure_time, departure_time));
+                station_times.push((node_idx, departure_time, departure_time + first_wait_time));
             }
 
             // Walk the route, handling duration inheritance
@@ -541,11 +544,14 @@ impl TrainJourney {
         while return_departure_time <= day_end && return_journey_count < MAX_JOURNEYS_PER_LINE {
             let mut station_times = Vec::with_capacity(route_nodes.len());
             let mut segments = Vec::with_capacity(line.return_route.len());
-            let mut cumulative_time = Duration::zero();
 
-            // Add first node (station or junction)
+            // Apply first stop wait time to the first station
+            let first_wait_time = line.return_first_stop_wait_time;
+            let mut cumulative_time = first_wait_time;
+
+            // Add first node (station or junction) with wait time
             if let Some(node_idx) = route_nodes[0] {
-                station_times.push((node_idx, return_departure_time, return_departure_time));
+                station_times.push((node_idx, return_departure_time, return_departure_time + first_wait_time));
             }
 
             // Walk the return route, handling duration inheritance
@@ -678,6 +684,8 @@ mod tests {
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 default_wait_time: Duration::seconds(30),
+                first_stop_wait_time: Duration::zero(),
+                return_first_stop_wait_time: Duration::zero(),
         }
     }
 
@@ -1013,6 +1021,8 @@ mod tests {
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 default_wait_time: Duration::seconds(30),
+                first_stop_wait_time: Duration::zero(),
+                return_first_stop_wait_time: Duration::zero(),
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);

@@ -14,6 +14,7 @@
 - Added separate 'Return Last Departure Before' field for return journeys in auto schedule mode
 - Updated last departure labels to "Last Departure Before" for clarity
 - Added configurable default wait time per line (used when creating new stops)
+- First stop can now have a wait time (train departs after waiting at the first station)
 
 # v0.1.2 - 2025-10-22
 

@@ -858,6 +858,24 @@ fn generate_return_route(
     return_route
 }
 
+/// Calculate wait time for a station based on import data
+fn calculate_wait_time(
+    is_passing_loop: bool,
+    line_station_data: &LineStationData,
+    default_wait_time: Duration,
+) -> Duration {
+    if is_passing_loop {
+        Duration::seconds(0)
+    } else if let (Some(arrival), Some(departure)) = (line_station_data.arrival_time, line_station_data.departure_time) {
+        Duration::seconds(super::shared::calculate_duration_with_wraparound(
+            arrival.num_seconds(),
+            departure.num_seconds()
+        ))
+    } else {
+        line_station_data.wait_time.unwrap_or(default_wait_time)
+    }
+}
+
 /// Build routes and graph from station data
 fn build_routes(
     lines: &mut [Line],
@@ -881,6 +899,9 @@ fn build_routes(
 
         // Track first departure time from CSV data
         let mut first_time_of_day: Option<Duration> = None;
+
+        // Track first station's wait time
+        let mut first_station_wait_time: Option<Duration> = None;
 
         // Get wait time for this line (fallback chain: per-line -> default)
         let default_wait_time = config.defaults.per_line_wait_times
@@ -955,6 +976,10 @@ fn build_routes(
 
             // If there was a previous station, create or reuse edge
             let Some((prev_idx, prev_time, prev_line_data)) = prev_station else {
+                // This is the first station - capture its wait time
+                if first_station_wait_time.is_none() {
+                    first_station_wait_time = Some(calculate_wait_time(is_passing_loop, line_station_data, default_wait_time));
+                }
                 prev_station = Some((station_idx, cumulative_time, line_station_data.clone()));
                 continue;
             };
@@ -990,17 +1015,7 @@ fn build_routes(
             // 2. If both arrival and departure times are present, calculate from difference
             // 3. Use wait_time column if present
             // 4. Fall back to default wait time
-            let station_wait_time = if is_passing_loop {
-                Duration::seconds(0)
-            } else if let (Some(arrival), Some(departure)) = (line_station_data.arrival_time, line_station_data.departure_time) {
-                // Calculate wait time with midnight wraparound handling
-                Duration::seconds(super::shared::calculate_duration_with_wraparound(
-                    arrival.num_seconds(),
-                    departure.num_seconds()
-                ))
-            } else {
-                line_station_data.wait_time.unwrap_or(default_wait_time)
-            };
+            let station_wait_time = calculate_wait_time(is_passing_loop, line_station_data, default_wait_time);
 
             // Handle platform assignment
             let (origin_platform, destination_platform) = if let Some(ref platform_name) = line_station_data.platform {
@@ -1054,6 +1069,12 @@ fn build_routes(
 
         // Set line's default wait time from import config
         lines[line_idx].default_wait_time = default_wait_time;
+
+        // Set first stop wait time (defaults to zero if not captured)
+        lines[line_idx].first_stop_wait_time = first_station_wait_time.unwrap_or(Duration::zero());
+
+        // Set return first stop wait time to zero (user can configure if needed)
+        lines[line_idx].return_first_stop_wait_time = Duration::zero();
 
         // Set departure from CSV data if available
         if let Some(time_of_day) = first_time_of_day {
