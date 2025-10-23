@@ -30,6 +30,7 @@
 - Junction placement mode now automatically exits after placing a junction
 - Any station can now be moved when editing a station (not just the one being edited)
 - Increased train number input width in manual schedule mode and shortened placeholder text for better usability
+- Station and junction labels in infrastructure view now maintain consistent orientation along each branch to minimize overlaps and remain stable while zooming
 
 # v0.1.2 - 2025-10-22
 
