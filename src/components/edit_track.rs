@@ -1,6 +1,7 @@
 use crate::components::window::Window;
 use crate::components::track_editor::TrackEditor;
 use crate::models::{RailwayGraph, Track, TrackDirection, Line, Stations};
+use crate::import::shared::create_tracks_with_count;
 use leptos::{component, create_effect, create_signal, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalUpdate, view};
 use petgraph::stable_graph::EdgeIndex;
 use std::rc::Rc;
@@ -88,16 +89,16 @@ pub fn EditTrack(
 
     let handle_add_track = move || {
         set_tracks.update(|t| {
-            t.push(Track {
-                direction: TrackDirection::Bidirectional,
-            });
+            let new_count = t.len() + 1;
+            *t = create_tracks_with_count(new_count);
         });
     };
 
-    let handle_remove_track = move |index: usize| {
+    let handle_remove_track = move |_index: usize| {
         set_tracks.update(|t| {
             if t.len() > 1 {
-                t.remove(index);
+                let new_count = t.len() - 1;
+                *t = create_tracks_with_count(new_count);
             }
         });
     };

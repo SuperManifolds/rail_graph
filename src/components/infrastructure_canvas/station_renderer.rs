@@ -422,13 +422,7 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
             }
         }
 
-        let label_pos = best_position.calculate_label_pos_with_offset(*pos, text_width, font_size, label_offset);
-        let bounds = LabelBounds {
-            x: label_pos.0,
-            y: label_pos.1 - font_size,
-            width: text_width,
-            height: font_size * 1.2,
-        };
+        let bounds = calculate_label_bounds(best_position, *pos, text_width, font_size, label_offset);
         label_positions.insert(idx, (bounds, best_position));
         branch_positions.insert(idx, best_position);
     }
@@ -518,13 +512,7 @@ pub fn draw_stations(
             }
         }
 
-        let label_pos = best_position.calculate_label_pos_with_offset(*pos, text_width, font_size, label_offset);
-        let bounds = LabelBounds {
-            x: label_pos.0,
-            y: label_pos.1 - font_size,
-            width: text_width,
-            height: font_size * 1.2,
-        };
+        let bounds = calculate_label_bounds(best_position, *pos, text_width, font_size, label_offset);
         label_positions.insert(idx, (bounds, best_position));
         branch_positions.insert(idx, best_position);
     }
