@@ -2324,6 +2324,7 @@ dependencies = [
  "actix-files",
  "actix-web",
  "env_logger",
+ "serde",
 ]
 
 [[package]]

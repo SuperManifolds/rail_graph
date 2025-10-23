@@ -8,10 +8,10 @@ use wasm_bindgen_futures::JsFuture;
 use pulldown_cmark::{Parser, Options, html};
 
 const LAST_VIEWED_CHANGELOG_KEY: &str = "rail_graph_last_viewed_changelog";
-const GITHUB_RELEASES_API: &str = "https://api.github.com/repos/SuperManifolds/rail_graph/releases/latest";
+const CHANGELOG_API: &str = "/api/changelog";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct GitHubRelease {
+struct ChangelogRelease {
     tag_name: String,
     name: String,
     body: String,
@@ -22,7 +22,7 @@ struct GitHubRelease {
 #[must_use]
 pub fn ChangelogPopup() -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
-    let (release_data, set_release_data) = create_signal(None::<GitHubRelease>);
+    let (release_data, set_release_data) = create_signal(None::<ChangelogRelease>);
 
     // Check if we should show the changelog
     let should_show = create_resource(
@@ -83,7 +83,7 @@ pub fn ChangelogPopup() -> impl IntoView {
 
 #[component]
 fn ChangelogContent(
-    release_data: leptos::ReadSignal<Option<GitHubRelease>>,
+    release_data: leptos::ReadSignal<Option<ChangelogRelease>>,
     on_close: impl Fn() + 'static + Copy,
 ) -> impl IntoView {
     // Get resize trigger from Window context
@@ -117,22 +117,16 @@ fn ChangelogContent(
     }
 }
 
-async fn fetch_latest_release() -> Result<GitHubRelease, String> {
+async fn fetch_latest_release() -> Result<ChangelogRelease, String> {
     let Some(window) = web_sys::window() else {
         return Err("No window".to_string());
     };
 
     let opts = web_sys::RequestInit::new();
     opts.set_method("GET");
-    opts.set_mode(web_sys::RequestMode::Cors);
 
-    let request = web_sys::Request::new_with_str_and_init(GITHUB_RELEASES_API, &opts)
+    let request = web_sys::Request::new_with_str_and_init(CHANGELOG_API, &opts)
         .map_err(|_| "Failed to create request".to_string())?;
-
-    request
-        .headers()
-        .set("Accept", "application/vnd.github.v3+json")
-        .map_err(|_| "Failed to set headers".to_string())?;
 
     let resp_value = JsFuture::from(window.fetch_with_request(&request))
         .await
