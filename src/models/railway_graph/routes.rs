@@ -233,7 +233,7 @@ impl Routes for RailwayGraph {
         use petgraph::visit::EdgeRef;
         use crate::models::track::TrackDirection;
 
-        // BFS to find shortest path, respecting track directions
+        // BFS to find shortest path, respecting track directions and junction routing rules
         let mut queue = VecDeque::new();
         let mut visited = HashMap::new();
 
@@ -255,6 +255,9 @@ impl Routes for RailwayGraph {
                 return Some(path);
             }
 
+            // Get the edge we used to arrive at current node (for junction routing checks)
+            let incoming_edge = visited.get(&current).and_then(|v| v.as_ref().map(|(_, edge)| *edge));
+
             // Explore all edges connected to current node (both incoming and outgoing)
             // Check each edge's TrackDirection to see if we can use it
 
@@ -264,11 +267,13 @@ impl Routes for RailwayGraph {
                 let track_segment = edge.weight();
 
                 // Can always use Forward or Bidirectional edges in their natural direction
-                let can_use = track_segment.tracks.iter().any(|t|
+                let can_use_track = track_segment.tracks.iter().any(|t|
                     matches!(t.direction, TrackDirection::Forward | TrackDirection::Bidirectional)
                 );
 
-                if can_use && matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
+                let can_use_junction = self.is_junction_routing_allowed(current, incoming_edge, edge.id());
+
+                if can_use_track && can_use_junction && matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
                     visited.insert(neighbor, Some((current, edge.id())));
                     queue.push_back(neighbor);
                 }
@@ -280,11 +285,13 @@ impl Routes for RailwayGraph {
                 let track_segment = edge.weight();
 
                 // Can use Backward or Bidirectional edges in reverse direction
-                let can_use = track_segment.tracks.iter().any(|t|
+                let can_use_track = track_segment.tracks.iter().any(|t|
                     matches!(t.direction, TrackDirection::Backward | TrackDirection::Bidirectional)
                 );
 
-                if can_use && matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
+                let can_use_junction = self.is_junction_routing_allowed(current, incoming_edge, edge.id());
+
+                if can_use_track && can_use_junction && matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
                     visited.insert(neighbor, Some((current, edge.id())));
                     queue.push_back(neighbor);
                 }
@@ -296,6 +303,31 @@ impl Routes for RailwayGraph {
 }
 
 impl RailwayGraph {
+    /// Check if routing through a junction is allowed
+    /// Returns true if node is not a junction, or if routing is allowed
+    fn is_junction_routing_allowed(
+        &self,
+        node_idx: NodeIndex,
+        incoming_edge: Option<EdgeIndex>,
+        outgoing_edge: EdgeIndex,
+    ) -> bool {
+        let Some(node) = self.graph.node_weight(node_idx) else {
+            return false;
+        };
+
+        let Some(junction) = node.as_junction() else {
+            // Not a junction, routing is always allowed
+            return true;
+        };
+
+        let Some(inc_edge) = incoming_edge else {
+            // No incoming edge (starting node), allow all routes
+            return true;
+        };
+
+        junction.is_routing_allowed(inc_edge, outgoing_edge)
+    }
+
     /// Add a node to the stations list if not already seen
     fn add_station_if_not_seen(
         &self,
@@ -697,5 +729,93 @@ mod tests {
         assert_eq!(nodes[0].0, "Station A");
         assert_eq!(nodes[1].0, "Junction J");
         assert_eq!(nodes[2].0, "Station B");
+    }
+
+    #[test]
+    fn test_find_path_respects_disabled_junction_routing() {
+        use crate::models::{Junctions, Junction, RoutingRule};
+
+        let mut graph = RailwayGraph::new();
+        let a = graph.add_or_get_station("Station A".to_string());
+        let b = graph.add_or_get_station("Station B".to_string());
+        let c = graph.add_or_get_station("Station C".to_string());
+
+        let j = graph.add_junction(Junction {
+            name: Some("Junction J".to_string()),
+            position: None,
+            routing_rules: vec![],
+        });
+
+        // Create A -> J -> B and A -> J -> C
+        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e3 = graph.add_track(j, c, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // First verify path from A to B exists with default routing (all allowed)
+        let path = graph.find_path_between_nodes(a, b);
+        assert!(path.is_some(), "Path from A to B should exist initially");
+
+        // Now disable routing from e1 to e2 at junction J
+        if let Some(junction) = graph.get_junction_mut(j) {
+            junction.routing_rules.push(RoutingRule {
+                from_edge: e1,
+                to_edge: e2,
+                allowed: false,
+            });
+        }
+
+        // Now path from A to B should not exist (blocked at junction)
+        let path = graph.find_path_between_nodes(a, b);
+        assert!(path.is_none(), "Path from A to B should be blocked by junction routing rule");
+
+        // But path from A to C should still exist
+        let path = graph.find_path_between_nodes(a, c);
+        assert!(path.is_some(), "Path from A to C should still exist");
+        if let Some(path) = path {
+            assert_eq!(path.len(), 2);
+            assert_eq!(path[0], e1);
+            assert_eq!(path[1], e3);
+        }
+    }
+
+    #[test]
+    fn test_find_path_respects_junction_routing_with_alternate_route() {
+        use crate::models::{Junctions, Junction, RoutingRule};
+
+        let mut graph = RailwayGraph::new();
+        let a = graph.add_or_get_station("Station A".to_string());
+        let b = graph.add_or_get_station("Station B".to_string());
+        let c = graph.add_or_get_station("Station C".to_string());
+
+        let j = graph.add_junction(Junction {
+            name: Some("Junction J".to_string()),
+            position: None,
+            routing_rules: vec![],
+        });
+
+        // Create network: A -> J -> B and also A -> C -> B (alternate route)
+        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e3 = graph.add_track(a, c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e4 = graph.add_track(c, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // Disable routing from e1 to e2 at junction J
+        if let Some(junction) = graph.get_junction_mut(j) {
+            junction.routing_rules.push(RoutingRule {
+                from_edge: e1,
+                to_edge: e2,
+                allowed: false,
+            });
+        }
+
+        // Path from A to B should use alternate route through C
+        let path = graph.find_path_between_nodes(a, b);
+        assert!(path.is_some(), "Alternate path from A to B should exist");
+        if let Some(path) = path {
+            // Should use A -> C -> B route
+            assert_eq!(path.len(), 2);
+            assert_eq!(path[0], e3);
+            assert_eq!(path[1], e4);
+        }
     }
 }

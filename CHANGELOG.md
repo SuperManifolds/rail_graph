@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Bug Fixes
+- Fixed view creation from lines ignoring disabled junction connections (pathfinding now respects junction routing rules)
 - Fixed changelog window not expanding when resized (was maintaining fixed internal height)
 - Fixed help text in train number format to show correct single brace syntax
 - Fixed time inputs displaying in 12-hour format for some users (now always shows 24-hour format)
