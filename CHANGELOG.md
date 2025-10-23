@@ -41,6 +41,7 @@
 - Horizontal scaling in time graph now triggered by scrolling with cursor over time labels (replacing Alt+scroll which conflicted with browser shortcuts)
 - CSV import now automatically fills in the filename (without extension) as the line name when importing a single line
 - Project import now automatically uses the filename (without extension) as the project name
+- Main Line view now automatically regenerates when infrastructure changes (new stations, junctions, or tracks added)
 
 # v0.1.2 - 2025-10-22
 

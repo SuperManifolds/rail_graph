@@ -127,6 +127,43 @@ pub fn App() -> impl IntoView {
         });
     });
 
+    // Regenerate "Main Line" view when infrastructure changes (after initial load)
+    create_effect(move |prev_counts: Option<(usize, usize)>| {
+        let current_graph = graph.get();
+        let node_count = current_graph.graph.node_count();
+        let edge_count = current_graph.graph.edge_count();
+
+        // Skip during initial load
+        if !initial_load_complete.get() {
+            return (node_count, edge_count);
+        }
+
+        let counts_changed = prev_counts.is_some_and(|(prev_nodes, prev_edges)|
+            node_count != prev_nodes || edge_count != prev_edges
+        );
+
+        // Only regenerate if node or edge count changed (new station/junction/track added)
+        if !counts_changed {
+            return (node_count, edge_count);
+        }
+
+        set_views.update(|v| {
+            // Find and regenerate the Main Line view
+            for view in v.iter_mut() {
+                if view.name != "Main Line" {
+                    continue;
+                }
+                let regenerated = GraphView::default_main_line(&current_graph);
+                // Preserve the view ID and viewport state
+                view.station_range = regenerated.station_range;
+                view.edge_path = regenerated.edge_path;
+                break;
+            }
+        });
+
+        (node_count, edge_count)
+    });
+
     // Auto-save project whenever lines, graph, legend, views, viewport states, or active tab change
     create_effect(move |_| {
         let current_lines = lines.get();
