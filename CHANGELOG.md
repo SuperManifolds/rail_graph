@@ -26,6 +26,7 @@
 - Right-clicking stations, junctions, and tracks in infrastructure view now opens their editor (same as double-clicking)
 - Track directions now automatically adjust when adding or removing tracks (1 track=bidirectional, 2 tracks=one each direction, 3+ tracks follow standard pattern with middle tracks bidirectional for odd counts). Lines automatically update their track assignments to remain compatible.
 - Junction placement mode now automatically exits after placing a junction
+- Any station can now be moved when editing a station (not just the one being edited)
 
 # v0.1.2 - 2025-10-22
 

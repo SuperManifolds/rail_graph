@@ -43,9 +43,7 @@ fn handle_mouse_move_hover_detection(
     y: f64,
     viewport: ViewportState,
     graph: ReadSignal<RailwayGraph>,
-    editing_station: ReadSignal<Option<NodeIndex>>,
     set_is_over_station: WriteSignal<bool>,
-    set_is_over_edited_station: WriteSignal<bool>,
     set_is_over_track: WriteSignal<bool>,
 ) {
     let world_x = (x - viewport.pan_offset_x) / viewport.zoom_level;
@@ -57,18 +55,14 @@ fn handle_mouse_move_hover_detection(
     let hovered_node = hit_detection::find_label_at_position(&current_graph, world_x, world_y, viewport.zoom_level)
         .or_else(|| hit_detection::find_station_at_position(&current_graph, world_x, world_y));
 
-    if let Some(hovered_station) = hovered_node {
-        let is_editing_this = Some(hovered_station) == editing_station.get();
+    if hovered_node.is_some() {
         set_is_over_station.set(true);
-        set_is_over_edited_station.set(is_editing_this);
         set_is_over_track.set(false);
     } else if hit_detection::find_track_at_position(&current_graph, world_x, world_y).is_some() {
         set_is_over_station.set(false);
-        set_is_over_edited_station.set(false);
         set_is_over_track.set(true);
     } else {
         set_is_over_station.set(false);
-        set_is_over_edited_station.set(false);
         set_is_over_track.set(false);
     }
 }
@@ -433,7 +427,7 @@ fn create_handler_callbacks(
 fn get_canvas_cursor_style(
     dragging_station: ReadSignal<Option<NodeIndex>>,
     edit_mode: ReadSignal<EditMode>,
-    is_over_edited_station: ReadSignal<bool>,
+    editing_station: ReadSignal<Option<NodeIndex>>,
     is_over_station: ReadSignal<bool>,
     is_over_track: ReadSignal<bool>,
     is_panning: ReadSignal<bool>,
@@ -447,7 +441,7 @@ fn get_canvas_cursor_style(
         match edit_mode.get() {
             EditMode::AddingTrack | EditMode::AddingJunction | EditMode::CreatingView => "cursor: pointer;",
             EditMode::None => {
-                if is_over_edited_station.get() {
+                if is_over_station.get() && editing_station.get().is_some() {
                     "cursor: grab;"
                 } else if is_over_station.get() || is_over_track.get() {
                     "cursor: pointer;"
@@ -561,7 +555,6 @@ fn create_event_handlers(
     dragging_station: ReadSignal<Option<NodeIndex>>,
     set_dragging_station: WriteSignal<Option<NodeIndex>>,
     set_is_over_station: WriteSignal<bool>,
-    set_is_over_edited_station: WriteSignal<bool>,
     set_is_over_track: WriteSignal<bool>,
     auto_layout_enabled: ReadSignal<bool>,
     space_pressed: ReadSignal<bool>,
@@ -622,9 +615,8 @@ fn create_event_handlers(
                     let current_graph = graph.get();
                     let clicked_station = hit_detection::find_station_at_position(&current_graph, world_x, world_y);
 
-                    let is_editing_clicked_station = clicked_station.is_some() && clicked_station == editing_station.get();
-
-                    if is_editing_clicked_station {
+                    // Allow dragging any station when a station is being edited
+                    if clicked_station.is_some() && editing_station.get().is_some() {
                         set_dragging_station.set(clicked_station);
                     }
                     // Space+move panning is handled in mouse_move, no click needed
@@ -666,7 +658,7 @@ fn create_event_handlers(
                 };
                 handle_mouse_move_hover_detection(
                     x, y, viewport_state,
-                    graph, editing_station, set_is_over_station, set_is_over_edited_station, set_is_over_track
+                    graph, set_is_over_station, set_is_over_track
                 );
             }
         }
@@ -805,7 +797,6 @@ pub fn InfrastructureView(
     let (delete_affected_lines, set_delete_affected_lines) = create_signal(Vec::<String>::new());
     let (delete_station_name, set_delete_station_name) = create_signal(String::new());
     let (is_over_station, set_is_over_station) = create_signal(false);
-    let (is_over_edited_station, set_is_over_edited_station) = create_signal(false);
     let (is_over_track, set_is_over_track) = create_signal(false);
     let (dragging_station, set_dragging_station) = create_signal(None::<NodeIndex>);
 
@@ -897,7 +888,7 @@ pub fn InfrastructureView(
         canvas_ref, edit_mode, set_edit_mode, selected_station, set_selected_station, set_second_station_clicked, graph, set_graph,
         lines, set_lines,
         editing_station, set_editing_station, set_editing_junction, set_editing_track,
-        dragging_station, set_dragging_station, set_is_over_station, set_is_over_edited_station, set_is_over_track,
+        dragging_station, set_dragging_station, set_is_over_station, set_is_over_track,
         auto_layout_enabled, space_pressed, &viewport
     );
 
@@ -905,7 +896,6 @@ pub fn InfrastructureView(
         canvas_viewport::handle_pan_end(&viewport);
         set_dragging_station.set(None);
         set_is_over_station.set(false);
-        set_is_over_edited_station.set(false);
         set_is_over_track.set(false);
     };
 
@@ -945,7 +935,7 @@ pub fn InfrastructureView(
                     on:dblclick=handle_double_click
                     on:wheel=handle_wheel
                     on:contextmenu=handle_context_menu
-                    style=move || get_canvas_cursor_style(dragging_station, edit_mode, is_over_edited_station, is_over_station, is_over_track, is_panning, space_pressed)
+                    style=move || get_canvas_cursor_style(dragging_station, edit_mode, editing_station, is_over_station, is_over_track, is_panning, space_pressed)
                 />
             </div>
 
