@@ -5,6 +5,7 @@ use crate::storage::{Storage, IndexedDbStorage};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
+use pulldown_cmark::{Parser, Options, html};
 
 const LAST_VIEWED_CHANGELOG_KEY: &str = "rail_graph_last_viewed_changelog";
 const GITHUB_RELEASES_API: &str = "https://api.github.com/repos/SuperManifolds/rail_graph/releases/latest";
@@ -182,59 +183,13 @@ fn format_date(iso_date: &str) -> String {
 }
 
 fn markdown_to_html(markdown: &str) -> String {
-    // Basic markdown to HTML conversion
-    // This is a simple implementation - could use a proper markdown parser for better results
-    let mut html = markdown
-        .lines()
-        .map(|line| {
-            let line = line.trim();
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_TASKLISTS);
 
-            // Headers
-            if let Some(rest) = line.strip_prefix("### ") {
-                return format!("<h3>{}</h3>", html_escape(rest));
-            }
-            if let Some(rest) = line.strip_prefix("## ") {
-                return format!("<h2>{}</h2>", html_escape(rest));
-            }
-            if let Some(rest) = line.strip_prefix("# ") {
-                return format!("<h1>{}</h1>", html_escape(rest));
-            }
-
-            // List items
-            if let Some(rest) = line.strip_prefix("- ") {
-                return format!("<li>{}</li>", html_escape(rest));
-            }
-            if let Some(rest) = line.strip_prefix("* ") {
-                return format!("<li>{}</li>", html_escape(rest));
-            }
-
-            // Empty lines
-            if line.is_empty() {
-                return "<br/>".to_string();
-            }
-
-            // Regular paragraphs
-            format!("<p>{}</p>", html_escape(line))
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    // Wrap list items in <ul>
-    html = html.replace("</li>\n<li>", "</li><li>");
-    if html.contains("<li>") {
-        html = html.replace("<li>", "<ul><li>");
-        html = html.replace("</li>", "</li></ul>");
-        // Clean up nested ul tags
-        html = html.replace("</ul>\n<ul>", "\n");
-    }
-
-    html
-}
-
-fn html_escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
+    let parser = Parser::new_ext(markdown, options);
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, parser);
+    html_output
 }

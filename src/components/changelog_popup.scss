@@ -5,6 +5,8 @@
     flex-direction: column;
     gap: var(--spacing-lg);
     max-width: 600px;
+    height: 100%;
+    overflow: hidden;
 
     .changelog-header {
         display: flex;
@@ -12,6 +14,7 @@
         gap: var(--spacing-xs);
         padding-bottom: var(--spacing-md);
         border-bottom: 1px solid var(--color-border);
+        flex-shrink: 0;
 
         .changelog-version {
             font-size: 0.9em;
@@ -37,8 +40,9 @@
         border-radius: 4px;
         color: var(--color-text-secondary);
         line-height: 1.6;
-        max-height: 400px;
+        flex: 1;
         overflow-y: auto;
+        min-height: 0;
 
         h1, h2, h3 {
             color: var(--color-text-primary);
@@ -88,12 +92,60 @@
             font-family: monospace;
             font-size: 0.9em;
         }
+
+        pre {
+            background-color: var(--color-background-secondary);
+            padding: var(--spacing-md);
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: var(--spacing-sm) 0;
+
+            code {
+                background-color: transparent;
+                padding: 0;
+            }
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: var(--spacing-sm) 0;
+
+            th, td {
+                padding: var(--spacing-xs) var(--spacing-sm);
+                border: 1px solid var(--color-border);
+                text-align: left;
+            }
+
+            th {
+                background-color: var(--color-background-secondary);
+                font-weight: 600;
+                color: var(--color-text-primary);
+            }
+        }
+
+        a {
+            color: var(--color-primary);
+            text-decoration: none;
+
+            &:hover {
+                text-decoration: underline;
+            }
+        }
+
+        blockquote {
+            border-left: 3px solid var(--color-border);
+            padding-left: var(--spacing-md);
+            margin: var(--spacing-sm) 0;
+            color: var(--color-text-tertiary);
+        }
     }
 
     .changelog-buttons {
         display: flex;
         justify-content: flex-end;
         padding-top: var(--spacing-md);
+        flex-shrink: 0;
 
         button {
             @include button-default;

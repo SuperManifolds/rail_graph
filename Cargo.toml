@@ -72,6 +72,7 @@ gloo-worker = "0.5"
 console_error_panic_hook = "0.1"
 uuid = { version = "1.0", features = ["v4", "js", "serde"] }
 bitflags = { version = "2.4", features = ["serde"] }
+pulldown-cmark = "0.12"
 
 [profile.release]
 opt-level = "z"
