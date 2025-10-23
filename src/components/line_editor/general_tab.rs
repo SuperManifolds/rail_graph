@@ -19,6 +19,7 @@ pub fn GeneralTab(
                     <label>"Name"</label>
                     <input
                         type="text"
+                        class="line-name-input"
                         value=move || edited_line.get().map(|l| l.name.clone()).unwrap_or_default()
                         on:change={
                             let on_save = on_save.get_value();
