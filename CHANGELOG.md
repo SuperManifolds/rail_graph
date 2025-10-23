@@ -24,6 +24,7 @@
 - Time and duration inputs now support NIMBY Rails quick entry format (e.g., "45" for 45 seconds, "3.30" for 3 minutes 30 seconds, "5.15." for 5 hours 15 minutes, with support for . , : ; separators)
 - Right-clicking stations, junctions, and tracks in infrastructure view now opens their editor (same as double-clicking)
 - Track directions now automatically adjust when adding or removing tracks (1 track=bidirectional, 2 tracks=one each direction, 3+ tracks follow standard pattern with middle tracks bidirectional for odd counts). Lines automatically update their track assignments to remain compatible.
+- Junction placement mode now automatically exits after placing a junction
 
 # v0.1.2 - 2025-10-22
 

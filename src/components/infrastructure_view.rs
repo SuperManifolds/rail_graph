@@ -85,6 +85,7 @@ fn handle_adding_junction(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
     set_editing_junction: WriteSignal<Option<NodeIndex>>,
+    set_edit_mode: WriteSignal<EditMode>,
 ) {
     use crate::models::{Junction, Junctions, Tracks};
 
@@ -137,6 +138,9 @@ fn handle_adding_junction(
 
     // Open the edit dialog for the newly created junction
     set_editing_junction.set(Some(junction_idx));
+
+    // Exit junction placement mode
+    set_edit_mode.set(EditMode::None);
 }
 
 fn add_station_handler(
@@ -542,6 +546,7 @@ fn setup_render_effect(
 fn create_event_handlers(
     canvas_ref: leptos::NodeRef<leptos::html::Canvas>,
     edit_mode: ReadSignal<EditMode>,
+    set_edit_mode: WriteSignal<EditMode>,
     selected_station: ReadSignal<Option<NodeIndex>>,
     set_selected_station: WriteSignal<Option<NodeIndex>>,
     set_second_station_clicked: WriteSignal<Option<NodeIndex>>,
@@ -593,7 +598,7 @@ fn create_event_handlers(
                     handle_mouse_down_adding_track(clicked_station, selected_station, set_selected_station, graph, set_graph);
                 }
                 EditMode::AddingJunction if is_single_click => {
-                    handle_adding_junction(world_x, world_y, graph, set_graph, lines, set_lines, set_editing_junction);
+                    handle_adding_junction(world_x, world_y, graph, set_graph, lines, set_lines, set_editing_junction, set_edit_mode);
                 }
                 EditMode::CreatingView if is_single_click => {
                     let current_graph = graph.get();
@@ -889,7 +894,7 @@ pub fn InfrastructureView(
     setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station);
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_context_menu, handle_wheel) = create_event_handlers(
-        canvas_ref, edit_mode, selected_station, set_selected_station, set_second_station_clicked, graph, set_graph,
+        canvas_ref, edit_mode, set_edit_mode, selected_station, set_selected_station, set_second_station_clicked, graph, set_graph,
         lines, set_lines,
         editing_station, set_editing_station, set_editing_junction, set_editing_track,
         dragging_station, set_dragging_station, set_is_over_station, set_is_over_edited_station, set_is_over_track,
