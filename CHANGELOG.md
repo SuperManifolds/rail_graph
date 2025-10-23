@@ -6,6 +6,7 @@
 - Fixed time inputs displaying in 12-hour format for some users (now always shows 24-hour format)
 - Fixed default wait time only being applied to first stop when creating new routes
 - Fixed project timestamps displaying in UTC instead of user's local time
+- Fixed "Save As" with an existing project name not prompting for overwrite confirmation (now shows a confirmation dialog)
 
 ## Improvements
 - Line thickness slider now adjusts in increments of 0.25

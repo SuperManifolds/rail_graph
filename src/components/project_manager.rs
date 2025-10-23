@@ -215,6 +215,11 @@ pub fn ProjectManager(
     let (show_save_as_dialog, set_show_save_as_dialog) = create_signal(false);
     let (save_as_name, set_save_as_name) = create_signal(String::new());
 
+    // Save As overwrite confirmation state
+    let (show_save_as_overwrite_confirm, set_show_save_as_overwrite_confirm) = create_signal(false);
+    let (save_as_overwrite_target_id, set_save_as_overwrite_target_id) = create_signal(String::new());
+    let (save_as_overwrite_target_name, set_save_as_overwrite_target_name) = create_signal(String::new());
+
     // New Project dialog state
     let (show_new_project_dialog, set_show_new_project_dialog) = create_signal(false);
     let (new_project_name, set_new_project_name) = create_signal(String::new());
@@ -270,20 +275,23 @@ pub fn ProjectManager(
     });
 
 
-    // Save current project with new name
-    let handle_save_as = Rc::new(move || {
+    // Perform the actual save-as operation
+    let perform_save_as = Rc::new(move |existing_project_id: Option<String>| {
         let name = save_as_name.get().trim().to_string();
-        if name.is_empty() {
-            set_error_message.set(Some("Project name cannot be empty".to_string()));
-            return;
-        }
 
         spawn_local(async move {
             let mut project = current_project.get();
             project.metadata.name = name;
-            project.metadata.id = uuid::Uuid::new_v4().to_string();
-            project.metadata.created_at = chrono::Utc::now().to_rfc3339();
-            project.metadata.updated_at.clone_from(&project.metadata.created_at);
+
+            // Use existing ID if overwriting, otherwise create new ID
+            if let Some(id) = existing_project_id {
+                project.metadata.id = id;
+                project.metadata.updated_at = chrono::Utc::now().to_rfc3339();
+            } else {
+                project.metadata.id = uuid::Uuid::new_v4().to_string();
+                project.metadata.created_at = chrono::Utc::now().to_rfc3339();
+                project.metadata.updated_at.clone_from(&project.metadata.created_at);
+            }
 
             let project_id = project.metadata.id.clone();
 
@@ -306,9 +314,44 @@ pub fn ProjectManager(
         });
     });
 
+    // Save current project with new name - check for duplicates first
+    let perform_save_as_clone = perform_save_as.clone();
+    let handle_save_as = Rc::new(move || {
+        let name = save_as_name.get().trim().to_string();
+        if name.is_empty() {
+            set_error_message.set(Some("Project name cannot be empty".to_string()));
+            return;
+        }
+
+        // Check if a project with this name already exists
+        let existing = projects.get().iter().find(|p| p.name == name).cloned();
+
+        if let Some(existing_project) = existing {
+            // Show confirmation dialog
+            set_save_as_overwrite_target_id.set(existing_project.id);
+            set_save_as_overwrite_target_name.set(existing_project.name);
+            set_show_save_as_overwrite_confirm.set(true);
+        } else {
+            // No conflict, proceed with new project
+            perform_save_as_clone(None);
+        }
+    });
+
     let cancel_save_as = Rc::new(move || {
         set_show_save_as_dialog.set(false);
         set_save_as_name.set(String::new());
+    });
+
+    // Confirm overwrite in save-as
+    let confirm_save_as_overwrite = Rc::new(move || {
+        let existing_id = save_as_overwrite_target_id.get();
+        set_show_save_as_overwrite_confirm.set(false);
+        perform_save_as(Some(existing_id));
+    });
+
+    // Cancel overwrite in save-as
+    let cancel_save_as_overwrite = Rc::new(move || {
+        set_show_save_as_overwrite_confirm.set(false);
     });
 
     // Load a project - inline in the view to avoid move issues
@@ -583,6 +626,17 @@ pub fn ProjectManager(
             on_confirm=handle_save_as
             on_cancel=cancel_save_as
             confirm_text="Save".to_string()
+            cancel_text="Cancel".to_string()
+        />
+
+        // Save As Overwrite Confirmation Dialog
+        <ConfirmationDialog
+            is_open=show_save_as_overwrite_confirm.into()
+            title=Signal::derive(|| "Overwrite Project?".to_string())
+            message=Signal::derive(move || format!("A project named '{}' already exists. Do you want to overwrite it?", save_as_overwrite_target_name.get()))
+            on_confirm=confirm_save_as_overwrite
+            on_cancel=cancel_save_as_overwrite
+            confirm_text="Overwrite".to_string()
             cancel_text="Cancel".to_string()
         />
 
