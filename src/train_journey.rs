@@ -290,11 +290,14 @@ impl TrainJourney {
         while departure_time <= day_end && journey_count < MAX_JOURNEYS_PER_LINE {
             let mut station_times = Vec::with_capacity(route_nodes.len());
             let mut segments = Vec::with_capacity(line.forward_route.len());
-            let mut cumulative_time = Duration::zero();
 
-            // Add first node (station or junction)
+            // Apply first stop wait time to the first station
+            let first_wait_time = line.first_stop_wait_time;
+            let mut cumulative_time = first_wait_time;
+
+            // Add first node (station or junction) with wait time
             if let Some(node_idx) = route_nodes[0] {
-                station_times.push((node_idx, departure_time, departure_time));
+                station_times.push((node_idx, departure_time, departure_time + first_wait_time));
             }
 
             // Walk the route, handling duration inheritance
@@ -541,11 +544,14 @@ impl TrainJourney {
         while return_departure_time <= day_end && return_journey_count < MAX_JOURNEYS_PER_LINE {
             let mut station_times = Vec::with_capacity(route_nodes.len());
             let mut segments = Vec::with_capacity(line.return_route.len());
-            let mut cumulative_time = Duration::zero();
 
-            // Add first node (station or junction)
+            // Apply first stop wait time to the first station
+            let first_wait_time = line.return_first_stop_wait_time;
+            let mut cumulative_time = first_wait_time;
+
+            // Add first node (station or junction) with wait time
             if let Some(node_idx) = route_nodes[0] {
-                station_times.push((node_idx, return_departure_time, return_departure_time));
+                station_times.push((node_idx, return_departure_time, return_departure_time + first_wait_time));
             }
 
             // Walk the return route, handling duration inheritance
@@ -604,7 +610,7 @@ impl TrainJourney {
             return_departure_time += line.frequency;
 
             // Check if next departure would be after the last departure time
-            let Some(last_departure_on_date) = time_on_date(line.last_departure, current_date) else {
+            let Some(last_departure_on_date) = time_on_date(line.return_last_departure, current_date) else {
                 break;
             };
             if return_departure_time > last_departure_on_date {
@@ -676,6 +682,10 @@ mod tests {
             sync_routes: true,
             auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                default_wait_time: Duration::seconds(30),
+                first_stop_wait_time: Duration::zero(),
+                return_first_stop_wait_time: Duration::zero(),
         }
     }
 
@@ -770,6 +780,7 @@ mod tests {
         line.first_departure = BASE_DATE.and_hms_opt(20, 0, 0).expect("valid time");
         line.return_first_departure = BASE_DATE.and_hms_opt(20, 0, 0).expect("valid time");
         line.last_departure = BASE_DATE.and_hms_opt(21, 0, 0).expect("valid time");
+        line.return_last_departure = BASE_DATE.and_hms_opt(21, 0, 0).expect("valid time");
         line.frequency = Duration::minutes(30);
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, Some(Weekday::Mon));
@@ -1008,6 +1019,10 @@ mod tests {
             sync_routes: true,
             auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                default_wait_time: Duration::seconds(30),
+                first_stop_wait_time: Duration::zero(),
+                return_first_stop_wait_time: Duration::zero(),
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);

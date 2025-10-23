@@ -51,15 +51,78 @@ fn draw_track_segment_with_avoidance(
     }
 }
 
-/// Check if a line segment from pos1 to pos2 passes near any stations (excluding source and target)
-/// Returns a perpendicular offset to shift the track away from the station
-#[must_use]
-pub fn calculate_avoidance_offset(
+/// Check if applying an offset would cause overlap with other track segments
+fn would_overlap_other_tracks(
+    graph: &RailwayGraph,
+    pos1: (f64, f64),
+    pos2: (f64, f64),
+    offset: (f64, f64),
+    source: petgraph::graph::NodeIndex,
+    target: petgraph::graph::NodeIndex,
+) -> bool {
+    const MIN_TRACK_DISTANCE: f64 = 15.0;
+
+    // Check multiple points along the offset segment
+    let sample_points = 5;
+    for i in 0..=sample_points {
+        let t = f64::from(i) / f64::from(sample_points);
+        let sample_x = pos1.0 + (pos2.0 - pos1.0) * t + offset.0;
+        let sample_y = pos1.1 + (pos2.1 - pos1.1) * t + offset.1;
+
+        // Check all other edges
+        for edge in graph.graph.edge_references() {
+            let other_source = edge.source();
+            let other_target = edge.target();
+
+            // Skip if this is the same edge
+            if (other_source == source && other_target == target) ||
+               (other_source == target && other_target == source) {
+                continue;
+            }
+
+            let Some(other_pos1) = graph.get_station_position(other_source) else { continue };
+            let Some(other_pos2) = graph.get_station_position(other_target) else { continue };
+
+            // Also check if the other track has avoidance offset
+            let other_offset = calculate_avoidance_offset_internal(graph, other_pos1, other_pos2, other_source, other_target, false);
+
+            let dx = other_pos2.0 - other_pos1.0;
+            let dy = other_pos2.1 - other_pos1.1;
+            let len_sq = dx * dx + dy * dy;
+
+            if len_sq < 0.01 {
+                continue;
+            }
+
+            // Project sample point onto other segment
+            let proj_t = ((sample_x - other_pos1.0) * dx + (sample_y - other_pos1.1) * dy) / len_sq;
+            let proj_t_clamped = proj_t.clamp(0.0, 1.0);
+
+            // Calculate closest point on other segment (with its offset)
+            let closest_x = other_pos1.0 + proj_t_clamped * dx + other_offset.0;
+            let closest_y = other_pos1.1 + proj_t_clamped * dy + other_offset.1;
+
+            let dist_x = sample_x - closest_x;
+            let dist_y = sample_y - closest_y;
+            let dist = (dist_x * dist_x + dist_y * dist_y).sqrt();
+
+            if dist < MIN_TRACK_DISTANCE {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Internal version of `calculate_avoidance_offset` that can skip overlap checking
+fn calculate_avoidance_offset_internal(
     graph: &RailwayGraph,
     pos1: (f64, f64),
     pos2: (f64, f64),
     source: petgraph::graph::NodeIndex,
     target: petgraph::graph::NodeIndex,
+    check_overlaps: bool,
 ) -> (f64, f64) {
     // Check all stations
     for node_idx in graph.graph.node_indices() {
@@ -107,12 +170,34 @@ pub fn calculate_avoidance_offset(
             let cross = dx * (station_pos.1 - pos1.1) - dy * (station_pos.0 - pos1.0);
             let side = if cross > 0.0 { -1.0 } else { 1.0 };
 
+            // Calculate proposed offset
+            let proposed_offset = (perp_x * side * STATION_AVOIDANCE_OFFSET, perp_y * side * STATION_AVOIDANCE_OFFSET);
+
+            // Check if this offset would cause overlap with other tracks (if requested)
+            if check_overlaps && would_overlap_other_tracks(graph, pos1, pos2, proposed_offset, source, target) {
+                // Don't apply avoidance if it would cause overlap
+                return (0.0, 0.0);
+            }
+
             // Return perpendicular offset to shift entire track away from station
-            return (perp_x * side * STATION_AVOIDANCE_OFFSET, perp_y * side * STATION_AVOIDANCE_OFFSET);
+            return proposed_offset;
         }
     }
 
     (0.0, 0.0)
+}
+
+/// Check if a line segment from pos1 to pos2 passes near any stations (excluding source and target)
+/// Returns a perpendicular offset to shift the track away from the station
+#[must_use]
+pub fn calculate_avoidance_offset(
+    graph: &RailwayGraph,
+    pos1: (f64, f64),
+    pos2: (f64, f64),
+    source: petgraph::graph::NodeIndex,
+    target: petgraph::graph::NodeIndex,
+) -> (f64, f64) {
+    calculate_avoidance_offset_internal(graph, pos1, pos2, source, target, true)
 }
 
 /// Get segments for a specific edge (used for both rendering and click detection)

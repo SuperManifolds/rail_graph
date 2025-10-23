@@ -226,6 +226,14 @@ pub fn GraphCanvas(
 
     let viewport = canvas_viewport::create_viewport_signals(true);
 
+    // Create a signal for canvas dimensions
+    let canvas_dimensions = Signal::derive(move || {
+        canvas_ref.get().map(|canvas| {
+            let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+            (f64::from(canvas_elem.width()), f64::from(canvas_elem.height()))
+        })
+    });
+
     // Setup keyboard listeners for Space and WASD
     canvas_viewport::setup_keyboard_listeners(
         set_space_pressed,
@@ -234,6 +242,8 @@ pub fn GraphCanvas(
         set_s_pressed,
         set_d_pressed,
         &viewport,
+        canvas_dimensions,
+        Some(1.0), // Min zoom of 1.0 for time graph
     );
 
     // Initialize viewport from saved state - only once on first mount
@@ -443,8 +453,11 @@ pub fn GraphCanvas(
             let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
             let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
 
-            if mouse_x >= LEFT_MARGIN && mouse_x <= LEFT_MARGIN + graph_width &&
-               mouse_y >= TOP_MARGIN && mouse_y <= TOP_MARGIN + graph_height {
+            // Check if cursor is over time labels section (top margin area)
+            let over_time_labels = mouse_y < TOP_MARGIN && mouse_x >= LEFT_MARGIN;
+
+            if over_time_labels || (mouse_x >= LEFT_MARGIN && mouse_x <= LEFT_MARGIN + graph_width &&
+               mouse_y >= TOP_MARGIN && mouse_y <= TOP_MARGIN + graph_height) {
 
                 let graph_mouse_x = mouse_x - LEFT_MARGIN;
                 let graph_mouse_y = mouse_y - TOP_MARGIN;
@@ -453,7 +466,7 @@ pub fn GraphCanvas(
                 // At this zoom, stations are positioned to fit the screen perfectly
                 let min_zoom = Some(1.0);
 
-                canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport, min_zoom, Some((graph_width, graph_height)));
+                canvas_viewport::handle_zoom(&ev, graph_mouse_x, graph_mouse_y, &viewport, min_zoom, Some((graph_width, graph_height)), over_time_labels);
             }
         }
     };

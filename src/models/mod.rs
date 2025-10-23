@@ -12,7 +12,7 @@ pub use days_of_week::DaysOfWeek;
 pub use junction::{Junction, RoutingRule};
 pub use line::{Line, ScheduleMode, ManualDeparture, RouteSegment, generate_random_color};
 pub use node::Node;
-pub use project::{Project, ProjectMetadata, Legend, SpacingMode};
+pub use project::{Project, ProjectMetadata, Legend, SpacingMode, ProjectSettings, TrackHandedness};
 pub use railway_graph::{RailwayGraph, Stations, Tracks, Routes, Junctions};
 pub use station::{StationNode, Platform};
 pub use track::{TrackSegment, Track, TrackDirection};

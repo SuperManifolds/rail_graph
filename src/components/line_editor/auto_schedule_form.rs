@@ -16,6 +16,7 @@ pub fn AutoScheduleForm(
             <label>"Train Number Format"</label>
             <input
                 type="text"
+                class="train-number-format-input"
                 placeholder="e.g., {line} {seq:04}"
                 value=move || edited_line.get().map(|l| l.auto_train_number_format).unwrap_or_default()
                 on:input=move |ev| {
@@ -26,7 +27,7 @@ pub fn AutoScheduleForm(
                     }
                 }
             />
-            <small class="help-text">"Format: {{line}} for line ID, {{seq:04}} for sequence number"</small>
+            <small class="help-text">"Format: {line} for line ID, {seq:04} for sequence number"</small>
         </div>
 
         <div class="form-group">
@@ -86,7 +87,7 @@ pub fn AutoScheduleForm(
         </div>
 
         <div class="form-group">
-            <label>"Last Departure"</label>
+            <label>"Last Departure Before"</label>
             <TimeInput
                 label=""
                 value=Signal::derive(move || edited_line.get().map(|l| l.last_departure).unwrap_or_default())
@@ -94,6 +95,21 @@ pub fn AutoScheduleForm(
                 on_change=Box::new(move |time| {
                     if let Some(mut updated_line) = edited_line.get_untracked() {
                         updated_line.last_departure = time;
+                        on_update.call(updated_line);
+                    }
+                })
+            />
+        </div>
+
+        <div class="form-group">
+            <label>"Return Last Departure Before"</label>
+            <TimeInput
+                label=""
+                value=Signal::derive(move || edited_line.get().map(|l| l.return_last_departure).unwrap_or_default())
+                default_time="22:00"
+                on_change=Box::new(move |time| {
+                    if let Some(mut updated_line) = edited_line.get_untracked() {
+                        updated_line.return_last_departure = time;
                         on_update.call(updated_line);
                     }
                 })

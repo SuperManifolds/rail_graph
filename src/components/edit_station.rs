@@ -16,6 +16,86 @@ struct ConnectedTrack {
     current_default_platform: Option<usize>,
 }
 
+#[component]
+fn TrackPlatformSelect(
+    edge_index: EdgeIndex,
+    other_station_name: String,
+    is_incoming: bool,
+    platforms: ReadSignal<Vec<Platform>>,
+    connected_tracks: ReadSignal<Vec<ConnectedTrack>>,
+    on_update: TrackDefaultsCallback,
+    editing_station: ReadSignal<Option<NodeIndex>>,
+    graph: ReadSignal<RailwayGraph>,
+    set_connected_tracks: leptos::WriteSignal<Vec<ConnectedTrack>>,
+) -> impl IntoView {
+    view! {
+        <div class="track-default-platform">
+            <label>{other_station_name}</label>
+            <select
+                class="platform-select"
+                prop:value=move || {
+                    // Look up current value from signal to ensure reactivity
+                    let current = connected_tracks.get()
+                        .iter()
+                        .find(|t| t.edge_index == edge_index)
+                        .and_then(|t| t.current_default_platform);
+
+                    current.map_or_else(|| "auto".to_string(), |i| i.to_string())
+                }
+                on:change=move |ev| {
+                    let value = event_target_value(&ev);
+                    let platform_idx = if value == "auto" {
+                        None
+                    } else {
+                        value.parse::<usize>().ok()
+                    };
+
+                    // Update the track segment
+                    if is_incoming {
+                        on_update(edge_index, None, platform_idx);
+                    } else {
+                        on_update(edge_index, platform_idx, None);
+                    }
+
+                    // Reload tracks to show updated value
+                    if let Some(idx) = editing_station.get_untracked() {
+                        let current_graph = graph.get_untracked();
+                        set_connected_tracks.set(load_connected_tracks(idx, &current_graph));
+                    }
+                }
+            >
+                <option value="auto">
+                    {move || {
+                        let all_platforms = platforms.get();
+                        if is_incoming {
+                            if let Some(last_platform) = all_platforms.last() {
+                                format!("Auto ({})", last_platform.name)
+                            } else {
+                                "Auto".to_string()
+                            }
+                        } else if let Some(first_platform) = all_platforms.first() {
+                            format!("Auto ({})", first_platform.name)
+                        } else {
+                            "Auto".to_string()
+                        }
+                    }}
+                </option>
+                {move || {
+                    let current_platforms = platforms.get();
+                    (0..current_platforms.len()).map(|i| {
+                        let platform = current_platforms[i].clone();
+                        view! {
+                            <option value=i.to_string()>
+                                {platform.name}
+                            </option>
+                        }
+                    }).collect::<Vec<_>>()
+                }}
+            </select>
+        </div>
+    }
+}
+
 fn load_connected_tracks(station_idx: NodeIndex, graph: &RailwayGraph) -> Vec<ConnectedTrack> {
     let mut tracks = Vec::new();
 
@@ -139,76 +219,19 @@ pub fn EditStation(
                     <For
                         each=move || connected_tracks.get()
                         key=|track| track.edge_index.index()
-                        children={
-                            let on_update = on_update_track_defaults.clone();
-                            move |track: ConnectedTrack| {
-                                let edge_idx = track.edge_index;
-                                let is_incoming = track.is_incoming;
-                                let on_update = on_update.clone();
-
-                                view! {
-                                    <div class="track-default-platform">
-                                        <label>{track.other_station_name}</label>
-                                        <select
-                                            class="platform-select"
-                                            on:change={
-                                                let on_update = on_update.clone();
-                                                move |ev| {
-                                                    let value = event_target_value(&ev);
-                                                    let platform_idx = if value == "auto" {
-                                                        None
-                                                    } else {
-                                                        value.parse::<usize>().ok()
-                                                    };
-
-                                                    // Update the track segment
-                                                    if is_incoming {
-                                                        on_update(edge_idx, None, platform_idx);
-                                                    } else {
-                                                        on_update(edge_idx, platform_idx, None);
-                                                    }
-
-                                                    // Reload tracks to show updated value
-                                                    if let Some(idx) = editing_station.get_untracked() {
-                                                        let current_graph = graph.get_untracked();
-                                                        set_connected_tracks.set(load_connected_tracks(idx, &current_graph));
-                                                    }
-                                                }
-                                            }
-                                    >
-                                        <option value="auto" selected=move || track.current_default_platform.is_none()>
-                                            {move || {
-                                                let all_platforms = platforms.get();
-                                                if is_incoming {
-                                                    if let Some(last_platform) = all_platforms.last() {
-                                                        format!("Auto ({})", last_platform.name)
-                                                    } else {
-                                                        "Auto".to_string()
-                                                    }
-                                                } else if let Some(first_platform) = all_platforms.first() {
-                                                    format!("Auto ({})", first_platform.name)
-                                                } else {
-                                                    "Auto".to_string()
-                                                }
-                                            }}
-                                        </option>
-                                        {move || {
-                                            let current_platforms = platforms.get();
-                                            (0..current_platforms.len()).map(|i| {
-                                                let platform = current_platforms[i].clone();
-                                                view! {
-                                                    <option
-                                                        value=i.to_string()
-                                                        selected=track.current_default_platform == Some(i)
-                                                    >
-                                                        {platform.name}
-                                                        </option>
-                                                    }
-                                                }).collect::<Vec<_>>()
-                                            }}
-                                        </select>
-                                    </div>
-                                }
+                        children=move |track: ConnectedTrack| {
+                            view! {
+                                <TrackPlatformSelect
+                                    edge_index=track.edge_index
+                                    other_station_name=track.other_station_name
+                                    is_incoming=track.is_incoming
+                                    platforms=platforms
+                                    connected_tracks=connected_tracks
+                                    on_update=on_update_track_defaults.clone()
+                                    editing_station=editing_station
+                                    graph=graph
+                                    set_connected_tracks=set_connected_tracks
+                                />
                             }
                         }
                     />

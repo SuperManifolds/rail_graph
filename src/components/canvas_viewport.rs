@@ -51,6 +51,37 @@ pub fn create_viewport_signals(enable_horizontal_zoom: bool) -> ViewportSignals 
     }
 }
 
+#[must_use]
+pub fn create_viewport_signals_with_initial(enable_horizontal_zoom: bool, initial: crate::models::ViewportState) -> ViewportSignals {
+    let (zoom_level, set_zoom_level) = create_signal(initial.zoom_level);
+    let (pan_offset_x, set_pan_offset_x) = create_signal(initial.pan_offset_x);
+    let (pan_offset_y, set_pan_offset_y) = create_signal(initial.pan_offset_y);
+    let (is_panning, set_is_panning) = create_signal(false);
+    let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
+
+    let zoom_level_x = if enable_horizontal_zoom {
+        let initial_zoom_x = initial.zoom_level_x.unwrap_or(1.0);
+        let (zoom_x, set_zoom_x) = create_signal(initial_zoom_x);
+        Some((zoom_x, set_zoom_x))
+    } else {
+        None
+    };
+
+    ViewportSignals {
+        zoom_level,
+        set_zoom_level,
+        zoom_level_x,
+        pan_offset_x,
+        set_pan_offset_x,
+        pan_offset_y,
+        set_pan_offset_y,
+        is_panning,
+        set_is_panning,
+        last_mouse_pos,
+        set_last_mouse_pos,
+    }
+}
+
 pub fn handle_pan_start(
     x: f64,
     y: f64,
@@ -94,20 +125,20 @@ pub fn handle_zoom(
     viewport: &ViewportSignals,
     min_zoom: Option<f64>,
     canvas_dimensions: Option<(f64, f64)>,
+    horizontal_zoom: bool,
 ) {
     let delta = ev.delta_y();
-    let alt_pressed = ev.alt_key();
 
     // Scroll wheel zoom controls:
-    // - No modifier = vertical zoom (Y-axis only)
-    // - Alt = horizontal zoom (X-axis only, time-based views)
+    // - Cursor over time labels = horizontal zoom (X-axis only, time-based views)
+    // - Cursor elsewhere = vertical zoom (Y-axis only)
     // Note: Shift+scroll horizontal panning was removed due to momentum scrolling conflicts.
     // Use Space+mouse or WASD keys for panning instead.
-    if alt_pressed && viewport.zoom_level_x.is_some() {
+    if horizontal_zoom && viewport.zoom_level_x.is_some() {
         // Horizontal zoom
         let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
         apply_horizontal_zoom(zoom_factor, mouse_x, viewport);
-    } else if !alt_pressed {
+    } else if !horizontal_zoom {
         // Normal zoom
         let zoom_factor = if delta < 0.0 { 1.1 } else { 0.9 };
         apply_normal_zoom(zoom_factor, mouse_x, mouse_y, viewport, min_zoom, canvas_dimensions);
@@ -258,8 +289,11 @@ pub fn setup_keyboard_listeners(
     set_s_pressed: WriteSignal<bool>,
     set_d_pressed: WriteSignal<bool>,
     viewport: &ViewportSignals,
+    canvas_dimensions: leptos::Signal<Option<(f64, f64)>>,
+    min_zoom: Option<f64>,
 ) {
     let viewport_for_keyup = *viewport;
+    let viewport_for_zoom = *viewport;
 
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
         if ev.repeat() {
@@ -285,6 +319,24 @@ pub fn setup_keyboard_listeners(
             "KeyA" => set_a_pressed.set(true),
             "KeyS" => set_s_pressed.set(true),
             "KeyD" => set_d_pressed.set(true),
+            "Equal" | "NumpadAdd" => {
+                ev.prevent_default();
+                // Zoom in at center of canvas
+                if let Some((width, height)) = canvas_dimensions.get_untracked() {
+                    let center_x = width / 2.0;
+                    let center_y = height / 2.0;
+                    apply_normal_zoom(1.1, center_x, center_y, &viewport_for_zoom, min_zoom, Some((width, height)));
+                }
+            }
+            "Minus" | "NumpadSubtract" => {
+                ev.prevent_default();
+                // Zoom out at center of canvas
+                if let Some((width, height)) = canvas_dimensions.get_untracked() {
+                    let center_x = width / 2.0;
+                    let center_y = height / 2.0;
+                    apply_normal_zoom(0.9, center_x, center_y, &viewport_for_zoom, min_zoom, Some((width, height)));
+                }
+            }
             _ => {}
         }
     });

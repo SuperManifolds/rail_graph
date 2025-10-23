@@ -4,13 +4,14 @@ use crate::components::button::Button;
 use crate::components::csv_column_mapper::CsvColumnMapper;
 use crate::components::window::Window;
 use crate::import::csv::{analyze_csv, parse_csv_with_mapping, CsvImportConfig};
-use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback, Show};
+use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, SignalGetUntracked, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback, Show};
 
 fn handle_fpl_import(
     text: &str,
     set_graph: WriteSignal<RailwayGraph>,
     set_lines: WriteSignal<Vec<Line>>,
     lines: ReadSignal<Vec<Line>>,
+    handedness: crate::models::TrackHandedness,
 ) {
     let Ok(timetable) = parse_jtraingraph(text) else {
         leptos::logging::error!("Failed to parse JTrainGraph file");
@@ -30,7 +31,7 @@ fn handle_fpl_import(
     set_graph.update(|graph| {
         before_stations = graph.graph.node_count();
 
-        match import_jtraingraph(&timetable, graph, before_lines_count, &existing_line_ids) {
+        match import_jtraingraph(&timetable, graph, before_lines_count, &existing_line_ids, handedness) {
             Ok(lines_to_add) => {
                 after_stations = graph.graph.node_count();
                 new_lines = Some(lines_to_add);
@@ -50,11 +51,19 @@ fn handle_fpl_import(
 
 fn handle_csv_analysis(
     text: &str,
+    filename: String,
     set_csv_config: WriteSignal<Option<CsvImportConfig>>,
     set_show_mapper: WriteSignal<bool>,
 ) {
     leptos::logging::log!("Analyzing CSV file, length: {}", text.len());
-    if let Some(config) = analyze_csv(text) {
+
+    // Extract filename without extension
+    let filename_without_ext = std::path::Path::new(&filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(String::from);
+
+    if let Some(config) = analyze_csv(text, filename_without_ext) {
         leptos::logging::log!("CSV analysis successful, {} columns detected", config.columns.len());
         set_csv_config.set(Some(config));
         set_show_mapper.set(true);
@@ -69,6 +78,7 @@ pub fn Importer(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
     set_graph: WriteSignal<RailwayGraph>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
     let file_input_ref = create_node_ref::<leptos::html::Input>();
     let (show_mapper, set_show_mapper) = create_signal(false);
@@ -111,9 +121,10 @@ pub fn Importer(
             leptos::logging::log!("File type: {}", if is_fpl { "FPL" } else { "CSV" });
 
             if is_fpl {
-                handle_fpl_import(&text, set_graph, set_lines, lines);
+                let handedness = settings.get_untracked().track_handedness;
+                handle_fpl_import(&text, set_graph, set_lines, lines, handedness);
             } else {
-                handle_csv_analysis(&text, set_csv_config, set_show_mapper);
+                handle_csv_analysis(&text, filename.clone(), set_csv_config, set_show_mapper);
             }
         });
     };
@@ -123,10 +134,11 @@ pub fn Importer(
 
         // Get existing line count for color offset
         let existing_line_count = lines.get().len();
+        let handedness = settings.get().track_handedness;
 
         // Parse CSV into existing graph
         set_graph.update(|graph| {
-            let lines = parse_csv_with_mapping(&file_content.get(), &config, graph, existing_line_count);
+            let lines = parse_csv_with_mapping(&file_content.get(), &config, graph, existing_line_count, handedness);
             new_lines = Some(lines);
         });
 
@@ -183,6 +195,7 @@ pub fn Importer(
                             defaults: crate::import::csv::ImportDefaults::default(),
                             pattern_repeat: None,
                             group_line_names: HashMap::new(),
+                            filename: None,
                         }
                     }))
                     on_cancel=Callback::new(move |()| set_show_mapper.set(false))

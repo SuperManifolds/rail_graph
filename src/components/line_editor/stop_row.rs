@@ -106,6 +106,11 @@ pub fn StopRow(
                     RouteDirection::Return => &l.return_route,
                 };
 
+                let first_stop_wait = match route_direction {
+                    RouteDirection::Forward => l.first_stop_wait_time,
+                    RouteDirection::Return => l.return_first_stop_wait_time,
+                };
+
                 let segment = if index < route.len() {
                     Some(route[index].clone())
                 } else {
@@ -124,7 +129,7 @@ pub fn StopRow(
                     route.iter().take(index).map(segment_total_seconds).sum()
                 };
 
-                (segment, prev_segment, cumulative_seconds, route.len())
+                (segment, prev_segment, cumulative_seconds, route.len(), first_stop_wait)
             })
         })
     });
@@ -135,9 +140,13 @@ pub fn StopRow(
             <span class="station-name">{name.clone()}</span>
             {move || {
                 route_data.with(|data| {
-                    data.as_ref().map(|(segment, prev_segment, cumulative_seconds, route_len)| {
+                    data.as_ref().map(|(segment, prev_segment, cumulative_seconds, route_len, first_stop_wait)| {
                         let segment_duration = segment.as_ref().and_then(|s| s.duration);
-                        let wait_duration = prev_segment.as_ref().map_or(Duration::zero(), |s| s.wait_time);
+                        let wait_duration = if is_first {
+                            *first_stop_wait
+                        } else {
+                            prev_segment.as_ref().map_or(Duration::zero(), |s| s.wait_time)
+                        };
                         let current_platform_origin = segment.as_ref().map(|s| s.origin_platform);
                         let current_platform_dest = prev_segment.as_ref().map(|s| s.destination_platform);
                         let current_track = segment.as_ref().map(|s| s.track_index);

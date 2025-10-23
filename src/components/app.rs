@@ -1,4 +1,4 @@
-use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value, Signal, store_value};
+use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value, Signal, store_value, SignalGetUntracked};
 use std::collections::HashMap;
 use leptos_meta::{provide_meta_context, Title};
 use uuid::Uuid;
@@ -52,12 +52,14 @@ pub fn App() -> impl IntoView {
     let (lines, set_lines) = create_signal(Vec::new());
     let (graph, set_graph) = create_signal(RailwayGraph::new());
     let (legend, set_legend) = create_signal(Legend::default());
+    let (settings, set_settings) = create_signal(crate::models::ProjectSettings::default());
     let (views, set_views) = create_signal(Vec::new());
     let (is_loading, set_is_loading) = create_signal(true);
     let (initial_load_complete, set_initial_load_complete) = create_signal(false);
 
     // Store viewport states separately to avoid triggering view updates
     let (viewport_states, set_viewport_states) = create_signal(HashMap::<Uuid, ViewportState>::new());
+    let (infrastructure_viewport, set_infrastructure_viewport) = create_signal(ViewportState::default());
 
     // Compute train journeys at app level
     let (train_journeys, set_train_journeys) = create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
@@ -74,18 +76,32 @@ pub fn App() -> impl IntoView {
             let project_id = storage.get_current_project_id().await.ok().flatten();
 
             let project = if let Some(id) = project_id {
-                storage.load_project(&id).await.ok()
+                match storage.load_project(&id).await {
+                    Ok(p) => {
+                        web_sys::console::log_1(&"Project loaded successfully".into());
+                        Some(p)
+                    }
+                    Err(e) => {
+                        web_sys::console::error_1(&format!("Failed to load project: {e}").into());
+                        None
+                    }
+                }
             } else {
+                web_sys::console::log_1(&"No previous project found".into());
                 None
             };
 
-            let project = project.unwrap_or_else(Project::empty);
+            let project = project.unwrap_or_else(|| {
+                web_sys::console::log_1(&"Creating empty project".into());
+                Project::empty()
+            });
             let empty_graph = project.graph.clone();
 
             set_current_project.set(project.clone());
             set_lines.set(project.lines.clone());
             set_graph.set(project.graph.clone());
             set_legend.set(project.legend);
+            set_settings.set(project.settings);
 
             // Ensure we have at least one view (create default "Main Line" view)
             let mut views = project.views.clone();
@@ -98,6 +114,7 @@ pub fn App() -> impl IntoView {
                 .map(|v| (v.id, v.viewport_state.clone()))
                 .collect();
             set_viewport_states.set(viewports);
+            set_infrastructure_viewport.set(project.infrastructure_viewport.clone());
 
             set_views.set(views.clone());
 
@@ -112,13 +129,52 @@ pub fn App() -> impl IntoView {
         });
     });
 
-    // Auto-save project whenever lines, graph, legend, views, viewport states, or active tab change
+    // Regenerate "Main Line" view when infrastructure changes (after initial load)
+    create_effect(move |prev_counts: Option<(usize, usize)>| {
+        let current_graph = graph.get();
+        let node_count = current_graph.graph.node_count();
+        let edge_count = current_graph.graph.edge_count();
+
+        // Skip during initial load
+        if !initial_load_complete.get() {
+            return (node_count, edge_count);
+        }
+
+        let counts_changed = prev_counts.is_some_and(|(prev_nodes, prev_edges)|
+            node_count != prev_nodes || edge_count != prev_edges
+        );
+
+        // Only regenerate if node or edge count changed (new station/junction/track added)
+        if !counts_changed {
+            return (node_count, edge_count);
+        }
+
+        set_views.update(|v| {
+            // Find and regenerate the Main Line view
+            for view in v.iter_mut() {
+                if view.name != "Main Line" {
+                    continue;
+                }
+                let regenerated = GraphView::default_main_line(&current_graph);
+                // Preserve the view ID and viewport state
+                view.station_range = regenerated.station_range;
+                view.edge_path = regenerated.edge_path;
+                break;
+            }
+        });
+
+        (node_count, edge_count)
+    });
+
+    // Auto-save project whenever lines, graph, legend, settings, views, viewport states, or active tab change
     create_effect(move |_| {
         let current_lines = lines.get();
         let current_graph = graph.get();
         let current_legend = legend.get();
+        let current_settings = settings.get();
         let current_views = views.get();
         let current_viewports = viewport_states.get();
+        let current_infrastructure_viewport = infrastructure_viewport.get();
         let current_tab = active_tab.get();
         let mut proj = current_project.get();
 
@@ -143,9 +199,14 @@ pub fn App() -> impl IntoView {
             proj.lines = current_lines;
             proj.graph = current_graph;
             proj.legend = current_legend;
+            proj.settings = current_settings;
             proj.views = views_with_viewports;
             proj.active_tab_id = active_tab_id;
+            proj.infrastructure_viewport = current_infrastructure_viewport;
             proj.touch_updated_at();
+
+            // Update current_project signal to keep it synchronized
+            set_current_project.set(proj.clone());
 
             let project_id = proj.metadata.id.clone();
             spawn_local(async move {
@@ -264,6 +325,7 @@ pub fn App() -> impl IntoView {
         set_lines.set(project.lines.clone());
         set_graph.set(project.graph.clone());
         set_legend.set(project.legend.clone());
+        set_settings.set(project.settings.clone());
 
         // Handle views
         let mut project_views = project.views.clone();
@@ -276,6 +338,7 @@ pub fn App() -> impl IntoView {
             .map(|v| (v.id, v.viewport_state.clone()))
             .collect();
         set_viewport_states.set(viewports);
+        set_infrastructure_viewport.set(project.infrastructure_viewport.clone());
         set_views.set(project_views.clone());
 
         // Set active tab
@@ -393,6 +456,11 @@ pub fn App() -> impl IntoView {
                             lines=lines
                             set_lines=set_lines
                             on_create_view=on_create_view
+                            settings=settings
+                            initial_viewport=infrastructure_viewport.get_untracked()
+                            on_viewport_change=Callback::new(move |viewport_state: ViewportState| {
+                                set_infrastructure_viewport.set(viewport_state);
+                            })
                         />
                     }.into_view(),
                     AppTab::GraphView(view_id) => {
@@ -406,6 +474,8 @@ pub fn App() -> impl IntoView {
                                     set_graph=set_graph
                                     legend=legend
                                     set_legend=set_legend
+                                    settings=settings
+                                    set_settings=set_settings
                                     view=view
                                     train_journeys=train_journeys
                                     selected_day=selected_day

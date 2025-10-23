@@ -10,6 +10,15 @@ fn duration_to_hhmmss(duration: Duration) -> String {
 }
 
 fn parse_hhmmss(input: &str) -> Option<Duration> {
+    // Try flexible format (NIMBY Rails format)
+    if let Some((hours, minutes, seconds)) = crate::time::parse_flexible_time(input) {
+        // For durations, we allow any non-negative values (no 24-hour or 60-minute limit)
+        if hours >= 0 && minutes >= 0 && seconds >= 0 {
+            return Some(Duration::hours(hours) + Duration::minutes(minutes) + Duration::seconds(seconds));
+        }
+    }
+
+    // Fall back to strict format
     let parts: Vec<&str> = input.split(':').collect();
     if parts.len() != 3 {
         return None;
@@ -69,5 +78,60 @@ pub fn OptionalDurationInput(
                 }
             }
         />
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_duration_large_hours() {
+        // Durations should accept any non-negative hours
+        let result = parse_hhmmss("26.0.0");
+        assert!(result.is_some());
+        let duration = result.expect("should parse");
+        assert_eq!(duration.num_hours(), 26);
+    }
+
+    #[test]
+    fn test_parse_duration_large_minutes() {
+        // Durations should accept any non-negative minutes
+        let result = parse_hhmmss("0.70.0");
+        assert!(result.is_some());
+        let duration = result.expect("should parse");
+        assert_eq!(duration.num_minutes(), 70);
+    }
+
+    #[test]
+    fn test_parse_duration_large_seconds() {
+        // Durations should accept any non-negative seconds
+        let result = parse_hhmmss("0.0.90");
+        assert!(result.is_some());
+        let duration = result.expect("should parse");
+        assert_eq!(duration.num_seconds(), 90);
+    }
+
+    #[test]
+    fn test_parse_duration_nimby_format() {
+        let result = parse_hhmmss("5.15.");
+        assert!(result.is_some());
+        let duration = result.expect("should parse");
+        assert_eq!(duration.num_hours(), 5);
+        assert_eq!(duration.num_minutes(), 5 * 60 + 15);
+    }
+
+    #[test]
+    fn test_parse_duration_standard_format() {
+        let result = parse_hhmmss("01:30:45");
+        assert!(result.is_some());
+        let duration = result.expect("should parse");
+        assert_eq!(duration.num_seconds(), 3600 + 30 * 60 + 45);
+    }
+
+    #[test]
+    fn test_duration_to_hhmmss() {
+        let duration = Duration::hours(2) + Duration::minutes(15) + Duration::seconds(30);
+        assert_eq!(duration_to_hhmmss(duration), "02:15:30");
     }
 }

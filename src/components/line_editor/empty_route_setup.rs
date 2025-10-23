@@ -43,12 +43,13 @@ fn create_route_between_stations(
     mut line: Line,
     graph: &RailwayGraph,
     direction: RouteDirection,
+    handedness: crate::models::TrackHandedness,
 ) -> Option<Line> {
     let first_idx = graph.get_station_index(first_name)?;
     let second_idx = graph.get_station_index(second_name)?;
     let path = graph.find_path_between_nodes(first_idx, second_idx)?;
 
-    for (i, edge) in path.iter().enumerate() {
+    for edge in &path {
         let Some((source, target)) = graph.graph.edge_endpoints(*edge) else {
             continue;
         };
@@ -59,7 +60,7 @@ fn create_route_between_stations(
         let default_wait = if is_passing_loop {
             Duration::seconds(0)
         } else {
-            Duration::seconds(30)
+            line.default_wait_time
         };
 
         let source_platform_count = graph.graph.node_weight(source)
@@ -70,8 +71,8 @@ fn create_route_between_stations(
             .and_then(|n| n.as_station())
             .map_or(1, |s| s.platforms.len());
 
-        let origin_platform = graph.get_default_platform_for_arrival(*edge, false, source_platform_count);
-        let destination_platform = graph.get_default_platform_for_arrival(*edge, true, target_platform_count);
+        let origin_platform = graph.get_default_platform_for_arrival(*edge, false, source_platform_count, handedness);
+        let destination_platform = graph.get_default_platform_for_arrival(*edge, true, target_platform_count, handedness);
 
         let segment = RouteSegment {
             edge_index: edge.index(),
@@ -79,7 +80,8 @@ fn create_route_between_stations(
             origin_platform,
             destination_platform,
             duration: None,
-            wait_time: if i == 0 { default_wait } else { Duration::zero() },
+            // Use default wait time for stations, zero for passing loops
+            wait_time: default_wait,
         };
 
         match direction {
@@ -109,6 +111,7 @@ fn SecondStationSelect(
     edited_line: ReadSignal<Option<Line>>,
     graph: ReadSignal<RailwayGraph>,
     on_save: std::rc::Rc<dyn Fn(Line)>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
     let other_stations: Vec<String> = all_stations.iter()
         .filter(|name| *name != &first_name)
@@ -125,8 +128,9 @@ fn SecondStationSelect(
         let Some(line) = edited_line.get_untracked() else { return };
         let graph_data = graph.get();
         let direction = route_direction.get();
+        let handedness = settings.get().track_handedness;
 
-        if let Some(updated_line) = create_route_between_stations(&first_name_for_handler, &second_name, line, &graph_data, direction) {
+        if let Some(updated_line) = create_route_between_stations(&first_name_for_handler, &second_name, line, &graph_data, direction, handedness) {
             on_save(updated_line);
             first_station.set(None);
         }
@@ -163,6 +167,7 @@ pub fn EmptyRouteSetup(
     edited_line: ReadSignal<Option<Line>>,
     graph: ReadSignal<RailwayGraph>,
     on_save: std::rc::Rc<dyn Fn(Line)>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
     // Extract data before the view
     let all_stations = create_memo(move |_| {
@@ -188,6 +193,7 @@ pub fn EmptyRouteSetup(
                             edited_line=edited_line
                             graph=graph
                             on_save=on_save.clone()
+                            settings=settings
                         />
                     }.into_view()
                 } else {

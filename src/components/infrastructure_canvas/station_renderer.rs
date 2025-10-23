@@ -5,9 +5,11 @@ use std::collections::HashMap;
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
+type TrackSegment = ((f64, f64), (f64, f64));
+
 const NODE_RADIUS: f64 = 8.0;
 const LABEL_OFFSET: f64 = 12.0;
-const JUNCTION_LABEL_OFFSET: f64 = 28.0; // Larger offset for junctions to clear connection lines
+const JUNCTION_LABEL_OFFSET: f64 = 12.0; // Same as stations
 const CHAR_WIDTH_ESTIMATE: f64 = 7.5;
 const STATION_COLOR: &str = "#4a9eff";
 const PASSING_LOOP_COLOR: &str = "#888";
@@ -17,8 +19,6 @@ const LABEL_COLOR: &str = "#fff";
 const SELECTION_RING_COLOR: &str = "#ffaa00";
 const SELECTION_RING_WIDTH: f64 = 3.0;
 const SELECTION_RING_OFFSET: f64 = 4.0;
-
-type TrackSegment = ((f64, f64), (f64, f64));
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum LabelPosition {
@@ -92,6 +92,7 @@ impl LabelPosition {
     }
 }
 
+#[derive(Clone)]
 struct LabelBounds {
     x: f64,
     y: f64,
@@ -349,6 +350,219 @@ fn get_node_positions_and_radii(graph: &RailwayGraph) -> Vec<(NodeIndex, (f64, f
     node_positions
 }
 
+fn identify_branches(graph: &RailwayGraph, node_positions: &[(NodeIndex, (f64, f64), f64)]) -> Vec<Vec<NodeIndex>> {
+    use std::collections::HashSet;
+
+    // Build adjacency map and calculate degrees
+    let mut adjacency: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+    for edge in graph.graph.edge_references() {
+        adjacency.entry(edge.source()).or_insert_with(Vec::new).push(edge.target());
+        adjacency.entry(edge.target()).or_insert_with(Vec::new).push(edge.source());
+    }
+
+    let mut visited_edges = HashSet::new();
+    let mut branches = Vec::new();
+
+    // Find all junction nodes (degree != 2) and endpoints (degree == 1)
+    let mut junction_or_endpoint_nodes = Vec::new();
+    for (idx, _, _) in node_positions {
+        let degree = adjacency.get(idx).map_or(0, Vec::len);
+        if degree != 2 {
+            junction_or_endpoint_nodes.push(*idx);
+        }
+    }
+
+    // For each junction/endpoint, trace paths to other junctions/endpoints
+    for &start_node in &junction_or_endpoint_nodes {
+        let Some(neighbors) = adjacency.get(&start_node) else { continue };
+
+        for &next_node in neighbors {
+            let edge_key = if start_node < next_node {
+                (start_node, next_node)
+            } else {
+                (next_node, start_node)
+            };
+
+            if visited_edges.contains(&edge_key) {
+                continue;
+            }
+
+            // Trace this branch
+            let mut branch = vec![start_node];
+            let mut current = next_node;
+            let mut previous = start_node;
+
+            visited_edges.insert(edge_key);
+
+            loop {
+                branch.push(current);
+
+                let current_degree = adjacency.get(&current).map_or(0, Vec::len);
+
+                // Stop if we hit a junction/endpoint
+                if current_degree != 2 {
+                    break;
+                }
+
+                // Continue along the linear path
+                let Some(neighbors) = adjacency.get(&current) else { break };
+                let next = neighbors.iter().find(|&&n| n != previous);
+
+                let Some(&next_node) = next else { break };
+
+                let edge_key = if current < next_node {
+                    (current, next_node)
+                } else {
+                    (next_node, current)
+                };
+
+                if visited_edges.contains(&edge_key) {
+                    break;
+                }
+
+                visited_edges.insert(edge_key);
+                previous = current;
+                current = next_node;
+            }
+
+            if !branch.is_empty() {
+                branches.push(branch);
+            }
+        }
+    }
+
+    // Handle any isolated linear segments (no junctions)
+    for (idx, _, _) in node_positions {
+        let Some(neighbors) = adjacency.get(idx) else { continue };
+
+        for &neighbor in neighbors {
+            let edge_key = if *idx < neighbor {
+                (*idx, neighbor)
+            } else {
+                (neighbor, *idx)
+            };
+
+            if visited_edges.contains(&edge_key) {
+                continue;
+            }
+
+            // Trace this isolated segment
+            let mut branch = vec![*idx];
+            let mut current = neighbor;
+            let mut previous = *idx;
+
+            visited_edges.insert(edge_key);
+
+            loop {
+                branch.push(current);
+
+                let Some(neighbors) = adjacency.get(&current) else { break };
+                let next = neighbors.iter().find(|&&n| n != previous);
+
+                let Some(&next_node) = next else { break };
+
+                let edge_key = if current < next_node {
+                    (current, next_node)
+                } else {
+                    (next_node, current)
+                };
+
+                if visited_edges.contains(&edge_key) {
+                    break;
+                }
+
+                visited_edges.insert(edge_key);
+                previous = current;
+                current = next_node;
+            }
+
+            if !branch.is_empty() {
+                branches.push(branch);
+            }
+        }
+    }
+
+    branches
+}
+
+fn process_node_group(
+    nodes: &[NodeIndex],
+    node_metadata: &HashMap<NodeIndex, (f64, f64, (f64, f64))>,
+    node_positions: &[(NodeIndex, (f64, f64), f64)],
+    track_segments: &[TrackSegment],
+    font_size: f64,
+    label_positions: &mut HashMap<NodeIndex, (LabelBounds, LabelPosition)>,
+) {
+    if nodes.is_empty() {
+        return;
+    }
+
+    // Try all orientations and find the one with minimum overlaps
+    let mut best_orientation = LabelPosition::Right;
+    let mut best_total_overlaps = usize::MAX;
+
+    for orientation in LabelPosition::all() {
+        let mut total_overlaps = 0;
+
+        for &node_idx in nodes {
+            if let Some((text_width, label_offset, pos)) = node_metadata.get(&node_idx) {
+                let bounds = calculate_label_bounds(orientation, *pos, *text_width, font_size, *label_offset);
+                let overlaps = count_label_overlaps(&bounds, node_idx, label_positions, node_positions, track_segments);
+                total_overlaps += overlaps;
+            }
+        }
+
+        if total_overlaps < best_total_overlaps {
+            best_total_overlaps = total_overlaps;
+            best_orientation = orientation;
+            if total_overlaps == 0 {
+                break;
+            }
+        }
+    }
+
+    // Apply this orientation to all nodes and track which ones still have conflicts
+    let mut conflicting_nodes = Vec::new();
+
+    for &node_idx in nodes {
+        if let Some((text_width, label_offset, pos)) = node_metadata.get(&node_idx) {
+            let bounds = calculate_label_bounds(best_orientation, *pos, *text_width, font_size, *label_offset);
+
+            // Check if this placement has overlaps
+            let overlaps = count_label_overlaps(&bounds, node_idx, label_positions, node_positions, track_segments);
+
+            if overlaps == 0 {
+                // No conflict, place it
+                label_positions.insert(node_idx, (bounds, best_orientation));
+            } else {
+                // Has conflict, add to conflicting nodes
+                conflicting_nodes.push(node_idx);
+            }
+        }
+    }
+
+    // Recursively process conflicting nodes, but only if we made progress
+    // (i.e., some nodes were placed without conflicts)
+    if !conflicting_nodes.is_empty() && conflicting_nodes.len() < nodes.len() {
+        process_node_group(
+            &conflicting_nodes,
+            node_metadata,
+            node_positions,
+            track_segments,
+            font_size,
+            label_positions,
+        );
+    } else if !conflicting_nodes.is_empty() {
+        // No progress made (all nodes still conflict), just place them with best orientation
+        for &node_idx in &conflicting_nodes {
+            if let Some((text_width, label_offset, pos)) = node_metadata.get(&node_idx) {
+                let bounds = calculate_label_bounds(best_orientation, *pos, *text_width, font_size, *label_offset);
+                label_positions.insert(node_idx, (bounds, best_orientation));
+            }
+        }
+    }
+}
+
 #[must_use]
 pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeIndex, (f64, f64, f64, f64)> {
     let font_size = 14.0 / zoom;
@@ -357,80 +571,64 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
 
     let node_positions = get_node_positions_and_radii(graph);
 
-    let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
-    let mut node_neighbors: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+    // Build node metadata (width, offset, position)
+    let mut node_metadata: HashMap<NodeIndex, (f64, f64, (f64, f64))> = HashMap::new();
+    for (idx, pos, _) in &node_positions {
+        if let Some(node) = graph.graph.node_weight(*idx) {
+            let name = node.display_name();
+            #[allow(clippy::cast_precision_loss)]
+            let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
+            let is_junction = graph.is_junction(*idx);
+            let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
+            node_metadata.insert(*idx, (text_width, label_offset, *pos));
+        }
+    }
 
+    let mut node_neighbors: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
     for edge in graph.graph.edge_references() {
         node_neighbors.entry(edge.source()).or_insert_with(Vec::new).push(edge.target());
         node_neighbors.entry(edge.target()).or_insert_with(Vec::new).push(edge.source());
     }
 
-    let mut visited_for_traversal = std::collections::HashSet::new();
-    let mut queue = std::collections::VecDeque::new();
-    let mut bfs_parent: HashMap<NodeIndex, NodeIndex> = HashMap::new();
-    let mut branch_positions: HashMap<NodeIndex, LabelPosition> = HashMap::new();
+    // Identify branches using BFS
+    let branches = identify_branches(graph, &node_positions);
 
-    if let Some((first_idx, _, _)) = node_positions.first() {
-        queue.push_back(*first_idx);
-        visited_for_traversal.insert(*first_idx);
+    let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
+
+    // First pass: process all stations (excluding junctions from branches)
+    for branch_nodes in &branches {
+        let station_only_nodes: Vec<NodeIndex> = branch_nodes.iter()
+            .filter(|idx| !graph.is_junction(**idx))
+            .copied()
+            .collect();
+
+        if !station_only_nodes.is_empty() {
+            process_node_group(
+                &station_only_nodes,
+                &node_metadata,
+                &node_positions,
+                &track_segments,
+                font_size,
+                &mut label_positions,
+            );
+        }
     }
 
-    while let Some(idx) = queue.pop_front() {
-        let Some((_, pos, _radius)) = node_positions.iter().find(|(i, _, _)| *i == idx) else { continue };
-        let Some(node) = graph.graph.node_weight(idx) else { continue };
-        let name = node.display_name();
-        #[allow(clippy::cast_precision_loss)]
-        let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
+    // Second pass: process each junction individually to find best position
+    let junction_nodes: Vec<NodeIndex> = node_positions.iter()
+        .filter(|(idx, _, _)| graph.is_junction(*idx))
+        .map(|(idx, _, _)| *idx)
+        .collect();
 
-        let is_junction = graph.is_junction(idx);
-        let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
-
-        let preferred_position = bfs_parent.get(&idx)
-            .and_then(|parent| branch_positions.get(parent))
-            .copied();
-
-        if let Some(neighbors) = node_neighbors.get(&idx) {
-            for &neighbor in neighbors {
-                if visited_for_traversal.insert(neighbor) {
-                    queue.push_back(neighbor);
-                    bfs_parent.insert(neighbor, idx);
-                }
-            }
-        }
-
-        let positions_to_try: Vec<LabelPosition> = if let Some(pref_pos) = preferred_position {
-            let mut positions = vec![pref_pos];
-            positions.extend(LabelPosition::all().into_iter().filter(|p| *p != pref_pos));
-            positions
-        } else {
-            LabelPosition::all()
-        };
-
-        let mut best_position = LabelPosition::Right;
-        let mut best_overlaps = usize::MAX;
-
-        for position in positions_to_try {
-            let bounds = calculate_label_bounds(position, *pos, text_width, font_size, label_offset);
-            let overlaps = count_label_overlaps(&bounds, idx, &label_positions, &node_positions, &track_segments);
-
-            if overlaps < best_overlaps {
-                best_overlaps = overlaps;
-                best_position = position;
-                if overlaps == 0 {
-                    break;
-                }
-            }
-        }
-
-        let label_pos = best_position.calculate_label_pos_with_offset(*pos, text_width, font_size, label_offset);
-        let bounds = LabelBounds {
-            x: label_pos.0,
-            y: label_pos.1 - font_size,
-            width: text_width,
-            height: font_size * 1.2,
-        };
-        label_positions.insert(idx, (bounds, best_position));
-        branch_positions.insert(idx, best_position);
+    for junction_idx in junction_nodes {
+        process_node_group(
+            &[junction_idx],
+            &node_metadata,
+            &node_positions,
+            &track_segments,
+            font_size,
+            &mut label_positions,
+        );
     }
 
     label_positions.into_iter()
@@ -451,82 +649,57 @@ pub fn draw_stations(
 
     let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations);
 
-    // Calculate optimal label positions using BFS traversal
+    // Build node metadata (width, offset, position)
+    let mut node_metadata: HashMap<NodeIndex, (f64, f64, (f64, f64))> = HashMap::new();
+    for (idx, pos, _) in &node_positions {
+        if let Some(node) = graph.graph.node_weight(*idx) {
+            let name = node.display_name();
+            #[allow(clippy::cast_precision_loss)]
+            let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
+            let is_junction = graph.is_junction(*idx);
+            let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
+            node_metadata.insert(*idx, (text_width, label_offset, *pos));
+        }
+    }
+
+    // Identify branches and process each one
+    let branches = identify_branches(graph, &node_positions);
     let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
-    let mut node_neighbors: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
 
-    for edge in graph.graph.edge_references() {
-        node_neighbors.entry(edge.source()).or_insert_with(Vec::new).push(edge.target());
-        node_neighbors.entry(edge.target()).or_insert_with(Vec::new).push(edge.source());
+    // First pass: process all stations (excluding junctions from branches)
+    for branch_nodes in &branches {
+        let station_only_nodes: Vec<NodeIndex> = branch_nodes.iter()
+            .filter(|idx| !graph.is_junction(**idx))
+            .copied()
+            .collect();
+
+        if !station_only_nodes.is_empty() {
+            process_node_group(
+                &station_only_nodes,
+                &node_metadata,
+                &node_positions,
+                &track_segments,
+                font_size,
+                &mut label_positions,
+            );
+        }
     }
 
-    let mut visited_for_traversal = std::collections::HashSet::new();
-    let mut queue = std::collections::VecDeque::new();
-    let mut bfs_parent: HashMap<NodeIndex, NodeIndex> = HashMap::new();
-    let mut branch_positions: HashMap<NodeIndex, LabelPosition> = HashMap::new();
+    // Second pass: process each junction individually to find best position
+    let junction_nodes: Vec<NodeIndex> = node_positions.iter()
+        .filter(|(idx, _, _)| graph.is_junction(*idx))
+        .map(|(idx, _, _)| *idx)
+        .collect();
 
-    if let Some((first_idx, _, _)) = node_positions.first() {
-        queue.push_back(*first_idx);
-        visited_for_traversal.insert(*first_idx);
-    }
-
-    while let Some(idx) = queue.pop_front() {
-        let Some((_, pos, _radius)) = node_positions.iter().find(|(i, _, _)| *i == idx) else { continue };
-        let Some(node) = graph.graph.node_weight(idx) else { continue };
-        let name = node.display_name();
-        #[allow(clippy::cast_precision_loss)]
-        let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
-
-        // Use larger offset for junctions
-        let is_junction = graph.is_junction(idx);
-        let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
-
-        let preferred_position = bfs_parent.get(&idx)
-            .and_then(|parent| branch_positions.get(parent))
-            .copied();
-
-        if let Some(neighbors) = node_neighbors.get(&idx) {
-            for &neighbor in neighbors {
-                if visited_for_traversal.insert(neighbor) {
-                    queue.push_back(neighbor);
-                    bfs_parent.insert(neighbor, idx);
-                }
-            }
-        }
-
-        let positions_to_try: Vec<LabelPosition> = if let Some(pref_pos) = preferred_position {
-            let mut positions = vec![pref_pos];
-            positions.extend(LabelPosition::all().into_iter().filter(|p| *p != pref_pos));
-            positions
-        } else {
-            LabelPosition::all()
-        };
-
-        let mut best_position = LabelPosition::Right;
-        let mut best_overlaps = usize::MAX;
-
-        for position in positions_to_try {
-            let bounds = calculate_label_bounds(position, *pos, text_width, font_size, label_offset);
-            let overlaps = count_label_overlaps(&bounds, idx, &label_positions, &node_positions, &track_segments);
-
-            if overlaps < best_overlaps {
-                best_overlaps = overlaps;
-                best_position = position;
-                if overlaps == 0 {
-                    break;
-                }
-            }
-        }
-
-        let label_pos = best_position.calculate_label_pos_with_offset(*pos, text_width, font_size, label_offset);
-        let bounds = LabelBounds {
-            x: label_pos.0,
-            y: label_pos.1 - font_size,
-            width: text_width,
-            height: font_size * 1.2,
-        };
-        label_positions.insert(idx, (bounds, best_position));
-        branch_positions.insert(idx, best_position);
+    for junction_idx in junction_nodes {
+        process_node_group(
+            &[junction_idx],
+            &node_metadata,
+            &node_positions,
+            &track_segments,
+            font_size,
+            &mut label_positions,
+        );
     }
 
     // Draw all labels

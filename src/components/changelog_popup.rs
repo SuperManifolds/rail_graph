@@ -5,12 +5,13 @@ use crate::storage::{Storage, IndexedDbStorage};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
+use pulldown_cmark::{Parser, Options, html};
 
 const LAST_VIEWED_CHANGELOG_KEY: &str = "rail_graph_last_viewed_changelog";
-const GITHUB_RELEASES_API: &str = "https://api.github.com/repos/SuperManifolds/rail_graph/releases/latest";
+const CHANGELOG_API: &str = "/api/changelog";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct GitHubRelease {
+struct ChangelogRelease {
     tag_name: String,
     name: String,
     body: String,
@@ -21,7 +22,7 @@ struct GitHubRelease {
 #[must_use]
 pub fn ChangelogPopup() -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
-    let (release_data, set_release_data) = create_signal(None::<GitHubRelease>);
+    let (releases_to_show, set_releases_to_show) = create_signal(Vec::<ChangelogRelease>::new());
 
     // Check if we should show the changelog
     let should_show = create_resource(
@@ -37,24 +38,47 @@ pub fn ChangelogPopup() -> impl IntoView {
                 return false;
             }
 
-            // Fetch latest release
-            let Ok(release) = fetch_latest_release().await else {
+            // Fetch all releases
+            let Ok(all_releases) = fetch_all_releases().await else {
                 return false;
             };
 
-            // Check if we've already shown this version
-            if has_viewed_version(&release.tag_name) {
+            if all_releases.is_empty() {
                 return false;
             }
 
-            set_release_data.set(Some(release));
+            // Get the last viewed version
+            let last_viewed = get_last_viewed_version();
+
+            // Filter releases to show only those since last viewed
+            let releases = if let Some(last_viewed_version) = last_viewed {
+                // Find the index of the last viewed version
+                let last_viewed_idx = all_releases
+                    .iter()
+                    .position(|r| r.tag_name == last_viewed_version);
+
+                match last_viewed_idx {
+                    Some(idx) => all_releases[..idx].to_vec(), // Get all releases before the last viewed one
+                    None => all_releases, // If we can't find it, show all
+                }
+            } else {
+                // First time viewing, only show the latest release
+                all_releases.into_iter().take(1).collect()
+            };
+
+            if releases.is_empty() {
+                return false;
+            }
+
+            set_releases_to_show.set(releases);
             true
         },
     );
 
     let on_close = move || {
-        if let Some(release) = release_data.get() {
-            mark_version_viewed(&release.tag_name);
+        let releases = releases_to_show.get();
+        if let Some(latest) = releases.first() {
+            mark_version_viewed(&latest.tag_name);
         }
         set_is_open.set(false);
     };
@@ -74,7 +98,7 @@ pub fn ChangelogPopup() -> impl IntoView {
                 title=Signal::derive(|| "What's New".to_string())
                 on_close=move || on_close()
             >
-                <ChangelogContent release_data=release_data on_close=on_close />
+                <ChangelogContent releases_to_show=releases_to_show on_close=on_close />
             </Window>
         </ModalOverlay>
     }
@@ -82,7 +106,7 @@ pub fn ChangelogPopup() -> impl IntoView {
 
 #[component]
 fn ChangelogContent(
-    release_data: leptos::ReadSignal<Option<GitHubRelease>>,
+    releases_to_show: leptos::ReadSignal<Vec<ChangelogRelease>>,
     on_close: impl Fn() + 'static + Copy,
 ) -> impl IntoView {
     // Get resize trigger from Window context
@@ -90,7 +114,7 @@ fn ChangelogContent(
 
     // Trigger resize when content loads
     create_effect(move |_| {
-        if release_data.get().is_some() {
+        if !releases_to_show.get().is_empty() {
             if let Some(trigger) = resize_trigger {
                 trigger.update(|v| *v += 1);
             }
@@ -99,39 +123,46 @@ fn ChangelogContent(
 
     view! {
         <div class="changelog-content">
-            {move || release_data.get().map(|release| view! {
-                <div class="changelog-header">
-                    <div class="changelog-version">{&release.tag_name}</div>
-                    <div class="changelog-title">{&release.name}</div>
-                    <div class="changelog-date">{format_date(&release.published_at)}</div>
-                </div>
-                <div class="changelog-body" inner_html=markdown_to_html(&release.body)></div>
-                <div class="changelog-buttons">
-                    <button class="primary" on:click=move |_| on_close()>
-                        "Got it!"
-                    </button>
-                </div>
-            })}
+            {move || {
+                let releases = releases_to_show.get();
+                if releases.is_empty() {
+                    return view! {}.into_view();
+                }
+
+                view! {
+                    <>
+                        {releases.into_iter().map(|release| view! {
+                            <div class="changelog-release">
+                                <div class="changelog-header">
+                                    <div class="changelog-version">{&release.tag_name}</div>
+                                    <div class="changelog-title">{&release.name}</div>
+                                    <div class="changelog-date">{format_date(&release.published_at)}</div>
+                                </div>
+                                <div class="changelog-body" inner_html=markdown_to_html(&release.body)></div>
+                            </div>
+                        }).collect::<Vec<_>>()}
+                        <div class="changelog-buttons">
+                            <button class="primary" on:click=move |_| on_close()>
+                                "Got it!"
+                            </button>
+                        </div>
+                    </>
+                }.into_view()
+            }}
         </div>
     }
 }
 
-async fn fetch_latest_release() -> Result<GitHubRelease, String> {
+async fn fetch_all_releases() -> Result<Vec<ChangelogRelease>, String> {
     let Some(window) = web_sys::window() else {
         return Err("No window".to_string());
     };
 
     let opts = web_sys::RequestInit::new();
     opts.set_method("GET");
-    opts.set_mode(web_sys::RequestMode::Cors);
 
-    let request = web_sys::Request::new_with_str_and_init(GITHUB_RELEASES_API, &opts)
+    let request = web_sys::Request::new_with_str_and_init(CHANGELOG_API, &opts)
         .map_err(|_| "Failed to create request".to_string())?;
-
-    request
-        .headers()
-        .set("Accept", "application/vnd.github.v3+json")
-        .map_err(|_| "Failed to set headers".to_string())?;
 
     let resp_value = JsFuture::from(window.fetch_with_request(&request))
         .await
@@ -155,14 +186,10 @@ async fn fetch_latest_release() -> Result<GitHubRelease, String> {
         .map_err(|e| format!("Failed to deserialize: {e:?}"))
 }
 
-fn has_viewed_version(version: &str) -> bool {
-    let Some(window) = web_sys::window() else { return false };
-    let Ok(Some(storage)) = window.local_storage() else { return false };
-
-    match storage.get_item(LAST_VIEWED_CHANGELOG_KEY) {
-        Ok(Some(viewed)) => viewed == version,
-        _ => false,
-    }
+fn get_last_viewed_version() -> Option<String> {
+    let window = web_sys::window()?;
+    let storage = window.local_storage().ok()??;
+    storage.get_item(LAST_VIEWED_CHANGELOG_KEY).ok()?
 }
 
 fn mark_version_viewed(version: &str) {
@@ -182,59 +209,13 @@ fn format_date(iso_date: &str) -> String {
 }
 
 fn markdown_to_html(markdown: &str) -> String {
-    // Basic markdown to HTML conversion
-    // This is a simple implementation - could use a proper markdown parser for better results
-    let mut html = markdown
-        .lines()
-        .map(|line| {
-            let line = line.trim();
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_TASKLISTS);
 
-            // Headers
-            if let Some(rest) = line.strip_prefix("### ") {
-                return format!("<h3>{}</h3>", html_escape(rest));
-            }
-            if let Some(rest) = line.strip_prefix("## ") {
-                return format!("<h2>{}</h2>", html_escape(rest));
-            }
-            if let Some(rest) = line.strip_prefix("# ") {
-                return format!("<h1>{}</h1>", html_escape(rest));
-            }
-
-            // List items
-            if let Some(rest) = line.strip_prefix("- ") {
-                return format!("<li>{}</li>", html_escape(rest));
-            }
-            if let Some(rest) = line.strip_prefix("* ") {
-                return format!("<li>{}</li>", html_escape(rest));
-            }
-
-            // Empty lines
-            if line.is_empty() {
-                return "<br/>".to_string();
-            }
-
-            // Regular paragraphs
-            format!("<p>{}</p>", html_escape(line))
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    // Wrap list items in <ul>
-    html = html.replace("</li>\n<li>", "</li><li>");
-    if html.contains("<li>") {
-        html = html.replace("<li>", "<ul><li>");
-        html = html.replace("</li>", "</li></ul>");
-        // Clean up nested ul tags
-        html = html.replace("</ul>\n<ul>", "\n");
-    }
-
-    html
-}
-
-fn html_escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
+    let parser = Parser::new_ext(markdown, options);
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, parser);
+    html_output
 }

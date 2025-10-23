@@ -36,6 +36,9 @@ COPY --from=builder /app/target/release/rail-graph-server .
 # Copy static files from trunk build
 COPY --from=builder /app/dist ./dist
 
+# Copy CHANGELOG.md for the API endpoint
+COPY --from=builder /app/CHANGELOG.md .
+
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /app
 

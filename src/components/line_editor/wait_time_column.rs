@@ -14,12 +14,18 @@ fn update_wait_time(
     if let Some(mut updated_line) = edited_line.get_untracked() {
         match route_direction {
             RouteDirection::Forward => {
-                if index > 0 && index - 1 < updated_line.forward_route.len() {
+                if index == 0 {
+                    updated_line.first_stop_wait_time = new_wait_time;
+                } else if index - 1 < updated_line.forward_route.len() {
                     updated_line.forward_route[index - 1].wait_time = new_wait_time;
                 }
+                // Sync wait time to return route if sync is enabled
+                updated_line.apply_route_sync_if_enabled();
             }
             RouteDirection::Return => {
-                if index > 0 && index - 1 < updated_line.return_route.len() {
+                if index == 0 {
+                    updated_line.return_first_stop_wait_time = new_wait_time;
+                } else if index - 1 < updated_line.return_route.len() {
                     updated_line.return_route[index - 1].wait_time = new_wait_time;
                 }
             }
@@ -36,19 +42,15 @@ pub fn WaitTimeColumn(
     edited_line: ReadSignal<Option<Line>>,
     on_save: Rc<dyn Fn(Line)>,
 ) -> impl IntoView {
-    if index > 0 {
-        view! {
-            <DurationInput
-                duration=Signal::derive(move || wait_duration)
-                on_change={
-                    let on_save = on_save.clone();
-                    move |new_wait_time| {
-                        update_wait_time(edited_line, route_direction, index, new_wait_time, &on_save);
-                    }
+    view! {
+        <DurationInput
+            duration=Signal::derive(move || wait_duration)
+            on_change={
+                let on_save = on_save.clone();
+                move |new_wait_time| {
+                    update_wait_time(edited_line, route_direction, index, new_wait_time, &on_save);
                 }
-            />
-        }.into_view()
-    } else {
-        view! { <span class="travel-time">"-"</span> }.into_view()
+            }
+        />
     }
 }

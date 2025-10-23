@@ -26,10 +26,10 @@ fn main() {
         let csv_content = fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {e}", filename.to_string_lossy()));
 
-        let config = analyze_csv(&csv_content)
+        let config = analyze_csv(&csv_content, None)
             .unwrap_or_else(|| panic!("Failed to analyze {}", filename.to_string_lossy()));
 
-        let lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, all_lines.len());
+        let lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, all_lines.len(), nimby_graph::models::TrackHandedness::RightHand);
         all_lines.extend(lines);
     }
 

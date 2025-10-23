@@ -70,10 +70,12 @@ pub struct CsvImportConfig {
     pub pattern_repeat: Option<usize>,
     /// Line names for each group (when `pattern_repeat` is set)
     pub group_line_names: HashMap<usize, String>,
+    /// Original filename (without extension)
+    pub filename: Option<String>,
 }
 
 /// Analyze CSV content and suggest column mappings
-pub fn analyze_csv(content: &str) -> Option<CsvImportConfig> {
+pub fn analyze_csv(content: &str, filename: Option<String>) -> Option<CsvImportConfig> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(content.as_bytes());
@@ -146,6 +148,7 @@ pub fn analyze_csv(content: &str) -> Option<CsvImportConfig> {
         defaults: ImportDefaults::default(),
         pattern_repeat,
         group_line_names,
+        filename,
     })
 }
 
@@ -560,7 +563,7 @@ fn is_duration_format(s: &str) -> bool {
 /// Merges stations and tracks into the existing graph
 /// `existing_line_count` is used to offset colors to avoid duplicates
 #[must_use]
-pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &mut RailwayGraph, existing_line_count: usize) -> Vec<Line> {
+pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &mut RailwayGraph, existing_line_count: usize, handedness: crate::models::TrackHandedness) -> Vec<Line> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(content.as_bytes());
@@ -582,7 +585,7 @@ pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &m
 
     let station_data = collect_station_data(&mut records, config, &line_groups);
 
-    build_routes(&mut lines, graph, &station_data, &line_groups, config);
+    build_routes(&mut lines, graph, &station_data, &line_groups, config, handedness);
 
     lines
 }
@@ -858,6 +861,24 @@ fn generate_return_route(
     return_route
 }
 
+/// Calculate wait time for a station based on import data
+fn calculate_wait_time(
+    is_passing_loop: bool,
+    line_station_data: &LineStationData,
+    default_wait_time: Duration,
+) -> Duration {
+    if is_passing_loop {
+        Duration::seconds(0)
+    } else if let (Some(arrival), Some(departure)) = (line_station_data.arrival_time, line_station_data.departure_time) {
+        Duration::seconds(super::shared::calculate_duration_with_wraparound(
+            arrival.num_seconds(),
+            departure.num_seconds()
+        ))
+    } else {
+        line_station_data.wait_time.unwrap_or(default_wait_time)
+    }
+}
+
 /// Build routes and graph from station data
 fn build_routes(
     lines: &mut [Line],
@@ -865,6 +886,7 @@ fn build_routes(
     station_data: &[StationRowData],
     line_groups: &[LineGroupData],
     config: &CsvImportConfig,
+    handedness: crate::models::TrackHandedness,
 ) {
     let mut edge_map: HashMap<(NodeIndex, NodeIndex), EdgeIndex> = HashMap::new();
 
@@ -881,6 +903,9 @@ fn build_routes(
 
         // Track first departure time from CSV data
         let mut first_time_of_day: Option<Duration> = None;
+
+        // Track first station's wait time
+        let mut first_station_wait_time: Option<Duration> = None;
 
         // Get wait time for this line (fallback chain: per-line -> default)
         let default_wait_time = config.defaults.per_line_wait_times
@@ -955,6 +980,10 @@ fn build_routes(
 
             // If there was a previous station, create or reuse edge
             let Some((prev_idx, prev_time, prev_line_data)) = prev_station else {
+                // This is the first station - capture its wait time
+                if first_station_wait_time.is_none() {
+                    first_station_wait_time = Some(calculate_wait_time(is_passing_loop, line_station_data, default_wait_time));
+                }
                 prev_station = Some((station_idx, cumulative_time, line_station_data.clone()));
                 continue;
             };
@@ -970,13 +999,13 @@ fn build_routes(
                     } else {
                         // Create new edge, using track count from CSV if available
                         let track_count = prev_line_data.track_number.unwrap_or(1);
-                        let tracks = super::shared::create_tracks_with_count(track_count);
+                        let tracks = super::shared::create_tracks_with_count(track_count, handedness);
                         graph.add_track(prev_idx, station_idx, tracks)
                     }
                 });
 
             // Ensure edge has enough tracks for the requested track index (from origin station)
-            super::shared::ensure_track_count(graph, edge_idx, prev_line_data.track_number);
+            super::shared::ensure_track_count(graph, edge_idx, prev_line_data.track_number, handedness);
 
             // Set distance on edge if provided (from origin station)
             if let Some(distance) = prev_line_data.track_distance {
@@ -990,17 +1019,7 @@ fn build_routes(
             // 2. If both arrival and departure times are present, calculate from difference
             // 3. Use wait_time column if present
             // 4. Fall back to default wait time
-            let station_wait_time = if is_passing_loop {
-                Duration::seconds(0)
-            } else if let (Some(arrival), Some(departure)) = (line_station_data.arrival_time, line_station_data.departure_time) {
-                // Calculate wait time with midnight wraparound handling
-                Duration::seconds(super::shared::calculate_duration_with_wraparound(
-                    arrival.num_seconds(),
-                    departure.num_seconds()
-                ))
-            } else {
-                line_station_data.wait_time.unwrap_or(default_wait_time)
-            };
+            let station_wait_time = calculate_wait_time(is_passing_loop, line_station_data, default_wait_time);
 
             // Handle platform assignment
             let (origin_platform, destination_platform) = if let Some(ref platform_name) = line_station_data.platform {
@@ -1011,7 +1030,7 @@ fn build_routes(
                 let origin_platforms = graph.graph.node_weight(prev_idx)
                     .and_then(|n| n.as_station())
                     .map_or(1, |s| s.platforms.len());
-                let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms);
+                let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms, handedness);
 
                 (origin_platform_idx, dest_platform_idx)
             } else {
@@ -1024,8 +1043,8 @@ fn build_routes(
                     .and_then(|n| n.as_station())
                     .map_or(1, |s| s.platforms.len());
 
-                let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms);
-                let dest_platform_idx = graph.get_default_platform_for_arrival(edge_idx, true, dest_platforms);
+                let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms, handedness);
+                let dest_platform_idx = graph.get_default_platform_for_arrival(edge_idx, true, dest_platforms, handedness);
 
                 (origin_platform_idx, dest_platform_idx)
             };
@@ -1051,6 +1070,15 @@ fn build_routes(
 
         // Generate return route
         lines[line_idx].return_route = generate_return_route(&route, graph, default_wait_time);
+
+        // Set line's default wait time from import config
+        lines[line_idx].default_wait_time = default_wait_time;
+
+        // Set first stop wait time (defaults to zero if not captured)
+        lines[line_idx].first_stop_wait_time = first_station_wait_time.unwrap_or(Duration::zero());
+
+        // Set return first stop wait time to zero (user can configure if needed)
+        lines[line_idx].return_first_stop_wait_time = Duration::zero();
 
         // Set departure from CSV data if available
         if let Some(time_of_day) = first_time_of_day {
@@ -1194,7 +1222,7 @@ mod tests {
     #[test]
     fn test_analyze_csv_simple() {
         let csv = "Station,Line1,Line2\nA,0:00:00,0:00:00\nB,0:10:00,0:15:00\n";
-        let config = analyze_csv(csv).expect("Should parse CSV");
+        let config = analyze_csv(csv, None).expect("Should parse CSV");
 
         assert!(config.has_headers);
         assert_eq!(config.columns.len(), 3);
@@ -1207,7 +1235,7 @@ mod tests {
     #[test]
     fn test_analyze_csv_no_headers() {
         let csv = "Station A,0:00:00,0:00:00\nStation B,0:10:00,0:15:00\n";
-        let config = analyze_csv(csv).expect("Should parse CSV");
+        let config = analyze_csv(csv, None).expect("Should parse CSV");
 
         assert!(!config.has_headers);
         assert_eq!(config.columns.len(), 3);
@@ -1223,10 +1251,10 @@ mod tests {
         let csv_content = std::fs::read_to_string("test-data/R70.csv")
             .expect("Failed to read test-data/R70.csv");
 
-        let config = analyze_csv(&csv_content).expect("Should parse R70.csv");
+        let config = analyze_csv(&csv_content, Some("R70".to_string())).expect("Should parse R70.csv");
 
         let mut graph = RailwayGraph::new();
-        let mut lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0);
+        let mut lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0, crate::models::TrackHandedness::RightHand);
 
         assert!(!lines.is_empty(), "Should have imported at least one line");
 
@@ -1236,6 +1264,8 @@ mod tests {
         lines[0].return_first_departure = BASE_DATE.and_hms_opt(5, 45, 0).expect("valid time");
         // Set last departure at 07:00:00 to allow multiple departures
         lines[0].last_departure = BASE_DATE.and_hms_opt(7, 0, 0).expect("valid time");
+        lines[0].return_last_departure = BASE_DATE.and_hms_opt(7, 0, 0).expect("valid time");
+        lines[0].default_wait_time = chrono::Duration::seconds(30);
         // Set frequency to 1 hour to generate 2 forward (05:00, 06:00) and 2 return (05:45, 06:45)
         lines[0].frequency = chrono::Duration::hours(1);
 

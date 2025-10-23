@@ -313,10 +313,12 @@ fn detect_line_ids(config: &CsvImportConfig) -> Vec<String> {
 
     if detected.is_empty() {
         // Fallback when no columns have numbers in headers
+        // For single line: use explicit name > filename > "Line 1"
         vec![
             config.group_line_names.get(&0)
                 .filter(|n| !n.trim().is_empty())
                 .cloned()
+                .or_else(|| config.filename.clone())
                 .unwrap_or_else(|| "Line 1".to_string())
         ]
     } else {
@@ -442,18 +444,37 @@ fn LineGroupingSection(
                     let:group_idx
                 >
                     {
-                        let default_name = format!("Line {}", group_idx + 1);
+                        // For single group, use filename as default; otherwise use "Line N"
+                        let default_name = move || {
+                            let cfg = local_config.get();
+                            let groups = count_groups(&cfg);
+                            if groups == 1 {
+                                cfg.filename.clone().unwrap_or_else(|| format!("Line {}", group_idx + 1))
+                            } else {
+                                format!("Line {}", group_idx + 1)
+                            }
+                        };
+
                         view! {
                             <div class="form-row">
                                 <label>{format!("Group {} Name:", group_idx + 1)}</label>
                                 <input
                                     type="text"
-                                    placeholder=default_name.clone()
+                                    placeholder=default_name
                                     prop:value=move || {
-                                        local_config.get()
-                                            .group_line_names
+                                        let cfg = local_config.get();
+                                        let groups = count_groups(&cfg);
+                                        // Auto-populate with filename for single group on initial load
+                                        cfg.group_line_names
                                             .get(&group_idx)
                                             .cloned()
+                                            .or_else(|| {
+                                                if groups == 1 {
+                                                    cfg.filename.clone()
+                                                } else {
+                                                    None
+                                                }
+                                            })
                                             .unwrap_or_default()
                                     }
                                     on:input=move |ev| {

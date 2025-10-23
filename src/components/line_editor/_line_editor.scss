@@ -43,8 +43,39 @@
             font-family: monospace;
         }
 
+        input[type="text"].train-number-format-input {
+            width: 250px;
+        }
+
+        input[type="text"].train-number-input {
+            width: 250px;
+        }
+
+        input[type="text"].line-name-input {
+            width: 300px;
+        }
+
         input[type="time"] {
             width: 120px;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+
+            input[type="checkbox"] {
+                cursor: pointer;
+            }
+        }
+
+        .form-help {
+            color: #888;
+            font-size: 0.8rem;
+            margin: 0;
+            padding: 0;
+            line-height: 1.4;
         }
 
         .thickness-control {

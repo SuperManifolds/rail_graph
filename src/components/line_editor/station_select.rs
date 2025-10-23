@@ -80,7 +80,7 @@ pub fn StationSelect(
                                             let default_wait = if is_passing_loop {
                                                 Duration::seconds(0)
                                             } else {
-                                                Duration::seconds(30)
+                                                updated_line.default_wait_time
                                             };
 
                                             let segment = RouteSegment {
@@ -89,9 +89,8 @@ pub fn StationSelect(
                                                 origin_platform: 0,
                                                 destination_platform: 0,
                                                 duration: None,
-                                                // Only the first segment gets the wait time
-                                                // Subsequent segments have zero wait time (no stops at intermediate junctions)
-                                                wait_time: if i == 0 { default_wait } else { Duration::zero() },
+                                                // Use default wait time for stations, zero for passing loops
+                                                wait_time: default_wait,
                                             };
 
                                             match (route_direction, position) {

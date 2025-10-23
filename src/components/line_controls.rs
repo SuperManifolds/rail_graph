@@ -13,6 +13,7 @@ pub fn LineControls(
     set_lines: WriteSignal<Vec<Line>>,
     graph: ReadSignal<RailwayGraph>,
     on_create_view: Callback<GraphView>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
     let (open_editors, set_open_editors) = create_signal(HashSet::<uuid::Uuid>::new());
     let (delete_pending, set_delete_pending) = create_signal(None::<uuid::Uuid>);
@@ -87,6 +88,7 @@ pub fn LineControls(
                                 });
                             }
                         }
+                        settings=settings
                     />
                 }
             }

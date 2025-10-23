@@ -47,7 +47,7 @@ where
                         <label class="day-checkbox">
                             <input
                                 type="checkbox"
-                                checked=move || days_of_week.get().contains(day_value)
+                                prop:checked=move || days_of_week.get().contains(day_value)
                                 on:change=move |_| {
                                     let current = days_of_week.get_untracked();
                                     let mut new_days = current;

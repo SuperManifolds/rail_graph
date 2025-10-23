@@ -6,7 +6,8 @@ use crate::components::{
     importer::Importer,
     legend::Legend,
     line_controls::LineControls,
-    line_editor::LineEditor
+    line_editor::LineEditor,
+    settings::Settings
 };
 use crate::models::{Line, RailwayGraph, GraphView, Stations};
 use crate::train_journey::TrainJourney;
@@ -110,6 +111,8 @@ pub fn TimeGraph(
     set_graph: WriteSignal<RailwayGraph>,
     legend: ReadSignal<crate::models::Legend>,
     set_legend: WriteSignal<crate::models::Legend>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
+    set_settings: WriteSignal<crate::models::ProjectSettings>,
     #[prop(optional)]
     view: Option<GraphView>,
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
@@ -225,7 +228,7 @@ pub fn TimeGraph(
                         station_idx_map=station_idx_map
                     />
                 </div>
-                <LineControls lines=lines set_lines=set_lines graph=graph on_create_view=on_create_view />
+                <LineControls lines=lines set_lines=set_lines graph=graph on_create_view=on_create_view settings=settings />
                 <div class="sidebar-footer">
                     <Button
                         class="import-button"
@@ -243,7 +246,7 @@ pub fn TimeGraph(
                     >
                         <i class="fa-solid fa-plus"></i>
                     </Button>
-                    <Importer lines=lines set_lines=set_lines set_graph=set_graph />
+                    <Importer lines=lines set_lines=set_lines set_graph=set_graph settings=settings />
                     <Legend
                         show_conflicts=show_conflicts
                         set_show_conflicts=set_show_conflicts
@@ -251,6 +254,10 @@ pub fn TimeGraph(
                         set_show_line_blocks=set_show_line_blocks
                         spacing_mode=spacing_mode
                         set_spacing_mode=set_spacing_mode
+                    />
+                    <Settings
+                        settings=Signal::derive(move || settings.get())
+                        set_settings=move |s| set_settings.set(s)
                     />
                 </div>
             </div>
@@ -299,6 +306,7 @@ pub fn TimeGraph(
                         }
                     });
                 }
+                settings=settings
             />
         </div>
     }

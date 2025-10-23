@@ -1,4 +1,5 @@
 use crate::components::tab_view::TabPanel;
+use crate::components::duration_input::DurationInput;
 use crate::models::Line;
 use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_value, event_target_checked, SignalGetUntracked, SignalSet};
 use std::rc::Rc;
@@ -18,6 +19,7 @@ pub fn GeneralTab(
                     <label>"Name"</label>
                     <input
                         type="text"
+                        class="line-name-input"
                         value=move || edited_line.get().map(|l| l.name.clone()).unwrap_or_default()
                         on:change={
                             let on_save = on_save.get_value();
@@ -62,7 +64,7 @@ pub fn GeneralTab(
                                     type="range"
                                     min="0.5"
                                     max="8.0"
-                                    step="0.1"
+                                    step="0.25"
                                     value=current_thickness
                                     on:change={
                                         let on_save = on_save.get_value();
@@ -77,11 +79,29 @@ pub fn GeneralTab(
                                     }
                                 />
                                 <span class="thickness-value">
-                                    {format!("{current_thickness:.1}")}
+                                    {format!("{current_thickness:.2}")}
                                 </span>
                             }
                         }}
                     </div>
+                </div>
+
+                <div class="form-group">
+                    <label>"Default Wait Time"</label>
+                    <DurationInput
+                        duration=Signal::derive(move || edited_line.get().map(|l| l.default_wait_time).unwrap_or_default())
+                        on_change={
+                            let on_save = on_save.get_value();
+                            move |new_duration| {
+                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                    updated_line.default_wait_time = new_duration;
+                                    set_edited_line.set(Some(updated_line.clone()));
+                                    on_save(updated_line);
+                                }
+                            }
+                        }
+                    />
+                    <p class="form-help">"Default wait time used when adding new stops to this line"</p>
                 </div>
 
                 <div class="form-group">
