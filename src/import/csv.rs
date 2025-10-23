@@ -70,10 +70,12 @@ pub struct CsvImportConfig {
     pub pattern_repeat: Option<usize>,
     /// Line names for each group (when `pattern_repeat` is set)
     pub group_line_names: HashMap<usize, String>,
+    /// Original filename (without extension)
+    pub filename: Option<String>,
 }
 
 /// Analyze CSV content and suggest column mappings
-pub fn analyze_csv(content: &str) -> Option<CsvImportConfig> {
+pub fn analyze_csv(content: &str, filename: Option<String>) -> Option<CsvImportConfig> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(content.as_bytes());
@@ -146,6 +148,7 @@ pub fn analyze_csv(content: &str) -> Option<CsvImportConfig> {
         defaults: ImportDefaults::default(),
         pattern_repeat,
         group_line_names,
+        filename,
     })
 }
 
@@ -1218,7 +1221,7 @@ mod tests {
     #[test]
     fn test_analyze_csv_simple() {
         let csv = "Station,Line1,Line2\nA,0:00:00,0:00:00\nB,0:10:00,0:15:00\n";
-        let config = analyze_csv(csv).expect("Should parse CSV");
+        let config = analyze_csv(csv, None).expect("Should parse CSV");
 
         assert!(config.has_headers);
         assert_eq!(config.columns.len(), 3);
@@ -1231,7 +1234,7 @@ mod tests {
     #[test]
     fn test_analyze_csv_no_headers() {
         let csv = "Station A,0:00:00,0:00:00\nStation B,0:10:00,0:15:00\n";
-        let config = analyze_csv(csv).expect("Should parse CSV");
+        let config = analyze_csv(csv, None).expect("Should parse CSV");
 
         assert!(!config.has_headers);
         assert_eq!(config.columns.len(), 3);
@@ -1247,7 +1250,7 @@ mod tests {
         let csv_content = std::fs::read_to_string("test-data/R70.csv")
             .expect("Failed to read test-data/R70.csv");
 
-        let config = analyze_csv(&csv_content).expect("Should parse R70.csv");
+        let config = analyze_csv(&csv_content, Some("R70".to_string())).expect("Should parse R70.csv");
 
         let mut graph = RailwayGraph::new();
         let mut lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0);

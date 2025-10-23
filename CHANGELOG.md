@@ -39,6 +39,7 @@
 - Station and junction labels in infrastructure view now maintain consistent orientation along each branch to minimize overlaps and remain stable while zooming
 - Increased line name input width in line editor for better visibility
 - Horizontal scaling in time graph now triggered by scrolling with cursor over time labels (replacing Alt+scroll which conflicted with browser shortcuts)
+- CSV import now automatically fills in the filename (without extension) as the line name when importing a single line
 
 # v0.1.2 - 2025-10-22
 

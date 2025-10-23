@@ -50,11 +50,19 @@ fn handle_fpl_import(
 
 fn handle_csv_analysis(
     text: &str,
+    filename: String,
     set_csv_config: WriteSignal<Option<CsvImportConfig>>,
     set_show_mapper: WriteSignal<bool>,
 ) {
     leptos::logging::log!("Analyzing CSV file, length: {}", text.len());
-    if let Some(config) = analyze_csv(text) {
+
+    // Extract filename without extension
+    let filename_without_ext = std::path::Path::new(&filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(String::from);
+
+    if let Some(config) = analyze_csv(text, filename_without_ext) {
         leptos::logging::log!("CSV analysis successful, {} columns detected", config.columns.len());
         set_csv_config.set(Some(config));
         set_show_mapper.set(true);
@@ -113,7 +121,7 @@ pub fn Importer(
             if is_fpl {
                 handle_fpl_import(&text, set_graph, set_lines, lines);
             } else {
-                handle_csv_analysis(&text, set_csv_config, set_show_mapper);
+                handle_csv_analysis(&text, filename.clone(), set_csv_config, set_show_mapper);
             }
         });
     };
@@ -183,6 +191,7 @@ pub fn Importer(
                             defaults: crate::import::csv::ImportDefaults::default(),
                             pattern_repeat: None,
                             group_line_names: HashMap::new(),
+                            filename: None,
                         }
                     }))
                     on_cancel=Callback::new(move |()| set_show_mapper.set(false))
