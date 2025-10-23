@@ -12,6 +12,7 @@
 - Fixed station editor default platform selection resetting to "Auto" when trying to select a specific platform
 - Fixed junction labels not being clickable
 - Fixed junction names not appearing in track editor when editing tracks connected to junctions
+- Fixed wait times not syncing correctly between forward and return routes when "Keep forward and return routes in sync" is enabled (now properly accounts for wait time shifts when reversing routes)
 
 ## Improvements
 - Line thickness slider now adjusts in increments of 0.25

@@ -19,6 +19,8 @@ fn update_wait_time(
                 } else if index - 1 < updated_line.forward_route.len() {
                     updated_line.forward_route[index - 1].wait_time = new_wait_time;
                 }
+                // Sync wait time to return route if sync is enabled
+                updated_line.apply_route_sync_if_enabled();
             }
             RouteDirection::Return => {
                 if index == 0 {

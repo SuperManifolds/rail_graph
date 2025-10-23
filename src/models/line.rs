@@ -443,31 +443,41 @@ impl Line {
             return;
         }
 
-        // Build a map of edge_index -> (wait_time, track_index, origin_platform, destination_platform)
-        // This preserves all user-configured settings from the existing return route
-        let existing_settings: HashMap<usize, (Duration, usize, usize, usize)> = self.return_route
+        // Build a map of edge_index -> (track_index, origin_platform, destination_platform)
+        // This preserves user-configured tracks and platforms from the existing return route
+        let existing_settings: HashMap<usize, (usize, usize, usize)> = self.return_route
             .iter()
             .map(|seg| (
                 seg.edge_index,
-                (seg.wait_time, seg.track_index, seg.origin_platform, seg.destination_platform)
+                (seg.track_index, seg.origin_platform, seg.destination_platform)
             ))
             .collect();
 
         // Create new return route by reversing forward route
         let mut new_return_route = Vec::new();
 
-        for forward_seg in self.forward_route.iter().rev() {
-            // If we have existing settings for this edge in return route, preserve them
-            if let Some((wait_time, track_index, origin_platform, destination_platform)) =
+        for (i, forward_seg) in self.forward_route.iter().rev().enumerate() {
+            // Wait times need to be shifted when reversing because they represent wait at destination
+            // For return_route[i], we need the wait time from the previous stop in forward direction
+            let wait_time = if i < self.forward_route.len() - 1 {
+                // Get wait time from forward_route[len - i - 2] (the next segment in forward direction)
+                self.forward_route[self.forward_route.len() - i - 2].wait_time
+            } else {
+                // Last segment in return route corresponds to first stop
+                self.first_stop_wait_time
+            };
+
+            // If we have existing settings for this edge in return route, preserve tracks/platforms
+            if let Some((track_index, origin_platform, destination_platform)) =
                 existing_settings.get(&forward_seg.edge_index) {
-                // Preserve all user settings
+                // Preserve user-configured tracks and platforms, but sync wait time and duration from forward
                 new_return_route.push(RouteSegment {
                     edge_index: forward_seg.edge_index,
                     track_index: *track_index,
                     origin_platform: *origin_platform,
                     destination_platform: *destination_platform,
                     duration: forward_seg.duration,
-                    wait_time: *wait_time,
+                    wait_time,
                 });
             } else {
                 // This is a new edge not in the return route, use defaults from forward route
@@ -478,12 +488,16 @@ impl Line {
                     origin_platform: forward_seg.destination_platform,
                     destination_platform: forward_seg.origin_platform,
                     duration: forward_seg.duration,
-                    wait_time: forward_seg.wait_time,
+                    wait_time,
                 });
             }
         }
 
         self.return_route = new_return_route;
+
+        // Sync first stop wait time for return route (which is the last stop of forward route)
+        self.return_first_stop_wait_time = self.forward_route.last()
+            .map_or(self.first_stop_wait_time, |seg| seg.wait_time);
     }
 
     #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
