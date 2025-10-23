@@ -62,7 +62,7 @@ pub fn GeneralTab(
                                     type="range"
                                     min="0.5"
                                     max="8.0"
-                                    step="0.1"
+                                    step="0.25"
                                     value=current_thickness
                                     on:change={
                                         let on_save = on_save.get_value();
@@ -77,7 +77,7 @@ pub fn GeneralTab(
                                     }
                                 />
                                 <span class="thickness-value">
-                                    {format!("{current_thickness:.1}")}
+                                    {format!("{current_thickness:.2}")}
                                 </span>
                             }
                         }}

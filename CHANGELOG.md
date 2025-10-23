@@ -1,3 +1,13 @@
+# Unreleased
+
+## Bug Fixes
+- Fixed changelog window not expanding when resized (was maintaining fixed internal height)
+
+## Improvements
+- Line thickness slider now adjusts in increments of 0.25 
+- Replaced custom markdown parser with pulldown-cmark for proper CommonMark support in changelog
+- Added proper styling for tables, code blocks, links, and blockquotes in changelog display
+
 # v0.1.2 - 2025-10-22
 
 ### Bug Fixes
