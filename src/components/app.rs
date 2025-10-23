@@ -147,6 +147,9 @@ pub fn App() -> impl IntoView {
             proj.active_tab_id = active_tab_id;
             proj.touch_updated_at();
 
+            // Update current_project signal to keep it synchronized
+            set_current_project.set(proj.clone());
+
             let project_id = proj.metadata.id.clone();
             spawn_local(async move {
                 if let Err(e) = storage.save_project(&proj).await {

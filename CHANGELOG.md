@@ -7,6 +7,7 @@
 - Fixed default wait time only being applied to first stop when creating new routes
 - Fixed project timestamps displaying in UTC instead of user's local time
 - Fixed "Save As" with an existing project name not prompting for overwrite confirmation (now shows a confirmation dialog)
+- Fixed "Save As" not including recent changes (new lines, stations, etc.) made before opening the project dialog
 
 ## Improvements
 - Line thickness slider now adjusts in increments of 0.25
