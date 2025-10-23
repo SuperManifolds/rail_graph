@@ -538,7 +538,7 @@ fn setup_render_effect(
     });
 }
 
-#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments, clippy::too_many_lines)]
 fn create_event_handlers(
     canvas_ref: leptos::NodeRef<leptos::html::Canvas>,
     edit_mode: ReadSignal<EditMode>,
@@ -561,7 +561,7 @@ fn create_event_handlers(
     auto_layout_enabled: ReadSignal<bool>,
     space_pressed: ReadSignal<bool>,
     viewport: &canvas_viewport::ViewportSignals,
-) -> (impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(WheelEvent)) {
+) -> (impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(WheelEvent)) {
     let zoom_level = viewport.zoom_level;
     let pan_offset_x = viewport.pan_offset_x;
     let pan_offset_y = viewport.pan_offset_y;
@@ -725,6 +725,41 @@ fn create_event_handlers(
         }
     };
 
+    let handle_context_menu = move |ev: MouseEvent| {
+        ev.prevent_default();
+
+        if let Some(canvas_elem) = canvas_ref.get() {
+            let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
+            let rect = canvas.get_bounding_client_rect();
+            let screen_x = f64::from(ev.client_x()) - rect.left();
+            let screen_y = f64::from(ev.client_y()) - rect.top();
+
+            let zoom = zoom_level.get();
+            let pan_x = pan_offset_x.get();
+            let pan_y = pan_offset_y.get();
+            let (world_x, world_y) = screen_to_world(screen_x, screen_y, zoom, pan_x, pan_y);
+
+            let current_graph = graph.get();
+
+            // Check for label click first, then node click
+            let clicked_node = hit_detection::find_label_at_position(&current_graph, world_x, world_y, zoom)
+                .or_else(|| hit_detection::find_station_at_position(&current_graph, world_x, world_y));
+
+            if let Some(node) = clicked_node {
+                if current_graph.is_junction(node) {
+                    set_editing_junction.set(Some(node));
+                } else {
+                    set_editing_station.set(Some(node));
+                }
+            } else if matches!(edit_mode.get(), EditMode::None) {
+                // Only open track editor on right-click when not in a special edit mode
+                if let Some(clicked_track) = hit_detection::find_track_at_position(&current_graph, world_x, world_y) {
+                    set_editing_track.set(Some(clicked_track));
+                }
+            }
+        }
+    };
+
     let handle_wheel = move |ev: WheelEvent| {
         ev.prevent_default();
 
@@ -738,7 +773,7 @@ fn create_event_handlers(
         }
     };
 
-    (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_wheel)
+    (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_context_menu, handle_wheel)
 }
 
 #[component]
@@ -853,7 +888,7 @@ pub fn InfrastructureView(
 
     setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station);
 
-    let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_wheel) = create_event_handlers(
+    let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_context_menu, handle_wheel) = create_event_handlers(
         canvas_ref, edit_mode, selected_station, set_selected_station, set_second_station_clicked, graph, set_graph,
         lines, set_lines,
         editing_station, set_editing_station, set_editing_junction, set_editing_track,
@@ -904,7 +939,7 @@ pub fn InfrastructureView(
                     on:mouseleave=handle_mouse_leave
                     on:dblclick=handle_double_click
                     on:wheel=handle_wheel
-                    on:contextmenu=|ev| ev.prevent_default()
+                    on:contextmenu=handle_context_menu
                     style=move || get_canvas_cursor_style(dragging_station, edit_mode, is_over_edited_station, is_over_station, is_over_track, is_panning, space_pressed)
                 />
             </div>
