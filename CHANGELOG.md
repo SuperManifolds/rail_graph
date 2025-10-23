@@ -42,6 +42,7 @@
 - CSV import now automatically fills in the filename (without extension) as the line name when importing a single line
 - Project import now automatically uses the filename (without extension) as the project name
 - Main Line view now automatically regenerates when infrastructure changes (new stations, junctions, or tracks added)
+- Added zoom in/out keyboard shortcuts: = to zoom in, - to zoom out (numpad +/- also supported)
 
 # v0.1.2 - 2025-10-22
 

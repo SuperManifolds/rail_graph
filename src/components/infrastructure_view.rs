@@ -9,7 +9,7 @@ use crate::components::delete_station_confirmation::DeleteStationConfirmation;
 use crate::components::edit_junction::EditJunction;
 use crate::components::edit_station::EditStation;
 use crate::components::edit_track::EditTrack;
-use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, IntoView, create_node_ref, create_signal, create_effect, SignalGet, SignalSet, SignalGetUntracked, Callable};
+use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, IntoView, create_node_ref, create_signal, create_effect, SignalGet, SignalSet, SignalGetUntracked, Callable, Signal};
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::rc::Rc;
@@ -985,6 +985,14 @@ pub fn InfrastructureView(
     let set_pan_offset_y = viewport.set_pan_offset_y;
     let is_panning = viewport.is_panning;
 
+    // Create a signal for canvas dimensions
+    let canvas_dimensions = Signal::derive(move || {
+        canvas_ref.get().map(|canvas| {
+            let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+            (f64::from(canvas_elem.width()), f64::from(canvas_elem.height()))
+        })
+    });
+
     // Setup keyboard listeners for Space and WASD
     canvas_viewport::setup_keyboard_listeners(
         set_space_pressed,
@@ -993,6 +1001,8 @@ pub fn InfrastructureView(
         set_s_pressed,
         set_d_pressed,
         &viewport,
+        canvas_dimensions,
+        None, // No min_zoom for infrastructure view
     );
 
     // WASD continuous panning

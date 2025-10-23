@@ -289,8 +289,11 @@ pub fn setup_keyboard_listeners(
     set_s_pressed: WriteSignal<bool>,
     set_d_pressed: WriteSignal<bool>,
     viewport: &ViewportSignals,
+    canvas_dimensions: leptos::Signal<Option<(f64, f64)>>,
+    min_zoom: Option<f64>,
 ) {
     let viewport_for_keyup = *viewport;
+    let viewport_for_zoom = *viewport;
 
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
         if ev.repeat() {
@@ -316,6 +319,24 @@ pub fn setup_keyboard_listeners(
             "KeyA" => set_a_pressed.set(true),
             "KeyS" => set_s_pressed.set(true),
             "KeyD" => set_d_pressed.set(true),
+            "Equal" | "NumpadAdd" => {
+                ev.prevent_default();
+                // Zoom in at center of canvas
+                if let Some((width, height)) = canvas_dimensions.get_untracked() {
+                    let center_x = width / 2.0;
+                    let center_y = height / 2.0;
+                    apply_normal_zoom(1.1, center_x, center_y, &viewport_for_zoom, min_zoom, Some((width, height)));
+                }
+            }
+            "Minus" | "NumpadSubtract" => {
+                ev.prevent_default();
+                // Zoom out at center of canvas
+                if let Some((width, height)) = canvas_dimensions.get_untracked() {
+                    let center_x = width / 2.0;
+                    let center_y = height / 2.0;
+                    apply_normal_zoom(0.9, center_x, center_y, &viewport_for_zoom, min_zoom, Some((width, height)));
+                }
+            }
             _ => {}
         }
     });
