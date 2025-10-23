@@ -18,6 +18,7 @@
 
 ## Improvements
 - Infrastructure autolayout now snaps stations to a grid and intelligently preserves your manual positioning and branch orientations when adding or modifying the network
+- Infrastructure view now remembers your pan and zoom position when switching between tabs
 - Line thickness slider now adjusts in increments of 0.25
 - Replaced custom markdown parser with pulldown-cmark for proper CommonMark support in changelog
 - Added proper styling for tables, code blocks, links, and blockquotes in changelog display

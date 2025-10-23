@@ -920,6 +920,10 @@ pub fn InfrastructureView(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
     on_create_view: leptos::Callback<crate::models::GraphView>,
+    #[prop(optional)]
+    initial_viewport: Option<crate::models::ViewportState>,
+    #[prop(optional)]
+    on_viewport_change: Option<leptos::Callback<crate::models::ViewportState>>,
 ) -> impl IntoView {
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (auto_layout_enabled, set_auto_layout_enabled) = create_signal(true);
@@ -970,7 +974,11 @@ pub fn InfrastructureView(
         }
     });
 
-    let viewport = canvas_viewport::create_viewport_signals(false);
+    let viewport = if let Some(initial) = initial_viewport {
+        canvas_viewport::create_viewport_signals_with_initial(false, initial)
+    } else {
+        canvas_viewport::create_viewport_signals(false)
+    };
     let zoom_level = viewport.zoom_level;
     let pan_offset_x = viewport.pan_offset_x;
     let set_pan_offset_x = viewport.set_pan_offset_x;
@@ -994,6 +1002,19 @@ pub fn InfrastructureView(
         set_pan_offset_x, set_pan_offset_y,
         pan_offset_x, pan_offset_y,
     );
+
+    // Save viewport state when it changes
+    if let Some(on_change) = on_viewport_change {
+        create_effect(move |_| {
+            let viewport_state = crate::models::ViewportState {
+                zoom_level: zoom_level.get(),
+                zoom_level_x: None, // Infrastructure view doesn't use horizontal zoom
+                pan_offset_x: pan_offset_x.get(),
+                pan_offset_y: pan_offset_y.get(),
+            };
+            on_change.call(viewport_state);
+        });
+    }
 
     setup_auto_layout_effect(auto_layout_enabled, graph, set_graph, canvas_ref);
 

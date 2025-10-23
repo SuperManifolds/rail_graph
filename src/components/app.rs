@@ -1,4 +1,4 @@
-use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value, Signal, store_value};
+use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value, Signal, store_value, SignalGetUntracked};
 use std::collections::HashMap;
 use leptos_meta::{provide_meta_context, Title};
 use uuid::Uuid;
@@ -58,6 +58,7 @@ pub fn App() -> impl IntoView {
 
     // Store viewport states separately to avoid triggering view updates
     let (viewport_states, set_viewport_states) = create_signal(HashMap::<Uuid, ViewportState>::new());
+    let (infrastructure_viewport, set_infrastructure_viewport) = create_signal(ViewportState::default());
 
     // Compute train journeys at app level
     let (train_journeys, set_train_journeys) = create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
@@ -74,12 +75,25 @@ pub fn App() -> impl IntoView {
             let project_id = storage.get_current_project_id().await.ok().flatten();
 
             let project = if let Some(id) = project_id {
-                storage.load_project(&id).await.ok()
+                match storage.load_project(&id).await {
+                    Ok(p) => {
+                        web_sys::console::log_1(&"Project loaded successfully".into());
+                        Some(p)
+                    }
+                    Err(e) => {
+                        web_sys::console::error_1(&format!("Failed to load project: {e}").into());
+                        None
+                    }
+                }
             } else {
+                web_sys::console::log_1(&"No previous project found".into());
                 None
             };
 
-            let project = project.unwrap_or_else(Project::empty);
+            let project = project.unwrap_or_else(|| {
+                web_sys::console::log_1(&"Creating empty project".into());
+                Project::empty()
+            });
             let empty_graph = project.graph.clone();
 
             set_current_project.set(project.clone());
@@ -98,6 +112,7 @@ pub fn App() -> impl IntoView {
                 .map(|v| (v.id, v.viewport_state.clone()))
                 .collect();
             set_viewport_states.set(viewports);
+            set_infrastructure_viewport.set(project.infrastructure_viewport.clone());
 
             set_views.set(views.clone());
 
@@ -119,6 +134,7 @@ pub fn App() -> impl IntoView {
         let current_legend = legend.get();
         let current_views = views.get();
         let current_viewports = viewport_states.get();
+        let current_infrastructure_viewport = infrastructure_viewport.get();
         let current_tab = active_tab.get();
         let mut proj = current_project.get();
 
@@ -145,6 +161,7 @@ pub fn App() -> impl IntoView {
             proj.legend = current_legend;
             proj.views = views_with_viewports;
             proj.active_tab_id = active_tab_id;
+            proj.infrastructure_viewport = current_infrastructure_viewport;
             proj.touch_updated_at();
 
             // Update current_project signal to keep it synchronized
@@ -279,6 +296,7 @@ pub fn App() -> impl IntoView {
             .map(|v| (v.id, v.viewport_state.clone()))
             .collect();
         set_viewport_states.set(viewports);
+        set_infrastructure_viewport.set(project.infrastructure_viewport.clone());
         set_views.set(project_views.clone());
 
         // Set active tab
@@ -396,6 +414,10 @@ pub fn App() -> impl IntoView {
                             lines=lines
                             set_lines=set_lines
                             on_create_view=on_create_view
+                            initial_viewport=infrastructure_viewport.get_untracked()
+                            on_viewport_change=Callback::new(move |viewport_state: ViewportState| {
+                                set_infrastructure_viewport.set(viewport_state);
+                            })
                         />
                     }.into_view(),
                     AppTab::GraphView(view_id) => {

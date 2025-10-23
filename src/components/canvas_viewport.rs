@@ -51,6 +51,37 @@ pub fn create_viewport_signals(enable_horizontal_zoom: bool) -> ViewportSignals 
     }
 }
 
+#[must_use]
+pub fn create_viewport_signals_with_initial(enable_horizontal_zoom: bool, initial: crate::models::ViewportState) -> ViewportSignals {
+    let (zoom_level, set_zoom_level) = create_signal(initial.zoom_level);
+    let (pan_offset_x, set_pan_offset_x) = create_signal(initial.pan_offset_x);
+    let (pan_offset_y, set_pan_offset_y) = create_signal(initial.pan_offset_y);
+    let (is_panning, set_is_panning) = create_signal(false);
+    let (last_mouse_pos, set_last_mouse_pos) = create_signal((0.0, 0.0));
+
+    let zoom_level_x = if enable_horizontal_zoom {
+        let initial_zoom_x = initial.zoom_level_x.unwrap_or(1.0);
+        let (zoom_x, set_zoom_x) = create_signal(initial_zoom_x);
+        Some((zoom_x, set_zoom_x))
+    } else {
+        None
+    };
+
+    ViewportSignals {
+        zoom_level,
+        set_zoom_level,
+        zoom_level_x,
+        pan_offset_x,
+        set_pan_offset_x,
+        pan_offset_y,
+        set_pan_offset_y,
+        is_panning,
+        set_is_panning,
+        last_mouse_pos,
+        set_last_mouse_pos,
+    }
+}
+
 pub fn handle_pan_start(
     x: f64,
     y: f64,

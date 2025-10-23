@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use super::{Line, RailwayGraph, GraphView};
+use super::{Line, RailwayGraph, GraphView, ViewportState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectMetadata {
@@ -51,6 +51,8 @@ pub struct Project {
     pub views: Vec<GraphView>,
     #[serde(default)]
     pub active_tab_id: Option<String>,
+    #[serde(default)]
+    pub infrastructure_viewport: ViewportState,
 }
 
 impl Project {
@@ -69,6 +71,7 @@ impl Project {
             legend: Legend::default(),
             views: Vec::new(),
             active_tab_id: None,
+            infrastructure_viewport: ViewportState::default(),
         }
     }
 
@@ -87,6 +90,7 @@ impl Project {
             legend,
             views: Vec::new(),
             active_tab_id: None,
+            infrastructure_viewport: ViewportState::default(),
         }
     }
 
@@ -105,6 +109,7 @@ impl Project {
             legend: Legend::default(),
             views: Vec::new(),
             active_tab_id: None,
+            infrastructure_viewport: ViewportState::default(),
         }
     }
 
@@ -127,6 +132,7 @@ impl Project {
             legend: self.legend.clone(),
             views: self.views.clone(),
             active_tab_id: self.active_tab_id.clone(),
+            infrastructure_viewport: self.infrastructure_viewport.clone(),
         }
     }
 }
