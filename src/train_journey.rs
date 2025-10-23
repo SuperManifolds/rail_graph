@@ -677,6 +677,7 @@ mod tests {
             auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                default_wait_time: Duration::seconds(30),
         }
     }
 
@@ -1011,6 +1012,7 @@ mod tests {
             auto_train_number_format: "{line} {seq:04}".to_string(),
                 last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
                 return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+                default_wait_time: Duration::seconds(30),
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);

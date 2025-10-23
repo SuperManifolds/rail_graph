@@ -1,4 +1,5 @@
 use crate::components::tab_view::TabPanel;
+use crate::components::duration_input::DurationInput;
 use crate::models::Line;
 use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_value, event_target_checked, SignalGetUntracked, SignalSet};
 use std::rc::Rc;
@@ -82,6 +83,24 @@ pub fn GeneralTab(
                             }
                         }}
                     </div>
+                </div>
+
+                <div class="form-group">
+                    <label>"Default Wait Time"</label>
+                    <DurationInput
+                        duration=Signal::derive(move || edited_line.get().map(|l| l.default_wait_time).unwrap_or_default())
+                        on_change={
+                            let on_save = on_save.get_value();
+                            move |new_duration| {
+                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                    updated_line.default_wait_time = new_duration;
+                                    set_edited_line.set(Some(updated_line.clone()));
+                                    on_save(updated_line);
+                                }
+                            }
+                        }
+                    />
+                    <p class="form-help">"Default wait time used when adding new stops to this line"</p>
                 </div>
 
                 <div class="form-group">

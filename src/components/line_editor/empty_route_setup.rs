@@ -48,7 +48,7 @@ fn create_route_between_stations(
     let second_idx = graph.get_station_index(second_name)?;
     let path = graph.find_path_between_nodes(first_idx, second_idx)?;
 
-    for (i, edge) in path.iter().enumerate() {
+    for edge in &path {
         let Some((source, target)) = graph.graph.edge_endpoints(*edge) else {
             continue;
         };
@@ -59,7 +59,7 @@ fn create_route_between_stations(
         let default_wait = if is_passing_loop {
             Duration::seconds(0)
         } else {
-            Duration::seconds(30)
+            line.default_wait_time
         };
 
         let source_platform_count = graph.graph.node_weight(source)
@@ -79,7 +79,8 @@ fn create_route_between_stations(
             origin_platform,
             destination_platform,
             duration: None,
-            wait_time: if i == 0 { default_wait } else { Duration::zero() },
+            // Use default wait time for stations, zero for passing loops
+            wait_time: default_wait,
         };
 
         match direction {

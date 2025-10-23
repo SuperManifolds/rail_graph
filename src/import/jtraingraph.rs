@@ -685,6 +685,7 @@ pub fn import_jtraingraph(
             auto_train_number_format: "{line} {seq:04}".to_string(),
             last_departure: BASE_DATE.and_hms_opt(23, 59, 0).ok_or_else(|| "Invalid last departure time".to_string())?,
             return_last_departure: BASE_DATE.and_hms_opt(23, 59, 0).ok_or_else(|| "Invalid last departure time".to_string())?,
+            default_wait_time: Duration::seconds(30),
         };
 
         new_lines.push(line);
