@@ -22,7 +22,7 @@ struct ChangelogRelease {
 #[must_use]
 pub fn ChangelogPopup() -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
-    let (release_data, set_release_data) = create_signal(None::<ChangelogRelease>);
+    let (releases_to_show, set_releases_to_show) = create_signal(Vec::<ChangelogRelease>::new());
 
     // Check if we should show the changelog
     let should_show = create_resource(
@@ -38,24 +38,47 @@ pub fn ChangelogPopup() -> impl IntoView {
                 return false;
             }
 
-            // Fetch latest release
-            let Ok(release) = fetch_latest_release().await else {
+            // Fetch all releases
+            let Ok(all_releases) = fetch_all_releases().await else {
                 return false;
             };
 
-            // Check if we've already shown this version
-            if has_viewed_version(&release.tag_name) {
+            if all_releases.is_empty() {
                 return false;
             }
 
-            set_release_data.set(Some(release));
+            // Get the last viewed version
+            let last_viewed = get_last_viewed_version();
+
+            // Filter releases to show only those since last viewed
+            let releases = if let Some(last_viewed_version) = last_viewed {
+                // Find the index of the last viewed version
+                let last_viewed_idx = all_releases
+                    .iter()
+                    .position(|r| r.tag_name == last_viewed_version);
+
+                match last_viewed_idx {
+                    Some(idx) => all_releases[..idx].to_vec(), // Get all releases before the last viewed one
+                    None => all_releases, // If we can't find it, show all
+                }
+            } else {
+                // First time viewing, only show the latest release
+                all_releases.into_iter().take(1).collect()
+            };
+
+            if releases.is_empty() {
+                return false;
+            }
+
+            set_releases_to_show.set(releases);
             true
         },
     );
 
     let on_close = move || {
-        if let Some(release) = release_data.get() {
-            mark_version_viewed(&release.tag_name);
+        let releases = releases_to_show.get();
+        if let Some(latest) = releases.first() {
+            mark_version_viewed(&latest.tag_name);
         }
         set_is_open.set(false);
     };
@@ -75,7 +98,7 @@ pub fn ChangelogPopup() -> impl IntoView {
                 title=Signal::derive(|| "What's New".to_string())
                 on_close=move || on_close()
             >
-                <ChangelogContent release_data=release_data on_close=on_close />
+                <ChangelogContent releases_to_show=releases_to_show on_close=on_close />
             </Window>
         </ModalOverlay>
     }
@@ -83,7 +106,7 @@ pub fn ChangelogPopup() -> impl IntoView {
 
 #[component]
 fn ChangelogContent(
-    release_data: leptos::ReadSignal<Option<ChangelogRelease>>,
+    releases_to_show: leptos::ReadSignal<Vec<ChangelogRelease>>,
     on_close: impl Fn() + 'static + Copy,
 ) -> impl IntoView {
     // Get resize trigger from Window context
@@ -91,7 +114,7 @@ fn ChangelogContent(
 
     // Trigger resize when content loads
     create_effect(move |_| {
-        if release_data.get().is_some() {
+        if !releases_to_show.get().is_empty() {
             if let Some(trigger) = resize_trigger {
                 trigger.update(|v| *v += 1);
             }
@@ -100,24 +123,37 @@ fn ChangelogContent(
 
     view! {
         <div class="changelog-content">
-            {move || release_data.get().map(|release| view! {
-                <div class="changelog-header">
-                    <div class="changelog-version">{&release.tag_name}</div>
-                    <div class="changelog-title">{&release.name}</div>
-                    <div class="changelog-date">{format_date(&release.published_at)}</div>
-                </div>
-                <div class="changelog-body" inner_html=markdown_to_html(&release.body)></div>
-                <div class="changelog-buttons">
-                    <button class="primary" on:click=move |_| on_close()>
-                        "Got it!"
-                    </button>
-                </div>
-            })}
+            {move || {
+                let releases = releases_to_show.get();
+                if releases.is_empty() {
+                    return view! {}.into_view();
+                }
+
+                view! {
+                    <>
+                        {releases.into_iter().map(|release| view! {
+                            <div class="changelog-release">
+                                <div class="changelog-header">
+                                    <div class="changelog-version">{&release.tag_name}</div>
+                                    <div class="changelog-title">{&release.name}</div>
+                                    <div class="changelog-date">{format_date(&release.published_at)}</div>
+                                </div>
+                                <div class="changelog-body" inner_html=markdown_to_html(&release.body)></div>
+                            </div>
+                        }).collect::<Vec<_>>()}
+                        <div class="changelog-buttons">
+                            <button class="primary" on:click=move |_| on_close()>
+                                "Got it!"
+                            </button>
+                        </div>
+                    </>
+                }.into_view()
+            }}
         </div>
     }
 }
 
-async fn fetch_latest_release() -> Result<ChangelogRelease, String> {
+async fn fetch_all_releases() -> Result<Vec<ChangelogRelease>, String> {
     let Some(window) = web_sys::window() else {
         return Err("No window".to_string());
     };
@@ -150,14 +186,10 @@ async fn fetch_latest_release() -> Result<ChangelogRelease, String> {
         .map_err(|e| format!("Failed to deserialize: {e:?}"))
 }
 
-fn has_viewed_version(version: &str) -> bool {
-    let Some(window) = web_sys::window() else { return false };
-    let Ok(Some(storage)) = window.local_storage() else { return false };
-
-    match storage.get_item(LAST_VIEWED_CHANGELOG_KEY) {
-        Ok(Some(viewed)) => viewed == version,
-        _ => false,
-    }
+fn get_last_viewed_version() -> Option<String> {
+    let window = web_sys::window()?;
+    let storage = window.local_storage().ok()??;
+    storage.get_item(LAST_VIEWED_CHANGELOG_KEY).ok()?
 }
 
 fn mark_version_viewed(version: &str) {
