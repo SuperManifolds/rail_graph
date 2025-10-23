@@ -180,7 +180,7 @@ fn handle_adding_junction(
     set_lines: WriteSignal<Vec<Line>>,
     set_editing_junction: WriteSignal<Option<NodeIndex>>,
     set_edit_mode: WriteSignal<EditMode>,
-    auto_layout_enabled: ReadSignal<bool>,
+    _auto_layout_enabled: ReadSignal<bool>,
 ) {
     use crate::models::{Junction, Junctions, Tracks};
 
@@ -202,17 +202,10 @@ fn handle_adding_junction(
     let mut updated_graph = current_graph;
     let mut current_lines = lines.get();
 
-    // Snap to grid if autolayout is enabled
-    let position = if auto_layout_enabled.get() {
-        auto_layout::snap_to_grid(world_x, world_y)
-    } else {
-        (world_x, world_y)
-    };
-
-    // Create junction at clicked position
+    // Create junction without initial position - autolayout will position it
     let junction = Junction {
         name: None,
-        position: Some(position),
+        position: None,
         routing_rules: vec![],
     };
     let junction_idx = updated_graph.add_junction(junction);
@@ -1025,18 +1018,8 @@ pub fn InfrastructureView(
         if new_state {
             let mut current_graph = graph.get();
 
-            // Check if any nodes have positions
-            let has_positioned_nodes = current_graph.graph.node_indices()
-                .any(|idx| {
-                    current_graph.get_station_position(idx)
-                        .is_some_and(|pos| pos != (0.0, 0.0))
-                });
-
-            if has_positioned_nodes {
-                // Smart adjustment: preserve structure but fix spacing/angles
-                auto_layout::adjust_layout(&mut current_graph);
-            } else if let Some(canvas) = canvas_ref.get() {
-                // No positions yet, do full layout
+            // Always do full layout when toggling autolayout on to fix any junction positioning issues
+            if let Some(canvas) = canvas_ref.get() {
                 let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
                 let height = f64::from(canvas_elem.client_height());
                 auto_layout::apply_layout(&mut current_graph, height);

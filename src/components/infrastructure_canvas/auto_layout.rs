@@ -1,11 +1,22 @@
 use crate::models::{RailwayGraph, Stations};
 use petgraph::stable_graph::NodeIndex;
-use petgraph::visit::EdgeRef;
-use petgraph::Direction;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::collections::HashSet;
 
-const STATION_SPACING: f64 = 60.0;
+const BASE_STATION_SPACING: f64 = 120.0;
 const GRID_SIZE: f64 = 30.0;
+
+// 8 compass directions (45° increments)
+const DIRECTIONS: [f64; 8] = [
+    0.0,                                    // E (0°)
+    std::f64::consts::FRAC_PI_4,           // SE (45°)
+    std::f64::consts::FRAC_PI_2,           // S (90°)
+    3.0 * std::f64::consts::FRAC_PI_4,     // SW (135°)
+    std::f64::consts::PI,                  // W (180°)
+    -3.0 * std::f64::consts::FRAC_PI_4,    // NW (-135°)
+    -std::f64::consts::FRAC_PI_2,          // N (-90°)
+    -std::f64::consts::FRAC_PI_4,          // NE (-45°)
+];
 
 /// Snap coordinates to grid intersections
 #[must_use]
@@ -15,605 +26,609 @@ pub fn snap_to_grid(x: f64, y: f64) -> (f64, f64) {
     (snapped_x, snapped_y)
 }
 
-/// Snap a station and its branch to the nearest 45-degree angle from its parent
-pub fn snap_to_angle(graph: &mut RailwayGraph, station_idx: NodeIndex, target_x: f64, target_y: f64) {
-    // Find the nearest junction (node with 3+ neighbors) by walking from station_idx
-    let junction_idx = find_nearest_junction(graph, station_idx);
-
-    let Some(junction_pos) = graph.get_station_position(junction_idx) else {
-        return;
-    };
-
-    // Calculate target snapped angle from junction to drop position
-    let dx = target_x - junction_pos.0;
-    let dy = target_y - junction_pos.1;
-    let target_angle = dy.atan2(dx);
-    let target_angle_deg = target_angle.to_degrees();
-    let snapped_angle_deg = (target_angle_deg / 45.0).round() * 45.0;
-    let snapped_angle = snapped_angle_deg.to_radians();
-
-    // Get all neighbors of the junction
-    let neighbors: Vec<_> = graph.graph.edges(junction_idx)
-        .map(|e| e.target())
-        .chain(graph.graph.edges_directed(junction_idx, Direction::Incoming)
-            .map(|e| e.source()))
-        .collect();
-
-    if neighbors.is_empty() {
-        return;
+/// Get angle difference in [0, PI]
+fn angle_difference(a1: f64, a2: f64) -> f64 {
+    let diff = (a1 - a2).abs();
+    if diff > std::f64::consts::PI {
+        2.0 * std::f64::consts::PI - diff
+    } else {
+        diff
     }
-
-    // Find which branch contains station_idx
-    let mut branch_to_move: Option<NodeIndex> = None;
-    for &neighbor in &neighbors {
-        let mut visited = HashSet::new();
-        visited.insert(junction_idx);
-        if contains_node(graph, neighbor, station_idx, &mut visited) {
-            branch_to_move = Some(neighbor);
-            break;
-        }
-    }
-
-    let Some(branch_to_move) = branch_to_move else {
-        return;
-    };
-
-    // Position the first node of the branch at the snapped angle from junction
-    let new_x = junction_pos.0 + snapped_angle.cos() * STATION_SPACING;
-    let new_y = junction_pos.1 + snapped_angle.sin() * STATION_SPACING;
-    let (new_x, new_y) = snap_to_grid(new_x, new_y);
-
-    // Save the branch angle for future auto layout runs
-    graph.branch_angles.insert((junction_idx.index(), branch_to_move.index()), snapped_angle);
-
-    // Realign the entire branch
-    let mut visited = HashSet::new();
-    visited.insert(junction_idx);
-
-    // Mark all other branches as visited so we don't move them
-    for &neighbor in &neighbors {
-        if neighbor != branch_to_move {
-            visited.insert(neighbor);
-        }
-    }
-
-    realign_branch(graph, branch_to_move, (new_x, new_y), snapped_angle, &mut visited);
 }
 
-/// Snap a station to a grid-aligned position along its current branch direction
-/// Does not move other stations or rotate the branch
-#[allow(clippy::similar_names)]
-pub fn snap_station_along_branch(graph: &mut RailwayGraph, station_idx: NodeIndex, target_x: f64, target_y: f64) {
-    // Get current position
-    let Some(current_pos) = graph.get_station_position(station_idx) else {
-        return;
-    };
-
-    // Get neighbors to determine branch direction
-    let neighbors: Vec<_> = graph.graph.edges(station_idx)
-        .map(|e| (e.target(), graph.get_station_position(e.target())))
-        .chain(graph.graph.edges_directed(station_idx, Direction::Incoming)
-            .map(|e| (e.source(), graph.get_station_position(e.source()))))
-        .collect();
-
-    if neighbors.is_empty() {
-        // No neighbors, just snap to grid
-        let snapped = snap_to_grid(target_x, target_y);
-        graph.set_station_position(station_idx, snapped);
-        return;
-    }
-
-    // Calculate the average branch direction from positioned neighbors
-    let mut total_dx = 0.0;
-    let mut total_dy = 0.0;
-    let mut count = 0;
-
-    for (_, neighbor_pos_opt) in &neighbors {
-        if let Some(neighbor_pos) = neighbor_pos_opt {
-            let dx = neighbor_pos.0 - current_pos.0;
-            let dy = neighbor_pos.1 - current_pos.1;
-            if dx.abs() > 0.01 || dy.abs() > 0.01 {
-                // Normalize
-                let len = (dx * dx + dy * dy).sqrt();
-                total_dx += dx / len;
-                total_dy += dy / len;
-                count += 1;
-            }
-        }
-    }
-
-    if count == 0 {
-        // No positioned neighbors with meaningful distance, just snap to grid
-        let snapped = snap_to_grid(target_x, target_y);
-        graph.set_station_position(station_idx, snapped);
-        return;
-    }
-
-    // Average direction
-    let avg_dx = total_dx / f64::from(count);
-    let avg_dy = total_dy / f64::from(count);
-
-    // Normalize to get unit direction vector
-    let dir_len = (avg_dx * avg_dx + avg_dy * avg_dy).sqrt();
-
-    if dir_len < 0.01 {
-        // Direction vectors cancelled out (e.g., node between two others on a line)
-        // Just snap to grid without projection
-        let snapped = snap_to_grid(target_x, target_y);
-        graph.set_station_position(station_idx, snapped);
-        return;
-    }
-
-    let dir_x = avg_dx / dir_len;
-    let dir_y = avg_dy / dir_len;
-
-    // Project target position onto the line through current_pos in direction (dir_x, dir_y)
-    // Line: P = current_pos + t * direction
-    // Find t where the projected point is closest to (target_x, target_y)
-    let to_target_x = target_x - current_pos.0;
-    let to_target_y = target_y - current_pos.1;
-    let t = to_target_x * dir_x + to_target_y * dir_y;
-
-    let projected_x = current_pos.0 + t * dir_x;
-    let projected_y = current_pos.1 + t * dir_y;
-
-    // Snap to grid
-    let snapped = snap_to_grid(projected_x, projected_y);
-    graph.set_station_position(station_idx, snapped);
-}
-
-/// Find the nearest junction (node with 3+ neighbors) starting from `start_node`
-/// If no junction found, returns `start_node`
-fn find_nearest_junction(graph: &RailwayGraph, start_node: NodeIndex) -> NodeIndex {
-    let mut queue = std::collections::VecDeque::new();
-    let mut visited = HashSet::new();
-
-    queue.push_back(start_node);
-    visited.insert(start_node);
-
-    while let Some(node) = queue.pop_front() {
-        let neighbor_count = graph.graph.edges(node).count()
-            + graph.graph.edges_directed(node, Direction::Incoming).count();
-
-        if neighbor_count >= 3 {
-            return node;
-        }
-
-        // Add neighbors to queue
-        for edge in graph.graph.edges(node) {
-            let target = edge.target();
-            if visited.insert(target) {
-                queue.push_back(target);
-            }
-        }
-        for edge in graph.graph.edges_directed(node, Direction::Incoming) {
-            let source = edge.source();
-            if visited.insert(source) {
-                queue.push_back(source);
-            }
-        }
-    }
-
-    start_node
-}
-
-/// Check if a branch starting from `start_node` contains `target_node`
-fn contains_node(
+/// Get all nodes reachable from `start_node`, excluding path back through `exclude_node`
+fn get_reachable_nodes(
     graph: &RailwayGraph,
     start_node: NodeIndex,
-    target_node: NodeIndex,
-    visited: &mut HashSet<NodeIndex>,
+    exclude_node: Option<NodeIndex>,
+) -> HashSet<NodeIndex> {
+    let mut reachable = HashSet::new();
+    let mut queue = std::collections::VecDeque::new();
+
+    queue.push_back(start_node);
+    reachable.insert(start_node);
+
+    while let Some(current) = queue.pop_front() {
+        // Get all neighbors (undirected)
+        for neighbor in graph.graph.neighbors_undirected(current) {
+            // Skip the excluded node
+            if Some(neighbor) == exclude_node {
+                continue;
+            }
+
+            // Skip already visited
+            if reachable.contains(&neighbor) {
+                continue;
+            }
+
+            reachable.insert(neighbor);
+            queue.push_back(neighbor);
+        }
+    }
+
+    reachable
+}
+
+/// Calculate how different two node sets are (0.0 = identical, 1.0 = completely different)
+#[allow(clippy::cast_precision_loss)]
+fn region_difference(set1: &HashSet<NodeIndex>, set2: &HashSet<NodeIndex>) -> f64 {
+    if set1.is_empty() && set2.is_empty() {
+        return 0.0;
+    }
+
+    let intersection_size = set1.intersection(set2).count();
+    let union_size = set1.union(set2).count();
+
+    if union_size == 0 {
+        return 0.0;
+    }
+
+    // Jaccard distance
+    1.0 - (intersection_size as f64 / union_size as f64)
+}
+
+/// Check if a position has node collision with existing nodes
+fn has_node_collision_at(
+    graph: &RailwayGraph,
+    test_pos: (f64, f64),
+    exclude_node: NodeIndex,
 ) -> bool {
-    if start_node == target_node {
-        return true;
+    for node_idx in graph.graph.node_indices() {
+        if node_idx == exclude_node {
+            continue;
+        }
+        if let Some(existing_pos) = graph.get_station_position(node_idx) {
+            if existing_pos == (0.0, 0.0) {
+                continue;
+            }
+            let dx = test_pos.0 - existing_pos.0;
+            let dy = test_pos.1 - existing_pos.1;
+            let dist = (dx * dx + dy * dy).sqrt();
+            if dist < BASE_STATION_SPACING * 0.9 {
+                return true;
+            }
+        }
     }
+    false
+}
 
-    if visited.contains(&start_node) {
-        return false;
-    }
+/// Check if a line segment would cross or come too close to any existing edges
+#[allow(clippy::similar_names)]
+fn would_overlap_existing_edges(
+    graph: &RailwayGraph,
+    pos1: (f64, f64),
+    pos2: (f64, f64),
+) -> bool {
+    const MIN_DISTANCE: f64 = 50.0; // Minimum distance between parallel segments
 
-    visited.insert(start_node);
+    // Check all existing edges
+    for edge in graph.graph.edge_references() {
+        let source = edge.source();
+        let target = edge.target();
 
-    let neighbors: Vec<_> = graph.graph.edges(start_node)
-        .map(|e| e.target())
-        .chain(graph.graph.edges_directed(start_node, Direction::Incoming)
-            .map(|e| e.source()))
-        .filter(|&n| !visited.contains(&n))
-        .collect();
+        let Some(source_pos) = graph.get_station_position(source) else { continue };
+        let Some(target_pos) = graph.get_station_position(target) else { continue };
 
-    for neighbor in neighbors {
-        if contains_node(graph, neighbor, target_node, visited) {
-            return true;
+        // Skip if either endpoint not placed yet
+        if source_pos == (0.0, 0.0) || target_pos == (0.0, 0.0) {
+            continue;
+        }
+
+        // Check if edges share an endpoint
+        let shared_endpoint = if source_pos == pos1 || target_pos == pos1 {
+            Some(pos1)
+        } else if source_pos == pos2 || target_pos == pos2 {
+            Some(pos2)
+        } else {
+            None
+        };
+
+        if let Some(shared_point) = shared_endpoint {
+            // Edges share an endpoint - check angle between them
+            let new_edge_other = if pos1 == shared_point { pos2 } else { pos1 };
+            let existing_edge_other = if source_pos == shared_point { target_pos } else { source_pos };
+
+            // Get direction vectors (normalized)
+            let new_dx = new_edge_other.0 - shared_point.0;
+            let new_dy = new_edge_other.1 - shared_point.1;
+            let new_len = (new_dx * new_dx + new_dy * new_dy).sqrt();
+
+            let exist_dx = existing_edge_other.0 - shared_point.0;
+            let exist_dy = existing_edge_other.1 - shared_point.1;
+            let exist_len = (exist_dx * exist_dx + exist_dy * exist_dy).sqrt();
+
+            if new_len > 0.1 && exist_len > 0.1 {
+                // Normalize direction vectors
+                let new_dir_x = new_dx / new_len;
+                let new_dir_y = new_dy / new_len;
+                let exist_dir_x = exist_dx / exist_len;
+                let exist_dir_y = exist_dy / exist_len;
+
+                // Calculate angle between directions using atan2
+                let new_angle = new_dir_y.atan2(new_dir_x);
+                let exist_angle = exist_dir_y.atan2(exist_dir_x);
+
+                let angle_diff = angle_difference(new_angle, exist_angle);
+
+                // If angle difference is less than 45 degrees (π/4), edges are too close
+                if angle_diff < std::f64::consts::FRAC_PI_4 {
+                    return true;
+                }
+            }
+        } else {
+            // Edges don't share an endpoint - check normal segment distance
+            let dist = segment_distance(pos1, pos2, source_pos, target_pos);
+            if dist < MIN_DISTANCE {
+                return true;
+            }
         }
     }
 
     false
 }
 
-/// Recursively realign a branch in the given direction
-fn realign_branch(
-    graph: &mut RailwayGraph,
-    current_node: NodeIndex,
-    position: (f64, f64),
-    direction: f64,
-    visited: &mut HashSet<NodeIndex>,
-) {
-    if visited.contains(&current_node) {
-        return;
+/// Calculate minimum distance between two line segments
+fn segment_distance(
+    a1: (f64, f64),
+    a2: (f64, f64),
+    b1: (f64, f64),
+    b2: (f64, f64),
+) -> f64 {
+    // Check if segments intersect
+    if segments_intersect(a1, a2, b1, b2) {
+        return 0.0;
     }
 
-    let snapped_position = snap_to_grid(position.0, position.1);
-    graph.set_station_position(current_node, snapped_position);
-    visited.insert(current_node);
+    // Check distances from endpoints to opposite segments
+    let d1 = point_to_segment_distance(a1, b1, b2);
+    let d2 = point_to_segment_distance(a2, b1, b2);
+    let d3 = point_to_segment_distance(b1, a1, a2);
+    let d4 = point_to_segment_distance(b2, a1, a2);
 
-    // Get all unvisited neighbors
-    let neighbors: Vec<_> = graph.graph.edges(current_node)
-        .map(|e| e.target())
-        .chain(graph.graph.edges_directed(current_node, Direction::Incoming)
-            .map(|e| e.source()))
-        .filter(|&n| !visited.contains(&n))
-        .collect();
-
-    // Continue in the same direction for all neighbors
-    for neighbor in neighbors {
-        let next_pos = (
-            position.0 + direction.cos() * STATION_SPACING,
-            position.1 + direction.sin() * STATION_SPACING,
-        );
-        realign_branch(graph, neighbor, next_pos, direction, visited);
-    }
+    d1.min(d2).min(d3).min(d4)
 }
 
-pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
-    use crate::models::Junctions;
+/// Check if two line segments intersect
+fn segments_intersect(
+    a1: (f64, f64),
+    a2: (f64, f64),
+    b1: (f64, f64),
+    b2: (f64, f64),
+) -> bool {
+    let d1 = cross_product_sign(b1, b2, a1);
+    let d2 = cross_product_sign(b1, b2, a2);
+    let d3 = cross_product_sign(a1, a2, b1);
+    let d4 = cross_product_sign(a1, a2, b2);
 
+    ((d1 > 0.0 && d2 < 0.0) || (d1 < 0.0 && d2 > 0.0)) &&
+    ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0))
+}
+
+/// Cross product to determine which side of a line a point is on
+fn cross_product_sign(line_start: (f64, f64), line_end: (f64, f64), point: (f64, f64)) -> f64 {
+    (line_end.0 - line_start.0) * (point.1 - line_start.1) -
+    (line_end.1 - line_start.1) * (point.0 - line_start.0)
+}
+
+/// Distance from point to line segment
+fn point_to_segment_distance(point: (f64, f64), seg_start: (f64, f64), seg_end: (f64, f64)) -> f64 {
+    let dx = seg_end.0 - seg_start.0;
+    let dy = seg_end.1 - seg_start.1;
+    let len_sq = dx * dx + dy * dy;
+
+    if len_sq == 0.0 {
+        let px = point.0 - seg_start.0;
+        let py = point.1 - seg_start.1;
+        return (px * px + py * py).sqrt();
+    }
+
+    let t = ((point.0 - seg_start.0) * dx + (point.1 - seg_start.1) * dy) / len_sq;
+    let t = t.clamp(0.0, 1.0);
+
+    let closest_x = seg_start.0 + t * dx;
+    let closest_y = seg_start.1 + t * dy;
+
+    let px = point.0 - closest_x;
+    let py = point.1 - closest_y;
+    (px * px + py * py).sqrt()
+}
+
+/// Find best direction and spacing for a branch node
+fn find_best_direction_for_branch(
+    graph: &RailwayGraph,
+    current_pos: (f64, f64),
+    neighbor: NodeIndex,
+    target_pos: Option<(f64, f64)>,
+    neighbor_reachable: &HashSet<NodeIndex>,
+    already_used: &[(f64, HashSet<NodeIndex>)],
+    incoming_direction: f64,
+) -> (f64, f64, i32) {
+    let mut best_direction = DIRECTIONS[0];
+    let mut best_score = i32::MIN;
+    let mut best_spacing = 1.0;
+
+    // Calculate direction to target if it exists
+    let target_direction = target_pos.map(|target| {
+        let dx = target.0 - current_pos.0;
+        let dy = target.1 - current_pos.1;
+        dy.atan2(dx)
+    });
+
+    // Try spacing multipliers from 1.0 up to 10.0
+    for spacing_mult in [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 10.0] {
+        for &direction in &DIRECTIONS {
+            let test_pos = snap_to_grid(
+                current_pos.0 + direction.cos() * BASE_STATION_SPACING * spacing_mult,
+                current_pos.1 + direction.sin() * BASE_STATION_SPACING * spacing_mult,
+            );
+
+            if has_node_collision_at(graph, test_pos, neighbor) {
+                continue;
+            }
+
+            // CRITICAL: If node has a target, reject directions that move away from it
+            if let Some(target_dir) = target_direction {
+                let angle_to_target = angle_difference(direction, target_dir);
+
+                // If we're moving away from target (> 90°), reject this direction
+                if angle_to_target > std::f64::consts::FRAC_PI_2 {
+                    continue;
+                }
+            }
+
+            let score = score_direction_for_branch(
+                graph,
+                current_pos,
+                direction,
+                spacing_mult,
+                target_direction,
+                neighbor_reachable,
+                already_used,
+                incoming_direction,
+            );
+
+            if score > best_score {
+                best_score = score;
+                best_direction = direction;
+                best_spacing = spacing_mult;
+
+                // If we found a valid direction, use it
+                if score > i32::MIN {
+                    return (best_direction, best_spacing, best_score);
+                }
+            }
+        }
+    }
+
+    (best_direction, best_spacing, best_score)
+}
+
+/// Score a direction for placing a branch node
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::too_many_arguments)]
+fn score_direction_for_branch(
+    graph: &RailwayGraph,
+    current_pos: (f64, f64),
+    direction: f64,
+    spacing_multiplier: f64,
+    target_direction: Option<f64>,
+    neighbor_reachable: &HashSet<NodeIndex>,
+    already_used: &[(f64, HashSet<NodeIndex>)],
+    incoming_direction: f64,
+) -> i32 {
+    let mut score = 0;
+
+    // Calculate proposed position
+    let neighbor_pos = snap_to_grid(
+        current_pos.0 + direction.cos() * BASE_STATION_SPACING * spacing_multiplier,
+        current_pos.1 + direction.sin() * BASE_STATION_SPACING * spacing_multiplier,
+    );
+
+    // CRITICAL: Check for geometric overlap with existing edges
+    if would_overlap_existing_edges(graph, current_pos, neighbor_pos) {
+        return i32::MIN;
+    }
+
+    // Check if this direction goes back where we came from (opposite of incoming)
+    let reverse_direction = incoming_direction + std::f64::consts::PI;
+    let reverse_angle_diff = angle_difference(direction, reverse_direction);
+
+    // CRITICAL: Never go back in the direction we came from (causes overlap)
+    if reverse_angle_diff < std::f64::consts::FRAC_PI_4 {
+        return i32::MIN;
+    }
+
+    // If we have a target, strongly prefer moving towards it
+    if let Some(target_dir) = target_direction {
+        let angle_to_target = angle_difference(direction, target_dir);
+
+        // Strong bonus for moving towards target
+        score += ((std::f64::consts::PI - angle_to_target) * 2000.0) as i32;
+    }
+
+    // For each already-used direction
+    for (used_dir, used_reachable) in already_used {
+        let angle_diff = angle_difference(direction, *used_dir);
+        let region_diff = region_difference(neighbor_reachable, used_reachable);
+
+        // If regions are DIFFERENT but directions are SIMILAR = bad
+        if region_diff > 0.5 && angle_diff < std::f64::consts::FRAC_PI_2 {
+            score -= ((1.0 - region_diff) * 5000.0) as i32;
+        }
+
+        // If regions are SIMILAR and directions are SIMILAR = ok
+        if region_diff < 0.3 && angle_diff < std::f64::consts::FRAC_PI_4 {
+            score += 200;
+        }
+
+        // Prefer larger angular separation
+        score += (angle_diff * 500.0) as i32;
+    }
+
+    score
+}
+
+/// Find longest simple path in the graph (path with most nodes, no cycles)
+fn find_longest_path(graph: &RailwayGraph) -> Vec<NodeIndex> {
+    let mut longest_path = Vec::new();
+
+    // Try starting from each node
+    for start_node in graph.graph.node_indices() {
+        let mut visited = HashSet::new();
+        let mut current_path = Vec::new();
+
+        dfs_longest_path(graph, start_node, &mut visited, &mut current_path, &mut longest_path);
+    }
+
+    longest_path
+}
+
+/// DFS helper to find longest simple path
+fn dfs_longest_path(
+    graph: &RailwayGraph,
+    current: NodeIndex,
+    visited: &mut HashSet<NodeIndex>,
+    current_path: &mut Vec<NodeIndex>,
+    longest_path: &mut Vec<NodeIndex>,
+) {
+    visited.insert(current);
+    current_path.push(current);
+
+    // Update longest if current is longer
+    if current_path.len() > longest_path.len() {
+        *longest_path = current_path.clone();
+    }
+
+    // Try extending path to each unvisited neighbor
+    for neighbor in graph.graph.neighbors_undirected(current) {
+        if !visited.contains(&neighbor) {
+            dfs_longest_path(graph, neighbor, visited, current_path, longest_path);
+        }
+    }
+
+    // Backtrack
+    current_path.pop();
+    visited.remove(&current);
+}
+
+#[allow(clippy::too_many_lines, clippy::missing_panics_doc, clippy::cast_precision_loss)]
+pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
     let start_x = 150.0;
     let start_y = height / 2.0;
 
-    // Find a starting node - prefer endpoints (nodes with only 1 connection)
-    let Some(start_node) = graph
+    if graph.graph.node_count() == 0 {
+        return; // Empty graph
+    }
+
+    // Clear all positions
+    let all_nodes: Vec<_> = graph.graph.node_indices().collect();
+    for node_idx in all_nodes {
+        graph.set_station_position(node_idx, (0.0, 0.0));
+    }
+
+    // Phase 1: Find longest path (the main spine)
+    let spine = find_longest_path(graph);
+
+    if spine.is_empty() {
+        return;
+    }
+
+    // Phase 2: Place spine vertically (North-South)
+    let mut visited = HashSet::new();
+    let spine_direction = -std::f64::consts::FRAC_PI_2; // North (-90°)
+
+    for (i, &node) in spine.iter().enumerate() {
+        let offset = i as f64 * BASE_STATION_SPACING;
+        let pos = snap_to_grid(
+            start_x + spine_direction.cos() * offset,
+            start_y + spine_direction.sin() * offset,
+        );
+        graph.set_station_position(node, pos);
+        visited.insert(node);
+    }
+
+    // Phase 3: Place branches from spine nodes
+    let mut queue = std::collections::VecDeque::new();
+
+    // Add all spine nodes to queue with their positions and incoming direction
+    for &node in &spine {
+        if let Some(pos) = graph.get_station_position(node) {
+            queue.push_back((node, pos, spine_direction));
+        }
+    }
+
+    while let Some((current_node, current_pos, incoming_direction)) = queue.pop_front() {
+        // Get all unvisited neighbors
+        let neighbors: Vec<_> = graph
+            .graph
+            .neighbors_undirected(current_node)
+            .filter(|n| !visited.contains(n))
+            .collect();
+
+        if neighbors.is_empty() {
+            continue;
+        }
+
+        // Track which directions we've assigned from this node
+        let mut already_used: Vec<(f64, HashSet<NodeIndex>)> = Vec::new();
+
+        for &neighbor in &neighbors {
+            // Check if neighbor has any edges to already-placed nodes (besides current)
+            let target_pos = find_placed_target(graph, neighbor, current_node, &visited);
+
+            let reachable = get_reachable_nodes(graph, neighbor, Some(current_node));
+
+            let (best_direction, best_spacing, _best_score) = find_best_direction_for_branch(
+                graph,
+                current_pos,
+                neighbor,
+                target_pos,
+                &reachable,
+                &already_used,
+                incoming_direction,
+            );
+
+            let neighbor_pos = snap_to_grid(
+                current_pos.0 + best_direction.cos() * BASE_STATION_SPACING * best_spacing,
+                current_pos.1 + best_direction.sin() * BASE_STATION_SPACING * best_spacing,
+            );
+
+            graph.set_station_position(neighbor, neighbor_pos);
+            visited.insert(neighbor);
+
+            already_used.push((best_direction, reachable.clone()));
+
+            queue.push_back((neighbor, neighbor_pos, best_direction));
+        }
+    }
+
+    // Phase 4: Handle disconnected components
+    let disconnected: Vec<_> = graph
         .graph
         .node_indices()
-        .min_by_key(|&idx| {
-            let outgoing = graph.graph.edges(idx).count();
-            let incoming = graph.graph.edges_directed(idx, Direction::Incoming).count();
-            let total = outgoing + incoming;
-            // Prefer endpoints (1 connection), then nodes with fewer connections
-            if total == 1 { 0 } else { total }
-        }) else {
-            return; // No nodes in graph
-        };
-
-    let mut visited = HashSet::new();
-    let mut available_directions = vec![
-        0.0,                                    // Right
-        std::f64::consts::PI / 4.0,            // Down-right
-        -std::f64::consts::PI / 4.0,           // Up-right
-        std::f64::consts::PI / 2.0,            // Down
-        3.0 * std::f64::consts::PI / 4.0,      // Down-left
-        -3.0 * std::f64::consts::PI / 4.0,     // Up-left
-    ];
-
-    // Layout the main line and branches
-    layout_line(
-        graph,
-        start_node,
-        (start_x, start_y),
-        -std::f64::consts::PI / 2.0, // Start going up/north
-        STATION_SPACING,
-        &mut visited,
-        &mut available_directions,
-    );
-
-    // Handle any disconnected nodes - collect first to avoid borrow checker issues
-    let disconnected_nodes: Vec<_> = graph.graph.node_indices()
         .filter(|idx| !visited.contains(idx))
         .collect();
 
-    let mut offset_y = start_y + 100.0;
-    for idx in disconnected_nodes {
-        let position = snap_to_grid(start_x + 200.0, offset_y);
-        graph.set_station_position(idx, position);
-        offset_y += STATION_SPACING;
-    }
+    if !disconnected.is_empty() {
+        let mut offset_x = start_x + 400.0;
 
-    // Interpolate positions for junctions without explicit positions
-    let junction_indices: Vec<_> = graph.graph.node_indices()
-        .filter(|&idx| graph.is_junction(idx))
-        .collect();
+        for &node in &disconnected {
+            if visited.contains(&node) {
+                continue;
+            }
 
-    for junction_idx in junction_indices {
-        graph.interpolate_junction_position(junction_idx, false);
+            // Find longest path in this disconnected component
+            let component_spine = find_longest_path_from(graph, node, &visited);
+
+            for (i, &comp_node) in component_spine.iter().enumerate() {
+                let offset = i as f64 * BASE_STATION_SPACING;
+                let pos = snap_to_grid(
+                    offset_x,
+                    start_y + spine_direction.sin() * offset,
+                );
+                graph.set_station_position(comp_node, pos);
+                visited.insert(comp_node);
+            }
+
+            offset_x += 400.0;
+        }
     }
 }
 
-/// Smart adjustment: preserves layout structure but fixes spacing, angles, and snaps to grid
-///
-/// This function adjusts an existing layout without resetting positions. It:
-/// - Snaps all positions to grid
-/// - Fixes spacing between stations to maintain `STATION_SPACING`
-/// - Preserves branch angles from user adjustments
-/// - Snaps angles to 45-degree increments
-///
-/// # Panics
-///
-/// Panics if a positioned start node exists but has no position (which should be impossible).
-pub fn adjust_layout(graph: &mut RailwayGraph) {
-    use crate::models::Junctions;
-    use std::collections::HashMap;
-
-    // First pass: snap all existing positions to grid
-    let positioned_nodes: Vec<_> = graph.graph.node_indices()
-        .filter_map(|idx| {
-            graph.get_station_position(idx).map(|pos| (idx, pos))
-        })
-        .collect();
-
-    for (idx, pos) in positioned_nodes {
-        let snapped = snap_to_grid(pos.0, pos.1);
-        graph.set_station_position(idx, snapped);
-    }
-
-    // Infer branch angles from current layout for nodes that have positions
-    let mut inferred_angles: HashMap<(usize, usize), f64> = HashMap::new();
-
-    for idx in graph.graph.node_indices() {
-        if let Some(parent_pos) = graph.get_station_position(idx) {
-            // Get all neighbors
-            let neighbors: Vec<_> = graph.graph.edges(idx)
-                .map(|e| e.target())
-                .chain(graph.graph.edges_directed(idx, Direction::Incoming).map(|e| e.source()))
-                .collect();
-
-            for neighbor in neighbors {
-                // Skip if we already have a saved branch angle
-                if graph.branch_angles.contains_key(&(idx.index(), neighbor.index())) {
-                    continue;
-                }
-
-                if let Some(neighbor_pos) = graph.get_station_position(neighbor) {
-                    let dx = neighbor_pos.0 - parent_pos.0;
-                    let dy = neighbor_pos.1 - parent_pos.1;
-                    let angle = dy.atan2(dx);
-
-                    // Snap to nearest 45-degree angle
-                    let angle_deg = angle.to_degrees();
-                    let snapped_angle_deg = (angle_deg / 45.0).round() * 45.0;
-                    let snapped_angle = snapped_angle_deg.to_radians();
-
-                    inferred_angles.insert((idx.index(), neighbor.index()), snapped_angle);
+/// Find if a node has any connections to already-placed nodes (excluding current)
+fn find_placed_target(
+    graph: &RailwayGraph,
+    node: NodeIndex,
+    exclude: NodeIndex,
+    visited: &HashSet<NodeIndex>,
+) -> Option<(f64, f64)> {
+    for neighbor in graph.graph.neighbors_undirected(node) {
+        if neighbor != exclude && visited.contains(&neighbor) {
+            if let Some(pos) = graph.get_station_position(neighbor) {
+                if pos != (0.0, 0.0) {
+                    return Some(pos);
                 }
             }
         }
     }
-
-    // Merge inferred angles with saved branch angles (saved angles take precedence)
-    for (key, angle) in inferred_angles {
-        graph.branch_angles.entry(key).or_insert(angle);
-    }
-
-    // Find starting node (prefer endpoints with positions)
-    let start_node = graph.graph.node_indices()
-        .find(|&idx| {
-            let neighbor_count = graph.graph.edges(idx).count()
-                + graph.graph.edges_directed(idx, Direction::Incoming).count();
-            neighbor_count == 1 && graph.get_station_position(idx).is_some()
-        })
-        .or_else(|| {
-            // Fall back to any positioned node
-            graph.graph.node_indices()
-                .find(|&idx| graph.get_station_position(idx).is_some())
-        });
-
-    let Some(start_node) = start_node else {
-        return; // No positioned nodes, nothing to adjust
-    };
-
-    let start_pos = graph.get_station_position(start_node).expect("Start node should have position");
-
-    // Recursively adjust positions starting from the start node
-    let mut visited = HashSet::new();
-    adjust_from_node(graph, start_node, start_pos, &mut visited);
-
-    // Handle any disconnected positioned components
-    let unvisited_positioned: Vec<_> = graph.graph.node_indices()
-        .filter(|&idx| !visited.contains(&idx) && graph.get_station_position(idx).is_some())
-        .collect();
-
-    for idx in unvisited_positioned {
-        let pos = graph.get_station_position(idx).expect("Node was filtered to have position");
-        visited.clear(); // Reset visited for this component
-        adjust_from_node(graph, idx, pos, &mut visited);
-    }
-
-    // Interpolate positions for junctions
-    let junction_indices: Vec<_> = graph.graph.node_indices()
-        .filter(|&idx| graph.is_junction(idx))
-        .collect();
-
-    for junction_idx in junction_indices {
-        graph.interpolate_junction_position(junction_idx, false);
-    }
+    None
 }
 
-/// Recursively adjust node positions from a starting node
-fn adjust_from_node(
-    graph: &mut RailwayGraph,
-    current_node: NodeIndex,
-    position: (f64, f64),
-    visited: &mut HashSet<NodeIndex>,
-) {
-    if visited.contains(&current_node) {
-        return;
-    }
+/// Find longest path starting from a specific node, avoiding already visited nodes
+fn find_longest_path_from(
+    graph: &RailwayGraph,
+    start: NodeIndex,
+    global_visited: &HashSet<NodeIndex>,
+) -> Vec<NodeIndex> {
+    let mut longest_path = Vec::new();
+    let mut visited = global_visited.clone();
+    let mut current_path = Vec::new();
 
-    let snapped_position = snap_to_grid(position.0, position.1);
-    graph.set_station_position(current_node, snapped_position);
-    visited.insert(current_node);
+    dfs_longest_path_excluding(graph, start, &mut visited, &mut current_path, &mut longest_path);
 
-    // Get all unvisited neighbors with their track counts
-    let mut neighbors_with_tracks: Vec<(NodeIndex, usize)> = Vec::new();
-
-    for edge in graph.graph.edges(current_node) {
-        let target = edge.target();
-        if !visited.contains(&target) {
-            let track_count = edge.weight().tracks.len();
-            neighbors_with_tracks.push((target, track_count));
-        }
-    }
-
-    for edge in graph.graph.edges_directed(current_node, Direction::Incoming) {
-        let source = edge.source();
-        if !visited.contains(&source) {
-            let track_count = edge.weight().tracks.len();
-            neighbors_with_tracks.push((source, track_count));
-        }
-    }
-
-    if neighbors_with_tracks.is_empty() {
-        return;
-    }
-
-    // Sort by track count (descending)
-    neighbors_with_tracks.sort_by(|a, b| b.1.cmp(&a.1));
-
-    // For each neighbor, determine its angle from saved branch_angles or current position
-    for (neighbor, _) in neighbors_with_tracks {
-        let angle = if let Some(&saved_angle) = graph.branch_angles.get(&(current_node.index(), neighbor.index())) {
-            saved_angle
-        } else if let Some(neighbor_pos) = graph.get_station_position(neighbor) {
-            // Infer from current position and snap to 45 degrees
-            let dx = neighbor_pos.0 - snapped_position.0;
-            let dy = neighbor_pos.1 - snapped_position.1;
-            let current_angle = dy.atan2(dx);
-            let angle_deg = current_angle.to_degrees();
-            let snapped_angle_deg = (angle_deg / 45.0).round() * 45.0;
-            snapped_angle_deg.to_radians()
-        } else {
-            // No position, skip this neighbor (will be positioned by apply_layout if needed)
-            continue;
-        };
-
-        // Calculate new position at proper distance and angle
-        let new_pos = (
-            snapped_position.0 + angle.cos() * STATION_SPACING,
-            snapped_position.1 + angle.sin() * STATION_SPACING,
-        );
-
-        adjust_from_node(graph, neighbor, new_pos, visited);
-    }
+    longest_path
 }
 
-fn layout_line(
-    graph: &mut RailwayGraph,
-    current_node: NodeIndex,
-    position: (f64, f64),
-    direction: f64,
-    spacing: f64,
+/// DFS helper that respects global visited set
+fn dfs_longest_path_excluding(
+    graph: &RailwayGraph,
+    current: NodeIndex,
     visited: &mut HashSet<NodeIndex>,
-    available_directions: &mut Vec<f64>,
+    current_path: &mut Vec<NodeIndex>,
+    longest_path: &mut Vec<NodeIndex>,
 ) {
-    if visited.contains(&current_node) {
+    if visited.contains(&current) {
         return;
     }
 
-    // Set position for current node (snapped to grid)
-    let snapped_position = snap_to_grid(position.0, position.1);
-    graph.set_station_position(current_node, snapped_position);
-    visited.insert(current_node);
+    visited.insert(current);
+    current_path.push(current);
 
-    // Get all unvisited neighbors with their track counts (both incoming and outgoing edges)
-    let mut neighbors_with_tracks: Vec<(NodeIndex, usize)> = Vec::new();
+    if current_path.len() > longest_path.len() {
+        *longest_path = current_path.clone();
+    }
 
-    // Outgoing edges
-    for edge in graph.graph.edges(current_node) {
-        let target = edge.target();
-        if !visited.contains(&target) {
-            let track_count = edge.weight().tracks.len();
-            neighbors_with_tracks.push((target, track_count));
+    for neighbor in graph.graph.neighbors_undirected(current) {
+        if !visited.contains(&neighbor) {
+            dfs_longest_path_excluding(graph, neighbor, visited, current_path, longest_path);
         }
     }
 
-    // Incoming edges (treat graph as undirected for layout purposes)
-    for edge in graph.graph.edges_directed(current_node, Direction::Incoming) {
-        let source = edge.source();
-        if !visited.contains(&source) {
-            let track_count = edge.weight().tracks.len();
-            neighbors_with_tracks.push((source, track_count));
-        }
-    }
+    current_path.pop();
+    visited.remove(&current);
+}
 
-    if neighbors_with_tracks.is_empty() {
-        return;
-    }
+pub fn adjust_layout(_graph: &mut RailwayGraph) {
+    // TODO: Implement smart adjustment
+}
 
-    // Sort neighbors by track count (descending) - edges with more tracks should continue straight
-    neighbors_with_tracks.sort_by(|a, b| b.1.cmp(&a.1));
+/// Snap station to grid when manually dragging (with branch reorientation)
+pub fn snap_to_angle(graph: &mut RailwayGraph, station_idx: NodeIndex, x: f64, y: f64) {
+    let snapped = snap_to_grid(x, y);
+    graph.set_station_position(station_idx, snapped);
+}
 
-    // Separate neighbors into those with saved angles and those without
-    let mut neighbors_with_angles: Vec<(NodeIndex, f64)> = Vec::new();
-    let mut neighbors_without_angles: Vec<(NodeIndex, usize)> = Vec::new();
-
-    for &(neighbor, track_count) in &neighbors_with_tracks {
-        if let Some(&saved_angle) = graph.branch_angles.get(&(current_node.index(), neighbor.index())) {
-            neighbors_with_angles.push((neighbor, saved_angle));
-        } else {
-            neighbors_without_angles.push((neighbor, track_count));
-        }
-    }
-
-    // Layout neighbors with saved angles first using their saved directions
-    for (neighbor, saved_angle) in neighbors_with_angles {
-        let neighbor_pos = (
-            position.0 + saved_angle.cos() * spacing,
-            position.1 + saved_angle.sin() * spacing,
-        );
-        layout_line(
-            graph,
-            neighbor,
-            neighbor_pos,
-            saved_angle,
-            spacing,
-            visited,
-            available_directions,
-        );
-    }
-
-    // For neighbors without saved angles, first (highest track count) continues in same direction (main line), rest are branches
-    if !neighbors_without_angles.is_empty() {
-        let (main_neighbor, _) = neighbors_without_angles[0];
-        let next_pos = (
-            position.0 + direction.cos() * spacing,
-            position.1 + direction.sin() * spacing,
-        );
-        layout_line(
-            graph,
-            main_neighbor,
-            next_pos,
-            direction,
-            spacing,
-            visited,
-            available_directions,
-        );
-
-        // Additional neighbors are branches - pick from available directions
-        for &(branch_neighbor, _) in neighbors_without_angles.iter().skip(1) {
-            if let Some(branch_dir) = available_directions.pop() {
-                let branch_pos = (
-                    position.0 + branch_dir.cos() * spacing,
-                    position.1 + branch_dir.sin() * spacing,
-                );
-
-                layout_line(
-                    graph,
-                    branch_neighbor,
-                    branch_pos,
-                    branch_dir,
-                    spacing,
-                    visited,
-                    available_directions,
-                );
-            }
-        }
-    }
+/// Snap station to grid when manually dragging (along branch)
+pub fn snap_station_along_branch(graph: &mut RailwayGraph, station_idx: NodeIndex, x: f64, y: f64) {
+    let snapped = snap_to_grid(x, y);
+    graph.set_station_position(station_idx, snapped);
 }

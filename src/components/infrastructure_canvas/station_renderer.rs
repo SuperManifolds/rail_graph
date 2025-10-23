@@ -9,7 +9,7 @@ type TrackSegment = ((f64, f64), (f64, f64));
 
 const NODE_RADIUS: f64 = 8.0;
 const LABEL_OFFSET: f64 = 12.0;
-const JUNCTION_LABEL_OFFSET: f64 = 28.0; // Larger offset for junctions to clear connection lines
+const JUNCTION_LABEL_OFFSET: f64 = 12.0; // Same as stations
 const CHAR_WIDTH_ESTIMATE: f64 = 7.5;
 const STATION_COLOR: &str = "#4a9eff";
 const PASSING_LOOP_COLOR: &str = "#888";
@@ -595,10 +595,34 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
 
     let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
 
-    // Process each branch
-    for branch_nodes in branches {
+    // First pass: process all stations (excluding junctions from branches)
+    for branch_nodes in &branches {
+        let station_only_nodes: Vec<NodeIndex> = branch_nodes.iter()
+            .filter(|idx| !graph.is_junction(**idx))
+            .copied()
+            .collect();
+
+        if !station_only_nodes.is_empty() {
+            process_node_group(
+                &station_only_nodes,
+                &node_metadata,
+                &node_positions,
+                &track_segments,
+                font_size,
+                &mut label_positions,
+            );
+        }
+    }
+
+    // Second pass: process each junction individually to find best position
+    let junction_nodes: Vec<NodeIndex> = node_positions.iter()
+        .filter(|(idx, _, _)| graph.is_junction(*idx))
+        .map(|(idx, _, _)| *idx)
+        .collect();
+
+    for junction_idx in junction_nodes {
         process_node_group(
-            &branch_nodes,
+            &[junction_idx],
             &node_metadata,
             &node_positions,
             &track_segments,
@@ -642,9 +666,34 @@ pub fn draw_stations(
     let branches = identify_branches(graph, &node_positions);
     let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
 
-    for branch_nodes in branches {
+    // First pass: process all stations (excluding junctions from branches)
+    for branch_nodes in &branches {
+        let station_only_nodes: Vec<NodeIndex> = branch_nodes.iter()
+            .filter(|idx| !graph.is_junction(**idx))
+            .copied()
+            .collect();
+
+        if !station_only_nodes.is_empty() {
+            process_node_group(
+                &station_only_nodes,
+                &node_metadata,
+                &node_positions,
+                &track_segments,
+                font_size,
+                &mut label_positions,
+            );
+        }
+    }
+
+    // Second pass: process each junction individually to find best position
+    let junction_nodes: Vec<NodeIndex> = node_positions.iter()
+        .filter(|(idx, _, _)| graph.is_junction(*idx))
+        .map(|(idx, _, _)| *idx)
+        .collect();
+
+    for junction_idx in junction_nodes {
         process_node_group(
-            &branch_nodes,
+            &[junction_idx],
             &node_metadata,
             &node_positions,
             &track_segments,
