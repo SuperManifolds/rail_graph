@@ -93,11 +93,14 @@ pub fn trigger_download(bytes: &[u8], filename: &str) -> Result<(), String> {
 
 /// Generate a new project with fresh IDs and timestamps
 #[must_use]
-pub fn regenerate_project_ids(mut project: Project) -> Project {
+pub fn regenerate_project_ids(mut project: Project, new_name: Option<String>) -> Project {
     let now = chrono::Utc::now().to_rfc3339();
     project.metadata.id = uuid::Uuid::new_v4().to_string();
     project.metadata.created_at.clone_from(&now);
     project.metadata.updated_at = now;
+    if let Some(name) = new_name {
+        project.metadata.name = name;
+    }
     project
 }
 
@@ -154,10 +157,21 @@ mod tests {
         let original_id = original.metadata.id.clone();
         let original_created = original.metadata.created_at.clone();
 
-        let prepared = regenerate_project_ids(original.clone());
+        let prepared = regenerate_project_ids(original.clone(), None);
 
         assert_ne!(prepared.metadata.id, original_id);
         assert_ne!(prepared.metadata.created_at, original_created);
         assert_eq!(prepared.metadata.name, original.metadata.name);
+    }
+
+    #[test]
+    fn test_regenerate_project_ids_with_new_name() {
+        let original = Project::new_with_name("Original".to_string());
+        let new_name = "Imported".to_string();
+
+        let prepared = regenerate_project_ids(original.clone(), Some(new_name.clone()));
+
+        assert_eq!(prepared.metadata.name, new_name);
+        assert_ne!(prepared.metadata.name, original.metadata.name);
     }
 }

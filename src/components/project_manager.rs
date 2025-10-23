@@ -402,7 +402,7 @@ pub fn ProjectManager(
     });
 
     // Process imported project file
-    let process_import = move |bytes: Vec<u8>| {
+    let process_import = move |bytes: Vec<u8>, filename: Option<String>| {
         let project = match storage::deserialize_project_from_bytes(&bytes) {
             Ok(p) => p,
             Err(e) => {
@@ -411,7 +411,7 @@ pub fn ProjectManager(
             }
         };
 
-        let project = storage::regenerate_project_ids(project);
+        let project = storage::regenerate_project_ids(project, filename);
 
         spawn_local(async move {
             if let Err(e) = storage.save_project(&project).await {
@@ -433,12 +433,19 @@ pub fn ProjectManager(
         let Some(files) = input.files() else { return };
         let Some(file) = files.get(0) else { return };
 
+        // Extract filename without extension
+        let filename_without_ext = std::path::Path::new(&file.name())
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(String::from);
+
         spawn_local(async move {
             let Ok(reader) = web_sys::FileReader::new() else {
                 set_error_message.set(Some("Failed to create FileReader".to_string()));
                 return;
             };
             let reader_clone = reader.clone();
+            let filename_clone = filename_without_ext.clone();
 
             let onload = Closure::wrap(Box::new(move |_: web_sys::Event| {
                 let Ok(result) = reader_clone.result() else {
@@ -454,7 +461,7 @@ pub fn ProjectManager(
                 let uint8_array = js_sys::Uint8Array::new(&array_buffer);
                 let bytes = uint8_array.to_vec();
 
-                process_import(bytes);
+                process_import(bytes, filename_clone.clone());
             }) as Box<dyn FnMut(_)>);
 
             reader.set_onload(Some(onload.as_ref().unchecked_ref()));
