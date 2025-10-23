@@ -2,11 +2,13 @@
 
 ## Bug Fixes
 - Fixed changelog window not expanding when resized (was maintaining fixed internal height)
+- Fixed help text in train number format to show correct single brace syntax
 
 ## Improvements
-- Line thickness slider now adjusts in increments of 0.25 
+- Line thickness slider now adjusts in increments of 0.25
 - Replaced custom markdown parser with pulldown-cmark for proper CommonMark support in changelog
 - Added proper styling for tables, code blocks, links, and blockquotes in changelog display
+- Increased train number format input width for better visibility
 
 # v0.1.2 - 2025-10-22
 

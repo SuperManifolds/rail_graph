@@ -16,6 +16,7 @@ pub fn AutoScheduleForm(
             <label>"Train Number Format"</label>
             <input
                 type="text"
+                class="train-number-format-input"
                 placeholder="e.g., {line} {seq:04}"
                 value=move || edited_line.get().map(|l| l.auto_train_number_format).unwrap_or_default()
                 on:input=move |ev| {
@@ -26,7 +27,7 @@ pub fn AutoScheduleForm(
                     }
                 }
             />
-            <small class="help-text">"Format: {{line}} for line ID, {{seq:04}} for sequence number"</small>
+            <small class="help-text">"Format: {line} for line ID, {seq:04} for sequence number"</small>
         </div>
 
         <div class="form-group">

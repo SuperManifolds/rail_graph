@@ -43,6 +43,10 @@
             font-family: monospace;
         }
 
+        input[type="text"].train-number-format-input {
+            width: 250px;
+        }
+
         input[type="time"] {
             width: 120px;
         }
