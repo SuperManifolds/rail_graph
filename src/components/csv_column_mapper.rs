@@ -197,6 +197,13 @@ pub fn CsvColumnMapper(
 
     view! {
         <div class="csv-column-mapper">
+            <div class="mapper-help">
+                <a href="https://github.com/SuperManifolds/rail_graph/blob/main/docs/csv-import-guide.md" target="_blank" rel="noopener noreferrer">
+                    <i class="fa-solid fa-circle-question"></i>
+                    " CSV Import Guide"
+                </a>
+            </div>
+
             <GroupingControls
                 local_config=local_config
                 update_pattern_repeat=update_pattern_repeat
