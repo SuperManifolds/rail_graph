@@ -56,64 +56,68 @@ pub fn AutoScheduleForm(
             />
         </div>
 
-        <div class="form-group">
-            <label>"First Departure"</label>
-            <TimeInput
-                label=""
-                value=Signal::derive(move || edited_line.get().map(|l| l.first_departure).unwrap_or_default())
-                default_time="05:00"
-                on_change=Box::new(move |time| {
-                    if let Some(mut updated_line) = edited_line.get_untracked() {
-                        updated_line.first_departure = time;
-                        on_update.call(updated_line);
-                    }
-                })
-            />
+        <div class="time-fields-row">
+            <div class="form-group">
+                <label>"First Departure"</label>
+                <TimeInput
+                    label=""
+                    value=Signal::derive(move || edited_line.get().map(|l| l.first_departure).unwrap_or_default())
+                    default_time="05:00"
+                    on_change=Box::new(move |time| {
+                        if let Some(mut updated_line) = edited_line.get_untracked() {
+                            updated_line.first_departure = time;
+                            on_update.call(updated_line);
+                        }
+                    })
+                />
+            </div>
+
+            <div class="form-group">
+                <label>"Last Departure Before"</label>
+                <TimeInput
+                    label=""
+                    value=Signal::derive(move || edited_line.get().map(|l| l.last_departure).unwrap_or_default())
+                    default_time="22:00"
+                    on_change=Box::new(move |time| {
+                        if let Some(mut updated_line) = edited_line.get_untracked() {
+                            updated_line.last_departure = time;
+                            on_update.call(updated_line);
+                        }
+                    })
+                />
+            </div>
         </div>
 
-        <div class="form-group">
-            <label>"Return First Departure"</label>
-            <TimeInput
-                label=""
-                value=Signal::derive(move || edited_line.get().map(|l| l.return_first_departure).unwrap_or_default())
-                default_time="06:00"
-                on_change=Box::new(move |time| {
-                    if let Some(mut updated_line) = edited_line.get_untracked() {
-                        updated_line.return_first_departure = time;
-                        on_update.call(updated_line);
-                    }
-                })
-            />
-        </div>
+        <div class="time-fields-row">
+            <div class="form-group">
+                <label>"Return First Departure"</label>
+                <TimeInput
+                    label=""
+                    value=Signal::derive(move || edited_line.get().map(|l| l.return_first_departure).unwrap_or_default())
+                    default_time="06:00"
+                    on_change=Box::new(move |time| {
+                        if let Some(mut updated_line) = edited_line.get_untracked() {
+                            updated_line.return_first_departure = time;
+                            on_update.call(updated_line);
+                        }
+                    })
+                />
+            </div>
 
-        <div class="form-group">
-            <label>"Last Departure Before"</label>
-            <TimeInput
-                label=""
-                value=Signal::derive(move || edited_line.get().map(|l| l.last_departure).unwrap_or_default())
-                default_time="22:00"
-                on_change=Box::new(move |time| {
-                    if let Some(mut updated_line) = edited_line.get_untracked() {
-                        updated_line.last_departure = time;
-                        on_update.call(updated_line);
-                    }
-                })
-            />
-        </div>
-
-        <div class="form-group">
-            <label>"Return Last Departure Before"</label>
-            <TimeInput
-                label=""
-                value=Signal::derive(move || edited_line.get().map(|l| l.return_last_departure).unwrap_or_default())
-                default_time="22:00"
-                on_change=Box::new(move |time| {
-                    if let Some(mut updated_line) = edited_line.get_untracked() {
-                        updated_line.return_last_departure = time;
-                        on_update.call(updated_line);
-                    }
-                })
-            />
+            <div class="form-group">
+                <label>"Return Last Departure Before"</label>
+                <TimeInput
+                    label=""
+                    value=Signal::derive(move || edited_line.get().map(|l| l.return_last_departure).unwrap_or_default())
+                    default_time="22:00"
+                    on_change=Box::new(move |time| {
+                        if let Some(mut updated_line) = edited_line.get_untracked() {
+                            updated_line.return_last_departure = time;
+                            on_update.call(updated_line);
+                        }
+                    })
+                />
+            </div>
         </div>
     }
 }

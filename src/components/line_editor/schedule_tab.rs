@@ -51,14 +51,14 @@ pub fn ScheduleTab(
                     />
                 </Show>
 
-                <Show when=move || matches!(edited_line.get().map(|l| l.schedule_mode).unwrap_or_default(), ScheduleMode::Manual)>
+                <div class="manual-departures-section">
                     <ManualDeparturesList
                         edited_line=edited_line
                         set_edited_line=set_edited_line
                         graph=graph
                         on_save=on_save.get_value()
                     />
-                </Show>
+                </div>
             </div>
         </TabPanel>
     }
