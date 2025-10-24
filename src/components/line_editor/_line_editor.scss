@@ -138,6 +138,22 @@
         }
     }
 
+    .time-fields-row {
+        display: flex;
+        gap: 1.5rem;
+        align-items: flex-start;
+
+        > .form-group {
+            flex: 0 0 200px;
+        }
+    }
+
+    .manual-departures-section {
+        border-top: 1px solid #333;
+        padding-top: 1.5rem;
+        margin-top: 0.5rem;
+    }
+
     .manual-departures-list {
         display: flex;
         flex-direction: column;

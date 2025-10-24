@@ -4,6 +4,7 @@
 - Fixed station labels not appearing in infrastructure view when station has no connections
 
 ## Improvements
+- Manual departures section is now always visible in line editor, even when automatic scheduling is enabled, making the feature more discoverable and allowing hybrid scheduling
 - Added customizable keyboard shortcuts - shortcuts can now be rebound in Settings > Keyboard Shortcuts with conflict detection and platform-specific defaults (Cmd on Mac, Ctrl on Windows/Linux)
 - Added 'Add Connection' section to station editor allowing you to easily connect stations without manually drawing tracks
 - Windows now remember their last position and reopen at that position (position is unique per window type: station editor, track editor, etc.)
