@@ -1,7 +1,7 @@
-use leptos::{component, view, IntoView, create_signal, SignalGet, SignalSet, Signal};
 use crate::components::modal_overlay::ModalOverlay;
-use crate::components::window::Window;
 use crate::components::report_issue_button::ReportIssueButton;
+use crate::components::window::Window;
+use leptos::{component, create_signal, view, IntoView, Signal, SignalGet, SignalSet};
 
 const DISCLAIMER_KEY: &str = "rail_graph_disclaimer_accepted";
 
@@ -24,7 +24,7 @@ pub fn AlphaDisclaimer() -> impl IntoView {
             >
                 <div class="disclaimer-content">
                     <div class="disclaimer-warning">
-                        <p><strong>"This is an alpha version of the Railway Time Graph application."</strong></p>
+                        <p><strong>"This is an alpha version of the RailGraph."</strong></p>
                         <p>"You may lose project data. Project file compatibility is not guaranteed between versions."</p>
                         <p>"Please save backups of your work regularly using the export functionality."</p>
                     </div>
@@ -52,8 +52,12 @@ pub fn AlphaDisclaimer() -> impl IntoView {
 }
 
 fn should_show_disclaimer() -> bool {
-    let Some(window) = web_sys::window() else { return false };
-    let Ok(Some(storage)) = window.local_storage() else { return false };
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let Ok(Some(storage)) = window.local_storage() else {
+        return false;
+    };
 
     match storage.get_item(DISCLAIMER_KEY) {
         Ok(Some(value)) => value != "true",
@@ -62,8 +66,12 @@ fn should_show_disclaimer() -> bool {
 }
 
 fn mark_disclaimer_accepted() {
-    let Some(window) = web_sys::window() else { return };
-    let Ok(Some(storage)) = window.local_storage() else { return };
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Ok(Some(storage)) = window.local_storage() else {
+        return;
+    };
 
     let _ = storage.set_item(DISCLAIMER_KEY, "true");
 }

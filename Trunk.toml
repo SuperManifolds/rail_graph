@@ -8,5 +8,11 @@ port = 8080
 open = false
 
 [watch]
-watch = ["src", "style", "index.html", "test-data"]
+watch = ["src", "style", "index.html", "test-data", "static"]
 ignore = ["dist"]
+
+[[hooks]]
+stage = "post_build"
+command = "sh"
+command_arguments = ["scripts/generate-manifest.sh"]
+
