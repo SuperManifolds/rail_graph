@@ -458,7 +458,7 @@ fn create_route_segments(
             .map_or(Duration::seconds(0), |&w| Duration::seconds(w));
 
         // Select a track compatible with our travel direction
-        let track_index = super::shared::select_track_for_direction(graph, *edge, traveling_backward);
+        let track_index = graph.select_track_for_direction(*edge, traveling_backward);
 
         route_segments.push(RouteSegment {
             edge_index: edge.index(),

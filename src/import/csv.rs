@@ -915,7 +915,7 @@ fn generate_return_route(
         let edge_idx = petgraph::graph::EdgeIndex::new(forward_segment.edge_index);
 
         // Select track compatible with backward travel direction
-        let return_track_index = super::shared::select_track_for_direction(graph, edge_idx, true);
+        let return_track_index = graph.select_track_for_direction(edge_idx, true);
 
         // Wait time should be from the previous forward segment (or default for last return segment)
         let return_wait_time = if i > 0 {
@@ -969,7 +969,7 @@ fn create_pathfound_segments(
     let time_per_segment = travel_time / (segment_count as i32);
 
     path.iter().enumerate().map(|(seg_idx, edge_idx)| {
-        let track_index = super::shared::select_track_for_direction(graph, *edge_idx, false);
+        let track_index = graph.select_track_for_direction(*edge_idx, false);
         let is_last_segment = seg_idx == segment_count - 1;
 
         let (from_node, to_node) = graph.graph.edge_endpoints(*edge_idx)
@@ -1255,7 +1255,7 @@ fn build_routes(
 
                 // Select appropriate track for forward travel direction
                 // If CSV specifies a track number, validate it's appropriate for forward direction
-                let track_index = super::shared::select_track_for_direction(graph, edge_idx, false);
+                let track_index = graph.select_track_for_direction(edge_idx, false);
 
                 route.push(RouteSegment {
                     edge_index: edge_idx.index(),

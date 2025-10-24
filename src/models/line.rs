@@ -301,14 +301,53 @@ impl Line {
         }
     }
 
+    /// Validate and fix all track indices in both forward and return routes
+    /// Only corrects segments where the track index is out of bounds or incompatible with route direction
+    /// Returns the number of segments that were corrected
+    pub fn validate_and_fix_track_indices(&mut self, graph: &RailwayGraph) -> usize {
+        use petgraph::stable_graph::EdgeIndex;
+
+        let mut fixed_count = 0;
+
+        // Fix forward route (traveling forward)
+        for segment in &mut self.forward_route {
+            let edge_idx = EdgeIndex::new(segment.edge_index);
+            let track_segment = graph.get_track(edge_idx);
+
+            // Check if current track is invalid (out of bounds or incompatible direction)
+            if Self::is_track_incompatible(track_segment, segment.track_index, true) {
+                let correct_track = graph.select_track_for_direction(edge_idx, false);
+                segment.track_index = correct_track;
+                fixed_count += 1;
+            }
+        }
+
+        // Fix return route (traveling backward)
+        for segment in &mut self.return_route {
+            let edge_idx = EdgeIndex::new(segment.edge_index);
+            let track_segment = graph.get_track(edge_idx);
+
+            // Check if current track is invalid (out of bounds or incompatible direction)
+            if Self::is_track_incompatible(track_segment, segment.track_index, false) {
+                let correct_track = graph.select_track_for_direction(edge_idx, true);
+                segment.track_index = correct_track;
+                fixed_count += 1;
+            }
+        }
+
+        fixed_count
+    }
+
     /// Check if a track is incompatible with the route direction
+    /// Returns true if track doesn't exist or has incompatible direction
     fn is_track_incompatible(track_segment: Option<&TrackSegment>, track_index: usize, is_forward: bool) -> bool {
         let Some(ts) = track_segment else {
             return false;
         };
 
         let Some(track) = ts.tracks.get(track_index) else {
-            return false;
+            // Track index is out of bounds - definitely incompatible
+            return true;
         };
 
         if is_forward {

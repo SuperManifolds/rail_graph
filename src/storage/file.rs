@@ -41,8 +41,13 @@ pub fn deserialize_project_from_bytes(bytes: &[u8]) -> Result<Project, String> {
 
     // Deserialize project
     let project_bytes = &bytes[4..];
-    rmp_serde::from_slice(project_bytes)
-        .map_err(|e| format!("Failed to parse project: {e}"))
+    let mut project: Project = rmp_serde::from_slice(project_bytes)
+        .map_err(|e| format!("Failed to parse project: {e}"))?;
+
+    // Validate and fix any invalid track indices in all lines
+    project.fix_invalid_track_indices();
+
+    Ok(project)
 }
 
 /// Create a download filename for a project

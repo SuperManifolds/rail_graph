@@ -114,28 +114,6 @@ pub fn calculate_duration_with_wraparound(from_seconds: i64, to_seconds: i64) ->
     }
 }
 
-/// Select appropriate track index for a given travel direction
-/// Returns the index of the first track compatible with the travel direction
-/// Falls back to track 0 if no compatible track is found
-#[must_use]
-pub fn select_track_for_direction(
-    graph: &RailwayGraph,
-    edge_idx: EdgeIndex,
-    traveling_backward: bool,
-) -> usize {
-    graph.graph.edge_weight(edge_idx)
-        .and_then(|track_segment| {
-            track_segment.tracks.iter().position(|t| {
-                if traveling_backward {
-                    matches!(t.direction, TrackDirection::Backward | TrackDirection::Bidirectional)
-                } else {
-                    matches!(t.direction, TrackDirection::Forward | TrackDirection::Bidirectional)
-                }
-            })
-        })
-        .unwrap_or(0)
-}
-
 /// Ensure an edge has enough tracks for the given track number (1-indexed)
 /// If `track_number` is Some(N), ensures at least N tracks exist
 /// Recreates tracks using `create_tracks_with_count` if expansion is needed
