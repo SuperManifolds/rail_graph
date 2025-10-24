@@ -1,5 +1,8 @@
 # Unreleased
 
+## Bug Fixes
+- Fixed station labels not appearing in infrastructure view when station has no connections
+
 ## Improvements
 - Added customizable keyboard shortcuts - shortcuts can now be rebound in Settings > Keyboard Shortcuts with conflict detection and platform-specific defaults (Cmd on Mac, Ctrl on Windows/Linux)
 - Added 'Add Connection' section to station editor allowing you to easily connect stations without manually drawing tracks

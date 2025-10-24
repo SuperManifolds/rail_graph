@@ -431,6 +431,14 @@ fn identify_branches(graph: &RailwayGraph, node_positions: &[(NodeIndex, (f64, f
         }
     }
 
+    // Handle any isolated nodes with no connections
+    for (idx, _, _) in node_positions {
+        if !adjacency.contains_key(idx) {
+            // This node has no connections at all
+            branches.push(vec![*idx]);
+        }
+    }
+
     // Handle any isolated linear segments (no junctions)
     for (idx, _, _) in node_positions {
         let Some(neighbors) = adjacency.get(idx) else { continue };
