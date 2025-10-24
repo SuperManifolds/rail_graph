@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Bug Fixes
+- Fixed route creation assigning all segments to track 0 instead of selecting appropriate tracks based on route direction - existing projects will be automatically fixed on load
 - Fixed station labels not appearing in infrastructure view when station has no connections
 - Fixed new project creation including data from the current project
 

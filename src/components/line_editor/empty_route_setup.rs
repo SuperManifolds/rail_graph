@@ -74,9 +74,13 @@ fn create_route_between_stations(
         let origin_platform = graph.get_default_platform_for_arrival(*edge, false, source_platform_count, handedness);
         let destination_platform = graph.get_default_platform_for_arrival(*edge, true, target_platform_count, handedness);
 
+        // Select track compatible with route direction
+        let traveling_backward = matches!(direction, RouteDirection::Return);
+        let track_index = graph.select_track_for_direction(*edge, traveling_backward);
+
         let segment = RouteSegment {
             edge_index: edge.index(),
-            track_index: 0,
+            track_index,
             origin_platform,
             destination_platform,
             duration: None,

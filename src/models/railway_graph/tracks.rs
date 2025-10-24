@@ -27,6 +27,15 @@ pub trait Tracks {
     /// * `platform_count` - Number of platforms at the arrival station
     /// * `handedness` - Track handedness (right-hand or left-hand traffic)
     fn get_default_platform_for_arrival(&self, edge_idx: EdgeIndex, arriving_at_target: bool, platform_count: usize, handedness: TrackHandedness) -> usize;
+
+    /// Select appropriate track index for a given travel direction
+    /// Returns the index of the first track compatible with the travel direction
+    /// Falls back to track 0 if no compatible track is found
+    ///
+    /// # Arguments
+    /// * `edge_idx` - The edge being traveled on
+    /// * `traveling_backward` - true for backward/return direction, false for forward direction
+    fn select_track_for_direction(&self, edge_idx: EdgeIndex, traveling_backward: bool) -> usize;
 }
 
 impl Tracks for RailwayGraph {
@@ -118,6 +127,22 @@ impl Tracks for RailwayGraph {
             // Left-hand: forward trains use left (first) platform
             (TrackHandedness::RightHand, false) | (TrackHandedness::LeftHand, true) => 0,
         }
+    }
+
+    fn select_track_for_direction(&self, edge_idx: EdgeIndex, traveling_backward: bool) -> usize {
+        use crate::models::track::TrackDirection;
+
+        self.graph.edge_weight(edge_idx)
+            .and_then(|track_segment| {
+                track_segment.tracks.iter().position(|t| {
+                    if traveling_backward {
+                        matches!(t.direction, TrackDirection::Backward | TrackDirection::Bidirectional)
+                    } else {
+                        matches!(t.direction, TrackDirection::Forward | TrackDirection::Bidirectional)
+                    }
+                })
+            })
+            .unwrap_or(0)
     }
 }
 

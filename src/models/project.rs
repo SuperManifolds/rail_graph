@@ -199,8 +199,12 @@ impl Project {
             match version {
                 1 => {
                     // Version 1 - current format
-                    let project: Self = rmp_serde::from_slice(project_bytes)
+                    let mut project: Self = rmp_serde::from_slice(project_bytes)
                         .map_err(|e| format!("Failed to parse project: {e}"))?;
+
+                    // Validate and fix any invalid track indices in all lines
+                    project.fix_invalid_track_indices();
+
                     Ok(project)
                 }
                 _ => Err(format!("Unsupported project version: {version}")),
@@ -208,6 +212,20 @@ impl Project {
         } else {
             // Legacy format without version header - treat as error
             Err("Legacy project format not supported. Please re-import your data.".to_string())
+        }
+    }
+
+    /// Fix invalid track indices in all lines of the project
+    /// Only corrects tracks that are out of bounds or have incompatible directions
+    pub(crate) fn fix_invalid_track_indices(&mut self) {
+        for line in &mut self.lines {
+            let fixed_count = line.validate_and_fix_track_indices(&self.graph);
+            if fixed_count > 0 {
+                web_sys::console::log_1(&format!(
+                    "Fixed {} invalid track indices in line '{}'",
+                    fixed_count, line.name
+                ).into());
+            }
         }
     }
 
