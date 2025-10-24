@@ -98,6 +98,7 @@ pub fn CsvColumnMapper(
     config: Signal<CsvImportConfig>,
     on_cancel: Callback<()>,
     on_import: Callback<CsvImportConfig>,
+    #[prop(optional)] import_error: Option<ReadSignal<Option<String>>>,
 ) -> impl IntoView {
     let (local_config, set_local_config) = create_signal(config.get());
     let (error_message, set_error_message) = create_signal(None::<String>);
@@ -164,6 +165,12 @@ pub fn CsvColumnMapper(
         });
     };
 
+    let update_disable_infrastructure = move |disabled: bool| {
+        set_local_config.update(|cfg| {
+            cfg.disable_infrastructure = disabled;
+        });
+    };
+
     let validate_config = move || -> Result<(), String> {
         let cfg = local_config.get();
 
@@ -206,6 +213,7 @@ pub fn CsvColumnMapper(
             <GroupingControls
                 local_config=local_config
                 update_pattern_repeat=update_pattern_repeat
+                update_disable_infrastructure=update_disable_infrastructure
             />
 
             <ColumnMappingTable
@@ -223,9 +231,13 @@ pub fn CsvColumnMapper(
                 update_line_wait_time=update_line_wait_time
             />
 
-            <Show when=move || error_message.get().is_some()>
+            <Show when=move || error_message.get().is_some() || import_error.and_then(|e| e.get()).is_some()>
                 <div class="mapper-error">
-                    {move || error_message.get().unwrap_or_default()}
+                    {move || {
+                        error_message.get()
+                            .or_else(|| import_error.and_then(|e| e.get()))
+                            .unwrap_or_default()
+                    }}
                 </div>
             </Show>
 
@@ -351,6 +363,7 @@ fn count_groups(config: &CsvImportConfig) -> usize {
 fn GroupingControls(
     local_config: ReadSignal<CsvImportConfig>,
     update_pattern_repeat: impl Fn(Option<usize>) + Copy + 'static,
+    update_disable_infrastructure: impl Fn(bool) + Copy + 'static,
 ) -> impl IntoView {
     let data_column_count = move || {
         let cfg = local_config.get();
@@ -411,6 +424,22 @@ fn GroupingControls(
                         options
                     }}
                 </select>
+            </div>
+            <div class="form-row">
+                <label>
+                    <input
+                        type="checkbox"
+                        prop:checked=move || local_config.get().disable_infrastructure
+                        on:change=move |ev| {
+                            let checked = leptos::event_target_checked(&ev);
+                            update_disable_infrastructure(checked);
+                        }
+                    />
+                    " Don't create new infrastructure"
+                </label>
+                <p class="help-text" style="margin-left: 1.5rem;">
+                    "Only use existing tracks and stations. Routes will be created by pathfinding between CSV stations."
+                </p>
             </div>
         </div>
     }

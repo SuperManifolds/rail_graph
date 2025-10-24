@@ -3,7 +3,7 @@ use crate::models::{Line, RailwayGraph};
 use crate::components::button::Button;
 use crate::components::csv_column_mapper::CsvColumnMapper;
 use crate::components::window::Window;
-use crate::import::csv::{analyze_csv, parse_csv_with_mapping, CsvImportConfig};
+use crate::import::csv::{analyze_csv, parse_csv_with_mapping, parse_csv_with_existing_infrastructure, CsvImportConfig};
 use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, SignalGetUntracked, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback, Show};
 
 fn handle_fpl_import(
@@ -54,8 +54,12 @@ fn handle_csv_analysis(
     filename: String,
     set_csv_config: WriteSignal<Option<CsvImportConfig>>,
     set_show_mapper: WriteSignal<bool>,
+    set_import_error: WriteSignal<Option<String>>,
 ) {
     leptos::logging::log!("Analyzing CSV file, length: {}", text.len());
+
+    // Clear any previous import errors
+    set_import_error.set(None);
 
     // Extract filename without extension
     let filename_without_ext = std::path::Path::new(&filename)
@@ -84,6 +88,7 @@ pub fn Importer(
     let (show_mapper, set_show_mapper) = create_signal(false);
     let (file_content, set_file_content) = create_signal(String::new());
     let (csv_config, set_csv_config) = create_signal(None::<CsvImportConfig>);
+    let (import_error, set_import_error) = create_signal(None::<String>);
 
     let handle_file_change = move |_| {
         let Some(input_elem) = file_input_ref.get() else { return };
@@ -124,13 +129,17 @@ pub fn Importer(
                 let handedness = settings.get_untracked().track_handedness;
                 handle_fpl_import(&text, set_graph, set_lines, lines, handedness);
             } else {
-                handle_csv_analysis(&text, filename.clone(), set_csv_config, set_show_mapper);
+                handle_csv_analysis(&text, filename.clone(), set_csv_config, set_show_mapper, set_import_error);
             }
         });
     };
 
     let handle_import = move |config: CsvImportConfig| {
+        // Clear any previous import errors
+        set_import_error.set(None);
+
         let mut new_lines = None;
+        let mut error_msg = None;
 
         // Get existing line count for color offset
         let existing_line_count = lines.get().len();
@@ -138,9 +147,25 @@ pub fn Importer(
 
         // Parse CSV into existing graph
         set_graph.update(|graph| {
-            let lines = parse_csv_with_mapping(&file_content.get(), &config, graph, existing_line_count, handedness);
-            new_lines = Some(lines);
+            if config.disable_infrastructure {
+                // Use pathfinding mode
+                match parse_csv_with_existing_infrastructure(&file_content.get(), &config, graph, existing_line_count, handedness) {
+                    Ok(lines) => new_lines = Some(lines),
+                    Err(e) => error_msg = Some(e),
+                }
+            } else {
+                // Use normal mode (creates infrastructure)
+                let lines = parse_csv_with_mapping(&file_content.get(), &config, graph, existing_line_count, handedness);
+                new_lines = Some(lines);
+            }
         });
+
+        // Handle errors
+        if let Some(error) = error_msg {
+            leptos::logging::error!("CSV import failed: {}", error);
+            set_import_error.set(Some(error));
+            return;
+        }
 
         // Add new lines to existing lines
         if let Some(lines) = new_lines {
@@ -197,10 +222,15 @@ pub fn Importer(
                             pattern_repeat: None,
                             group_line_names: HashMap::new(),
                             filename: None,
+                            disable_infrastructure: false,
                         }
                     }))
-                    on_cancel=Callback::new(move |()| set_show_mapper.set(false))
+                    on_cancel=Callback::new(move |()| {
+                        set_show_mapper.set(false);
+                        set_import_error.set(None);
+                    })
                     on_import=Callback::new(handle_import)
+                    import_error=import_error
                 />
             </Window>
         </Show>

@@ -138,11 +138,11 @@
     .mapper-error {
         padding: var(--spacing-md);
         margin-top: var(--spacing-md);
-        background-color: #fee;
-        border: 1px solid #fcc;
+        background-color: rgba(220, 53, 69, 0.1);
+        border-left: 4px solid var(--color-danger);
         border-radius: 4px;
-        color: #c33;
-        font-weight: 600;
+        color: var(--color-text-primary);
+        line-height: 1.5;
     }
 
     .mapper-actions {
