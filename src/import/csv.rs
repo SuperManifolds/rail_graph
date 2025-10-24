@@ -72,6 +72,8 @@ pub struct CsvImportConfig {
     pub group_line_names: HashMap<usize, String>,
     /// Original filename (without extension)
     pub filename: Option<String>,
+    /// If true, only use existing infrastructure (no new stations/tracks created)
+    pub disable_infrastructure: bool,
 }
 
 /// Analyze CSV content and suggest column mappings
@@ -149,6 +151,7 @@ pub fn analyze_csv(content: &str, filename: Option<String>) -> Option<CsvImportC
         pattern_repeat,
         group_line_names,
         filename,
+        disable_infrastructure: false,
     })
 }
 
@@ -585,9 +588,52 @@ pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &m
 
     let station_data = collect_station_data(&mut records, config, &line_groups);
 
-    build_routes(&mut lines, graph, &station_data, &line_groups, config, handedness);
+    // build_routes now returns Result, but parse_csv_with_mapping returns Vec<Line> for backward compatibility
+    // In the old mode (disable_infrastructure=false), errors shouldn't occur, so we can unwrap or log
+    if let Err(e) = build_routes(&mut lines, graph, &station_data, &line_groups, config, handedness) {
+        leptos::logging::error!("Error building routes: {}", e);
+        return Vec::new();
+    }
 
     lines
+}
+
+/// Parse CSV content using existing infrastructure only (no new stations/tracks created)
+/// Uses pathfinding to create routes between stations listed in CSV
+///
+/// # Errors
+/// Returns error if any station is not found or if no path exists between consecutive stations
+pub fn parse_csv_with_existing_infrastructure(
+    content: &str,
+    config: &CsvImportConfig,
+    graph: &mut RailwayGraph,
+    existing_line_count: usize,
+    handedness: crate::models::TrackHandedness,
+) -> Result<Vec<Line>, String> {
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(content.as_bytes());
+
+    let mut records = reader.records();
+
+    // Skip header row if present
+    if config.has_headers {
+        let _ = records.next();
+    }
+
+    let line_groups = build_line_groups(config);
+    if line_groups.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let line_ids: Vec<String> = line_groups.iter().map(|g| g.line_name.clone()).collect();
+    let mut lines = Line::create_from_ids(&line_ids, existing_line_count);
+
+    let station_data = collect_station_data(&mut records, config, &line_groups);
+
+    build_routes(&mut lines, graph, &station_data, &line_groups, config, handedness)?;
+
+    Ok(lines)
 }
 
 /// Build line groups from column configuration
@@ -881,7 +927,77 @@ fn calculate_wait_time(
     }
 }
 
+/// Create route segments from pathfinding between two stations
+fn create_pathfound_segments(
+    graph: &RailwayGraph,
+    path: &[EdgeIndex],
+    travel_time: Duration,
+    is_passing_loop: bool,
+    line_station_data: &LineStationData,
+    default_wait_time: Duration,
+    handedness: crate::models::TrackHandedness,
+) -> Vec<RouteSegment> {
+    let segment_count = path.len();
+    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+    let time_per_segment = travel_time / (segment_count as i32);
+
+    path.iter().enumerate().map(|(seg_idx, edge_idx)| {
+        let track_index = super::shared::select_track_for_direction(graph, *edge_idx, false);
+        let is_last_segment = seg_idx == segment_count - 1;
+
+        let (from_node, to_node) = graph.graph.edge_endpoints(*edge_idx)
+            .expect("Edge should have endpoints");
+
+        let origin_platforms = graph.graph.node_weight(from_node)
+            .and_then(|n| n.as_station())
+            .map_or(1, |s| s.platforms.len());
+        let dest_platforms = graph.graph.node_weight(to_node)
+            .and_then(|n| n.as_station())
+            .map_or(1, |s| s.platforms.len());
+
+        let origin_platform = graph.get_default_platform_for_arrival(*edge_idx, false, origin_platforms, handedness);
+        let dest_platform = graph.get_default_platform_for_arrival(*edge_idx, true, dest_platforms, handedness);
+
+        let segment_wait_time = if is_last_segment {
+            calculate_wait_time(is_passing_loop, line_station_data, default_wait_time)
+        } else {
+            Duration::zero()
+        };
+
+        RouteSegment {
+            edge_index: edge_idx.index(),
+            track_index,
+            origin_platform,
+            destination_platform: dest_platform,
+            duration: Some(time_per_segment),
+            wait_time: segment_wait_time,
+        }
+    }).collect()
+}
+
+/// Get or create edge between two nodes
+fn get_or_create_edge(
+    graph: &mut RailwayGraph,
+    edge_map: &mut HashMap<(NodeIndex, NodeIndex), EdgeIndex>,
+    prev_idx: NodeIndex,
+    station_idx: NodeIndex,
+    prev_line_data: &LineStationData,
+    handedness: crate::models::TrackHandedness,
+) -> EdgeIndex {
+    *edge_map.entry((prev_idx, station_idx))
+        .or_insert_with(|| {
+            if let Some(existing_edge) = graph.graph.find_edge(prev_idx, station_idx) {
+                existing_edge
+            } else {
+                let track_count = prev_line_data.track_number.unwrap_or(1);
+                let tracks = super::shared::create_tracks_with_count(track_count, handedness);
+                graph.add_track(prev_idx, station_idx, tracks)
+            }
+        })
+}
+
 /// Build routes and graph from station data
+#[allow(clippy::too_many_lines)]
 fn build_routes(
     lines: &mut [Line],
     graph: &mut RailwayGraph,
@@ -889,7 +1005,8 @@ fn build_routes(
     line_groups: &[LineGroupData],
     config: &CsvImportConfig,
     handedness: crate::models::TrackHandedness,
-) {
+) -> Result<(), String> {
+    use crate::models::{Routes, Stations};
     let mut edge_map: HashMap<(NodeIndex, NodeIndex), EdgeIndex> = HashMap::new();
 
     for (line_idx, group) in line_groups.iter().enumerate() {
@@ -951,7 +1068,22 @@ fn build_routes(
                 .to_string();
 
             // Get or create station/junction node
-            let station_idx = if is_junction {
+            let station_idx = if config.disable_infrastructure {
+                // In pathfinding mode, only look up existing stations/junctions (fail if not found)
+                if is_junction {
+                    // Look up existing junction by name and connection to previous station
+                    prev_station.as_ref()
+                        .and_then(|(prev_idx, _, _)| graph.get_station_name(*prev_idx))
+                        .and_then(|prev_station_name| find_junction_by_connection(graph, &clean_name, prev_station_name))
+                        .ok_or_else(|| format!("Junction '{clean_name}' from CSV not found in existing infrastructure"))?
+                } else {
+                    graph.get_all_stations_ordered()
+                        .iter()
+                        .find(|(_, s)| s.name == clean_name)
+                        .map(|(idx, _)| *idx)
+                        .ok_or_else(|| format!("Station '{clean_name}' from CSV not found in existing infrastructure"))?
+                }
+            } else if is_junction {
                 use crate::models::{Junctions, Junction};
 
                 // Check if there's already a junction with this name connected to a station with the same name as prev_station
@@ -992,77 +1124,86 @@ fn build_routes(
 
             let travel_time = cumulative_time - prev_time;
 
-            // Check if edge already exists in the graph or the local map
-            let edge_idx = *edge_map.entry((prev_idx, station_idx))
-                .or_insert_with(|| {
-                    // First check if edge already exists in the graph
-                    if let Some(existing_edge) = graph.graph.find_edge(prev_idx, station_idx) {
-                        existing_edge
-                    } else {
-                        // Create new edge, using track count from CSV if available
-                        let track_count = prev_line_data.track_number.unwrap_or(1);
-                        let tracks = super::shared::create_tracks_with_count(track_count, handedness);
-                        graph.add_track(prev_idx, station_idx, tracks)
-                    }
-                });
+            if config.disable_infrastructure {
+                // Use pathfinding to find route between prev_idx and station_idx
+                let path = graph.find_path_between_nodes(prev_idx, station_idx)
+                    .ok_or_else(|| {
+                        let from_name = graph.get_station_name(prev_idx).unwrap_or("Unknown");
+                        let to_name = graph.get_station_name(station_idx).unwrap_or("Unknown");
+                        format!("No path found between '{from_name}' and '{to_name}'")
+                    })?;
 
-            // Ensure edge has enough tracks for the requested track index (from origin station)
-            super::shared::ensure_track_count(graph, edge_idx, prev_line_data.track_number, handedness);
+                // Convert path edges to route segments
+                let segments = create_pathfound_segments(
+                    graph,
+                    &path,
+                    travel_time,
+                    is_passing_loop,
+                    line_station_data,
+                    default_wait_time,
+                    handedness,
+                );
+                route.extend(segments);
+            } else {
+                // Check if edge already exists in the graph or the local map
+                let edge_idx = get_or_create_edge(graph, &mut edge_map, prev_idx, station_idx, &prev_line_data, handedness);
 
-            // Set distance on edge if provided (from origin station)
-            if let Some(distance) = prev_line_data.track_distance {
-                if let Some(track_segment) = graph.graph.edge_weight_mut(edge_idx) {
+                // Ensure edge has enough tracks for the requested track index (from origin station)
+                super::shared::ensure_track_count(graph, edge_idx, prev_line_data.track_number, handedness);
+
+                // Set distance on edge if provided (from origin station)
+                if let (Some(distance), Some(track_segment)) = (prev_line_data.track_distance, graph.graph.edge_weight_mut(edge_idx)) {
                     track_segment.distance = Some(distance);
                 }
+
+                // Determine wait time based on priority:
+                // 1. Passing loops always have 0 wait time
+                // 2. If both arrival and departure times are present, calculate from difference
+                // 3. Use wait_time column if present
+                // 4. Fall back to default wait time
+                let station_wait_time = calculate_wait_time(is_passing_loop, line_station_data, default_wait_time);
+
+                // Handle platform assignment
+                let (origin_platform, destination_platform) = if let Some(ref platform_name) = line_station_data.platform {
+                    // Add platform to destination station if not exists and get its index
+                    let dest_platform_idx = super::shared::get_or_add_platform(graph, station_idx, platform_name);
+
+                    // For origin, use default platform selection
+                    let origin_platforms = graph.graph.node_weight(prev_idx)
+                        .and_then(|n| n.as_station())
+                        .map_or(1, |s| s.platforms.len());
+                    let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms, handedness);
+
+                    (origin_platform_idx, dest_platform_idx)
+                } else {
+                    // No platform specified, use defaults
+                    let origin_platforms = graph.graph.node_weight(prev_idx)
+                        .and_then(|n| n.as_station())
+                        .map_or(1, |s| s.platforms.len());
+
+                    let dest_platforms = graph.graph.node_weight(station_idx)
+                        .and_then(|n| n.as_station())
+                        .map_or(1, |s| s.platforms.len());
+
+                    let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms, handedness);
+                    let dest_platform_idx = graph.get_default_platform_for_arrival(edge_idx, true, dest_platforms, handedness);
+
+                    (origin_platform_idx, dest_platform_idx)
+                };
+
+                // Select appropriate track for forward travel direction
+                // If CSV specifies a track number, validate it's appropriate for forward direction
+                let track_index = super::shared::select_track_for_direction(graph, edge_idx, false);
+
+                route.push(RouteSegment {
+                    edge_index: edge_idx.index(),
+                    track_index,
+                    origin_platform,
+                    destination_platform,
+                    duration: Some(travel_time),
+                    wait_time: station_wait_time,
+                });
             }
-
-            // Determine wait time based on priority:
-            // 1. Passing loops always have 0 wait time
-            // 2. If both arrival and departure times are present, calculate from difference
-            // 3. Use wait_time column if present
-            // 4. Fall back to default wait time
-            let station_wait_time = calculate_wait_time(is_passing_loop, line_station_data, default_wait_time);
-
-            // Handle platform assignment
-            let (origin_platform, destination_platform) = if let Some(ref platform_name) = line_station_data.platform {
-                // Add platform to destination station if not exists and get its index
-                let dest_platform_idx = super::shared::get_or_add_platform(graph, station_idx, platform_name);
-
-                // For origin, use default platform selection
-                let origin_platforms = graph.graph.node_weight(prev_idx)
-                    .and_then(|n| n.as_station())
-                    .map_or(1, |s| s.platforms.len());
-                let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms, handedness);
-
-                (origin_platform_idx, dest_platform_idx)
-            } else {
-                // No platform specified, use defaults
-                let origin_platforms = graph.graph.node_weight(prev_idx)
-                    .and_then(|n| n.as_station())
-                    .map_or(1, |s| s.platforms.len());
-
-                let dest_platforms = graph.graph.node_weight(station_idx)
-                    .and_then(|n| n.as_station())
-                    .map_or(1, |s| s.platforms.len());
-
-                let origin_platform_idx = graph.get_default_platform_for_arrival(edge_idx, false, origin_platforms, handedness);
-                let dest_platform_idx = graph.get_default_platform_for_arrival(edge_idx, true, dest_platforms, handedness);
-
-                (origin_platform_idx, dest_platform_idx)
-            };
-
-            // Select appropriate track for forward travel direction
-            // If CSV specifies a track number, validate it's appropriate for forward direction
-            let track_index = super::shared::select_track_for_direction(graph, edge_idx, false);
-
-            route.push(RouteSegment {
-                edge_index: edge_idx.index(),
-                track_index,
-                origin_platform,
-                destination_platform,
-                duration: Some(travel_time),
-                wait_time: station_wait_time,
-            });
 
             prev_station = Some((station_idx, cumulative_time, line_station_data.clone()));
         }
@@ -1107,6 +1248,8 @@ fn build_routes(
             }
         }
     }
+
+    Ok(())
 }
 
 struct LineGroupData {

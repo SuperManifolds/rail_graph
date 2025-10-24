@@ -4,6 +4,7 @@
 - Fixed station labels not appearing in infrastructure view when station has no connections
 
 ## Improvements
+- CSV import now supports "Don't create new infrastructure" mode - uses pathfinding on existing tracks to create routes between CSV stations without creating new stations or tracks
 - Manual departures can now repeat at a specified interval until a given time or end of day - allows creating repeating services without switching to automatic scheduling
 - Manual departures section is now always visible in line editor, even when automatic scheduling is enabled, making the feature more discoverable and allowing hybrid scheduling
 - Added customizable keyboard shortcuts - shortcuts can now be rebound in Settings > Keyboard Shortcuts with conflict detection and platform-specific defaults (Cmd on Mac, Ctrl on Windows/Linux)
