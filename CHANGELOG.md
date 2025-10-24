@@ -1,3 +1,8 @@
+# Unreleased
+
+## Bug Fixes
+- Fixed infrastructure view not showing CSV-imported stations in new projects - stations now properly appear when imported before opening infrastructure view
+
 # v0.1.4 - 2025-10-24
 
 ## Bug Fixes

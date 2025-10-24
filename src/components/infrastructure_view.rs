@@ -571,17 +571,28 @@ fn setup_auto_layout_effect(
         let edge_count = current_graph.graph.edge_references().count();
         let current_topology = (node_count, edge_count);
 
-        // Check if topology changed (node or edge count changed)
-        // Skip on first run (prev_topology is None) to preserve loaded positions
+        // Check if we should apply layout
+        let has_unpositioned = current_graph
+            .graph
+            .node_indices()
+            .any(|idx| current_graph.get_station_position(idx).is_none());
+
         let topology_changed = prev_topology.is_some() && prev_topology != Some(current_topology);
 
-        if topology_changed && node_count > 0 {
-            let mut current_graph = current_graph.clone();
+        // Apply layout if:
+        // - First run and there are unpositioned nodes (e.g., CSV import to new project)
+        // - Topology changed (nodes/edges added or removed)
+        let should_layout = if prev_topology.is_none() {
+            // First run: only layout if there are unpositioned nodes
+            // This preserves positions from loaded projects while handling new imports
+            has_unpositioned && node_count > 0
+        } else {
+            // Subsequent runs: layout if topology changed
+            topology_changed && node_count > 0
+        };
 
-            let has_unpositioned = current_graph
-                .graph
-                .node_indices()
-                .any(|idx| current_graph.get_station_position(idx).is_none());
+        if should_layout {
+            let mut current_graph = current_graph.clone();
 
             let has_positioned_nodes = current_graph.graph.node_indices()
                 .any(|idx| {
