@@ -6,6 +6,7 @@ pub mod canvas_viewport;
 pub mod changelog_popup;
 pub mod modal_overlay;
 pub mod confirmation_dialog;
+pub mod connect_to_station;
 pub mod create_view_dialog;
 pub mod delete_station_confirmation;
 pub mod edit_junction;

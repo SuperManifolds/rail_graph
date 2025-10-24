@@ -1,4 +1,4 @@
-use crate::models::{RailwayGraph, Line, Track, Stations, Tracks, Junctions};
+use crate::models::{RailwayGraph, Line, Track, TrackDirection, Stations, Tracks, Junctions};
 use crate::components::infrastructure_canvas::{auto_layout, renderer, hit_detection};
 use crate::components::infrastructure_toolbar::{InfrastructureToolbar, EditMode};
 use crate::components::canvas_viewport;
@@ -1130,6 +1130,11 @@ pub fn InfrastructureView(
                             track_segment.default_platform_target = Some(tgt);
                         }
                     }
+                    set_graph.set(current_graph);
+                })
+                on_add_connection=Rc::new(move |from_station: NodeIndex, to_station: NodeIndex| {
+                    let mut current_graph = graph.get();
+                    current_graph.add_track(from_station, to_station, vec![Track { direction: TrackDirection::Bidirectional }]);
                     set_graph.set(current_graph);
                 })
             />

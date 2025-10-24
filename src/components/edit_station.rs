@@ -1,5 +1,6 @@
 use crate::components::window::Window;
 use crate::components::platform_editor::PlatformEditor;
+use crate::components::connect_to_station::ConnectToStation;
 use crate::models::{RailwayGraph, Platform};
 use leptos::{component, create_effect, create_signal, event_target_checked, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalGetUntracked, view, For};
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
@@ -7,6 +8,7 @@ use petgraph::visit::EdgeRef;
 use std::rc::Rc;
 
 type TrackDefaultsCallback = Rc<dyn Fn(EdgeIndex, Option<usize>, Option<usize>)>;
+type AddConnectionCallback = Rc<dyn Fn(NodeIndex, NodeIndex)>;
 
 #[derive(Clone, Debug)]
 struct ConnectedTrack {
@@ -142,6 +144,7 @@ pub fn EditStation(
     on_delete: Rc<dyn Fn(NodeIndex)>,
     graph: ReadSignal<RailwayGraph>,
     on_update_track_defaults: TrackDefaultsCallback,
+    on_add_connection: AddConnectionCallback,
 ) -> impl IntoView {
     let (station_name, set_station_name) = create_signal(String::new());
     let (is_passing_loop, set_is_passing_loop) = create_signal(false);
@@ -180,6 +183,15 @@ pub fn EditStation(
         }
     };
 
+    let handle_add_connection = Rc::new(move |connect_idx: NodeIndex| {
+        if let Some(station_idx) = editing_station.get_untracked() {
+            on_add_connection(station_idx, connect_idx);
+            // Reload connected tracks to show new connection
+            let current_graph = graph.get_untracked();
+            set_connected_tracks.set(load_connected_tracks(station_idx, &current_graph));
+        }
+    });
+
     let is_open = Signal::derive(move || editing_station.get().is_some());
 
     view! {
@@ -211,6 +223,12 @@ pub fn EditStation(
                     platforms=platforms
                     set_platforms=set_platforms
                     is_passing_loop=is_passing_loop
+                />
+
+                <ConnectToStation
+                    current_station=editing_station
+                    graph=graph
+                    on_add_connection=handle_add_connection
                 />
 
                 <div class="form-section">
