@@ -214,7 +214,10 @@ pub fn TimeGraph(
             </div>
             <div class="sidebar">
                 <div class="sidebar-header">
-                    <h2>"Railway Time Graph"</h2>
+                    <h2>
+                        <img src="/static/railgraph.svg" alt="RailGraph" class="logo-icon" />
+                        "railgraph.app"
+                    </h2>
                     <DaySelector
                         selected_day=selected_day
                         set_selected_day=set_selected_day

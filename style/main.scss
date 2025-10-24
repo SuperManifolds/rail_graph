@@ -68,7 +68,7 @@ body {
 .app-header-actions {
     display: flex;
     align-items: center;
-    padding: var(--spacing-md) var(--spacing-lg);
+    padding: 0 var(--spacing-lg);
     gap: var(--spacing-md);
 }
 
@@ -92,7 +92,7 @@ body {
     background-color: transparent;
     border: none;
     color: var(--color-text-muted);
-    padding: var(--spacing-lg) var(--spacing-2xl);
+    padding: var(--spacing-md) var(--spacing-2xl);
     font-size: var(--font-size-md);
     cursor: pointer;
     border-bottom: 2px solid transparent;

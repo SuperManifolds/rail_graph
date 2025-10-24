@@ -1,18 +1,22 @@
-use leptos::{component, create_effect, create_signal, IntoView, Show, SignalGet, SignalSet, spawn_local, view, WriteSignal, Callback, SignalUpdate, event_target_value, Signal, store_value, SignalGetUntracked};
-use std::collections::HashMap;
-use leptos_meta::{provide_meta_context, Title};
-use uuid::Uuid;
-use crate::components::time_graph::TimeGraph;
-use crate::components::infrastructure_view::InfrastructureView;
-use crate::components::project_manager::ProjectManager;
 use crate::components::alpha_disclaimer::AlphaDisclaimer;
 use crate::components::changelog_popup::ChangelogPopup;
+use crate::components::infrastructure_view::InfrastructureView;
+use crate::components::project_manager::ProjectManager;
 use crate::components::report_issue_button::ReportIssueButton;
-use crate::models::{Project, RailwayGraph, Legend, GraphView, ViewportState};
+use crate::components::time_graph::TimeGraph;
+use crate::conflict::Conflict;
+use crate::models::{GraphView, Legend, Project, RailwayGraph, ViewportState};
 use crate::storage::{IndexedDbStorage, Storage};
 use crate::train_journey::TrainJourney;
-use crate::conflict::Conflict;
 use crate::worker_bridge::ConflictDetector;
+use leptos::{
+    component, create_effect, create_signal, event_target_value, spawn_local, store_value, view,
+    Callback, IntoView, Show, Signal, SignalGet, SignalGetUntracked, SignalSet, SignalUpdate,
+    WriteSignal,
+};
+use leptos_meta::{provide_meta_context, Title};
+use std::collections::HashMap;
+use uuid::Uuid;
 
 #[derive(Clone, PartialEq)]
 enum AppTab {
@@ -58,11 +62,14 @@ pub fn App() -> impl IntoView {
     let (initial_load_complete, set_initial_load_complete) = create_signal(false);
 
     // Store viewport states separately to avoid triggering view updates
-    let (viewport_states, set_viewport_states) = create_signal(HashMap::<Uuid, ViewportState>::new());
-    let (infrastructure_viewport, set_infrastructure_viewport) = create_signal(ViewportState::default());
+    let (viewport_states, set_viewport_states) =
+        create_signal(HashMap::<Uuid, ViewportState>::new());
+    let (infrastructure_viewport, set_infrastructure_viewport) =
+        create_signal(ViewportState::default());
 
     // Compute train journeys at app level
-    let (train_journeys, set_train_journeys) = create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
+    let (train_journeys, set_train_journeys) =
+        create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
     let (selected_day, set_selected_day) = create_signal(None::<chrono::Weekday>);
 
     // Project manager state
@@ -110,7 +117,8 @@ pub fn App() -> impl IntoView {
             }
 
             // Extract viewport states into separate signal
-            let viewports: HashMap<Uuid, ViewportState> = views.iter()
+            let viewports: HashMap<Uuid, ViewportState> = views
+                .iter()
                 .map(|v| (v.id, v.viewport_state.clone()))
                 .collect();
             set_viewport_states.set(viewports);
@@ -140,9 +148,9 @@ pub fn App() -> impl IntoView {
             return (node_count, edge_count);
         }
 
-        let counts_changed = prev_counts.is_some_and(|(prev_nodes, prev_edges)|
+        let counts_changed = prev_counts.is_some_and(|(prev_nodes, prev_edges)| {
             node_count != prev_nodes || edge_count != prev_edges
-        );
+        });
 
         // Only regenerate if node or edge count changed (new station/junction/track added)
         if !counts_changed {
@@ -186,7 +194,8 @@ pub fn App() -> impl IntoView {
             };
 
             // Merge viewport states back into views for saving
-            let views_with_viewports: Vec<GraphView> = current_views.into_iter()
+            let views_with_viewports: Vec<GraphView> = current_views
+                .into_iter()
                 .map(|mut v| {
                     if let Some(viewport) = current_viewports.get(&v.id) {
                         v.viewport_state = viewport.clone();
@@ -215,7 +224,9 @@ pub fn App() -> impl IntoView {
                     return;
                 }
                 if let Err(e) = storage.set_current_project_id(&project_id).await {
-                    web_sys::console::error_1(&format!("Failed to set current project ID: {e}").into());
+                    web_sys::console::error_1(
+                        &format!("Failed to set current project ID: {e}").into(),
+                    );
                 }
             });
         }
@@ -235,12 +246,14 @@ pub fn App() -> impl IntoView {
         let day_filter = selected_day.get();
 
         // Filter to only visible lines
-        let visible_lines: Vec<_> = current_lines.into_iter()
+        let visible_lines: Vec<_> = current_lines
+            .into_iter()
             .filter(|line| line.visible)
             .collect();
 
         // Generate journeys for the full day
-        let new_journeys = TrainJourney::generate_journeys(&visible_lines, &current_graph, day_filter);
+        let new_journeys =
+            TrainJourney::generate_journeys(&visible_lines, &current_graph, day_filter);
         set_train_journeys.set(new_journeys);
     });
 
@@ -265,7 +278,9 @@ pub fn App() -> impl IntoView {
     let on_create_view = Callback::new(move |new_view: GraphView| {
         let view_id = new_view.id;
         let viewport = new_view.viewport_state.clone();
-        set_viewport_states.update(|vs| { vs.insert(view_id, viewport); });
+        set_viewport_states.update(|vs| {
+            vs.insert(view_id, viewport);
+        });
         set_views.update(|v| v.push(new_view));
         set_active_tab.set(AppTab::GraphView(view_id));
     });
@@ -280,7 +295,9 @@ pub fn App() -> impl IntoView {
 
         // Remove the view and its viewport state
         set_views.update(|v| v.retain(|view| view.id != view_id));
-        set_viewport_states.update(|vs| { vs.remove(&view_id); });
+        set_viewport_states.update(|vs| {
+            vs.remove(&view_id);
+        });
 
         // If we closed the active tab, switch to another tab
         if is_active {
@@ -334,7 +351,8 @@ pub fn App() -> impl IntoView {
         }
 
         // Extract viewport states
-        let viewports: HashMap<Uuid, ViewportState> = project_views.iter()
+        let viewports: HashMap<Uuid, ViewportState> = project_views
+            .iter()
             .map(|v| (v.id, v.viewport_state.clone()))
             .collect();
         set_viewport_states.set(viewports);
@@ -357,7 +375,7 @@ pub fn App() -> impl IntoView {
     });
 
     view! {
-        <Title text="Railway Time Graph"/>
+        <Title text="RailGraph"/>
 
         <div class="app">
             <div class="app-header">
@@ -511,3 +529,4 @@ pub fn App() -> impl IntoView {
         </div>
     }
 }
+

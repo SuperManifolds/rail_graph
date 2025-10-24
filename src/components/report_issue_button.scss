@@ -3,6 +3,7 @@
 .report-issue-button {
     @include button-default;
     text-decoration: none;
+    padding: var(--spacing-xs) var(--spacing-lg);
 
     &:hover {
         text-decoration: none;

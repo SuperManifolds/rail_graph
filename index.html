@@ -1,18 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
+  <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Railway timetable graph editor">
+    <meta name="theme-color" content="#1a1a1a">
     <title>RailGraph</title>
+    <!-- Favicons -->
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/site.webmanifest">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link data-trunk rel="scss" href="style/main.scss">
-    <link data-trunk rel="rust" data-target-name="nimby_graph" data-wasm-opt="z" />
-    <link data-trunk rel="rust" data-bin="conflict_worker" data-wasm-opt="z" data-type="worker" />
-</head>
-
-<body>
+    <link data-trunk rel="rust" data-target-name="nimby_graph" data-wasm-opt="z">
+    <link data-trunk rel="rust" data-bin="conflict_worker" data-wasm-opt="z" data-type="worker">
+    <link data-trunk rel="copy-dir" href="static">
+  </head>
+  <body>
     <noscript>This app requires JavaScript to run.</noscript>
-</body>
-
+    <script src="/static/sw-register.js"></script>
+  </body>
 </html>
