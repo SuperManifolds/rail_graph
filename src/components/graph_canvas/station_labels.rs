@@ -1,6 +1,7 @@
 use web_sys::CanvasRenderingContext2d;
 use crate::models::Node;
 use super::types::GraphDimensions;
+use super::canvas::LEFT_MARGIN;
 use petgraph::stable_graph::NodeIndex;
 
 // Station label constants
@@ -10,11 +11,50 @@ const PASSING_LOOP_LABEL_COLOR: &str = "#777";
 const STATION_LABEL_FONT: &str = "11px monospace";
 const STATION_LABEL_X: f64 = 5.0;
 const STATION_LABEL_Y_OFFSET: f64 = 3.0;
+const LABEL_RIGHT_PADDING: f64 = 5.0; // Space between label and graph area
 
 // Junction constants
 const JUNCTION_LABEL_COLOR: &str = "#ffb84d";
 const JUNCTION_DIAMOND_SIZE: f64 = 6.0;
 const JUNCTION_LABEL_X_OFFSET: f64 = 12.0;
+
+/// Truncate text with ellipsis if it exceeds the maximum width
+/// Returns the potentially truncated text
+fn truncate_text_with_ellipsis(ctx: &CanvasRenderingContext2d, text: &str, max_width: f64) -> String {
+    // Measure the full text
+    let metrics = ctx.measure_text(text).ok();
+    let text_width = metrics.map_or(0.0, |m| m.width());
+
+    if text_width <= max_width {
+        return text.to_string();
+    }
+
+    // Text is too long, we need to truncate
+    let ellipsis = "...";
+    let ellipsis_width = ctx.measure_text(ellipsis).ok().map_or(15.0, |m| m.width());
+    let available_width = max_width - ellipsis_width;
+
+    // Binary search for the right number of characters
+    let mut low = 0;
+    let mut high = text.chars().count();
+    let mut best_fit = 0;
+
+    while low <= high {
+        let mid = (low + high) / 2;
+        let truncated: String = text.chars().take(mid).collect();
+        let truncated_width = ctx.measure_text(&truncated).ok().map_or(0.0, |m| m.width());
+
+        if truncated_width <= available_width {
+            best_fit = mid;
+            low = mid + 1;
+        } else {
+            high = mid.saturating_sub(1);
+        }
+    }
+
+    let truncated: String = text.chars().take(best_fit).collect();
+    format!("{truncated}{ellipsis}")
+}
 
 #[allow(clippy::cast_precision_loss)]
 pub fn draw_station_labels(
@@ -58,19 +98,25 @@ pub fn draw_station_labels(
 fn draw_station_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
     ctx.set_fill_style_str(STATION_LABEL_COLOR);
     ctx.set_font(STATION_LABEL_FONT);
-    let _ = ctx.fill_text(station, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
+    let max_width = LEFT_MARGIN - STATION_LABEL_X - LABEL_RIGHT_PADDING;
+    let text = truncate_text_with_ellipsis(ctx, station, max_width);
+    let _ = ctx.fill_text(&text, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
 }
 
 fn draw_single_platform_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
     ctx.set_fill_style_str(SINGLE_PLATFORM_LABEL_COLOR);
     ctx.set_font(STATION_LABEL_FONT);
-    let _ = ctx.fill_text(station, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
+    let max_width = LEFT_MARGIN - STATION_LABEL_X - LABEL_RIGHT_PADDING;
+    let text = truncate_text_with_ellipsis(ctx, station, max_width);
+    let _ = ctx.fill_text(&text, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
 }
 
 fn draw_passing_loop_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
     ctx.set_fill_style_str(PASSING_LOOP_LABEL_COLOR);
     ctx.set_font(STATION_LABEL_FONT);
-    let _ = ctx.fill_text(station, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
+    let max_width = LEFT_MARGIN - STATION_LABEL_X - LABEL_RIGHT_PADDING;
+    let text = truncate_text_with_ellipsis(ctx, station, max_width);
+    let _ = ctx.fill_text(&text, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
 }
 
 fn draw_junction_label(ctx: &CanvasRenderingContext2d, junction_name: Option<&str>, y: f64) {
@@ -92,6 +138,46 @@ fn draw_junction_label(ctx: &CanvasRenderingContext2d, junction_name: Option<&st
     if let Some(name) = junction_name {
         ctx.set_fill_style_str(JUNCTION_LABEL_COLOR);
         ctx.set_font(STATION_LABEL_FONT);
-        let _ = ctx.fill_text(name, STATION_LABEL_X + JUNCTION_LABEL_X_OFFSET, y + STATION_LABEL_Y_OFFSET);
+        let max_width = LEFT_MARGIN - (STATION_LABEL_X + JUNCTION_LABEL_X_OFFSET) - LABEL_RIGHT_PADDING;
+        let text = truncate_text_with_ellipsis(ctx, name, max_width);
+        let _ = ctx.fill_text(&text, STATION_LABEL_X + JUNCTION_LABEL_X_OFFSET, y + STATION_LABEL_Y_OFFSET);
     }
+}
+
+/// Check if mouse is hovering over a station label
+/// Returns the full station name and viewport coordinates for tooltip
+#[must_use]
+#[allow(clippy::too_many_arguments)]
+pub fn check_station_label_hover(
+    canvas_x: f64,
+    canvas_y: f64,
+    viewport_x: f64,
+    viewport_y: f64,
+    stations: &[(NodeIndex, Node)],
+    station_y_positions: &[f64],
+    top_margin: f64,
+    zoom_level: f64,
+    pan_offset_y: f64,
+) -> Option<(String, f64, f64)> {
+    use super::canvas::TOP_MARGIN as ORIGINAL_TOP_MARGIN;
+    const HOVER_Y_TOLERANCE: f64 = 8.0; // Vertical tolerance for hover detection
+
+    // Check if mouse is in the label area (left margin)
+    if canvas_x >= LEFT_MARGIN {
+        return None;
+    }
+
+    // Find which station label the mouse is over
+    for (idx, (_, station_node)) in stations.iter().enumerate() {
+        let base_y = station_y_positions[idx] - ORIGINAL_TOP_MARGIN;
+        let adjusted_y = top_margin + (base_y * zoom_level) + pan_offset_y;
+
+        // Check if mouse y is near this station's label
+        if (canvas_y - adjusted_y).abs() < HOVER_Y_TOLERANCE {
+            let full_name = station_node.display_name().to_string();
+            return Some((full_name, viewport_x, viewport_y));
+        }
+    }
+
+    None
 }

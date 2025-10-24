@@ -2,6 +2,7 @@
 
 ## Bug Fixes
 - Fixed infrastructure view not showing CSV-imported stations in new projects - stations now properly appear when imported before opening infrastructure view
+- Fixed long station names overlapping train graph area - labels now truncate with ellipsis and show full name on hover
 
 # v0.1.4 - 2025-10-24
 
