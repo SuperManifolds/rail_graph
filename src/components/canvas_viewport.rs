@@ -2,6 +2,7 @@ use leptos::{batch, create_signal, ReadSignal, WriteSignal, SignalGet, SignalSet
 use std::time::Duration;
 use wasm_bindgen::JsCast;
 use web_sys::WheelEvent;
+use crate::models::UserSettings;
 
 // WASD panning speed (pixels per frame at 60fps)
 const WASD_PAN_SPEED: f64 = 10.0;
@@ -282,6 +283,7 @@ pub fn setup_wasd_panning(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn setup_keyboard_listeners(
     set_space_pressed: WriteSignal<bool>,
     set_w_pressed: WriteSignal<bool>,
@@ -291,35 +293,50 @@ pub fn setup_keyboard_listeners(
     viewport: &ViewportSignals,
     canvas_dimensions: leptos::Signal<Option<(f64, f64)>>,
     min_zoom: Option<f64>,
+    user_settings: ReadSignal<UserSettings>,
+    is_capturing_shortcut: ReadSignal<bool>,
 ) {
     let viewport_for_keyup = *viewport;
     let viewport_for_zoom = *viewport;
 
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
+        // Don't handle shortcuts when capturing in the shortcuts editor
+        if is_capturing_shortcut.get() {
+            return;
+        }
+
         if ev.repeat() {
             return;
         }
 
         // Don't handle keyboard shortcuts when typing in input fields
-        if let Some(target) = ev.target() {
-            if let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() {
-                let tag_name = element.tag_name().to_lowercase();
-                if tag_name == "input" || tag_name == "textarea" {
-                    return;
-                }
-            }
+        let Some(target) = ev.target() else { return };
+        let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() else { return };
+        let tag_name = element.tag_name().to_lowercase();
+        if tag_name == "input" || tag_name == "textarea" {
+            return;
         }
 
-        match ev.code().as_str() {
-            "Space" => {
+        // Look up what action this key combination maps to
+        let shortcuts = user_settings.get().keyboard_shortcuts;
+        let action = shortcuts.find_action(
+            &ev.code(),
+            ev.ctrl_key(),
+            ev.shift_key(),
+            ev.alt_key(),
+            ev.meta_key()
+        );
+
+        match action {
+            Some("pan_toggle") => {
                 ev.prevent_default();
                 set_space_pressed.set(true);
             }
-            "KeyW" => set_w_pressed.set(true),
-            "KeyA" => set_a_pressed.set(true),
-            "KeyS" => set_s_pressed.set(true),
-            "KeyD" => set_d_pressed.set(true),
-            "Equal" | "NumpadAdd" => {
+            Some("pan_up") => set_w_pressed.set(true),
+            Some("pan_left") => set_a_pressed.set(true),
+            Some("pan_down") => set_s_pressed.set(true),
+            Some("pan_right") => set_d_pressed.set(true),
+            Some("zoom_in") => {
                 ev.prevent_default();
                 // Zoom in at center of canvas
                 if let Some((width, height)) = canvas_dimensions.get_untracked() {
@@ -328,7 +345,7 @@ pub fn setup_keyboard_listeners(
                     apply_normal_zoom(1.1, center_x, center_y, &viewport_for_zoom, min_zoom, Some((width, height)));
                 }
             }
-            "Minus" | "NumpadSubtract" => {
+            Some("zoom_out") => {
                 ev.prevent_default();
                 // Zoom out at center of canvas
                 if let Some((width, height)) = canvas_dimensions.get_untracked() {
@@ -343,24 +360,32 @@ pub fn setup_keyboard_listeners(
 
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keyup, move |ev| {
         // Don't handle keyboard shortcuts when typing in input fields
-        if let Some(target) = ev.target() {
-            if let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() {
-                let tag_name = element.tag_name().to_lowercase();
-                if tag_name == "input" || tag_name == "textarea" {
-                    return;
-                }
-            }
+        let Some(target) = ev.target() else { return };
+        let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() else { return };
+        let tag_name = element.tag_name().to_lowercase();
+        if tag_name == "input" || tag_name == "textarea" {
+            return;
         }
 
-        match ev.code().as_str() {
-            "Space" => {
+        // Look up what action this key combination maps to
+        let shortcuts = user_settings.get().keyboard_shortcuts;
+        let action = shortcuts.find_action(
+            &ev.code(),
+            ev.ctrl_key(),
+            ev.shift_key(),
+            ev.alt_key(),
+            ev.meta_key()
+        );
+
+        match action {
+            Some("pan_toggle") => {
                 set_space_pressed.set(false);
                 handle_pan_end(&viewport_for_keyup);
             }
-            "KeyW" => set_w_pressed.set(false),
-            "KeyA" => set_a_pressed.set(false),
-            "KeyS" => set_s_pressed.set(false),
-            "KeyD" => set_d_pressed.set(false),
+            Some("pan_up") => set_w_pressed.set(false),
+            Some("pan_left") => set_a_pressed.set(false),
+            Some("pan_down") => set_s_pressed.set(false),
+            Some("pan_right") => set_d_pressed.set(false),
             _ => {}
         }
     });

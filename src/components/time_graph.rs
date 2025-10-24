@@ -236,7 +236,7 @@ pub fn TimeGraph(
                     <Button
                         class="import-button"
                         on_click=leptos::Callback::new(move |_| set_show_project_manager.set(true))
-                        shortcut="P"
+                        shortcut_id="manage_projects"
                         title="Manage Projects"
                     >
                         <i class="fa-solid fa-folder"></i>
@@ -244,7 +244,7 @@ pub fn TimeGraph(
                     <Button
                         class="import-button"
                         on_click=leptos::Callback::new(move |_| set_new_line_dialog_open.set(true))
-                        shortcut="L"
+                        shortcut_id="create_line"
                         title="Create new line"
                     >
                         <i class="fa-solid fa-plus"></i>

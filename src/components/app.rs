@@ -10,9 +10,9 @@ use crate::storage::{IndexedDbStorage, Storage};
 use crate::train_journey::TrainJourney;
 use crate::worker_bridge::ConflictDetector;
 use leptos::{
-    component, create_effect, create_signal, event_target_value, spawn_local, store_value, view,
-    Callback, IntoView, Show, Signal, SignalGet, SignalGetUntracked, SignalSet, SignalUpdate,
-    WriteSignal,
+    component, create_effect, create_signal, event_target_value, provide_context, spawn_local,
+    store_value, view, Callback, IntoView, Show, Signal, SignalGet, SignalGetUntracked, SignalSet,
+    SignalUpdate, WriteSignal,
 };
 use leptos_meta::{provide_meta_context, Title};
 use std::collections::HashMap;
@@ -75,6 +75,27 @@ pub fn App() -> impl IntoView {
     // Project manager state
     let (show_project_manager, set_show_project_manager) = create_signal(false);
     let (current_project, set_current_project) = create_signal(Project::empty());
+
+    // User settings (persists across projects)
+    let (user_settings, set_user_settings) = create_signal(crate::models::UserSettings::default());
+
+    // Track when we're capturing keyboard shortcuts in the editor
+    let (is_capturing_shortcut, set_is_capturing_shortcut) = create_signal(false);
+
+    // Load user settings on mount
+    create_effect(move |_| {
+        spawn_local(async move {
+            match crate::models::UserSettings::load().await {
+                Ok(settings) => {
+                    set_user_settings.set(settings);
+                }
+                Err(e) => {
+                    leptos::logging::warn!("Failed to load user settings: {}", e);
+                    // Use defaults
+                }
+            }
+        });
+    });
 
     // Auto-load saved project on component mount
     create_effect(move |_| {
@@ -373,6 +394,10 @@ pub fn App() -> impl IntoView {
             }
         });
     });
+
+    // Provide user settings via context
+    provide_context((user_settings, set_user_settings));
+    provide_context((is_capturing_shortcut, set_is_capturing_shortcut));
 
     view! {
         <Title text="RailGraph"/>
