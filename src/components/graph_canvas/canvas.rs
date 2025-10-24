@@ -10,6 +10,7 @@ use crate::models::{RailwayGraph, UserSettings};
 use crate::conflict::Conflict;
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
+use crate::components::station_label_tooltip::StationLabelTooltip;
 use crate::components::canvas_viewport;
 use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
@@ -141,6 +142,8 @@ fn setup_render_effect(
 fn handle_mouse_move_hover(
     x: f64,
     y: f64,
+    viewport_x: f64,
+    viewport_y: f64,
     canvas: &web_sys::HtmlCanvasElement,
     viewport: ViewportState,
     conflicts_memo: Memo<Vec<Conflict>>,
@@ -149,6 +152,7 @@ fn handle_mouse_move_hover(
     train_journeys: ReadSignal<std::collections::HashMap<uuid::Uuid, TrainJourney>>,
     set_hovered_conflict: WriteSignal<Option<(Conflict, f64, f64)>>,
     set_hovered_journey_id: WriteSignal<Option<uuid::Uuid>>,
+    set_hovered_station_label: WriteSignal<Option<(String, f64, f64)>>,
     station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
     graph: ReadSignal<RailwayGraph>,
     spacing_mode: Signal<crate::models::SpacingMode>,
@@ -177,6 +181,13 @@ fn handle_mouse_move_hover(
         &idx_map,
     );
     set_hovered_conflict.set(hovered);
+
+    // Check for station label hover
+    let hovered_label = station_labels::check_station_label_hover(
+        x, y, viewport_x, viewport_y, &current_stations, &station_y_positions,
+        dimensions.top_margin, viewport.zoom_level, viewport.pan_offset_y,
+    );
+    set_hovered_station_label.set(hovered_label);
 
     if show_line_blocks.get() {
         let journeys = train_journeys.get();
@@ -224,6 +235,7 @@ pub fn GraphCanvas(
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
+    let (hovered_station_label, set_hovered_station_label) = create_signal(None::<(String, f64, f64)>);
     let (space_pressed, set_space_pressed) = create_signal(false);
 
     // Track WASD keys for panning
@@ -412,6 +424,10 @@ pub fn GraphCanvas(
             let x = f64::from(ev.client_x()) - rect.left();
             let y = f64::from(ev.client_y()) - rect.top();
 
+            // Viewport coordinates for tooltips (position: fixed)
+            let viewport_x = f64::from(ev.client_x());
+            let viewport_y = f64::from(ev.client_y());
+
             // If space is pressed and not yet panning, start panning
             if space_pressed.get() && !is_panning.get() {
                 canvas_viewport::handle_pan_start(x, y, &viewport);
@@ -433,7 +449,7 @@ pub fn GraphCanvas(
                     pan_offset_x: pan_offset_x.get(),
                     pan_offset_y: pan_offset_y.get(),
                 };
-                handle_mouse_move_hover(x, y, canvas, viewport_state, conflicts_memo, display_stations, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id, station_idx_map, graph, spacing_mode);
+                handle_mouse_move_hover(x, y, viewport_x, viewport_y, canvas, viewport_state, conflicts_memo, display_stations, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id, set_hovered_station_label, station_idx_map, graph, spacing_mode);
             }
         }
     };
@@ -447,6 +463,7 @@ pub fn GraphCanvas(
         set_is_dragging.set(false);
         canvas_viewport::handle_pan_end(&viewport);
         set_hovered_conflict.set(None);
+        set_hovered_station_label.set(None);
     };
 
     let handle_wheel = move |ev: WheelEvent| {
@@ -505,6 +522,7 @@ pub fn GraphCanvas(
             ></canvas>
 
             <ConflictTooltip hovered_conflict=hovered_conflict display_nodes=display_stations />
+            <StationLabelTooltip hovered_station_label=hovered_station_label />
         </div>
     }
 }

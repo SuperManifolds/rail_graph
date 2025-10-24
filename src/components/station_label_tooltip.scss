@@ -1,0 +1,17 @@
+.station-label-tooltip {
+  position: fixed;
+  z-index: 10000;
+  padding: 6px 10px;
+  background-color: rgba(0, 0, 0, 0.9);
+  color: #fff;
+  font-size: 12px;
+  font-family: monospace;
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.station-label-tooltip-hidden {
+  display: none;
+}
