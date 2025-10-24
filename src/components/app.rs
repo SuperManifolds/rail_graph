@@ -359,12 +359,6 @@ pub fn App() -> impl IntoView {
     let on_load_project = Callback::new(move |project: Project| {
         let project_id = project.metadata.id.clone();
 
-        set_current_project.set(project.clone());
-        set_lines.set(project.lines.clone());
-        set_graph.set(project.graph.clone());
-        set_legend.set(project.legend.clone());
-        set_settings.set(project.settings.clone());
-
         // Handle views
         let mut project_views = project.views.clone();
         if project_views.is_empty() {
@@ -376,16 +370,25 @@ pub fn App() -> impl IntoView {
             .iter()
             .map(|v| (v.id, v.viewport_state.clone()))
             .collect();
-        set_viewport_states.set(viewports);
-        set_infrastructure_viewport.set(project.infrastructure_viewport.clone());
-        set_views.set(project_views.clone());
 
-        // Set active tab
-        if let Some(tab_id) = &project.active_tab_id {
-            restore_active_tab(tab_id, &project_views, set_active_tab);
-        } else if let Some(first_view) = project_views.first() {
-            set_active_tab.set(AppTab::GraphView(first_view.id));
-        }
+        // Batch all signal updates to prevent auto-save from triggering with partial state
+        leptos::batch(move || {
+            set_current_project.set(project.clone());
+            set_lines.set(project.lines.clone());
+            set_graph.set(project.graph.clone());
+            set_legend.set(project.legend.clone());
+            set_settings.set(project.settings.clone());
+            set_viewport_states.set(viewports);
+            set_infrastructure_viewport.set(project.infrastructure_viewport.clone());
+            set_views.set(project_views.clone());
+
+            // Set active tab
+            if let Some(tab_id) = &project.active_tab_id {
+                restore_active_tab(tab_id, &project_views, set_active_tab);
+            } else if let Some(first_view) = project_views.first() {
+                set_active_tab.set(AppTab::GraphView(first_view.id));
+            }
+        });
 
         // Set this as the current project
         spawn_local(async move {
