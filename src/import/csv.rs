@@ -595,6 +595,11 @@ pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &m
         return Vec::new();
     }
 
+    // If no routes were created (infrastructure-only import), don't return any lines
+    if lines.iter().all(|line| line.forward_route.is_empty()) {
+        return Vec::new();
+    }
+
     lines
 }
 
@@ -644,7 +649,20 @@ fn build_line_groups(config: &CsvImportConfig) -> Vec<LineGroupData> {
         .max()
         .map_or(0, |max_idx| max_idx + 1);
 
-    (0..num_groups).map(|group_idx| {
+    // For infrastructure-only imports (no time columns, no groups), create one dummy group
+    let has_station_column = config.columns.iter().any(|c| c.column_type == ColumnType::StationName);
+    let has_infra_columns = config.columns.iter().any(|c| {
+        matches!(c.column_type, ColumnType::Platform | ColumnType::TrackNumber | ColumnType::TrackDistance)
+    });
+    let has_time_groups = num_groups > 0;
+
+    let groups_to_create = if !has_time_groups && has_station_column && has_infra_columns {
+        1  // Create one dummy group for infrastructure-only import
+    } else {
+        num_groups
+    };
+
+    (0..groups_to_create).map(|group_idx| {
             let group_columns: Vec<&ColumnMapping> = config.columns.iter()
                 .filter(|c| c.group_index == Some(group_idx))
                 .collect();
@@ -697,7 +715,16 @@ fn build_line_groups(config: &CsvImportConfig) -> Vec<LineGroupData> {
                 track_number_column: track_num_col,
                 track_distance_column: track_dist_col,
             }
-        }).filter(|g| g.arrival_time_column.is_some() || g.departure_time_column.is_some() || g.offset_column.is_some() || g.travel_time_column.is_some())
+        }).filter(|g| {
+            // Include groups with time columns OR infrastructure columns (for infrastructure-only imports)
+            g.arrival_time_column.is_some()
+            || g.departure_time_column.is_some()
+            || g.offset_column.is_some()
+            || g.travel_time_column.is_some()
+            || g.platform_column.is_some()
+            || g.track_number_column.is_some()
+            || g.track_distance_column.is_some()
+        })
           .collect()
 }
 
@@ -996,6 +1023,22 @@ fn get_or_create_edge(
         })
 }
 
+/// Create infrastructure (edge) between two stations with track and distance info
+fn create_infrastructure_edge(
+    graph: &mut RailwayGraph,
+    edge_map: &mut HashMap<(NodeIndex, NodeIndex), EdgeIndex>,
+    prev_idx: NodeIndex,
+    station_idx: NodeIndex,
+    prev_line_data: &LineStationData,
+    handedness: crate::models::TrackHandedness,
+) {
+    let edge_idx = get_or_create_edge(graph, edge_map, prev_idx, station_idx, prev_line_data, handedness);
+    super::shared::ensure_track_count(graph, edge_idx, prev_line_data.track_number, handedness);
+    if let (Some(distance), Some(track_segment)) = (prev_line_data.track_distance, graph.graph.edge_weight_mut(edge_idx)) {
+        track_segment.distance = Some(distance);
+    }
+}
+
 /// Build routes and graph from station data
 #[allow(clippy::too_many_lines)]
 fn build_routes(
@@ -1011,7 +1054,7 @@ fn build_routes(
 
     for (line_idx, group) in line_groups.iter().enumerate() {
         let mut route = Vec::new();
-        let mut prev_station: Option<(NodeIndex, Duration, LineStationData)> = None;
+        let mut prev_station: Option<(NodeIndex, Option<Duration>, LineStationData)> = None;
 
         // Track cumulative time for TravelTime format
         let mut cumulative_time_tracker = Duration::zero();
@@ -1038,17 +1081,13 @@ fn build_routes(
             // Determine cumulative time: either from time column or accumulated from travel times
             let cumulative_time = calculate_station_cumulative_time(
                 uses_travel_time,
-                prev_station.as_ref().map(|(_, t, _)| *t),
+                prev_station.as_ref().and_then(|(_, t, _)| *t),
                 line_station_data,
                 &mut cumulative_time_tracker,
             );
 
-            let Some(cumulative_time) = cumulative_time else {
-                continue;
-            };
-
             // Capture first time of day from arrival or departure time
-            if first_time_of_day.is_none() {
+            if cumulative_time.is_some() && first_time_of_day.is_none() {
                 // For first station, use departure time if available, otherwise arrival time
                 if let Some(departure) = line_station_data.departure_time {
                     first_time_of_day = Some(departure);
@@ -1104,6 +1143,11 @@ fn build_routes(
                 graph.add_or_get_station(clean_name)
             };
 
+            // Set platforms if specified
+            if let Some(ref platform_name) = line_station_data.platform {
+                super::shared::get_or_add_platform(graph, station_idx, platform_name);
+            }
+
             // Mark as passing loop if needed
             if is_passing_loop {
                 if let Some(station_node) = graph.graph.node_weight_mut(station_idx)
@@ -1112,13 +1156,31 @@ fn build_routes(
                 }
             }
 
-            // If there was a previous station, create or reuse edge
-            let Some((prev_idx, prev_time, prev_line_data)) = prev_station else {
-                // This is the first station - capture its wait time
-                if first_station_wait_time.is_none() {
+            // If there was a previous station, create infrastructure and potentially route segments
+            let prev_station_data = prev_station.replace((station_idx, cumulative_time, line_station_data.clone()));
+
+            let Some((prev_idx, prev_time, prev_line_data)) = prev_station_data else {
+                // This is the first station
+                if cumulative_time.is_some() && first_station_wait_time.is_none() {
                     first_station_wait_time = Some(calculate_wait_time(is_passing_loop, line_station_data, default_wait_time));
                 }
-                prev_station = Some((station_idx, cumulative_time, line_station_data.clone()));
+                continue;
+            };
+
+            // Only create route segments if we have time data
+            let Some(cumulative_time) = cumulative_time else {
+                // No time data - create infrastructure only
+                if !config.disable_infrastructure {
+                    create_infrastructure_edge(graph, &mut edge_map, prev_idx, station_idx, &prev_line_data, handedness);
+                }
+                continue;
+            };
+
+            let Some(prev_time) = prev_time else {
+                // Previous station had no time data - can't create route segment
+                if !config.disable_infrastructure {
+                    create_infrastructure_edge(graph, &mut edge_map, prev_idx, station_idx, &prev_line_data, handedness);
+                }
                 continue;
             };
 
@@ -1205,7 +1267,7 @@ fn build_routes(
                 });
             }
 
-            prev_station = Some((station_idx, cumulative_time, line_station_data.clone()));
+            prev_station = Some((station_idx, Some(cumulative_time), line_station_data.clone()));
         }
 
         // Assign forward route
@@ -1296,6 +1358,7 @@ fn parse_time_to_duration(s: &str) -> Option<Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use petgraph::visit::EdgeRef;
 
     #[test]
     fn test_is_time_format() {
@@ -1385,6 +1448,96 @@ mod tests {
         assert!(!config.has_headers);
         assert_eq!(config.columns.len(), 3);
         assert_eq!(config.columns[0].column_type, ColumnType::StationName);
+    }
+
+    #[test]
+    fn test_infrastructure_only_import() {
+        let csv_content = std::fs::read_to_string("test-data/infra.csv")
+            .expect("Failed to read test-data/infra.csv");
+
+        let config = analyze_csv(&csv_content, None).expect("Should parse infra.csv");
+
+        let mut graph = RailwayGraph::new();
+        let lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0, crate::models::TrackHandedness::RightHand);
+
+        let all_nodes = graph.get_all_nodes_ordered();
+
+        // Should not create any lines when there's no time data
+        assert!(lines.is_empty(), "Should not create lines for infrastructure-only import");
+
+        // Should have created stations and junctions
+        let node_count = graph.graph.node_count();
+        assert!(node_count > 0, "Should have created stations and junctions");
+
+        // Check that specific stations exist
+        let node_names: Vec<String> = all_nodes.iter()
+            .map(|(_, n)| {
+                match n {
+                    crate::models::Node::Station(s) => s.name.clone(),
+                    crate::models::Node::Junction(j) => j.name.clone().unwrap_or_default(),
+                }
+            })
+            .collect();
+
+        assert!(node_names.contains(&"Støren".to_string()), "Should have Støren station");
+        assert!(node_names.contains(&"Trondheim".to_string()), "Should have Trondheim station");
+        assert!(node_names.contains(&"Steinkjer".to_string()), "Should have Steinkjer station");
+
+        // Check for junctions
+        assert!(node_names.contains(&"Stavne".to_string()), "Should have Stavne junction");
+        assert!(node_names.contains(&"Ladalen".to_string()), "Should have Ladalen junction");
+        assert!(node_names.contains(&"Selbu".to_string()), "Should have Selbu junction");
+
+        // Check for passing loops
+        assert!(node_names.contains(&"Søberg".to_string()), "Should have Søberg passing loop");
+        assert!(node_names.contains(&"Nypan".to_string()), "Should have Nypan passing loop");
+
+        // Verify edges were created (should be node_count - 1 for a simple path)
+        let edge_count = graph.graph.edge_count();
+        assert!(edge_count > 0, "Should have created edges between nodes");
+        assert_eq!(edge_count, node_count - 1, "Should have one edge between each consecutive node pair");
+
+        // Verify platforms were created
+        let trondheim_idx = all_nodes.iter()
+            .find(|(_, n)| matches!(n, crate::models::Node::Station(s) if s.name == "Trondheim"))
+            .map(|(idx, _)| idx)
+            .expect("Trondheim should exist");
+
+        if let Some(node) = graph.graph.node_weight(*trondheim_idx) {
+            if let Some(station) = node.as_station() {
+                assert_eq!(station.platforms.len(), 3, "Trondheim should have 3 platforms");
+            }
+        }
+
+        // Verify passing loops are marked
+        let soberg_idx = all_nodes.iter()
+            .find(|(_, n)| matches!(n, crate::models::Node::Station(s) if s.name == "Søberg"))
+            .map(|(idx, _)| idx)
+            .expect("Søberg should exist");
+
+        if let Some(node) = graph.graph.node_weight(*soberg_idx) {
+            if let Some(station) = node.as_station() {
+                assert!(station.passing_loop, "Søberg should be marked as passing loop");
+            }
+        }
+
+        // Verify track counts
+        let heimdal_idx = all_nodes.iter()
+            .find(|(_, n)| matches!(n, crate::models::Node::Station(s) if s.name == "Heimdal"))
+            .map(|(idx, _)| idx)
+            .expect("Heimdal should exist");
+
+        let kolstad_idx = all_nodes.iter()
+            .find(|(_, n)| matches!(n, crate::models::Node::Station(s) if s.name == "Kolstad"))
+            .map(|(idx, _)| idx)
+            .expect("Kolstad should exist");
+
+        // Find edge between Heimdal and Kolstad
+        let edge = graph.graph.edges(*heimdal_idx)
+            .find(|e| e.target() == *kolstad_idx)
+            .expect("Should have edge from Heimdal to Kolstad");
+
+        assert_eq!(edge.weight().tracks.len(), 2, "Heimdal-Kolstad should have 2 tracks");
     }
 
     #[test]

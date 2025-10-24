@@ -180,19 +180,6 @@ pub fn CsvColumnMapper(
             return Err("At least one column must be marked as Station Name".to_string());
         }
 
-        // Check for at least one time-related column
-        let has_time_info = cfg.columns.iter().any(|c| {
-            matches!(c.column_type,
-                ColumnType::ArrivalTime |
-                ColumnType::DepartureTime |
-                ColumnType::TravelTime |
-                ColumnType::Offset
-            )
-        });
-        if !has_time_info {
-            return Err("At least one column must contain time information (Arrival Time, Departure Time, or Travel Time)".to_string());
-        }
-
         Ok(())
     };
 

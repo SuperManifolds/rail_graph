@@ -81,6 +81,7 @@ fn handle_csv_analysis(
 pub fn Importer(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
+    graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
@@ -145,20 +146,20 @@ pub fn Importer(
         let existing_line_count = lines.get().len();
         let handedness = settings.get().track_handedness;
 
-        // Parse CSV into existing graph
-        set_graph.update(|graph| {
-            if config.disable_infrastructure {
-                // Use pathfinding mode
-                match parse_csv_with_existing_infrastructure(&file_content.get(), &config, graph, existing_line_count, handedness) {
-                    Ok(lines) => new_lines = Some(lines),
-                    Err(e) => error_msg = Some(e),
-                }
-            } else {
-                // Use normal mode (creates infrastructure)
-                let lines = parse_csv_with_mapping(&file_content.get(), &config, graph, existing_line_count, handedness);
-                new_lines = Some(lines);
+        // Get owned copy of graph, mutate it, then set it back (triggers reactivity)
+        let mut current_graph = graph.get();
+
+        if config.disable_infrastructure {
+            // Use pathfinding mode
+            match parse_csv_with_existing_infrastructure(&file_content.get(), &config, &mut current_graph, existing_line_count, handedness) {
+                Ok(lines) => new_lines = Some(lines),
+                Err(e) => error_msg = Some(e),
             }
-        });
+        } else {
+            // Use normal mode (creates infrastructure)
+            let lines = parse_csv_with_mapping(&file_content.get(), &config, &mut current_graph, existing_line_count, handedness);
+            new_lines = Some(lines);
+        }
 
         // Handle errors
         if let Some(error) = error_msg {
@@ -166,6 +167,9 @@ pub fn Importer(
             set_import_error.set(Some(error));
             return;
         }
+
+        // Set modified graph back to signal
+        set_graph.set(current_graph);
 
         // Add new lines to existing lines
         if let Some(lines) = new_lines {
