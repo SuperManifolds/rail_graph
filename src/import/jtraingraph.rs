@@ -655,6 +655,8 @@ pub fn import_jtraingraph(
                     to_station: station_node_indices[arr_station_idx],
                     days_of_week: DaysOfWeek::ALL_DAYS,
                     train_number: Some(train.name.clone()),
+                    repeat_interval: None,
+                    repeat_until: None,
                 })
             })
             .collect();

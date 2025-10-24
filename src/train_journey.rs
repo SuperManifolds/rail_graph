@@ -375,6 +375,12 @@ impl TrainJourney {
         day_filter: DaysOfWeek,
     ) {
         let mut sequence = 1;
+
+        // Determine end of day
+        let Some(end_of_day) = current_date.and_hms_opt(23, 59, 59) else {
+            return;
+        };
+
         for manual_dep in &line.manual_departures {
             // Filter by day of week
             if !manual_dep.days_of_week.contains(day_filter) {
@@ -382,46 +388,103 @@ impl TrainJourney {
             }
 
             // Convert the manual departure time to the current date
-            let Some(departure_time) = time_on_date(manual_dep.time, current_date) else {
+            let Some(initial_departure_time) = time_on_date(manual_dep.time, current_date) else {
                 continue;
             };
 
             let from_idx = manual_dep.from_station;
             let to_idx = manual_dep.to_station;
 
-            // Use custom train number if provided, otherwise generate one
-            let train_number = manual_dep.train_number.clone()
-                .unwrap_or_else(|| generate_train_number(&line.auto_train_number_format, &line.name, sequence));
+            // Check if this is a repeating departure
+            if let Some(repeat_interval) = manual_dep.repeat_interval {
+                // Determine when to stop repeating
+                let repeat_until = if let Some(until_time) = manual_dep.repeat_until {
+                    time_on_date(until_time, current_date).unwrap_or(end_of_day)
+                } else {
+                    end_of_day
+                };
 
-            // Try forward route first
-            if let Some(journey) = Self::generate_manual_journey_for_route(
-                &line.forward_route,
-                line,
-                graph,
-                departure_time,
-                from_idx,
-                to_idx,
-                &train_number,
-            ) {
-                journeys.insert(journey.id, journey);
-                sequence += 1;
-                continue;
-            }
+                // Generate multiple journeys at the repeat interval
+                let mut current_departure = initial_departure_time;
 
-            // Try return route if forward didn't work
-            if let Some(journey) = Self::generate_manual_journey_for_route(
-                &line.return_route,
-                line,
-                graph,
-                departure_time,
-                from_idx,
-                to_idx,
-                &train_number,
-            ) {
-                journeys.insert(journey.id, journey);
-                sequence += 1;
+                while current_departure <= repeat_until {
+                    Self::try_generate_manual_journey(
+                        journeys,
+                        line,
+                        graph,
+                        current_departure,
+                        from_idx,
+                        to_idx,
+                        manual_dep.train_number.as_ref(),
+                        &mut sequence,
+                    );
+
+                    // Move to next departure time
+                    current_departure += repeat_interval;
+                }
+            } else {
+                // Single departure (no repeat)
+                Self::try_generate_manual_journey(
+                    journeys,
+                    line,
+                    graph,
+                    initial_departure_time,
+                    from_idx,
+                    to_idx,
+                    manual_dep.train_number.as_ref(),
+                    &mut sequence,
+                );
             }
         }
+    }
+
+    /// Try to generate a single manual journey on either forward or return route
+    /// Returns true if a journey was successfully generated
+    fn try_generate_manual_journey(
+        journeys: &mut HashMap<uuid::Uuid, TrainJourney>,
+        line: &Line,
+        graph: &RailwayGraph,
+        departure_time: NaiveDateTime,
+        from_idx: petgraph::graph::NodeIndex,
+        to_idx: petgraph::graph::NodeIndex,
+        custom_train_number: Option<&String>,
+        sequence: &mut usize,
+    ) -> bool {
+        // Use custom train number if provided, otherwise generate one
+        let train_number = custom_train_number.cloned()
+            .unwrap_or_else(|| generate_train_number(&line.auto_train_number_format, &line.name, *sequence));
+
+        // Try forward route first
+        if let Some(journey) = Self::generate_manual_journey_for_route(
+            &line.forward_route,
+            line,
+            graph,
+            departure_time,
+            from_idx,
+            to_idx,
+            &train_number,
+        ) {
+            journeys.insert(journey.id, journey);
+            *sequence += 1;
+            return true;
+        }
+
+        // Try return route if forward didn't work
+        if let Some(journey) = Self::generate_manual_journey_for_route(
+            &line.return_route,
+            line,
+            graph,
+            departure_time,
+            from_idx,
+            to_idx,
+            &train_number,
+        ) {
+            journeys.insert(journey.id, journey);
+            *sequence += 1;
+            return true;
+        }
+
+        false
     }
 
     fn generate_manual_journey_for_route(
@@ -954,6 +1017,8 @@ mod tests {
                 to_station: idx2,
                 days_of_week: DaysOfWeek::MONDAY | DaysOfWeek::WEDNESDAY | DaysOfWeek::FRIDAY,
                 train_number: None,
+                repeat_interval: None,
+                repeat_until: None,
             },
         ];
 

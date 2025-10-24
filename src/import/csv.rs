@@ -825,6 +825,8 @@ fn create_manual_departure(
         to_station,
         days_of_week: DaysOfWeek::default(),
         train_number: None,
+        repeat_interval: None,
+        repeat_until: None,
     })
 }
 

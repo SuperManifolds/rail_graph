@@ -1,6 +1,7 @@
-use crate::components::{days_of_week_selector::DaysOfWeekSelector, time_input::TimeInput};
+use crate::components::{days_of_week_selector::DaysOfWeekSelector, time_input::TimeInput, duration_input::OptionalDurationInput};
 use crate::models::{ManualDeparture, RailwayGraph, Stations, DaysOfWeek};
 use leptos::{component, view, IntoView, create_signal, store_value, Signal, SignalGet, SignalUpdate, SignalGetUntracked, event_target_value};
+use crate::constants::BASE_DATE;
 
 #[component]
 #[allow(clippy::needless_pass_by_value)]
@@ -109,20 +110,58 @@ pub fn ManualDepartureEditor(
                 }
             />
             </div>
-            <div class="form-group">
-                <label>"Train Number (optional)"</label>
-                <input
-                    type="text"
-                    class="train-number-input"
-                    placeholder="Auto-generated if empty"
-                    value=move || local_departure.get().train_number.unwrap_or_default()
-                    on:input=move |ev| {
-                        let value = event_target_value(&ev);
-                        let train_number = if value.is_empty() { None } else { Some(value) };
-                        set_local_departure.update(|dep| dep.train_number = train_number);
-                        on_update.with_value(|f| f(index, local_departure.get_untracked()));
-                    }
-                />
+            <div class="train-repeat-row">
+                <div class="form-group">
+                    <label>"Train Number (optional)"</label>
+                    <input
+                        type="text"
+                        class="train-number-input"
+                        placeholder="Auto-generated if empty"
+                        value=move || local_departure.get().train_number.unwrap_or_default()
+                        on:input=move |ev| {
+                            let value = event_target_value(&ev);
+                            let train_number = if value.is_empty() { None } else { Some(value) };
+                            set_local_departure.update(|dep| dep.train_number = train_number);
+                            on_update.with_value(|f| f(index, local_departure.get_untracked()));
+                        }
+                    />
+                </div>
+                <div class="form-group">
+                    <label>"Repeat every"</label>
+                    <OptionalDurationInput
+                        duration=Signal::derive(move || local_departure.get().repeat_interval)
+                        on_change=move |duration| {
+                            set_local_departure.update(|dep| dep.repeat_interval = duration);
+                            on_update.with_value(|f| f(index, local_departure.get_untracked()));
+                        }
+                    />
+                </div>
+                <div class="form-group">
+                    <label>"Until (optional)"</label>
+                    <input
+                        type="time"
+                        class="time-input"
+                        step="1"
+                        lang="en-GB"
+                        placeholder="End of day"
+                        prop:value=move || {
+                            local_departure.get().repeat_until
+                                .map_or(String::new(), |dt| dt.format("%H:%M:%S").to_string())
+                        }
+                        on:input=move |ev| {
+                            let time_str = event_target_value(&ev);
+                            let repeat_until = if time_str.is_empty() {
+                                None
+                            } else if let Ok(naive_time) = crate::time::parse_time_hms(&time_str) {
+                                Some(BASE_DATE.and_time(naive_time))
+                            } else {
+                                local_departure.get_untracked().repeat_until
+                            };
+                            set_local_departure.update(|dep| dep.repeat_until = repeat_until);
+                            on_update.with_value(|f| f(index, local_departure.get_untracked()));
+                        }
+                    />
+                </div>
             </div>
         </div>
     }

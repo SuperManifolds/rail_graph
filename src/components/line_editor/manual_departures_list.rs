@@ -127,6 +127,8 @@ pub fn ManualDeparturesList(
                                 to_station,
                                 days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
                                 train_number: None,
+                                repeat_interval: None,
+                                repeat_until: None,
                             };
                             updated_line.manual_departures.push(new_departure);
                             set_edited_line.set(Some(updated_line.clone()));

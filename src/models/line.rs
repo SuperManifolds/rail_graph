@@ -79,6 +79,10 @@ pub struct ManualDeparture {
     pub days_of_week: DaysOfWeek,
     #[serde(default)]
     pub train_number: Option<String>,
+    #[serde(with = "option_duration_serde", default)]
+    pub repeat_interval: Option<Duration>,
+    #[serde(with = "option_naive_datetime_serde", default)]
+    pub repeat_until: Option<NaiveDateTime>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -618,6 +622,32 @@ mod naive_datetime_serde {
     {
         let s = String::deserialize(deserializer)?;
         NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S")
+            .map_err(serde::de::Error::custom)
+    }
+}
+
+mod option_naive_datetime_serde {
+    use chrono::NaiveDateTime;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    #[allow(clippy::ref_option)]
+    pub fn serialize<S>(datetime: &Option<NaiveDateTime>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match datetime {
+            Some(dt) => serializer.serialize_some(&dt.format("%Y-%m-%d %H:%M:%S").to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<NaiveDateTime>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Option::<String>::deserialize(deserializer)?
+            .map(|s| NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S"))
+            .transpose()
             .map_err(serde::de::Error::custom)
     }
 }
