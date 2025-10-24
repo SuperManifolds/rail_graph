@@ -199,6 +199,7 @@ pub fn EditStation(
             is_open=is_open
             title=Signal::derive(|| "Edit Station".to_string())
             on_close=move || on_close_clone()
+            position_key="edit-station"
         >
             <div class="add-station-form">
                 <div class="form-field">

@@ -38,6 +38,7 @@ pub fn Settings(
             is_open=Signal::derive(move || is_open.get())
             title=Signal::derive(|| "Settings".to_string())
             on_close=move || set_is_open.set(false)
+            position_key="settings"
         >
             <TabView tabs=tabs active_tab=active_tab>
                 <TabPanel when=Signal::derive(move || active_tab.get() == "project")>

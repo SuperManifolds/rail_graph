@@ -51,6 +51,7 @@ pub fn AddStation(
             is_open=is_open
             title=Signal::derive(|| "Add New Station".to_string())
             on_close=move || on_close_clone()
+            position_key="add-station"
         >
             <div class="add-station-form">
                 <div class="form-field">

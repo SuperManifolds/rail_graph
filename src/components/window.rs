@@ -4,6 +4,33 @@ use wasm_bindgen::{prelude::*, JsCast};
 // Global window z-index counter
 static NEXT_Z_INDEX: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(2000);
 
+const WINDOW_POSITION_KEY_PREFIX: &str = "rail_graph_window_position_";
+
+fn get_saved_position(key: &str) -> Option<(f64, f64)> {
+    let window = web_sys::window()?;
+    let storage = window.local_storage().ok()??;
+    let storage_key = format!("{WINDOW_POSITION_KEY_PREFIX}{key}");
+    let json_str = storage.get_item(&storage_key).ok()??;
+
+    // Parse JSON: {"x": 100.0, "y": 150.0}
+    let json: serde_json::Value = serde_json::from_str(&json_str).ok()?;
+    let x = json.get("x")?.as_f64()?;
+    let y = json.get("y")?.as_f64()?;
+
+    Some((x, y))
+}
+
+fn save_position(key: &str, x: f64, y: f64) {
+    let Some(window) = web_sys::window() else { return };
+    let Ok(Some(storage)) = window.local_storage() else { return };
+
+    let storage_key = format!("{WINDOW_POSITION_KEY_PREFIX}{key}");
+    let json = serde_json::json!({"x": x, "y": y});
+    let Ok(json_str) = serde_json::to_string(&json) else { return };
+
+    let _ = storage.set_item(&storage_key, &json_str);
+}
+
 fn calculate_window_size(
     content_el: &web_sys::HtmlElement,
     max_size: (f64, f64),
@@ -48,19 +75,33 @@ fn calculate_window_size(
 }
 
 #[component]
+#[allow(clippy::too_many_lines)]
 pub fn Window(
     #[prop(into)] is_open: MaybeSignal<bool>,
     title: Signal<String>,
     on_close: impl Fn() + 'static,
     children: Children,
     #[prop(default = (1600.0, 1200.0))] max_size: (f64, f64),
+    #[prop(optional, into)] position_key: Option<String>,
 ) -> impl IntoView {
-    // Random offset so windows don't stack exactly on top of each other
+    // Try to load saved position, or use random offset so windows don't stack exactly on top of each other
     // Use store_value to ensure this is only calculated once
     let initial_position = store_value({
-        let offset_x = js_sys::Math::random() * 200.0;
-        let offset_y = js_sys::Math::random() * 150.0;
-        (100.0 + offset_x, 100.0 + offset_y)
+        if let Some(ref key) = position_key {
+            if let Some(saved_pos) = get_saved_position(key) {
+                saved_pos
+            } else {
+                // No saved position, use random
+                let offset_x = js_sys::Math::random() * 200.0;
+                let offset_y = js_sys::Math::random() * 150.0;
+                (100.0 + offset_x, 100.0 + offset_y)
+            }
+        } else {
+            // No position key, use random
+            let offset_x = js_sys::Math::random() * 200.0;
+            let offset_y = js_sys::Math::random() * 150.0;
+            (100.0 + offset_x, 100.0 + offset_y)
+        }
     });
 
     let (position, set_position) = create_signal(initial_position.get_value());
@@ -137,10 +178,6 @@ pub fn Window(
         }
     };
 
-    let handle_mouse_up = move |_: web_sys::MouseEvent| {
-        let _ = set_is_dragging.try_set(false);
-        let _ = set_is_resizing.try_set(false);
-    };
 
     let handle_resize_down = move |ev: web_sys::MouseEvent| {
         ev.stop_propagation();
@@ -181,8 +218,21 @@ pub fn Window(
                 handle_resize_move(ev);
             }) as Box<dyn FnMut(_)>);
 
-            let up_handler = Closure::wrap(Box::new(move |ev: web_sys::MouseEvent| {
-                handle_mouse_up(ev);
+            let position_key_for_up = position_key.clone();
+            let up_handler = Closure::wrap(Box::new(move |_: web_sys::MouseEvent| {
+                // Save position if we were dragging and have a position key
+                let was_dragging = is_dragging.try_get_untracked().unwrap_or(false);
+                if !was_dragging {
+                    let _ = set_is_dragging.try_set(false);
+                    let _ = set_is_resizing.try_set(false);
+                    return;
+                }
+
+                if let (Some(ref key), Some((x, y))) = (&position_key_for_up, position.try_get_untracked()) {
+                    save_position(key, x, y);
+                }
+                let _ = set_is_dragging.try_set(false);
+                let _ = set_is_resizing.try_set(false);
             }) as Box<dyn FnMut(_)>);
 
             let _ = body.add_event_listener_with_callback("mousemove", move_handler.as_ref().unchecked_ref());

@@ -2,6 +2,7 @@
 
 ## Improvements
 - Added 'Add Connection' section to station editor allowing you to easily connect stations without manually drawing tracks
+- Windows now remember their last position and reopen at that position (position is unique per window type: station editor, track editor, etc.)
 
 # v0.1.3 - 2025-10-23
 
