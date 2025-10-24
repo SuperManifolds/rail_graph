@@ -185,6 +185,7 @@ pub fn Importer(
                 is_open=show_mapper
                 title=Signal::derive(|| "CSV Column Mapping".to_string())
                 on_close=move || set_show_mapper.set(false)
+                position_key="importer"
             >
                 <CsvColumnMapper
                     config=Signal::derive(move || csv_config.get().unwrap_or_else(|| {

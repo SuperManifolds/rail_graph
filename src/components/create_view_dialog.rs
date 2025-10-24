@@ -42,6 +42,7 @@ pub fn CreateViewDialog(
                 set_view_name.set(String::new());
                 on_close_clone();
             }
+            position_key="create-view"
         >
             <div class="add-station-form">
                 <div class="form-field">

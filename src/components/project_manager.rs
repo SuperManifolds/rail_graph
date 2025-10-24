@@ -483,6 +483,7 @@ pub fn ProjectManager(
                 }
             }
             max_size=(800.0, 600.0)
+            position_key="project-manager"
         >
             <div class="project-manager">
                 {move || error_message.get().map(|msg| view! {
