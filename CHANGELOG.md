@@ -1,4 +1,4 @@
-# Unreleased
+# v0.1.4 - 2025-10-24
 
 ## Bug Fixes
 - Fixed route creation assigning all segments to track 0 instead of selecting appropriate tracks based on route direction - existing projects will be automatically fixed on load
