@@ -6,7 +6,7 @@ use std::cell::Cell;
 use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
-use crate::models::RailwayGraph;
+use crate::models::{RailwayGraph, UserSettings};
 use crate::conflict::Conflict;
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
@@ -213,6 +213,14 @@ pub fn GraphCanvas(
     initial_viewport: crate::models::ViewportState,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
 ) -> impl IntoView {
+    // Get user settings from context
+    let (user_settings, _) = use_context::<(ReadSignal<UserSettings>, WriteSignal<UserSettings>)>()
+        .expect("UserSettings context not found");
+
+    // Get capturing shortcut state from context
+    let (is_capturing_shortcut, _) = use_context::<(ReadSignal<bool>, WriteSignal<bool>)>()
+        .expect("is_capturing_shortcut context not found");
+
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
     let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
@@ -244,6 +252,8 @@ pub fn GraphCanvas(
         &viewport,
         canvas_dimensions,
         Some(1.0), // Min zoom of 1.0 for time graph
+        user_settings,
+        is_capturing_shortcut,
     );
 
     // Initialize viewport from saved state - only once on first mount

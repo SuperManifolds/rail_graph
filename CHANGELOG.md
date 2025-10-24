@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Improvements
+- Added customizable keyboard shortcuts - shortcuts can now be rebound in Settings > Keyboard Shortcuts with conflict detection and platform-specific defaults (Cmd on Mac, Ctrl on Windows/Linux)
 - Added 'Add Connection' section to station editor allowing you to easily connect stations without manually drawing tracks
 - Windows now remember their last position and reopen at that position (position is unique per window type: station editor, track editor, etc.)
 - Added Progressive Web App support - app can now be installed and works offline with full asset caching

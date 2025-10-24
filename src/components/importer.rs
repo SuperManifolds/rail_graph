@@ -174,7 +174,7 @@ pub fn Importer(
                     }
                 });
             })
-            shortcut="O"
+            shortcut_id="import_data"
             title="Import CSV or JTrainGraph (.fpl)"
         >
             <i class="fa-solid fa-file-import"></i>

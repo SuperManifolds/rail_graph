@@ -2,6 +2,7 @@ use leptos::{component, view, Signal, IntoView, create_signal, create_rw_signal,
 use crate::components::window::Window;
 use crate::components::button::Button;
 use crate::components::tab_view::{TabView, TabPanel, Tab};
+use crate::components::keyboard_shortcuts_editor::KeyboardShortcutsEditor;
 use crate::models::{ProjectSettings, TrackHandedness};
 
 #[component]
@@ -23,12 +24,17 @@ pub fn Settings(
             id: "project".to_string(),
             label: "Project Settings".to_string(),
         },
+        Tab {
+            id: "shortcuts".to_string(),
+            label: "Keyboard Shortcuts".to_string(),
+        },
     ];
 
     view! {
         <Button
             class="import-button"
             on_click=leptos::Callback::new(move |_| set_is_open.set(true))
+            shortcut_id="open_settings"
             title="Project Settings"
         >
             <i class="fa-solid fa-cog"></i>
@@ -82,6 +88,10 @@ pub fn Settings(
                             </div>
                         </div>
                     </div>
+                </TabPanel>
+
+                <TabPanel when=Signal::derive(move || active_tab.get() == "shortcuts")>
+                    <KeyboardShortcutsEditor />
                 </TabPanel>
             </TabView>
         </Window>

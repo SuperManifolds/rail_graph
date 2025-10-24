@@ -31,7 +31,7 @@ pub fn InfrastructureToolbar(
             <Button
                 class="toolbar-button"
                 on_click=Callback::new(move |_| set_show_add_station.set(true))
-                shortcut="S"
+                shortcut_id="add_station"
                 title="Add Station"
             >
                 <i class="fa-solid fa-circle-plus"></i>
@@ -49,7 +49,7 @@ pub fn InfrastructureToolbar(
                         set_selected_station.set(None);
                     }
                 })
-                shortcut="T"
+                shortcut_id="add_track"
                 title="Add Track"
             >
                 <i class="fa-solid fa-link"></i>
@@ -65,7 +65,7 @@ pub fn InfrastructureToolbar(
                         set_edit_mode.set(EditMode::AddingJunction);
                     }
                 })
-                shortcut="J"
+                shortcut_id="add_junction"
                 title="Add Junction"
             >
                 <i class="fa-solid fa-diamond"></i>
@@ -81,7 +81,7 @@ pub fn InfrastructureToolbar(
                         set_edit_mode.set(EditMode::CreatingView);
                     }
                 })
-                shortcut="N"
+                shortcut_id="create_view"
                 title="Create View"
             >
                 <i class="fa-solid fa-eye"></i>

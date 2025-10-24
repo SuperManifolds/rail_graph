@@ -9,7 +9,8 @@ use crate::components::delete_station_confirmation::DeleteStationConfirmation;
 use crate::components::edit_junction::EditJunction;
 use crate::components::edit_station::EditStation;
 use crate::components::edit_track::EditTrack;
-use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, IntoView, create_node_ref, create_signal, create_effect, SignalGet, SignalSet, SignalGetUntracked, Callable, Signal};
+use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, IntoView, create_node_ref, create_signal, create_effect, SignalGet, SignalSet, SignalGetUntracked, Callable, Signal, use_context};
+use crate::models::UserSettings;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::rc::Rc;
@@ -925,6 +926,14 @@ pub fn InfrastructureView(
     #[prop(optional)]
     on_viewport_change: Option<leptos::Callback<crate::models::ViewportState>>,
 ) -> impl IntoView {
+    // Get user settings from context
+    let (user_settings, _) = use_context::<(ReadSignal<UserSettings>, WriteSignal<UserSettings>)>()
+        .expect("UserSettings context not found");
+
+    // Get capturing shortcut state from context
+    let (is_capturing_shortcut, _) = use_context::<(ReadSignal<bool>, WriteSignal<bool>)>()
+        .expect("is_capturing_shortcut context not found");
+
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (auto_layout_enabled, set_auto_layout_enabled) = create_signal(true);
     let (edit_mode, set_edit_mode) = create_signal(EditMode::None);
@@ -1004,6 +1013,8 @@ pub fn InfrastructureView(
         &viewport,
         canvas_dimensions,
         None, // No min_zoom for infrastructure view
+        user_settings,
+        is_capturing_shortcut,
     );
 
     // WASD continuous panning

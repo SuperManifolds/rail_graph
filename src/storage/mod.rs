@@ -1,5 +1,6 @@
 mod indexeddb;
 mod file;
+pub mod idb;
 
 pub use indexeddb::IndexedDbStorage;
 pub use file::{serialize_project_to_bytes, deserialize_project_from_bytes, create_export_filename, trigger_download, regenerate_project_ids};

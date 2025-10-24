@@ -1,6 +1,7 @@
-use leptos::{component, view, IntoView, Children, Callback, create_effect, SignalGet, MaybeSignal, Callable};
+use leptos::{component, view, IntoView, Children, Callback, create_effect, SignalGet, MaybeSignal, Callable, use_context, ReadSignal, WriteSignal};
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys;
+use crate::models::{UserSettings, KeyboardShortcut};
 
 /// Detects if the current platform uses Cmd (Mac/iOS) or Ctrl (Windows/Linux)
 fn is_mac_platform() -> bool {
@@ -9,13 +10,11 @@ fn is_mac_platform() -> bool {
     navigator.contains("Mac") || navigator.contains("iPhone") || navigator.contains("iPad")
 }
 
-/// Formats a keyboard shortcut for display in tooltips
-fn format_shortcut(key: &str) -> String {
-    if is_mac_platform() {
-        format!("⌘⇧{}", key.to_uppercase())
-    } else {
-        format!("Ctrl+Shift+{}", key.to_uppercase())
-    }
+/// Detects if the current platform is Windows
+fn is_windows_platform() -> bool {
+    let Some(window) = web_sys::window() else { return false };
+    let Some(navigator) = window.navigator().platform().ok() else { return false };
+    navigator.contains("Win")
 }
 
 #[component]
@@ -25,10 +24,10 @@ pub fn Button(
     on_click: Callback<web_sys::MouseEvent>,
     /// The button contents (icons, text, etc.)
     children: Children,
-    /// Optional keyboard shortcut key (e.g., "L", "S", "T", "J")
-    /// Will be triggered with Cmd/Ctrl+Shift+{key}
+    /// Optional keyboard shortcut ID (e.g., "add_station", "add_track")
+    /// Will look up the shortcut from user settings
     #[prop(optional, into)]
-    shortcut: Option<String>,
+    shortcut_id: Option<String>,
     /// Optional CSS class for the button
     #[prop(optional, into)]
     class: MaybeSignal<String>,
@@ -39,9 +38,21 @@ pub fn Button(
     #[prop(optional, into)]
     title: Option<String>,
 ) -> impl IntoView {
+    // Get user settings from context to look up shortcuts
+    let user_settings_context = use_context::<(ReadSignal<UserSettings>, WriteSignal<UserSettings>)>();
+
+    // Look up the keyboard shortcut if a shortcut_id is provided
+    let shortcut_info = shortcut_id.as_ref().and_then(|id| {
+        user_settings_context.as_ref().and_then(|(user_settings, _)| {
+            user_settings.get().keyboard_shortcuts.get(id).cloned()
+        })
+    });
+
     // Build the final tooltip with shortcut hint if provided
-    let final_title = if let Some(ref key) = shortcut {
-        let shortcut_hint = format_shortcut(key);
+    let is_mac = is_mac_platform();
+    let is_windows = is_windows_platform();
+    let final_title = if let Some(ref shortcut) = shortcut_info {
+        let shortcut_hint = shortcut.format(is_mac, is_windows);
         match title {
             Some(base_title) => format!("{base_title} ({shortcut_hint})"),
             None => format!("({shortcut_hint})"),
@@ -51,41 +62,36 @@ pub fn Button(
     };
 
     // Set up keyboard shortcut listener if shortcut is provided
-    if let Some(key) = shortcut {
-        let key_lower = key.to_lowercase();
-        let key_upper = key.to_uppercase();
-        let is_mac = is_mac_platform();
-
+    if let Some(shortcut) = shortcut_info {
         create_effect(move |_| {
             let Some(window) = web_sys::window() else { return };
             let Some(document) = window.document() else { return };
 
-            let key_lower = key_lower.clone();
-            let key_upper = key_upper.clone();
+            let shortcut = shortcut.clone();
             let handler = Closure::wrap(Box::new(move |ev: web_sys::KeyboardEvent| {
-                // Check for Cmd (Mac) or Ctrl (Windows/Linux) + Shift + key
-                let modifier_pressed = if is_mac {
-                    ev.meta_key()
-                } else {
-                    ev.ctrl_key()
-                };
-
-                // Early return if modifier keys don't match
-                if !modifier_pressed || !ev.shift_key() || ev.alt_key() {
+                // Don't handle keyboard shortcuts when typing in input fields
+                let Some(target) = ev.target() else { return };
+                let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() else { return };
+                let tag_name = element.tag_name().to_lowercase();
+                if tag_name == "input" || tag_name == "textarea" {
                     return;
                 }
 
-                let pressed_key = ev.key();
-                let is_match = pressed_key == key_lower || pressed_key == key_upper;
-                if !is_match {
+                // Check if this event matches our shortcut
+                let event_shortcut = KeyboardShortcut::new(
+                    ev.code(),
+                    ev.ctrl_key(),
+                    ev.shift_key(),
+                    ev.alt_key(),
+                    ev.meta_key()
+                );
+                if shortcut != event_shortcut {
                     return;
                 }
 
                 ev.prevent_default();
-                // Create a synthetic mouse event to pass to the callback
-                if let Ok(mouse_ev) = web_sys::MouseEvent::new("click") {
-                    on_click.call(mouse_ev);
-                }
+                let Ok(mouse_ev) = web_sys::MouseEvent::new("click") else { return };
+                on_click.call(mouse_ev);
             }) as Box<dyn FnMut(_)>);
 
             let _ = document.add_event_listener_with_callback("keydown", handler.as_ref().unchecked_ref());
