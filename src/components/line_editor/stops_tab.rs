@@ -106,14 +106,16 @@ fn RouteStopsList(
                 let current_dir = dir.get();
                 let current_mode = time_mode.get();
                 stations_data.get().map(|stations| {
+                    let num_stations = stations.len();
                     stations.into_iter().enumerate().map(|(i, (name, station_idx))| {
-                        (i, name, station_idx, current_dir, current_mode)
+                        let is_first = i == 0;
+                        let is_last = i == num_stations - 1;
+                        (i, name, station_idx, current_dir, current_mode, is_first, is_last)
                     }).collect::<Vec<_>>()
                 }).unwrap_or_default()
             }
-            key=|(i, _, station_idx, current_dir, current_mode)| (station_idx.index(), *i, *current_dir as u8, *current_mode as u8)
-            children=move |(i, name, station_idx, current_dir, current_mode)| {
-                let num_stations = stations_data.with(|s| s.as_ref().map_or(0, Vec::len));
+            key=|(i, _, station_idx, current_dir, current_mode, is_first, is_last)| (station_idx.index(), *i, *current_dir as u8, *current_mode as u8, *is_first, *is_last)
+            children=move |(i, name, station_idx, current_dir, current_mode, is_first, is_last)| {
                 view! {
                     <StopRow
                         index=i
@@ -124,8 +126,8 @@ fn RouteStopsList(
                         edited_line=edited_line
                         graph=graph
                         on_save=on_save_for_list.clone()
-                        is_first={i == 0}
-                        is_last={i == num_stations - 1}
+                        is_first=is_first
+                        is_last=is_last
                     />
                 }
             }
