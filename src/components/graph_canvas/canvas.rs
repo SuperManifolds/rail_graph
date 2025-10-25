@@ -38,6 +38,7 @@ fn setup_render_effect(
     hovered_journey_id: ReadSignal<Option<uuid::Uuid>>,
     display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
     station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
+    view_edge_path: Signal<Vec<usize>>,
 ) {
     let (render_requested, set_render_requested) = create_signal(false);
     let is_disposed = Rc::new(Cell::new(false));
@@ -60,6 +61,7 @@ fn setup_render_effect(
         let _ = graph.get();
         let _ = display_stations.get();
         let _ = station_idx_map.get();
+        let _ = view_edge_path.get();
         let _ = zoom_level.get();
         let _ = zoom_level_x.get();
         let _ = pan_offset_x.get();
@@ -129,7 +131,8 @@ fn setup_render_effect(
                     hovered_journey_id: hovered_journey_value.as_ref(),
                 };
                 let current_spacing_mode = spacing_mode.get_untracked();
-                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph, &idx_map, current_spacing_mode);
+                let current_edge_path = view_edge_path.get_untracked();
+                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph, &idx_map, current_spacing_mode, &current_edge_path);
             });
 
             let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
@@ -156,12 +159,14 @@ fn handle_mouse_move_hover(
     station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
     graph: ReadSignal<RailwayGraph>,
     spacing_mode: Signal<crate::models::SpacingMode>,
+    view_edge_path: Signal<Vec<usize>>,
 ) {
     let current_conflicts = conflicts_memo.get();
     let current_stations = display_stations.get();
     let idx_map = station_idx_map.get();
     let current_graph = graph.get();
     let current_spacing_mode = spacing_mode.get();
+    let current_edge_path = view_edge_path.get();
 
     // Calculate station positions for accurate hover detection
     let canvas_width = f64::from(canvas.width());
@@ -176,6 +181,7 @@ fn handle_mouse_move_hover(
 
     let hovered = conflict_indicators::check_conflict_hover(
         x, y, &current_conflicts, &current_stations, &station_y_positions,
+        &current_edge_path,
         canvas_width, canvas_height,
         viewport.zoom_level, viewport.zoom_level_x, viewport.pan_offset_x, viewport.pan_offset_y,
         &idx_map,
@@ -195,6 +201,7 @@ fn handle_mouse_move_hover(
         journeys_vec.sort_by_key(|j| j.departure_time);
         let hovered_journey = train_journeys::check_journey_hover(
             x, y, &journeys_vec, &current_stations, &station_y_positions,
+            &current_edge_path,
             canvas_width, canvas_height,
             &viewport
         );
@@ -221,6 +228,7 @@ pub fn GraphCanvas(
     #[prop(optional)] pan_to_conflict_signal: Option<ReadSignal<Option<(f64, f64)>>>,
     display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
     station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
+    view_edge_path: Signal<Vec<usize>>,
     initial_viewport: crate::models::ViewportState,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
 ) -> impl IntoView {
@@ -400,7 +408,8 @@ pub fn GraphCanvas(
     setup_render_effect(
         canvas_ref, train_journeys, visualization_time, graph, &viewport,
         conflicts_memo, show_conflicts, show_line_blocks, spacing_mode,
-        hovered_conflict, hovered_journey_id, display_stations, station_idx_map
+        hovered_conflict, hovered_journey_id, display_stations, station_idx_map,
+        view_edge_path
     );
 
     let handle_mouse_down = move |ev: MouseEvent| {
@@ -449,7 +458,7 @@ pub fn GraphCanvas(
                     pan_offset_x: pan_offset_x.get(),
                     pan_offset_y: pan_offset_y.get(),
                 };
-                handle_mouse_move_hover(x, y, viewport_x, viewport_y, canvas, viewport_state, conflicts_memo, display_stations, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id, set_hovered_station_label, station_idx_map, graph, spacing_mode);
+                handle_mouse_move_hover(x, y, viewport_x, viewport_y, canvas, viewport_state, conflicts_memo, display_stations, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id, set_hovered_station_label, station_idx_map, graph, spacing_mode, view_edge_path);
             }
         }
     };
@@ -573,6 +582,7 @@ fn render_graph(
     graph: &RailwayGraph,
     station_idx_map: &std::collections::HashMap<usize, usize>,
     spacing_mode: crate::models::SpacingMode,
+    view_edge_path: &[usize],
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = canvas;
     let canvas_width = f64::from(canvas_element.width());
@@ -663,6 +673,7 @@ fn render_graph(
         stations,
         &station_y_positions,
         &journeys_vec,
+        view_edge_path,
         viewport.zoom_level,
         time_to_fraction,
     );
@@ -683,6 +694,7 @@ fn render_graph(
             &zoomed_dimensions,
             &visible_conflicts,
             &station_y_positions,
+            view_edge_path,
             viewport.zoom_level,
             time_to_fraction,
             station_idx_map,
@@ -698,6 +710,7 @@ fn render_graph(
                     conflict,
                     &journeys_vec,
                     &station_y_positions,
+                    view_edge_path,
                     viewport.zoom_level,
                     time_to_fraction,
                     station_idx_map,
@@ -714,8 +727,9 @@ fn render_graph(
                     &ctx,
                     &zoomed_dimensions,
                     journey,
-                    stations,
                     &station_y_positions,
+                    view_edge_path,
+                    stations,
                     viewport.zoom_level,
                     time_to_fraction,
                 );
@@ -730,6 +744,7 @@ fn render_graph(
         stations,
         &journeys_vec,
         &station_y_positions,
+        view_edge_path,
         current_time,
         viewport.zoom_level,
         time_to_fraction,

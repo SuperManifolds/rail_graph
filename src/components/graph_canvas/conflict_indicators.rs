@@ -23,6 +23,7 @@ pub fn draw_conflict_highlights(
     dims: &GraphDimensions,
     conflicts: &[&Conflict],
     station_y_positions: &[f64],
+    view_edge_path: &[usize],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
     station_idx_map: &std::collections::HashMap<usize, usize>,
@@ -47,17 +48,34 @@ pub fn draw_conflict_highlights(
         let _ = path.arc(0.0, 4.0 / zoom_level, dot_radius, 0.0, std::f64::consts::PI * 2.0);
     }
 
+    // Build edge index -> view position map once (O(m) where m = edges in view)
+    let edge_to_pos: std::collections::HashMap<usize, usize> = view_edge_path.iter()
+        .enumerate()
+        .map(|(pos, &edge)| (edge, pos))
+        .collect();
+
     // Set styles once
     ctx.set_line_width(1.5 / zoom_level);
 
     // Draw each marker by translating and stamping the paths
     for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
-        // Map full-graph indices to display indices
-        let Some(&display_idx1) = station_idx_map.get(&conflict.station1_idx) else {
-            continue; // Station not in current view
-        };
-        let Some(&display_idx2) = station_idx_map.get(&conflict.station2_idx) else {
-            continue; // Station not in current view
+        // Use edge-based matching for track conflicts (O(1) lookup), HashMap fallback for platform conflicts
+        let (display_idx1, display_idx2) = if let Some(edge_idx) = conflict.edge_index {
+            // O(1) lookup in pre-built HashMap
+            if let Some(&pos) = edge_to_pos.get(&edge_idx) {
+                (pos, pos + 1)
+            } else {
+                continue; // Edge not in current view
+            }
+        } else {
+            // Fallback to station HashMap for platform conflicts
+            let Some(&idx1) = station_idx_map.get(&conflict.station1_idx) else {
+                continue;
+            };
+            let Some(&idx2) = station_idx_map.get(&conflict.station2_idx) else {
+                continue;
+            };
+            (idx1, idx2)
         };
 
         let time_fraction = time_to_fraction(conflict.time);
@@ -104,12 +122,23 @@ pub fn draw_conflict_highlights(
 
         // Draw all labels
         for conflict in conflicts.iter().take(MAX_CONFLICTS_DISPLAYED) {
-            // Map full-graph indices to display indices
-            let Some(&display_idx1) = station_idx_map.get(&conflict.station1_idx) else {
-                continue; // Station not in current view
-            };
-            let Some(&display_idx2) = station_idx_map.get(&conflict.station2_idx) else {
-                continue; // Station not in current view
+            // Use edge-based matching for track conflicts (O(1) lookup), HashMap fallback for platform conflicts
+            let (display_idx1, display_idx2) = if let Some(edge_idx) = conflict.edge_index {
+                // O(1) lookup in pre-built HashMap
+                if let Some(&pos) = edge_to_pos.get(&edge_idx) {
+                    (pos, pos + 1)
+                } else {
+                    continue; // Edge not in current view
+                }
+            } else {
+                // Fallback to station HashMap for platform conflicts
+                let Some(&idx1) = station_idx_map.get(&conflict.station1_idx) else {
+                    continue;
+                };
+                let Some(&idx2) = station_idx_map.get(&conflict.station2_idx) else {
+                    continue;
+                };
+                (idx1, idx2)
             };
 
             let time_fraction = time_to_fraction(conflict.time);
@@ -149,6 +178,7 @@ pub fn check_conflict_hover(
     conflicts: &[Conflict],
     _stations: &[(petgraph::stable_graph::NodeIndex, Node)],
     station_y_positions: &[f64],
+    view_edge_path: &[usize],
     canvas_width: f64,
     canvas_height: f64,
     zoom_level: f64,
@@ -172,13 +202,30 @@ pub fn check_conflict_hover(
         return None;
     }
 
+    // Build edge index -> view position map once (O(m) where m = edges in view)
+    let edge_to_pos: std::collections::HashMap<usize, usize> = view_edge_path.iter()
+        .enumerate()
+        .map(|(pos, &edge)| (edge, pos))
+        .collect();
+
     for conflict in conflicts {
-        // Map full-graph indices to display indices
-        let Some(&display_idx1) = station_idx_map.get(&conflict.station1_idx) else {
-            continue; // Station not in current view
-        };
-        let Some(&display_idx2) = station_idx_map.get(&conflict.station2_idx) else {
-            continue; // Station not in current view
+        // Use edge-based matching for track conflicts (O(1) lookup), HashMap fallback for platform conflicts
+        let (display_idx1, display_idx2) = if let Some(edge_idx) = conflict.edge_index {
+            // O(1) lookup in pre-built HashMap
+            if let Some(&pos) = edge_to_pos.get(&edge_idx) {
+                (pos, pos + 1)
+            } else {
+                continue; // Edge not in current view
+            }
+        } else {
+            // Fallback to station HashMap for platform conflicts
+            let Some(&idx1) = station_idx_map.get(&conflict.station1_idx) else {
+                continue;
+            };
+            let Some(&idx2) = station_idx_map.get(&conflict.station2_idx) else {
+                continue;
+            };
+            (idx1, idx2)
         };
 
         // Calculate conflict position in screen coordinates
@@ -214,13 +261,14 @@ pub fn check_conflict_hover(
     None
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
 pub fn draw_block_violation_visualization(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     conflict: &Conflict,
     train_journeys: &[&crate::train_journey::TrainJourney],
     station_y_positions: &[f64],
+    view_edge_path: &[usize],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
     station_idx_map: &std::collections::HashMap<usize, usize>,
@@ -229,12 +277,23 @@ pub fn draw_block_violation_visualization(
     if let (Some((s1_start, s1_end)), Some((s2_start, s2_end))) =
         (conflict.segment1_times, conflict.segment2_times) {
 
-        // Map full-graph indices to display indices
-        let Some(&display_idx1) = station_idx_map.get(&conflict.station1_idx) else {
-            return; // Station not in current view
-        };
-        let Some(&display_idx2) = station_idx_map.get(&conflict.station2_idx) else {
-            return; // Station not in current view
+        // For conflicts with edge_index (block/track conflicts), use edge-based matching
+        let (display_idx1, display_idx2) = if let Some(edge_idx) = conflict.edge_index {
+            // Find this edge in the view edge path
+            if let Some(pos) = view_edge_path.iter().position(|&e| e == edge_idx) {
+                (pos, pos + 1)
+            } else {
+                return; // Edge not in current view
+            }
+        } else {
+            // Fallback to HashMap for platform conflicts (should not have visualization blocks)
+            let Some(&display_idx1) = station_idx_map.get(&conflict.station1_idx) else {
+                return; // Station not in current view
+            };
+            let Some(&display_idx2) = station_idx_map.get(&conflict.station2_idx) else {
+                return; // Station not in current view
+            };
+            (display_idx1, display_idx2)
         };
 
         // Find the journeys to get their colors
@@ -280,47 +339,51 @@ pub fn draw_journey_blocks(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
     journey: &crate::train_journey::TrainJourney,
-    stations: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)],
     station_y_positions: &[f64],
+    view_edge_path: &[usize],
+    view_nodes: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
-
     // Get journey color
     let color = journey.color.as_str();
     let fill_color = format!("{color}{BLOCK_FILL_OPACITY}");
     let stroke_color = format!("{color}{BLOCK_STROKE_OPACITY}");
 
-    // Create NodeIndex to display index mapping
-    let station_map: std::collections::HashMap<petgraph::stable_graph::NodeIndex, usize> = stations
-        .iter()
-        .enumerate()
-        .map(|(idx, (node_idx, _))| (*node_idx, idx))
-        .collect();
+    // Use the same edge-based matching as train journeys (handles bidirectional traversal)
+    let station_positions = super::train_journeys::match_journey_stations_to_view_by_edges(
+        &journey.segments,
+        &journey.station_times,
+        view_edge_path,
+        view_nodes,
+    );
 
-    // Draw a block for each segment
-    for i in 1..journey.station_times.len() {
-        let (node_from, _arrival_from, departure_from) = &journey.station_times[i - 1];
-        let (node_to, arrival_to, _departure_to) = &journey.station_times[i];
+    // Draw blocks for each segment
+    for i in 0..journey.segments.len() {
+        // Bounds check: ensure we have both start and end stations for this segment
+        if i + 1 >= journey.station_times.len() {
+            break;
+        }
 
-        // Look up station indices
-        let Some(&start_idx) = station_map.get(node_from) else {
-            continue;
-        };
-        let Some(&end_idx) = station_map.get(node_to) else {
-            continue;
-        };
+        let (_node_from, _arrival_from, departure_from) = journey.station_times[i];
+        let (_node_to, arrival_to, _departure_to) = journey.station_times[i + 1];
 
-        draw_block_rectangle(
-            ctx,
-            dims,
-            (*departure_from, *arrival_to),
-            (start_idx, end_idx),
-            station_y_positions,
-            zoom_level,
-            time_to_fraction,
-            (&fill_color, &stroke_color),
-        );
+        // Get the matched view positions for this segment
+        if let (Some(start_idx), Some(end_idx)) = (
+            station_positions.get(i).and_then(|&opt| opt),
+            station_positions.get(i + 1).and_then(|&opt| opt),
+        ) {
+            draw_block_rectangle(
+                ctx,
+                dims,
+                (departure_from, arrival_to),
+                (start_idx, end_idx),
+                station_y_positions,
+                zoom_level,
+                time_to_fraction,
+                (&fill_color, &stroke_color),
+            );
+        }
     }
 }
 

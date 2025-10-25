@@ -9,7 +9,7 @@ use crate::components::{
     line_editor::LineEditor,
     settings::Settings
 };
-use crate::models::{Line, RailwayGraph, GraphView, Stations};
+use crate::models::{Line, RailwayGraph, GraphView, Stations, Routes};
 use crate::train_journey::TrainJourney;
 use crate::conflict::Conflict;
 use leptos::{component, view, Signal, IntoView, SignalGet, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect};
@@ -26,6 +26,40 @@ fn compute_display_nodes(
             graph_view.get_nodes_for_display(&current_graph)
         } else {
             current_graph.get_all_nodes_ordered()
+        }
+    })
+}
+
+fn compute_edge_path(
+    view: Option<GraphView>,
+    graph: ReadSignal<RailwayGraph>,
+) -> Signal<Vec<usize>> {
+    Signal::derive(move || {
+        let current_graph = graph.get();
+        if let Some(ref graph_view) = view {
+            // Use view's edge_path if available, otherwise calculate from station_range
+            let edge_path = if let Some(ref edge_path) = graph_view.edge_path {
+                edge_path.clone()
+            } else if let Some((from, to)) = graph_view.station_range {
+                // Calculate edge path from station range
+                current_graph.find_path_between_nodes(from, to)
+                    .map(|edges| edges.iter().map(|e| e.index()).collect())
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
+
+            // Log the computed edge path
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "View '{}' edge_path: {:?}",
+                graph_view.name, edge_path
+            )));
+
+            edge_path
+        } else {
+            // No view - return empty edge path (full view mode not using edge matching)
+            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str("No view - using full graph"));
+            Vec::new()
         }
     })
 }
@@ -147,24 +181,16 @@ pub fn TimeGraph(
     // Filter journeys for this view
     let (filtered_journeys, set_filtered_journeys) = create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
 
-    create_effect({
-        let view = view.clone();
-        move |_| {
-            let all_journeys = train_journeys.get();
-            let filtered = if let Some(ref graph_view) = view {
-                let journeys_vec: Vec<_> = all_journeys.values().cloned().collect();
-                let current_graph = graph.get();
-                let filtered_vec = graph_view.filter_journeys(&journeys_vec, &current_graph);
-                filtered_vec.into_iter().map(|j| (j.id, j)).collect()
-            } else {
-                all_journeys
-            };
-            set_filtered_journeys.set(filtered);
-        }
+    create_effect(move |_| {
+        let all_journeys = train_journeys.get();
+        // Don't filter journeys for views - the edge-based matching handles partial visibility
+        set_filtered_journeys.set(all_journeys);
     });
 
     // Get nodes (stations and junctions) to display based on view
     let display_stations = compute_display_nodes(view.clone(), graph);
+    // Get edge path for journey rendering
+    let view_edge_path = compute_edge_path(view.clone(), graph);
     // Build station index mapping for conflict rendering
     let station_idx_map = compute_station_index_map(view.clone(), graph);
 
@@ -208,6 +234,7 @@ pub fn TimeGraph(
                     pan_to_conflict_signal=pan_to_conflict
                     display_stations=display_stations
                     station_idx_map=station_idx_map
+                    view_edge_path=view_edge_path
                     initial_viewport={view.as_ref().map_or(crate::models::ViewportState::default(), |v| v.viewport_state.clone())}
                     on_viewport_change=on_viewport_change
                 />
