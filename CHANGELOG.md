@@ -1,10 +1,11 @@
 # Unreleased
 
 ## Bug Fixes
-- Fixed time inputs using browser's native time picker which forced 12-hour format on some systems - now uses text inputs with custom parsing
+- Fixed line list in sidebar resetting when toggling line visibility or making other changes
+- Fixed time inputs using browser's native time picker which forced 12-hour format on some systems
 - Fixed delete button not appearing on new last stop after deleting the previous last stop in line editor
-- Fixed infrastructure view not showing CSV-imported stations in new projects - stations now properly appear when imported before opening infrastructure view
-- Fixed long station names overlapping train graph area - labels now truncate with ellipsis and show full name on hover
+- Fixed infrastructure view not showing CSV-imported stations in new projects
+- Fixed long station names overlapping train graph area
 
 # v0.1.4 - 2025-10-24
 
