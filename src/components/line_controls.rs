@@ -2,6 +2,7 @@ use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, 
 use crate::models::{Line, RailwayGraph, GraphView, ViewportState, Routes};
 use crate::components::line_editor::LineEditor;
 use crate::components::confirmation_dialog::ConfirmationDialog;
+use crate::components::dropdown_menu::{DropdownMenu, MenuItem};
 use std::collections::HashSet;
 use std::rc::Rc;
 
@@ -43,6 +44,14 @@ pub fn LineControls(
                                 }
                                 on_delete=move |id: uuid::Uuid| {
                                     set_delete_pending.set(Some(id));
+                                }
+                                on_duplicate=move |id: uuid::Uuid| {
+                                    set_lines.update(|lines_vec| {
+                                        if let Some(line) = lines_vec.iter().find(|l| l.id == id) {
+                                            let duplicated = line.duplicate();
+                                            lines_vec.push(duplicated);
+                                        }
+                                    });
                                 }
                                 on_create_view=on_create_view
                             />
@@ -129,6 +138,7 @@ pub fn LineControl(
     graph: ReadSignal<RailwayGraph>,
     on_edit: impl Fn(uuid::Uuid) + 'static,
     on_delete: impl Fn(uuid::Uuid) + 'static,
+    on_duplicate: impl Fn(uuid::Uuid) + 'static,
     on_create_view: Callback<GraphView>,
 ) -> impl IntoView {
     let current_line = Signal::derive(move || {
@@ -137,6 +147,7 @@ pub fn LineControl(
 
     let on_edit = store_value(on_edit);
     let on_delete = store_value(on_delete);
+    let on_duplicate = store_value(on_duplicate);
 
     view! {
         {move || {
@@ -164,51 +175,50 @@ pub fn LineControl(
                                 >
                                     <i class=if line.visible { "fa-solid fa-eye" } else { "fa-solid fa-eye-slash" }></i>
                                 </button>
-                                <button
-                                    class="create-view-button"
-                                    on:click={
-                                        let line = line.clone();
-                                        move |_| {
-                                            use crate::models::RouteDirection;
+                                <DropdownMenu items={
+                                    let line_clone = line.clone();
+                                    vec![
+                                        MenuItem {
+                                            label: "Open in View",
+                                            icon: "fa-solid fa-arrow-up-right-from-square",
+                                            on_click: Rc::new(move || {
+                                                use crate::models::RouteDirection;
 
-                                            let edge_path: Vec<usize> = line.forward_route.iter().map(|seg| seg.edge_index).collect();
-                                            if !edge_path.is_empty() {
-                                                let current_graph = graph.get();
-                                                let (from, to) = current_graph.get_route_endpoints(&line.forward_route, RouteDirection::Forward);
+                                                let edge_path: Vec<usize> = line_clone.forward_route.iter().map(|seg| seg.edge_index).collect();
+                                                if !edge_path.is_empty() {
+                                                    let current_graph = graph.get();
+                                                    let (from, to) = current_graph.get_route_endpoints(&line_clone.forward_route, RouteDirection::Forward);
 
-                                                if let (Some(from), Some(to)) = (from, to) {
-                                                    let view = GraphView {
-                                                        id: uuid::Uuid::new_v4(),
-                                                        name: line.name.clone(),
-                                                        viewport_state: ViewportState::default(),
-                                                        station_range: Some((from, to)),
-                                                        edge_path: Some(edge_path),
-                                                    };
-                                                    on_create_view.call(view);
+                                                    if let (Some(from), Some(to)) = (from, to) {
+                                                        let view = GraphView {
+                                                            id: uuid::Uuid::new_v4(),
+                                                            name: line_clone.name.clone(),
+                                                            viewport_state: ViewportState::default(),
+                                                            station_range: Some((from, to)),
+                                                            edge_path: Some(edge_path),
+                                                        };
+                                                        on_create_view.call(view);
+                                                    }
                                                 }
-                                            }
-                                        }
-                                    }
-                                    title="Open line in new view"
-                                >
-                                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
-                                </button>
-                                <button
-                                    class="edit-button"
-                                    on:click=move |_| on_edit.with_value(|f| f(line_id))
-                                    title="Edit line"
-                                >
-                                    <i class="fa-solid fa-pen"></i>
-                                </button>
-                                <button
-                                    class="delete-button"
-                                    on:click={
-                                        move |_| on_delete.with_value(|f| f(line_id))
-                                    }
-                                    title="Delete line"
-                                >
-                                    <i class="fa-solid fa-trash"></i>
-                                </button>
+                                            }),
+                                        },
+                                        MenuItem {
+                                            label: "Edit",
+                                            icon: "fa-solid fa-pen",
+                                            on_click: Rc::new(move || on_edit.with_value(|f| f(line_id))),
+                                        },
+                                        MenuItem {
+                                            label: "Duplicate",
+                                            icon: "fa-solid fa-copy",
+                                            on_click: Rc::new(move || on_duplicate.with_value(|f| f(line_id))),
+                                        },
+                                        MenuItem {
+                                            label: "Delete",
+                                            icon: "fa-solid fa-trash",
+                                            on_click: Rc::new(move || on_delete.with_value(|f| f(line_id))),
+                                        },
+                                    ]
+                                } />
                             </div>
                         </div>
                     </div>

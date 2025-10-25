@@ -21,18 +21,9 @@
                 align-items: center;
                 gap: var(--spacing-sm);
 
-                .visibility-toggle,
-                .create-view-button,
-                .edit-button,
-                .delete-button {
+                .visibility-toggle {
                     @include button-icon;
                     font-size: var(--font-size-base);
-                }
-
-                .delete-button {
-                    &:hover {
-                        color: var(--color-danger-dark);
-                    }
                 }
             }
         }
