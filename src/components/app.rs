@@ -230,9 +230,8 @@ pub fn App() -> impl IntoView {
         (node_count, edge_count)
     });
 
-    // Regenerate all views when their source line or infrastructure changes
+    // Regenerate all views when infrastructure changes
     create_effect(move |prev_counts: Option<(usize, usize)>| {
-        let current_lines = lines.get();
         let current_graph = graph.get();
         let node_count = current_graph.graph.node_count();
         let edge_count = current_graph.graph.edge_count();
@@ -246,11 +245,14 @@ pub fn App() -> impl IntoView {
             node_count != prev_nodes || edge_count != prev_edges
         });
 
-        set_views.update(|views_vec| {
-            for view in views_vec.iter_mut() {
-                update_view(view, infrastructure_changed, &current_lines, &current_graph);
-            }
-        });
+        if infrastructure_changed {
+            let current_lines = lines.get_untracked();
+            set_views.update(|views_vec| {
+                for view in views_vec.iter_mut() {
+                    update_view(view, infrastructure_changed, &current_lines, &current_graph);
+                }
+            });
+        }
 
         (node_count, edge_count)
     });
