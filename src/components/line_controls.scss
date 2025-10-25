@@ -15,6 +15,12 @@
             font-size: var(--font-size-base);
             color: var(--color-text-primary);
             font-weight: var(--font-weight-medium);
+            cursor: pointer;
+            user-select: none;
+
+            &:hover {
+                opacity: 0.8;
+            }
 
             .line-header-controls {
                 display: flex;

@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Improvements
+- Added double-click to edit line in line controls sidebar
 - Added automatic view regeneration when source line or infrastructure changes
 - Added duplicate line feature - creates a copy of a line with smart name incrementing
 - Reorganized line controls with ellipsis menu - actions now in dropdown menu for cleaner interface
