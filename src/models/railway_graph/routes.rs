@@ -217,6 +217,11 @@ impl Routes for RailwayGraph {
         use petgraph::visit::EdgeRef;
         use crate::models::track::TrackDirection;
 
+        // Don't consider a path from a node to itself
+        if from == to {
+            return None;
+        }
+
         // BFS to find shortest path, respecting track directions and junction routing rules
         let mut queue = VecDeque::new();
         let mut visited = HashMap::new();
@@ -243,8 +248,13 @@ impl Routes for RailwayGraph {
 
                 let can_use_junction = self.is_junction_routing_allowed(current, incoming_edge, edge.id());
 
+                // Check if we can use this track and junction routing allows it
+                if !can_use_track || !can_use_junction {
+                    continue;
+                }
+
                 // Check if we've reached destination
-                if neighbor == to && current != from {
+                if neighbor == to {
                     // Found the destination! Reconstruct path
                     let mut path = Vec::new();
                     let mut node = current;
@@ -258,7 +268,7 @@ impl Routes for RailwayGraph {
                 }
 
                 // For non-destination nodes, check if already visited
-                if can_use_track && can_use_junction && matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
+                if matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
                     visited.insert(neighbor, Some((current, edge.id())));
                     queue.push_back(neighbor);
                 }
@@ -276,8 +286,13 @@ impl Routes for RailwayGraph {
 
                 let can_use_junction = self.is_junction_routing_allowed(current, incoming_edge, edge.id());
 
+                // Check if we can use this track and junction routing allows it
+                if !can_use_track || !can_use_junction {
+                    continue;
+                }
+
                 // Check if we've reached destination
-                if neighbor == to && current != from {
+                if neighbor == to {
                     // Found the destination! Reconstruct path
                     let mut path = Vec::new();
                     let mut node = current;
@@ -291,7 +306,7 @@ impl Routes for RailwayGraph {
                 }
 
                 // For non-destination nodes, check if already visited
-                if can_use_track && can_use_junction && matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
+                if matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
                     visited.insert(neighbor, Some((current, edge.id())));
                     queue.push_back(neighbor);
                 }
@@ -517,8 +532,9 @@ mod tests {
         let route = vec![create_test_route_segment(edge2.index())];
 
         let available = graph.get_available_start_stations(&route, RouteDirection::Forward);
-        assert_eq!(available.len(), 1);
+        assert_eq!(available.len(), 2);
         assert!(available.contains(&"Station A".to_string()));
+        assert!(available.contains(&"Station C".to_string()));
     }
 
     #[test]
@@ -536,7 +552,8 @@ mod tests {
         let route = vec![create_test_route_segment(edge1.index())];
 
         let available = graph.get_available_end_stations(&route, RouteDirection::Forward);
-        assert_eq!(available.len(), 1);
+        assert_eq!(available.len(), 2);
+        assert!(available.contains(&"Station A".to_string()));
         assert!(available.contains(&"Station C".to_string()));
     }
 
