@@ -75,14 +75,14 @@ impl TrainJourney {
 
             if let Some(node_idx) = route_nodes[seg_idx + 1] {
                 station_times.push((node_idx, arrival_time, departure_from_station));
-            }
 
-            segments.push(JourneySegment {
-                edge_index: seg.edge_index,
-                track_index: seg.track_index,
-                origin_platform: seg.origin_platform,
-                destination_platform: seg.destination_platform,
-            });
+                segments.push(JourneySegment {
+                    edge_index: seg.edge_index,
+                    track_index: seg.track_index,
+                    origin_platform: seg.origin_platform,
+                    destination_platform: seg.destination_platform,
+                });
+            }
         }
     }
 
@@ -125,14 +125,14 @@ impl TrainJourney {
 
             if let Some(node_idx) = route_nodes[seg_idx + 1] {
                 station_times.push((node_idx, arrival_time, departure_from_station));
-            }
 
-            segments.push(JourneySegment {
-                edge_index: seg.edge_index,
-                track_index: seg.track_index,
-                origin_platform: seg.origin_platform,
-                destination_platform: seg.destination_platform,
-            });
+                segments.push(JourneySegment {
+                    edge_index: seg.edge_index,
+                    track_index: seg.track_index,
+                    origin_platform: seg.origin_platform,
+                    destination_platform: seg.destination_platform,
+                });
+            }
         }
     }
 
@@ -336,6 +336,17 @@ impl TrainJourney {
             }
 
             if station_times.len() >= 2 {
+                // Validate journey integrity
+                if segments.len() != station_times.len() - 1 {
+                    web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
+                        "❌ Journey construction error for line '{}': {} segments but {} stations (expected {})",
+                        line_name, segments.len(), station_times.len(), station_times.len() - 1
+                    )));
+                    // Skip this invalid journey
+                    departure_time += line.frequency;
+                    continue;
+                }
+
                 let id = uuid::Uuid::new_v4();
                 let train_number = generate_train_number(&line.auto_train_number_format, &line_name, journey_count + 1);
                 let route_start_node = station_times.first().map(|(node_idx, _, _)| *node_idx);
@@ -651,6 +662,17 @@ impl TrainJourney {
             }
 
             if station_times.len() >= 2 {
+                // Validate journey integrity
+                if segments.len() != station_times.len() - 1 {
+                    web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
+                        "❌ Journey construction error for line '{}' (return): {} segments but {} stations (expected {})",
+                        line_name, segments.len(), station_times.len(), station_times.len() - 1
+                    )));
+                    // Skip this invalid journey
+                    return_departure_time += line.frequency;
+                    continue;
+                }
+
                 let id = uuid::Uuid::new_v4();
                 let train_number = generate_train_number(&line.auto_train_number_format, &line_name, return_journey_count + 1);
                 let route_start_node = station_times.first().map(|(node_idx, _, _)| *node_idx);

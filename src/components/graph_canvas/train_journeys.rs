@@ -2,7 +2,6 @@ use web_sys::CanvasRenderingContext2d;
 use crate::models::Node;
 use crate::train_journey::TrainJourney;
 use super::types::GraphDimensions;
-use std::collections::HashMap;
 use petgraph::stable_graph::NodeIndex;
 
 // Train journey constants
@@ -12,16 +11,87 @@ const DOT_RADIUS_MULTIPLIER: f64 = 1.5; // Scale dots relative to line thickness
 const MIN_DOT_RADIUS: f64 = 2.0; // Minimum dot radius in pixels
 const TOTAL_HOURS: f64 = 48.0; // Total hours displayed on the graph
 
-/// Build a map from `NodeIndex` to display position (0, 1, 2, ...)
-/// All nodes (stations and junctions) get sequential integer positions
-#[allow(clippy::cast_precision_loss)]
-fn build_node_position_map(
-    nodes: &[(NodeIndex, Node)],
-) -> HashMap<NodeIndex, usize> {
-    nodes.iter()
-        .enumerate()
-        .map(|(idx, (node_idx, _))| (*node_idx, idx))
-        .collect()
+/// Assign view positions for a matched edge based on direction
+fn assign_edge_positions(
+    result: &mut [Option<usize>],
+    seg_idx: usize,
+    view_pos: usize,
+    journey_start_node: NodeIndex,
+    view_edge_start_node: NodeIndex,
+) {
+    // Bounds check: ensure we have space for both endpoints
+    if seg_idx + 1 >= result.len() {
+        return;
+    }
+
+    let going_forward = journey_start_node == view_edge_start_node;
+
+    if going_forward {
+        result[seg_idx] = Some(view_pos);
+        result[seg_idx + 1] = Some(view_pos + 1);
+    } else {
+        // Going backward along this edge
+        result[seg_idx] = Some(view_pos + 1);
+        result[seg_idx + 1] = Some(view_pos);
+    }
+}
+
+/// Match journey stations to view positions using edge-based matching
+/// This correctly handles duplicate nodes by matching the actual edges traversed
+/// Supports bidirectional search for return journeys
+#[must_use]
+pub fn match_journey_stations_to_view_by_edges(
+    journey_segments: &[crate::train_journey::JourneySegment],
+    journey_stations: &[(NodeIndex, chrono::NaiveDateTime, chrono::NaiveDateTime)],
+    view_edge_path: &[usize],
+    view_nodes: &[(NodeIndex, Node)],
+) -> Vec<Option<usize>> {
+    let mut result = vec![None; journey_stations.len()];
+    let mut last_view_pos: Option<usize> = None;
+
+    // Match each journey segment to view edge path
+    for (seg_idx, segment) in journey_segments.iter().enumerate() {
+        // Skip if this segment doesn't have a corresponding station
+        // (This can happen if the journey has invalid nodes in the route)
+        if seg_idx >= journey_stations.len() {
+            continue;
+        }
+
+        let journey_edge = segment.edge_index;
+
+        // Search bidirectionally from last position
+        let start_pos = last_view_pos.unwrap_or(0);
+        let mut matched = false;
+
+        // First try forward from start_pos
+        for view_pos in start_pos..view_edge_path.len() {
+            if view_edge_path[view_pos] == journey_edge {
+                let journey_start_node = journey_stations[seg_idx].0;
+                let view_edge_start_node = view_nodes[view_pos].0;
+
+                assign_edge_positions(&mut result, seg_idx, view_pos, journey_start_node, view_edge_start_node);
+                last_view_pos = Some(view_pos);
+                matched = true;
+                break;
+            }
+        }
+
+        // If not found forward, try backward from start_pos
+        if !matched && start_pos > 0 {
+            for view_pos in (0..start_pos).rev() {
+                if view_edge_path[view_pos] == journey_edge {
+                    let journey_start_node = journey_stations[seg_idx].0;
+                    let view_edge_start_node = view_nodes[view_pos].0;
+
+                    assign_edge_positions(&mut result, seg_idx, view_pos, journey_start_node, view_edge_start_node);
+                    last_view_pos = Some(view_pos);
+                    break;
+                }
+            }
+        }
+    }
+
+    result
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -31,16 +101,23 @@ pub fn draw_train_journeys(
     nodes: &[(NodeIndex, Node)],
     station_y_positions: &[f64],
     train_journeys: &[&TrainJourney],
+    view_edge_path: &[usize],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
 ) {
-    let node_positions = build_node_position_map(nodes);
-
     // Draw lines for each journey
     for journey in train_journeys {
         if journey.station_times.is_empty() {
             continue;
         }
+
+        // Match journey stations to view positions using edge-based matching (handles duplicate nodes correctly)
+        let station_positions = match_journey_stations_to_view_by_edges(
+            &journey.segments,
+            &journey.station_times,
+            view_edge_path,
+            nodes,
+        );
 
         ctx.set_stroke_style_str(&journey.color);
         ctx.set_line_width(journey.thickness / zoom_level);
@@ -48,9 +125,9 @@ pub fn draw_train_journeys(
 
         let mut last_visible_point: Option<(f64, f64, usize)> = None; // (x, y, view_position)
 
-        for (node_idx, arrival_time, departure_time) in &journey.station_times {
+        for (i, (_node_idx, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
             // Look up the display position for this station
-            let station_idx = node_positions.get(node_idx);
+            let station_idx = station_positions.get(i).and_then(|&opt| opt);
 
             let arrival_fraction = time_to_fraction(*arrival_time);
             let arrival_x = dims.left_margin + (arrival_fraction * dims.hour_width);
@@ -59,7 +136,7 @@ pub fn draw_train_journeys(
             let departure_x = dims.left_margin + (departure_fraction * dims.hour_width);
 
             // Only draw if this node is visible
-            let Some(&idx) = station_idx else {
+            let Some(idx) = station_idx else {
                 // Node is not visible - break the line
                 last_visible_point = None;
                 continue;
@@ -69,15 +146,10 @@ pub fn draw_train_journeys(
             let y = station_y_positions[idx] - super::canvas::TOP_MARGIN;
 
             // Draw segment from previous point if applicable
-            if let Some(last_visible_idx) = last_visible_point.map(|(_, _, idx)| idx) {
-                // Check if this node is consecutive with the previous node in the view (forward or backward)
-                let is_consecutive = idx == last_visible_idx + 1 || idx + 1 == last_visible_idx;
-
-                if is_consecutive {
-                    // Draw normal diagonal segment from last visible point to this arrival
-                    ctx.line_to(arrival_x, y);
-                }
-                // If not consecutive, don't draw a segment (gap with invisible nodes)
+            if last_visible_point.is_some() {
+                // Draw diagonal segment from last visible point to this arrival
+                // Consecutive journey stations always have a railway connection
+                ctx.line_to(arrival_x, y);
             } else {
                 // First visible point - start the path
                 ctx.move_to(arrival_x, y);
@@ -105,14 +177,23 @@ pub fn draw_train_journeys(
             continue;
         }
 
+        // Match journey stations to view positions using edge-based matching (handles duplicate nodes correctly)
+        let station_positions = match_journey_stations_to_view_by_edges(
+            &journey.segments,
+            &journey.station_times,
+            view_edge_path,
+            nodes,
+        );
+
         ctx.set_fill_style_str(&journey.color);
         let dot_radius = (journey.thickness * DOT_RADIUS_MULTIPLIER).max(MIN_DOT_RADIUS);
         ctx.begin_path();
 
         // Collect visible node info with original node_idx
         let visible_nodes: Vec<_> = journey.station_times.iter()
-            .filter_map(|(node_idx, arrival_time, departure_time)| {
-                let idx = *node_positions.get(node_idx)?;
+            .enumerate()
+            .filter_map(|(i, (node_idx, arrival_time, departure_time))| {
+                let idx = station_positions.get(i).and_then(|&opt| opt)?;
 
                 let arrival_fraction = time_to_fraction(*arrival_time);
                 let departure_fraction = time_to_fraction(*departure_time);
@@ -155,7 +236,7 @@ pub fn draw_train_journeys(
     }
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
 #[must_use]
 pub fn check_journey_hover(
     mouse_x: f64,
@@ -163,6 +244,7 @@ pub fn check_journey_hover(
     train_journeys: &[&TrainJourney],
     nodes: &[(NodeIndex, Node)],
     station_y_positions: &[f64],
+    view_edge_path: &[usize],
     canvas_width: f64,
     canvas_height: f64,
     viewport: &super::types::ViewportState,
@@ -178,8 +260,6 @@ pub fn check_journey_hover(
         return None;
     }
 
-    let node_positions = build_node_position_map(nodes);
-
     train_journeys
         .iter()
         .find_map(|journey| {
@@ -187,10 +267,11 @@ pub fn check_journey_hover(
                 mouse_x,
                 mouse_y,
                 journey,
+                nodes,
                 graph_width,
                 station_y_positions,
+                view_edge_path,
                 viewport,
-                &node_positions,
             )
         })
 }
@@ -200,13 +281,22 @@ fn check_single_journey_hover(
     mouse_x: f64,
     mouse_y: f64,
     journey: &TrainJourney,
+    nodes: &[(NodeIndex, Node)],
     graph_width: f64,
     station_y_positions: &[f64],
+    view_edge_path: &[usize],
     viewport: &super::types::ViewportState,
-    node_positions: &HashMap<NodeIndex, usize>,
 ) -> Option<uuid::Uuid> {
     use super::canvas::{LEFT_MARGIN, TOP_MARGIN};
     use crate::time::time_to_fraction;
+
+    // Match journey stations to view positions using edge-based matching
+    let station_positions = match_journey_stations_to_view_by_edges(
+        &journey.segments,
+        &journey.station_times,
+        view_edge_path,
+        nodes,
+    );
 
     let mut prev_departure_point: Option<(f64, f64)> = None;
 
@@ -214,9 +304,9 @@ fn check_single_journey_hover(
     let mut first_point = true;
     let mut prev_x = 0.0;
 
-    for (node_idx, arrival_time, departure_time) in &journey.station_times {
+    for (i, (_node_idx, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
         // Look up the display position for this station
-        let station_idx = node_positions.get(node_idx);
+        let station_idx = station_positions.get(i).and_then(|&opt| opt);
 
         let arrival_fraction = time_to_fraction(*arrival_time);
         let departure_fraction = time_to_fraction(*departure_time);
@@ -230,7 +320,7 @@ fn check_single_journey_hover(
         }
 
         // Only process hover detection for visible stations
-        if let Some(&idx) = station_idx {
+        if let Some(idx) = station_idx {
             let y_in_zoomed = station_y_positions[idx] - TOP_MARGIN;
 
             // Transform to screen coordinates

@@ -1,5 +1,5 @@
 use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, SignalGet, SignalUpdate, SignalSet, For, Signal, store_value, Callback, Callable};
-use crate::models::{Line, RailwayGraph, GraphView};
+use crate::models::{Line, RailwayGraph, GraphView, ViewportState, Routes};
 use crate::components::line_editor::LineEditor;
 use crate::components::confirmation_dialog::ConfirmationDialog;
 use std::collections::HashSet;
@@ -167,12 +167,22 @@ pub fn LineControl(
                                     class="create-view-button"
                                     on:click={
                                         let line = line.clone();
-                                        let current_graph = graph.get();
                                         move |_| {
-                                            // Use the line's forward route to create the view
+                                            use crate::models::RouteDirection;
+
                                             let edge_path: Vec<usize> = line.forward_route.iter().map(|seg| seg.edge_index).collect();
                                             if !edge_path.is_empty() {
-                                                if let Ok(view) = GraphView::from_edge_path(line.name.clone(), edge_path, &current_graph) {
+                                                let current_graph = graph.get();
+                                                let (from, to) = current_graph.get_route_endpoints(&line.forward_route, RouteDirection::Forward);
+
+                                                if let (Some(from), Some(to)) = (from, to) {
+                                                    let view = GraphView {
+                                                        id: uuid::Uuid::new_v4(),
+                                                        name: line.name.clone(),
+                                                        viewport_state: ViewportState::default(),
+                                                        station_range: Some((from, to)),
+                                                        edge_path: Some(edge_path),
+                                                    };
                                                     on_create_view.call(view);
                                                 }
                                             }

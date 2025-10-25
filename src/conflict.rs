@@ -62,6 +62,8 @@ pub struct Conflict {
     pub segment2_times: Option<(NaiveDateTime, NaiveDateTime)>,
     // For platform violations: store the platform index
     pub platform_idx: Option<usize>,
+    // Edge index for block/track conflicts (None for platform conflicts)
+    pub edge_index: Option<usize>,
 }
 
 impl Conflict {
@@ -786,6 +788,7 @@ fn check_segment_pair(
                 segment1_times: Some((segment1.time_start, segment1.time_end)),
                 segment2_times: Some((segment2.time_start, segment2.time_end)),
                 platform_idx: None,
+                edge_index: Some(edge_index),
             });
 
             #[cfg(target_arch = "wasm32")]
@@ -870,6 +873,7 @@ fn check_segment_pair(
         segment1_times: Some((segment1.time_start, segment1.time_end)),
         segment2_times: Some((segment2.time_start, segment2.time_end)),
         platform_idx: None,
+        edge_index: Some(edge_index),
     });
 
     #[cfg(target_arch = "wasm32")]
@@ -1127,6 +1131,7 @@ fn check_platform_conflicts_cached(
                     segment1_times: Some((occ1.time_start, occ1.time_end)),
                     segment2_times: Some((occ2.time_start, occ2.time_end)),
                     platform_idx: Some(occ1.platform_idx),
+                    edge_index: None, // Platform conflicts don't involve edges
                 });
 
                 if results.conflicts.len() >= MAX_CONFLICTS {
@@ -1162,6 +1167,7 @@ mod tests {
             segment1_times: None,
             segment2_times: None,
             platform_idx: None,
+            edge_index: Some(0),
         };
 
         assert_eq!(conflict.type_name(), "Head-on Conflict");
@@ -1184,6 +1190,7 @@ mod tests {
             segment1_times: None,
             segment2_times: None,
             platform_idx: None,
+            edge_index: Some(0),
         };
 
         let message = conflict.format_message("Station 1", "Station 2");
@@ -1216,6 +1223,7 @@ mod tests {
             segment1_times: None,
             segment2_times: None,
             platform_idx: Some(1),
+            edge_index: None,
         };
 
         let message = conflict.format_message("Central Station", "Central Station");
@@ -1239,6 +1247,7 @@ mod tests {
             segment1_times: None,
             segment2_times: None,
             platform_idx: None,
+            edge_index: Some(0),
         };
 
         let message = conflict.format_message("A", "B");
