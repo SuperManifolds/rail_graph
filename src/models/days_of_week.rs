@@ -101,6 +101,31 @@ impl DaysOfWeek {
             _ => None,
         }
     }
+
+    /// Parse `JTrainGraph` days format (7-character string of 1s and 0s)
+    /// Format: "1111111" where each character represents Mon-Sun
+    /// Returns `ALL_DAYS` if parsing fails
+    #[must_use]
+    pub fn from_jtraingraph_format(days_str: &str) -> Self {
+        if days_str.len() != 7 {
+            return Self::ALL_DAYS;
+        }
+
+        let mut result = Self::empty();
+        for (i, ch) in days_str.chars().enumerate() {
+            if ch == '1' {
+                if let Some(day) = Self::from_index(i) {
+                    result |= day;
+                }
+            }
+        }
+
+        if result.is_empty() {
+            Self::ALL_DAYS
+        } else {
+            result
+        }
+    }
 }
 
 // Custom serialization to store as u8
@@ -200,5 +225,38 @@ mod tests {
         let deserialized: DaysOfWeek = serde_json::from_str(&serialized).expect("deserialization should succeed");
         assert_eq!(days, deserialized);
         assert!(deserialized.is_all_days());
+    }
+
+    #[test]
+    fn test_from_jtraingraph_format() {
+        // Test all days
+        let days = DaysOfWeek::from_jtraingraph_format("1111111");
+        assert!(days.is_all_days());
+
+        // Test Monday, Friday, Saturday, Sunday (from dayofweek.fpl)
+        let days = DaysOfWeek::from_jtraingraph_format("1000111");
+        assert!(days.contains(DaysOfWeek::MONDAY));
+        assert!(!days.contains(DaysOfWeek::TUESDAY));
+        assert!(!days.contains(DaysOfWeek::WEDNESDAY));
+        assert!(!days.contains(DaysOfWeek::THURSDAY));
+        assert!(days.contains(DaysOfWeek::FRIDAY));
+        assert!(days.contains(DaysOfWeek::SATURDAY));
+        assert!(days.contains(DaysOfWeek::SUNDAY));
+
+        // Test weekdays only
+        let days = DaysOfWeek::from_jtraingraph_format("1111100");
+        assert_eq!(days, DaysOfWeek::WEEKDAYS);
+
+        // Test invalid format (too short) - should return ALL_DAYS
+        let days = DaysOfWeek::from_jtraingraph_format("111");
+        assert!(days.is_all_days());
+
+        // Test invalid format (empty) - should return ALL_DAYS
+        let days = DaysOfWeek::from_jtraingraph_format("");
+        assert!(days.is_all_days());
+
+        // Test all zeros - should return ALL_DAYS
+        let days = DaysOfWeek::from_jtraingraph_format("0000000");
+        assert!(days.is_all_days());
     }
 }

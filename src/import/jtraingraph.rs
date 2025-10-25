@@ -653,7 +653,7 @@ pub fn import_jtraingraph(
                     time: departure_datetime,
                     from_station: station_node_indices[dep_station_idx],
                     to_station: station_node_indices[arr_station_idx],
-                    days_of_week: DaysOfWeek::ALL_DAYS,
+                    days_of_week: DaysOfWeek::from_jtraingraph_format(&train.days),
                     train_number: Some(train.name.clone()),
                     repeat_interval: None,
                     repeat_until: None,
