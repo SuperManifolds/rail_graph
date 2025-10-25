@@ -1,13 +1,34 @@
-use leptos::{component, view, IntoView, create_signal, SignalGet, SignalSet, SignalUpdate, create_node_ref};
+use leptos::{component, view, IntoView, create_signal, SignalGet, SignalSet, SignalUpdate, create_node_ref, on_cleanup};
 use wasm_bindgen::JsCast;
 use web_sys::MouseEvent;
 use std::rc::Rc;
+use std::cell::RefCell;
+
+type ClickListenerClosure = wasm_bindgen::closure::Closure<dyn Fn(MouseEvent)>;
+type ListenerCleanup = Rc<RefCell<Option<ClickListenerClosure>>>;
 
 #[derive(Clone)]
 pub struct MenuItem {
     pub label: &'static str,
     pub icon: &'static str,
     pub on_click: Rc<dyn Fn() + 'static>,
+}
+
+fn add_click_listener(listener_cleanup: &ListenerCleanup, callback: impl Fn(MouseEvent) + 'static) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+
+    let closure = wasm_bindgen::closure::Closure::wrap(Box::new(callback) as Box<dyn Fn(MouseEvent)>);
+    let _ = document.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
+    *listener_cleanup.borrow_mut() = Some(closure);
+}
+
+fn remove_click_listener(closure: &ClickListenerClosure) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let _ = document.remove_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
 }
 
 #[component]
@@ -28,15 +49,28 @@ pub fn DropdownMenu(items: Vec<MenuItem>) -> impl IntoView {
         }
     };
 
-    leptos::create_effect(move |_| {
-        if is_open.get() {
-            if let Some(window) = web_sys::window() {
-                if let Some(document) = window.document() {
-                    let closure = wasm_bindgen::closure::Closure::wrap(Box::new(close_on_outside_click) as Box<dyn Fn(MouseEvent)>);
-                    let _ = document.add_event_listener_with_callback("click", closure.as_ref().unchecked_ref());
-                    closure.forget();
-                }
+    let listener_cleanup: ListenerCleanup = Rc::new(RefCell::new(None));
+
+    leptos::create_effect({
+        let listener_cleanup = listener_cleanup.clone();
+        move |_| {
+            // Clean up previous listener if any
+            if let Some(closure) = listener_cleanup.borrow_mut().take() {
+                remove_click_listener(&closure);
+                drop(closure);
             }
+
+            if is_open.get() {
+                add_click_listener(&listener_cleanup, close_on_outside_click);
+            }
+        }
+    });
+
+    // Clean up on component unmount
+    on_cleanup(move || {
+        if let Some(closure) = listener_cleanup.borrow_mut().take() {
+            remove_click_listener(&closure);
+            drop(closure);
         }
     });
 
