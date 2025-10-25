@@ -157,7 +157,10 @@ pub fn LineControl(
                         class="line-control"
                         style=format!("border-left: 4px solid {}", line.color)
                     >
-                        <div class="line-header">
+                        <div
+                            class="line-header"
+                            on:dblclick=move |_| on_edit.with_value(|f| f(line_id))
+                        >
                             <strong>{line.name.clone()}</strong>
                             <div class="line-header-controls">
                                 <button
