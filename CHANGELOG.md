@@ -5,6 +5,7 @@
 - Reorganized line controls with ellipsis menu - actions now in dropdown menu for cleaner interface
 
 ## Bug Fixes
+- Fixed JTrainGraph import not parsing days of week from train data
 - Fixed line list in sidebar resetting when toggling line visibility or making other changes
 - Fixed time inputs using browser's native time picker which forced 12-hour format on some systems
 - Fixed delete button not appearing on new last stop after deleting the previous last stop in line editor
