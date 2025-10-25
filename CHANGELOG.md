@@ -1,6 +1,7 @@
-# Unreleased
+# v0.1.5 - 2025-10-25
 
 ## Improvements
+- Added proper support for lines that revisit the same station or track segment
 - Improved visibility of grid in infrastructure editor
 - Added double-click to edit line in line controls sidebar
 - Added automatic view regeneration when source line or infrastructure changes
@@ -8,6 +9,7 @@
 - Reorganized line controls with ellipsis menu - actions now in dropdown menu for cleaner interface
 
 ## Bug Fixes
+- Fixed an issue where opening a view from a line would sometimes not work
 - Fixed JTrainGraph import not parsing days of week from train data
 - Fixed line list in sidebar resetting when toggling line visibility or making other changes
 - Fixed time inputs using browser's native time picker which forced 12-hour format on some systems
