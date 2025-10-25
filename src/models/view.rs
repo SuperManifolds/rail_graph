@@ -19,6 +19,9 @@ pub struct GraphView {
     /// Optional specific edge path to follow (for line views)
     #[serde(default)]
     pub edge_path: Option<Vec<usize>>,
+    /// If this view was created from a line, store the line ID for regeneration
+    #[serde(default)]
+    pub source_line_id: Option<Uuid>,
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
@@ -116,6 +119,7 @@ impl GraphView {
             viewport_state: ViewportState::default(),
             station_range,
             edge_path: None,
+            source_line_id: None,
         }
     }
 
@@ -139,6 +143,7 @@ impl GraphView {
             viewport_state: ViewportState::default(),
             station_range: Some((from, to)),
             edge_path: None,
+            source_line_id: None,
         })
     }
 
@@ -192,7 +197,29 @@ impl GraphView {
             viewport_state: ViewportState::default(),
             station_range: Some((from, to)),
             edge_path: Some(edge_path),
+            source_line_id: None,
         })
+    }
+
+    /// Update this view's edge path and station range from a line's current route
+    /// Keeps the view's ID, name, and viewport state
+    /// Returns true if the view was updated, false if the line has no valid route
+    pub fn update_from_line(&mut self, line: &super::Line, graph: &RailwayGraph) -> bool {
+        use super::RouteDirection;
+
+        let edge_path: Vec<usize> = line.forward_route.iter().map(|seg| seg.edge_index).collect();
+        if edge_path.is_empty() {
+            return false;
+        }
+
+        let (from, to) = graph.get_route_endpoints(&line.forward_route, RouteDirection::Forward);
+        if let (Some(from), Some(to)) = (from, to) {
+            self.edge_path = Some(edge_path);
+            self.station_range = Some((from, to));
+            true
+        } else {
+            false
+        }
     }
 
     /// Calculate the path for this view based on current graph state
@@ -371,6 +398,7 @@ mod tests {
             viewport_state: ViewportState::default(),
             station_range: Some((NodeIndex::new(0), NodeIndex::new(2))),
             edge_path: None,
+            source_line_id: None,
         };
 
         assert_eq!(view.name, "Test");
@@ -418,6 +446,7 @@ mod tests {
             viewport_state: ViewportState::default(),
             station_range: Some((s1, s3)),
             edge_path: None,
+            source_line_id: None,
         };
 
         let path = view.calculate_path(&graph);
@@ -438,6 +467,7 @@ mod tests {
             viewport_state: ViewportState::default(),
             station_range: None,
             edge_path: None,
+            source_line_id: None,
         };
 
         let path = view.calculate_path(&graph);

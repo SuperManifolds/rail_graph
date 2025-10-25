@@ -5,7 +5,7 @@ use crate::components::project_manager::ProjectManager;
 use crate::components::report_issue_button::ReportIssueButton;
 use crate::components::time_graph::TimeGraph;
 use crate::conflict::Conflict;
-use crate::models::{GraphView, Legend, Project, RailwayGraph, ViewportState};
+use crate::models::{GraphView, Legend, Project, RailwayGraph, Routes, ViewportState};
 use crate::storage::{IndexedDbStorage, Storage};
 use crate::train_journey::TrainJourney;
 use crate::worker_bridge::ConflictDetector;
@@ -38,6 +38,41 @@ fn restore_active_tab(tab_id: &str, views: &[GraphView], set_active_tab: WriteSi
     // Verify the view still exists
     if views.iter().any(|v| v.id == uuid) {
         set_active_tab.set(AppTab::GraphView(uuid));
+    }
+}
+
+/// Update a single view based on its type and current state
+fn update_view(
+    view: &mut GraphView,
+    infrastructure_changed: bool,
+    current_lines: &[crate::models::Line],
+    current_graph: &RailwayGraph,
+) {
+    // Line-based view: update from current line data
+    if let Some(source_line_id) = view.source_line_id {
+        let Some(source_line) = current_lines.iter().find(|line| line.id == source_line_id) else {
+            return;
+        };
+        view.update_from_line(source_line, current_graph);
+        return;
+    }
+
+    // Non-line, non-main-line view: recalculate edge_path from station_range when infrastructure changes
+    if !infrastructure_changed || view.name == "Main Line" {
+        return;
+    }
+
+    let Some((from, to)) = view.station_range else {
+        return;
+    };
+
+    let Some(edge_path) = current_graph.find_path_between_nodes(from, to) else {
+        return;
+    };
+
+    let edge_indices: Vec<usize> = edge_path.iter().map(|e| e.index()).collect();
+    if !edge_indices.is_empty() {
+        view.edge_path = Some(edge_indices);
     }
 }
 
@@ -189,6 +224,31 @@ pub fn App() -> impl IntoView {
                 view.station_range = regenerated.station_range;
                 view.edge_path = regenerated.edge_path;
                 break;
+            }
+        });
+
+        (node_count, edge_count)
+    });
+
+    // Regenerate all views when their source line or infrastructure changes
+    create_effect(move |prev_counts: Option<(usize, usize)>| {
+        let current_lines = lines.get();
+        let current_graph = graph.get();
+        let node_count = current_graph.graph.node_count();
+        let edge_count = current_graph.graph.edge_count();
+
+        // Skip during initial load
+        if !initial_load_complete.get() {
+            return (node_count, edge_count);
+        }
+
+        let infrastructure_changed = prev_counts.is_some_and(|(prev_nodes, prev_edges)| {
+            node_count != prev_nodes || edge_count != prev_edges
+        });
+
+        set_views.update(|views_vec| {
+            for view in views_vec.iter_mut() {
+                update_view(view, infrastructure_changed, &current_lines, &current_graph);
             }
         });
 
