@@ -139,10 +139,8 @@ pub fn ManualDepartureEditor(
                 <div class="form-group">
                     <label>"Until (optional)"</label>
                     <input
-                        type="time"
+                        type="text"
                         class="time-input"
-                        step="1"
-                        lang="en-GB"
                         placeholder="End of day"
                         prop:value=move || {
                             local_departure.get().repeat_until
