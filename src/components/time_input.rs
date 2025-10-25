@@ -14,10 +14,8 @@ pub fn TimeInput(
         <label>
             {label}
             <input
-                type="time"
+                type="text"
                 class="time-input"
-                step="1"
-                lang="en-GB"
                 prop:value=move || value.get().format("%H:%M:%S").to_string()
                 placeholder=default_time
                 on:input=move |ev| {

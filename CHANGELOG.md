@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Bug Fixes
+- Fixed time inputs using browser's native time picker which forced 12-hour format on some systems - now uses text inputs with custom parsing
 - Fixed delete button not appearing on new last stop after deleting the previous last stop in line editor
 - Fixed infrastructure view not showing CSV-imported stations in new projects - stations now properly appear when imported before opening infrastructure view
 - Fixed long station names overlapping train graph area - labels now truncate with ellipsis and show full name on hover
