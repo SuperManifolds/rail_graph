@@ -26,9 +26,10 @@ pub fn LineControls(
         <div class="controls">
             <h3>"Line Configuration:"</h3>
             <div class="line-controls">
-                {move || {
-                    lines.get().into_iter().map(|line| {
-                        let line_id = line.id;
+                <For
+                    each={move || lines.get().into_iter().map(|line| line.id).collect::<Vec<_>>()}
+                    key={|line_id| *line_id}
+                    children={move |line_id: uuid::Uuid| {
                         view! {
                             <LineControl
                                 line_id=line_id
@@ -46,8 +47,8 @@ pub fn LineControls(
                                 on_create_view=on_create_view
                             />
                         }
-                    }).collect::<Vec<_>>()
-                }}
+                    }}
+                />
             </div>
         </div>
 
