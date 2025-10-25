@@ -19,6 +19,7 @@ pub mod conflict_tooltip;
 pub mod csv_column_mapper;
 pub mod day_selector;
 pub mod days_of_week_selector;
+pub mod dropdown_menu;
 pub mod duration_input;
 pub mod error_list;
 pub mod graph_canvas;

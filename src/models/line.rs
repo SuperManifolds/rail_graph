@@ -598,6 +598,32 @@ impl Line {
 
         changed
     }
+
+    /// Generate a name for a duplicated line
+    /// If the name ends with (N), increments N. Otherwise appends (1).
+    #[must_use]
+    pub fn generate_duplicate_name(original_name: &str) -> String {
+        // Check if the name ends with " (N)" pattern
+        if let Some(rest) = original_name.strip_suffix(')') {
+            if let Some(open_paren_pos) = rest.rfind(" (") {
+                let number_str = &rest[open_paren_pos + 2..];
+                if let Ok(num) = number_str.parse::<i32>() {
+                    let base = &rest[..open_paren_pos];
+                    return format!("{base} ({})", num + 1);
+                }
+            }
+        }
+        format!("{original_name} (1)")
+    }
+
+    /// Create a duplicate of this line with a new ID and updated name
+    #[must_use]
+    pub fn duplicate(&self) -> Self {
+        let mut duplicated = self.clone();
+        duplicated.id = uuid::Uuid::new_v4();
+        duplicated.name = Self::generate_duplicate_name(&self.name);
+        duplicated
+    }
 }
 
 mod duration_serde {

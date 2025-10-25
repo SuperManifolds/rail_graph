@@ -1,5 +1,9 @@
 # Unreleased
 
+## Improvements
+- Added duplicate line feature - creates a copy of a line with smart name incrementing
+- Reorganized line controls with ellipsis menu - actions now in dropdown menu for cleaner interface
+
 ## Bug Fixes
 - Fixed line list in sidebar resetting when toggling line visibility or making other changes
 - Fixed time inputs using browser's native time picker which forced 12-hour format on some systems
