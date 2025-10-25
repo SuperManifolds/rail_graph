@@ -11,7 +11,7 @@ const EMPTY_MESSAGE_OFFSET_X: f64 = 80.0;
 
 const GRID_SIZE: f64 = 30.0; // Must match auto_layout.rs GRID_SIZE
 const GRID_COLOR: &str = "#141414";
-const GRID_LINE_WIDTH: f64 = 0.25;
+const GRID_LINE_WIDTH: f64 = 0.5;
 
 /// Draw a subtle grid pattern to show snap points
 fn draw_grid(
