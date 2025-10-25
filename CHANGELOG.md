@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Improvements
+- Improved visibility of grid in infrastructure editor
 - Added double-click to edit line in line controls sidebar
 - Added automatic view regeneration when source line or infrastructure changes
 - Added duplicate line feature - creates a copy of a line with smart name incrementing
