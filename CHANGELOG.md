@@ -1,4 +1,4 @@
-# Unreleased
+# v0.1.6 - 2025-10-25
 
 ## Bug Fixes
 - Fixed line editor closing when modifying line properties, as a result views will not auto-update on line changes. A better solution for this will come in a future update, until then you must recreate your views after adding stations.
