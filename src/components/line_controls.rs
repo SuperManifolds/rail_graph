@@ -196,6 +196,7 @@ pub fn LineControl(
                                                             viewport_state: ViewportState::default(),
                                                             station_range: Some((from, to)),
                                                             edge_path: Some(edge_path),
+                                                            source_line_id: Some(line_clone.id),
                                                         };
                                                         on_create_view.call(view);
                                                     }
