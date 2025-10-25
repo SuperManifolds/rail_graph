@@ -45,16 +45,15 @@ pub trait Routes {
 }
 
 impl Routes for RailwayGraph {
+    #[allow(clippy::excessive_nesting)]
     fn get_stations_from_route(
         &self,
         route: &[crate::models::RouteSegment],
         direction: crate::models::RouteDirection,
     ) -> Vec<(String, NodeIndex)> {
         use super::tracks::Tracks;
-        use std::collections::HashSet;
 
         let mut stations = Vec::new();
-        let mut seen = HashSet::new();
 
         match direction {
             crate::models::RouteDirection::Forward => {
@@ -81,11 +80,15 @@ impl Routes for RailwayGraph {
 
                     // Add the origin node if this is the first segment
                     if idx == 0 {
-                        self.add_station_if_not_seen(travel_from, &mut stations, &mut seen);
+                        if let Some(node) = self.graph.node_weight(travel_from) {
+                            stations.push((node.display_name().to_string(), travel_from));
+                        }
                     }
 
-                    // Add the destination node
-                    self.add_station_if_not_seen(travel_to, &mut stations, &mut seen);
+                    // Add the destination node (allow duplicates)
+                    if let Some(node) = self.graph.node_weight(travel_to) {
+                        stations.push((node.display_name().to_string(), travel_to));
+                    }
                     current_node = Some(travel_to);
                 }
             }
@@ -113,11 +116,15 @@ impl Routes for RailwayGraph {
 
                     // Add the origin node if this is the first segment
                     if idx == 0 {
-                        self.add_station_if_not_seen(travel_from, &mut stations, &mut seen);
+                        if let Some(node) = self.graph.node_weight(travel_from) {
+                            stations.push((node.display_name().to_string(), travel_from));
+                        }
                     }
 
-                    // Add the destination node
-                    self.add_station_if_not_seen(travel_to, &mut stations, &mut seen);
+                    // Add the destination node (allow duplicates)
+                    if let Some(node) = self.graph.node_weight(travel_to) {
+                        stations.push((node.display_name().to_string(), travel_to));
+                    }
                     current_node = Some(travel_to);
                 }
             }
@@ -144,7 +151,6 @@ impl Routes for RailwayGraph {
         direction: crate::models::RouteDirection,
     ) -> Vec<String> {
         use super::stations::Stations;
-        use std::collections::HashSet;
 
         let (first_idx, _) = self.get_route_endpoints(route, direction);
 
@@ -152,27 +158,16 @@ impl Routes for RailwayGraph {
             return Vec::new();
         };
 
-        // Get all nodes already in the route
-        let nodes_in_route: HashSet<NodeIndex> = self.get_stations_from_route(route, direction)
-            .iter()
-            .map(|(_, idx)| *idx)
-            .collect();
-
         self.get_all_stations_ordered()
             .iter()
             .filter_map(|(node_idx, station)| {
-                // Skip if already in route
-                if nodes_in_route.contains(node_idx) {
-                    return None;
-                }
-
                 // For forward: find path from node_idx to first_idx
                 // For return: find path from first_idx to node_idx (traveling backwards)
                 let has_path = match direction {
                     crate::models::RouteDirection::Forward => self.find_path_between_nodes(*node_idx, first_idx).is_some(),
                     crate::models::RouteDirection::Return => self.find_path_between_nodes(first_idx, *node_idx).is_some(),
                 };
-                if has_path && *node_idx != first_idx {
+                if has_path {
                     Some(station.name.clone())
                 } else {
                     None
@@ -187,7 +182,6 @@ impl Routes for RailwayGraph {
         direction: crate::models::RouteDirection,
     ) -> Vec<String> {
         use super::stations::Stations;
-        use std::collections::HashSet;
 
         let (_, last_idx) = self.get_route_endpoints(route, direction);
 
@@ -195,27 +189,16 @@ impl Routes for RailwayGraph {
             return Vec::new();
         };
 
-        // Get all nodes already in the route
-        let nodes_in_route: HashSet<NodeIndex> = self.get_stations_from_route(route, direction)
-            .iter()
-            .map(|(_, idx)| *idx)
-            .collect();
-
         self.get_all_stations_ordered()
             .iter()
             .filter_map(|(node_idx, station)| {
-                // Skip if already in route
-                if nodes_in_route.contains(node_idx) {
-                    return None;
-                }
-
                 // For forward: find path from last_idx to node_idx
                 // For return: find path from node_idx to last_idx (traveling backwards)
                 let has_path = match direction {
                     crate::models::RouteDirection::Forward => self.find_path_between_nodes(last_idx, *node_idx).is_some(),
                     crate::models::RouteDirection::Return => self.find_path_between_nodes(*node_idx, last_idx).is_some(),
                 };
-                if has_path && *node_idx != last_idx {
+                if has_path {
                     Some(station.name.clone())
                 } else {
                     None
@@ -224,6 +207,7 @@ impl Routes for RailwayGraph {
             .collect()
     }
 
+    #[allow(clippy::excessive_nesting)]
     fn find_path_between_nodes(
         &self,
         from: NodeIndex,
@@ -241,20 +225,6 @@ impl Routes for RailwayGraph {
         visited.insert(from, None);
 
         while let Some(current) = queue.pop_front() {
-            if current == to {
-                // Reconstruct path
-                let mut path = Vec::new();
-                let mut node = to;
-
-                while let Some(Some((prev_node, edge))) = visited.get(&node) {
-                    path.push(*edge);
-                    node = *prev_node;
-                }
-
-                path.reverse();
-                return Some(path);
-            }
-
             // Get the edge we used to arrive at current node (for junction routing checks)
             let incoming_edge = visited.get(&current).and_then(|v| v.as_ref().map(|(_, edge)| *edge));
 
@@ -273,6 +243,21 @@ impl Routes for RailwayGraph {
 
                 let can_use_junction = self.is_junction_routing_allowed(current, incoming_edge, edge.id());
 
+                // Check if we've reached destination
+                if neighbor == to && current != from {
+                    // Found the destination! Reconstruct path
+                    let mut path = Vec::new();
+                    let mut node = current;
+                    while let Some(Some((prev_node, prev_edge))) = visited.get(&node) {
+                        path.push(*prev_edge);
+                        node = *prev_node;
+                    }
+                    path.reverse();
+                    path.push(edge.id());
+                    return Some(path);
+                }
+
+                // For non-destination nodes, check if already visited
                 if can_use_track && can_use_junction && matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
                     visited.insert(neighbor, Some((current, edge.id())));
                     queue.push_back(neighbor);
@@ -291,6 +276,21 @@ impl Routes for RailwayGraph {
 
                 let can_use_junction = self.is_junction_routing_allowed(current, incoming_edge, edge.id());
 
+                // Check if we've reached destination
+                if neighbor == to && current != from {
+                    // Found the destination! Reconstruct path
+                    let mut path = Vec::new();
+                    let mut node = current;
+                    while let Some(Some((prev_node, prev_edge))) = visited.get(&node) {
+                        path.push(*prev_edge);
+                        node = *prev_node;
+                    }
+                    path.reverse();
+                    path.push(edge.id());
+                    return Some(path);
+                }
+
+                // For non-destination nodes, check if already visited
                 if can_use_track && can_use_junction && matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
                     visited.insert(neighbor, Some((current, edge.id())));
                     queue.push_back(neighbor);
@@ -326,25 +326,6 @@ impl RailwayGraph {
         };
 
         junction.is_routing_allowed(inc_edge, outgoing_edge)
-    }
-
-    /// Add a node to the stations list if not already seen
-    fn add_station_if_not_seen(
-        &self,
-        node_idx: NodeIndex,
-        stations: &mut Vec<(String, NodeIndex)>,
-        seen: &mut std::collections::HashSet<NodeIndex>,
-    ) {
-        if seen.contains(&node_idx) {
-            return;
-        }
-
-        let Some(name) = self.get_node_name(node_idx) else {
-            return;
-        };
-
-        stations.push((name, node_idx));
-        seen.insert(node_idx);
     }
 
     /// Determine travel direction for an edge based on previous node and next segment
