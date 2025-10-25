@@ -328,15 +328,25 @@ impl GraphView {
     /// Filter conflicts to only those within this path
     #[must_use]
     pub fn filter_conflicts(&self, conflicts: &[Conflict], graph: &RailwayGraph, all_nodes: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)]) -> Vec<Conflict> {
+        // Build edge path set for O(1) lookup if we have an edge path
+        let edge_set: Option<std::collections::HashSet<usize>> = self.edge_path.as_ref()
+            .map(|path| path.iter().copied().collect());
+
         let visible_nodes = self.visible_stations(graph);
 
         conflicts.iter()
             .filter(|conflict| {
-                // Convert conflict indices to NodeIndex values
+                // For track/block conflicts with edge_index, use edge-based matching
+                if let Some(edge_idx) = conflict.edge_index {
+                    if let Some(ref edges) = edge_set {
+                        return edges.contains(&edge_idx);
+                    }
+                }
+
+                // Fallback to station-based matching for platform conflicts or when no edge path
                 let node1 = all_nodes.get(conflict.station1_idx).map(|(node_idx, _)| node_idx);
                 let node2 = all_nodes.get(conflict.station2_idx).map(|(node_idx, _)| node_idx);
 
-                // Include if both nodes involved are in the visible set
                 match (node1, node2) {
                     (Some(n1), Some(n2)) => visible_nodes.contains(n1) && visible_nodes.contains(n2),
                     _ => false,
