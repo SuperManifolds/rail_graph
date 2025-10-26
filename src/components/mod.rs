@@ -38,6 +38,7 @@ pub mod report_issue_button;
 pub mod settings;
 pub mod routing_rule_editor;
 pub mod station_label_tooltip;
+pub mod tab_shortcuts;
 pub mod tab_view;
 pub mod text_input_dialog;
 pub mod time_graph;

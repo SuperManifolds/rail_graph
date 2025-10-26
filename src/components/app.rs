@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Clone, PartialEq)]
-enum AppTab {
+pub enum AppTab {
     Infrastructure,
     GraphView(Uuid),
 }
@@ -469,6 +469,13 @@ pub fn App() -> impl IntoView {
     // Provide user settings via context
     provide_context((user_settings, set_user_settings));
     provide_context((is_capturing_shortcut, set_is_capturing_shortcut));
+
+    // Setup tab switching keyboard shortcuts
+    crate::components::tab_shortcuts::setup_tab_switching(
+        is_capturing_shortcut,
+        views,
+        set_active_tab,
+    );
 
     view! {
         <Title text="RailGraph"/>
