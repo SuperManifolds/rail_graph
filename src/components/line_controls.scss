@@ -1,4 +1,39 @@
 // LineControls component styles
+.controls {
+    .sort-mode-selector {
+        display: inline-flex;
+        margin-bottom: var(--spacing-md);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        border: 1px solid var(--color-border-darker);
+
+        button {
+            @include button-base;
+            padding: var(--spacing-xs) var(--spacing-sm);
+            font-size: var(--font-size-base);
+            background-color: var(--color-bg-secondary);
+            border: none;
+            border-right: 1px solid var(--color-border);
+            color: var(--color-text-secondary);
+            border-radius: 0;
+            transition: all 0.15s ease;
+
+            &:last-child {
+                border-right: none;
+            }
+
+            &:hover {
+                background-color: var(--color-bg-tertiary);
+            }
+
+            &.active {
+                background-color: var(--color-accent);
+                color: var(--color-text-inverse);
+            }
+        }
+    }
+}
+
 .line-controls {
     display: flex;
     flex-direction: column;
@@ -9,17 +44,48 @@
         border-radius: var(--radius-lg);
         padding: var(--spacing-md);
         border: 1px solid var(--color-border-darker);
+        cursor: grab;
+        transition: opacity 0.2s, transform 0.1s;
+
+        &:active {
+            cursor: grabbing;
+        }
+
+        &.dragging {
+            opacity: 0.5;
+        }
+
+        &.drag-over {
+            border-top: 2px solid var(--color-accent);
+            transform: translateY(2px);
+        }
 
         .line-header {
-            @include flex-between;
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
             font-size: var(--font-size-base);
             color: var(--color-text-primary);
             font-weight: var(--font-weight-medium);
-            cursor: pointer;
             user-select: none;
 
-            &:hover {
-                opacity: 0.8;
+            .drag-handle {
+                color: var(--color-text-tertiary);
+                cursor: grab;
+                font-size: var(--font-size-sm);
+
+                &:hover {
+                    color: var(--color-text-secondary);
+                }
+            }
+
+            strong {
+                flex: 1;
+                cursor: pointer;
+
+                &:hover {
+                    opacity: 0.8;
+                }
             }
 
             .line-header-controls {

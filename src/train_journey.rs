@@ -789,6 +789,7 @@ mod tests {
                 default_wait_time: Duration::seconds(30),
                 first_stop_wait_time: Duration::zero(),
                 return_first_stop_wait_time: Duration::zero(),
+            sort_index: None,
         }
     }
 
@@ -1128,6 +1129,7 @@ mod tests {
                 default_wait_time: Duration::seconds(30),
                 first_stop_wait_time: Duration::zero(),
                 return_first_stop_wait_time: Duration::zero(),
+            sort_index: None,
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);

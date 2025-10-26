@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Features
+- Lines can now be sorted alphabetically, by creation order, or manually reordered by dragging
 - Added Distance Offset column type for CSV imports - allows importing cumulative distances that are automatically converted to inter-node distances
 - View creation now supports multiple waypoints - create views that pass through any number of stations and junctions
 - Stations and junctions can now be selected from a dropdown when creating views

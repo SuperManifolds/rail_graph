@@ -258,7 +258,7 @@ pub fn TimeGraph(
                         station_idx_map=station_idx_map
                     />
                 </div>
-                <LineControls lines=lines set_lines=set_lines graph=graph on_create_view=on_create_view settings=settings />
+                <LineControls lines=lines set_lines=set_lines graph=graph on_create_view=on_create_view settings=settings set_settings=set_settings />
                 <div class="sidebar-footer">
                     <Button
                         class="import-button"

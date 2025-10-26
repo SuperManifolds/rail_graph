@@ -125,6 +125,8 @@ pub struct Line {
     pub first_stop_wait_time: Duration,
     #[serde(with = "duration_serde", default = "default_first_stop_wait_time")]
     pub return_first_stop_wait_time: Duration,
+    #[serde(default)]
+    pub sort_index: Option<f64>,
 }
 
 fn default_visible() -> bool {
@@ -187,6 +189,7 @@ impl Line {
                     default_wait_time: default_wait_time(),
                     first_stop_wait_time: default_first_stop_wait_time(),
                     return_first_stop_wait_time: default_first_stop_wait_time(),
+                    sort_index: None,
                 }
             })
             .collect()
@@ -853,6 +856,7 @@ mod tests {
                 default_wait_time: default_wait_time(),
                 first_stop_wait_time: default_first_stop_wait_time(),
                 return_first_stop_wait_time: default_first_stop_wait_time(),
+            sort_index: None,
         };
 
         assert!(line.uses_edge(1));
@@ -884,6 +888,7 @@ mod tests {
                 default_wait_time: default_wait_time(),
                 first_stop_wait_time: default_first_stop_wait_time(),
                 return_first_stop_wait_time: default_first_stop_wait_time(),
+            sort_index: None,
         };
 
         assert!(line.uses_any_edge(&[1, 5, 6]));
@@ -918,6 +923,7 @@ mod tests {
                 default_wait_time: default_wait_time(),
                 first_stop_wait_time: default_first_stop_wait_time(),
                 return_first_stop_wait_time: default_first_stop_wait_time(),
+            sort_index: None,
         };
 
         // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
@@ -963,6 +969,7 @@ mod tests {
                 default_wait_time: default_wait_time(),
                 first_stop_wait_time: default_first_stop_wait_time(),
                 return_first_stop_wait_time: default_first_stop_wait_time(),
+            sort_index: None,
         };
 
         // Remove edge 1 but no bypass mapping
@@ -1016,6 +1023,7 @@ mod tests {
                 default_wait_time: default_wait_time(),
                 first_stop_wait_time: default_first_stop_wait_time(),
                 return_first_stop_wait_time: default_first_stop_wait_time(),
+            sort_index: None,
         };
 
         line.fix_track_indices_after_change(edge.index(), 2, &graph);
@@ -1110,6 +1118,7 @@ mod tests {
                 default_wait_time: default_wait_time(),
                 first_stop_wait_time: default_first_stop_wait_time(),
                 return_first_stop_wait_time: default_first_stop_wait_time(),
+            sort_index: None,
         };
 
         // Split edge 10 into edges 20 and 21
@@ -1182,6 +1191,7 @@ mod tests {
                 default_wait_time: default_wait_time(),
                 first_stop_wait_time: default_first_stop_wait_time(),
                 return_first_stop_wait_time: default_first_stop_wait_time(),
+            sort_index: None,
         };
 
         // Delete the direct edge B -> C
@@ -1229,6 +1239,7 @@ mod tests {
                 default_wait_time: default_wait_time(),
                 first_stop_wait_time: default_first_stop_wait_time(),
                 return_first_stop_wait_time: default_first_stop_wait_time(),
+            sort_index: None,
         };
 
         // Delete the edge
