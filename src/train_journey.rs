@@ -142,6 +142,9 @@ impl TrainJourney {
     /// * `lines` - The lines to generate journeys for
     /// * `graph` - The railway graph
     /// * `selected_day` - Optional day of week filter. If provided, only generates journeys for lines operating on that day
+    ///
+    /// # Panics
+    /// Panics if `BASE_DATE` cannot be converted to a valid datetime at midnight (00:00:00)
     #[must_use]
     pub fn generate_journeys(lines: &[Line], graph: &RailwayGraph, selected_day: Option<Weekday>) -> HashMap<uuid::Uuid, TrainJourney> {
         let mut journeys = HashMap::new();
@@ -151,8 +154,10 @@ impl TrainJourney {
             // Only simulate the selected day
             vec![(day, 0)]
         } else {
-            // Simulate all 7 days of the week
+            // Simulate Sunday from previous week (day -1) to catch late Sunday trains
+            // that extend into Monday, then the full week (days 0-6)
             vec![
+                (Weekday::Sun, -1), // Previous week's Sunday for wraparound conflicts
                 (Weekday::Mon, 0),
                 (Weekday::Tue, 1),
                 (Weekday::Wed, 2),
@@ -195,6 +200,18 @@ impl TrainJourney {
                     }
                 }
             }
+        }
+
+        // Filter out journeys from day -1 (previous Sunday) that don't extend into the current week
+        // Keep only journeys that have at least one station time >= Monday 00:00:00
+        if selected_day.is_none() {
+            let week_start = BASE_DATE.and_hms_opt(0, 0, 0).expect("Valid datetime");
+            journeys.retain(|_, journey| {
+                // Check if any station time (arrival or departure) is within the current week
+                journey.station_times.iter().any(|(_, arrival, departure)| {
+                    *arrival >= week_start || *departure >= week_start
+                })
+            });
         }
 
         journeys
