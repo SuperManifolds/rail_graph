@@ -16,6 +16,7 @@ fn apply_column_type_to_group(cfg: &mut CsvImportConfig, col_idx: usize, new_typ
             c.column_index > station_idx
             && c.column_type != ColumnType::Skip
             && c.column_type != ColumnType::TrackDistance
+            && c.column_type != ColumnType::DistanceOffset
         })
         .map(|c| (c.column_index, c.group_index.unwrap_or(0)))
         .collect();
@@ -43,7 +44,8 @@ fn assign_group_indices(cfg: &mut CsvImportConfig, pattern_len: usize) {
     for col in &mut cfg.columns {
         let is_data_col = col.column_index > station_idx
             && col.column_type != ColumnType::Skip
-            && col.column_type != ColumnType::TrackDistance;
+            && col.column_type != ColumnType::TrackDistance
+            && col.column_type != ColumnType::DistanceOffset;
         col.group_index = if is_data_col {
             let group_idx = data_col_idx / pattern_len;
             data_col_idx += 1;
@@ -66,6 +68,7 @@ fn extract_group_line_names(cfg: &mut CsvImportConfig, pattern_len: usize) {
             c.column_index > station_idx
             && c.column_type != ColumnType::Skip
             && c.column_type != ColumnType::TrackDistance
+            && c.column_type != ColumnType::DistanceOffset
         })
         .collect();
 
@@ -252,6 +255,7 @@ fn parse_column_type(s: &str) -> Option<ColumnType> {
         "Station Name" => Some(ColumnType::StationName),
         "Platform" => Some(ColumnType::Platform),
         "Track Distance" => Some(ColumnType::TrackDistance),
+        "Distance Offset" => Some(ColumnType::DistanceOffset),
         "Track Number" => Some(ColumnType::TrackNumber),
         "Arrival Time" => Some(ColumnType::ArrivalTime),
         "Departure Time" => Some(ColumnType::DepartureTime),
@@ -263,10 +267,11 @@ fn parse_column_type(s: &str) -> Option<ColumnType> {
     }
 }
 
-const COLUMN_TYPE_OPTIONS: [ColumnType; 10] = [
+const COLUMN_TYPE_OPTIONS: [ColumnType; 11] = [
     ColumnType::StationName,
     ColumnType::Platform,
     ColumnType::TrackDistance,
+    ColumnType::DistanceOffset,
     ColumnType::TrackNumber,
     ColumnType::ArrivalTime,
     ColumnType::DepartureTime,
@@ -376,6 +381,7 @@ fn GroupingControls(
             c.column_index > station_idx
             && c.column_type != ColumnType::Skip
             && c.column_type != ColumnType::TrackDistance
+            && c.column_type != ColumnType::DistanceOffset
         }).count()
     };
 

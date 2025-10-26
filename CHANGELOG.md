@@ -1,5 +1,8 @@
 # Unreleased
 
+## Features
+- Added Distance Offset column type for CSV imports - allows importing cumulative distances that are automatically converted to inter-node distances
+
 ## Bug Fixes
 - Fixed CSV import not using auto-detected line name from filename for single-line imports
 - Fixed error list items shifting right and overflowing when hovered
