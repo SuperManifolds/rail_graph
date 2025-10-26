@@ -112,6 +112,16 @@ body {
         border-bottom-color: var(--color-accent);
         background-color: var(--color-bg-primary);
     }
+
+    &.dragging {
+        opacity: 0.5;
+        cursor: grabbing;
+    }
+
+    &.drag-over {
+        border-left: 3px solid var(--color-accent);
+        padding-left: calc(var(--spacing-2xl) - 3px);
+    }
 }
 
 .tab-close-button {

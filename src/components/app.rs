@@ -14,6 +14,7 @@ use leptos::{
     store_value, view, Callback, IntoView, Show, Signal, SignalGet, SignalGetUntracked, SignalSet,
     SignalUpdate, WriteSignal,
 };
+use wasm_bindgen::JsCast;
 use leptos_meta::{provide_meta_context, Title};
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -397,6 +398,11 @@ pub fn App() -> impl IntoView {
     let (editing_view_id, set_editing_view_id) = create_signal(None::<Uuid>);
     let (edit_name_value, set_edit_name_value) = create_signal(String::new());
 
+    // State for drag-and-drop reordering
+    let (dragged_view_id, set_dragged_view_id) = create_signal(None::<Uuid>);
+    let (drag_over_view_id, set_drag_over_view_id) = create_signal(None::<Uuid>);
+    let (drag_timer_id, set_drag_timer_id) = create_signal(None::<i32>);
+
     // Callback for renaming a view
     let on_rename_view = move |view_id: Uuid, new_name: String| {
         if !new_name.trim().is_empty() {
@@ -507,10 +513,110 @@ pub fn App() -> impl IntoView {
                                                 .find(|v| v.id == view_id)
                                                 .map(|v| v.name.clone())
                                                 .unwrap_or_default();
+                                            let is_dragging = move || dragged_view_id.get() == Some(view_id);
+                                            let is_drag_over = move || drag_over_view_id.get() == Some(view_id);
+
                                             view! {
                                                 <button
-                                                    class=move || if active_tab.get() == AppTab::GraphView(view_id) { "tab-button active" } else { "tab-button" }
-                                                    on:click=move |_| set_active_tab.set(AppTab::GraphView(view_id))
+                                                    class=move || {
+                                                        let mut classes = vec!["tab-button"];
+                                                        if active_tab.get() == AppTab::GraphView(view_id) {
+                                                            classes.push("active");
+                                                        }
+                                                        if is_dragging() {
+                                                            classes.push("dragging");
+                                                        }
+                                                        if is_drag_over() {
+                                                            classes.push("drag-over");
+                                                        }
+                                                        classes.join(" ")
+                                                    }
+                                                    draggable="false"
+                                                    on:mousedown=move |_| {
+                                                        // Start a timer to enable dragging after 300ms
+                                                        let window = web_sys::window().expect("window");
+                                                        let set_draggable = move || {
+                                                            set_dragged_view_id.set(Some(view_id));
+                                                        };
+                                                        let closure = wasm_bindgen::closure::Closure::wrap(Box::new(set_draggable) as Box<dyn FnMut()>);
+                                                        let timer_id = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                                                            closure.as_ref().unchecked_ref(),
+                                                            300
+                                                        ).expect("set_timeout");
+                                                        closure.forget();
+                                                        set_drag_timer_id.set(Some(timer_id));
+                                                    }
+                                                    on:mouseup=move |_| {
+                                                        // Cancel the timer if mouse is released before 300ms
+                                                        if let Some(timer_id) = drag_timer_id.get() {
+                                                            web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
+                                                            set_drag_timer_id.set(None);
+                                                        }
+                                                        // Clear drag state if released without dragging
+                                                        set_dragged_view_id.set(None);
+                                                        set_drag_over_view_id.set(None);
+                                                    }
+                                                    on:mouseleave=move |_| {
+                                                        // Cancel the timer if mouse leaves before 300ms
+                                                        if let Some(timer_id) = drag_timer_id.get() {
+                                                            web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
+                                                            set_drag_timer_id.set(None);
+                                                        }
+                                                    }
+                                                    on:click=move |_| {
+                                                        // Only handle click if not dragging
+                                                        if dragged_view_id.get().is_none() {
+                                                            set_active_tab.set(AppTab::GraphView(view_id));
+                                                        }
+                                                    }
+                                                    on:dragstart=move |ev| {
+                                                        if let Some(dt) = ev.data_transfer() {
+                                                            let _ = dt.set_data("text/plain", &view_id.to_string());
+                                                            dt.set_effect_allowed("move");
+                                                        }
+                                                    }
+                                                    on:dragover=move |ev| {
+                                                        if dragged_view_id.get().is_some() {
+                                                            ev.prevent_default();
+                                                            if let Some(dt) = ev.data_transfer() {
+                                                                dt.set_drop_effect("move");
+                                                            }
+                                                            set_drag_over_view_id.set(Some(view_id));
+                                                        }
+                                                    }
+                                                    on:dragleave=move |_| {
+                                                        set_drag_over_view_id.set(None);
+                                                    }
+                                                    on:drop=move |ev| {
+                                                        ev.prevent_default();
+                                                        ev.stop_propagation();
+
+                                                        if let Some(dragged_id) = dragged_view_id.get() {
+                                                            if dragged_id != view_id {
+                                                                // Reorder the views array
+                                                                set_views.update(|views_vec| {
+                                                                    let dragged_idx = views_vec.iter().position(|v| v.id == dragged_id);
+                                                                    let target_idx = views_vec.iter().position(|v| v.id == view_id);
+
+                                                                    if let (Some(from), Some(to)) = (dragged_idx, target_idx) {
+                                                                        let item = views_vec.remove(from);
+                                                                        views_vec.insert(to, item);
+                                                                    }
+                                                                });
+                                                            }
+                                                        }
+
+                                                        set_dragged_view_id.set(None);
+                                                        set_drag_over_view_id.set(None);
+                                                    }
+                                                    on:dragend=move |_| {
+                                                        set_dragged_view_id.set(None);
+                                                        set_drag_over_view_id.set(None);
+                                                        if let Some(timer_id) = drag_timer_id.get() {
+                                                            web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
+                                                            set_drag_timer_id.set(None);
+                                                        }
+                                                    }
                                                     on:dblclick=move |e| {
                                                         e.stop_propagation();
                                                         let name = views.get().iter()
@@ -520,6 +626,7 @@ pub fn App() -> impl IntoView {
                                                         set_edit_name_value.set(name);
                                                         set_editing_view_id.set(Some(view_id));
                                                     }
+                                                    prop:draggable=move || dragged_view_id.get() == Some(view_id)
                                                 >
                                                     {current_name}
                                                 </button>
