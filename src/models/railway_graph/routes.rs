@@ -213,9 +213,13 @@ impl Routes for RailwayGraph {
         from: NodeIndex,
         to: NodeIndex,
     ) -> Option<Vec<EdgeIndex>> {
-        use std::collections::{VecDeque, HashMap};
+        use std::collections::{VecDeque, HashMap, HashSet};
         use petgraph::visit::EdgeRef;
         use crate::models::track::TrackDirection;
+
+        // State = (current node, edge used to arrive at that node)
+        // This allows visiting the same junction multiple times via different incoming edges
+        type State = (NodeIndex, Option<EdgeIndex>);
 
         // Don't consider a path from a node to itself
         if from == to {
@@ -224,15 +228,14 @@ impl Routes for RailwayGraph {
 
         // BFS to find shortest path, respecting track directions and junction routing rules
         let mut queue = VecDeque::new();
-        let mut visited = HashMap::new();
+        let mut visited = HashSet::new();
+        let mut came_from: HashMap<State, (State, EdgeIndex)> = HashMap::new();
 
-        queue.push_back(from);
-        visited.insert(from, None);
+        let start_state = (from, None);
+        queue.push_back(start_state);
+        visited.insert(start_state);
 
-        while let Some(current) = queue.pop_front() {
-            // Get the edge we used to arrive at current node (for junction routing checks)
-            let incoming_edge = visited.get(&current).and_then(|v| v.as_ref().map(|(_, edge)| *edge));
-
+        while let Some((current, incoming_edge)) = queue.pop_front() {
             // Explore all edges connected to current node (both incoming and outgoing)
             // Check each edge's TrackDirection to see if we can use it
 
@@ -257,20 +260,24 @@ impl Routes for RailwayGraph {
                 if neighbor == to {
                     // Found the destination! Reconstruct path
                     let mut path = Vec::new();
-                    let mut node = current;
-                    while let Some(Some((prev_node, prev_edge))) = visited.get(&node) {
+                    let mut state = (current, incoming_edge);
+                    while let Some((prev_state, prev_edge)) = came_from.get(&state) {
                         path.push(*prev_edge);
-                        node = *prev_node;
+                        state = *prev_state;
                     }
                     path.reverse();
                     path.push(edge.id());
                     return Some(path);
                 }
 
-                // For non-destination nodes, check if already visited
-                if matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
-                    visited.insert(neighbor, Some((current, edge.id())));
-                    queue.push_back(neighbor);
+                // Create new state for neighbor
+                let neighbor_state = (neighbor, Some(edge.id()));
+
+                // For non-destination nodes, check if state already visited
+                if !visited.contains(&neighbor_state) {
+                    visited.insert(neighbor_state);
+                    came_from.insert(neighbor_state, ((current, incoming_edge), edge.id()));
+                    queue.push_back(neighbor_state);
                 }
             }
 
@@ -295,20 +302,24 @@ impl Routes for RailwayGraph {
                 if neighbor == to {
                     // Found the destination! Reconstruct path
                     let mut path = Vec::new();
-                    let mut node = current;
-                    while let Some(Some((prev_node, prev_edge))) = visited.get(&node) {
+                    let mut state = (current, incoming_edge);
+                    while let Some((prev_state, prev_edge)) = came_from.get(&state) {
                         path.push(*prev_edge);
-                        node = *prev_node;
+                        state = *prev_state;
                     }
                     path.reverse();
                     path.push(edge.id());
                     return Some(path);
                 }
 
-                // For non-destination nodes, check if already visited
-                if matches!(visited.entry(neighbor), std::collections::hash_map::Entry::Vacant(_)) {
-                    visited.insert(neighbor, Some((current, edge.id())));
-                    queue.push_back(neighbor);
+                // Create new state for neighbor
+                let neighbor_state = (neighbor, Some(edge.id()));
+
+                // For non-destination nodes, check if state already visited
+                if !visited.contains(&neighbor_state) {
+                    visited.insert(neighbor_state);
+                    came_from.insert(neighbor_state, ((current, incoming_edge), edge.id()));
+                    queue.push_back(neighbor_state);
                 }
             }
         }
@@ -753,16 +764,22 @@ mod tests {
         let path = graph.find_path_between_nodes(a, b);
         assert!(path.is_some(), "Path from A to B should exist initially");
 
-        // Now disable routing from e1 to e2 at junction J
+        // Now disable routing from e1 to e2 and e3 to e2 at junction J
         if let Some(junction) = graph.get_junction_mut(j) {
             junction.routing_rules.push(RoutingRule {
                 from_edge: e1,
                 to_edge: e2,
                 allowed: false,
             });
+            junction.routing_rules.push(RoutingRule {
+                from_edge: e3,
+                to_edge: e2,
+                allowed: false,
+            });
         }
 
         // Now path from A to B should not exist (blocked at junction)
+        // Even with state-based tracking allowing A->J->C->J, the J->B route is blocked from e3 too
         let path = graph.find_path_between_nodes(a, b);
         assert!(path.is_none(), "Path from A to B should be blocked by junction routing rule");
 
@@ -814,6 +831,53 @@ mod tests {
             assert_eq!(path.len(), 2);
             assert_eq!(path[0], e3);
             assert_eq!(path[1], e4);
+        }
+    }
+
+    #[test]
+    fn test_find_path_through_junction_twice() {
+        use crate::models::{Junctions, Junction, RoutingRule};
+
+        let mut graph = RailwayGraph::new();
+        let a = graph.add_or_get_station("Station A".to_string());
+        let b = graph.add_or_get_station("Station B".to_string());
+        let c = graph.add_or_get_station("Station C".to_string());
+
+        let j = graph.add_junction(Junction {
+            name: Some("Junction J".to_string()),
+            position: None,
+            routing_rules: vec![],
+        });
+
+        // Create network: A -> J -> B and J -> C
+        //     A
+        //     |
+        //     J (junction)
+        //    / \
+        //   B   C
+        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e3 = graph.add_track(j, c, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        // Block direct route from A to C (e1 -> e3)
+        if let Some(junction) = graph.get_junction_mut(j) {
+            junction.routing_rules.push(RoutingRule {
+                from_edge: e1,
+                to_edge: e3,
+                allowed: false,
+            });
+        }
+
+        // Path from A to C should go: A -> J -> B -> J -> C
+        // This requires visiting junction J twice via different incoming edges
+        let path = graph.find_path_between_nodes(a, c);
+        assert!(path.is_some(), "Path from A to C should exist by visiting J twice");
+        if let Some(path) = path {
+            assert_eq!(path.len(), 4, "Path should have 4 edges: A->J, J->B, B->J, J->C");
+            assert_eq!(path[0], e1, "First edge should be A->J");
+            assert_eq!(path[1], e2, "Second edge should be J->B");
+            assert_eq!(path[2], e2, "Third edge should be B->J (same as J->B, bidirectional)");
+            assert_eq!(path[3], e3, "Fourth edge should be J->C");
         }
     }
 }
