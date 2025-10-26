@@ -338,6 +338,7 @@ impl TrainJourney {
             if station_times.len() >= 2 {
                 // Validate journey integrity
                 if segments.len() != station_times.len() - 1 {
+                    #[cfg(target_arch = "wasm32")]
                     web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
                         "❌ Journey construction error for line '{}': {} segments but {} stations (expected {})",
                         line_name, segments.len(), station_times.len(), station_times.len() - 1
@@ -664,6 +665,7 @@ impl TrainJourney {
             if station_times.len() >= 2 {
                 // Validate journey integrity
                 if segments.len() != station_times.len() - 1 {
+                    #[cfg(target_arch = "wasm32")]
                     web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!(
                         "❌ Journey construction error for line '{}' (return): {} segments but {} stations (expected {})",
                         line_name, segments.len(), station_times.len(), station_times.len() - 1
