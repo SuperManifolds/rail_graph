@@ -702,6 +702,14 @@ fn build_line_groups(config: &CsvImportConfig) -> Vec<LineGroupData> {
 
             let line_name = config.group_line_names.get(&group_idx)
                 .cloned()
+                .or_else(|| {
+                    // For single-group imports, use filename as fallback
+                    if groups_to_create == 1 && group_idx == 0 {
+                        config.filename.clone()
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or_else(|| format!("Line {}", group_idx + 1));
 
             LineGroupData {
