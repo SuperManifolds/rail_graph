@@ -3,6 +3,7 @@
 ## Features
 - Lines can now be sorted alphabetically, by creation order, or manually reordered by dragging
 - View tabs can now be reordered by holding and dragging them to a new position
+- Added keyboard shortcuts for quick tab switching - press 1-0 to switch between tabs (1 for Infrastructure, 2-0 for views)
 - Added Distance Offset column type for CSV imports - allows importing cumulative distances that are automatically converted to inter-node distances
 - View creation now supports multiple waypoints - create views that pass through any number of stations and junctions
 - Stations and junctions can now be selected from a dropdown when creating views
