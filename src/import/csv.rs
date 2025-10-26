@@ -8,6 +8,7 @@ pub enum ColumnType {
     StationName,
     Platform,
     TrackDistance,
+    DistanceOffset,
     TrackNumber,
     ArrivalTime,
     DepartureTime,
@@ -24,6 +25,7 @@ impl ColumnType {
             Self::StationName => "Station Name",
             Self::Platform => "Platform",
             Self::TrackDistance => "Track Distance",
+            Self::DistanceOffset => "Distance Offset",
             Self::TrackNumber => "Track Number",
             Self::ArrivalTime => "Arrival Time",
             Self::DepartureTime => "Departure Time",
@@ -178,6 +180,7 @@ fn detect_column_grouping(columns: &[ColumnMapping]) -> (Option<usize>, HashMap<
             c.column_index > station_idx
             && c.column_type != ColumnType::Skip
             && c.column_type != ColumnType::TrackDistance
+            && c.column_type != ColumnType::DistanceOffset
         })
         .collect();
 
@@ -652,7 +655,7 @@ fn build_line_groups(config: &CsvImportConfig) -> Vec<LineGroupData> {
     // For infrastructure-only imports (no time columns, no groups), create one dummy group
     let has_station_column = config.columns.iter().any(|c| c.column_type == ColumnType::StationName);
     let has_infra_columns = config.columns.iter().any(|c| {
-        matches!(c.column_type, ColumnType::Platform | ColumnType::TrackNumber | ColumnType::TrackDistance)
+        matches!(c.column_type, ColumnType::Platform | ColumnType::TrackNumber | ColumnType::TrackDistance | ColumnType::DistanceOffset)
     });
     let has_time_groups = num_groups > 0;
 
@@ -700,6 +703,11 @@ fn build_line_groups(config: &CsvImportConfig) -> Vec<LineGroupData> {
                 .find(|c| c.column_type == ColumnType::TrackDistance && c.group_index.is_none())
                 .map(|c| c.column_index);
 
+            // Distance offset is also a global column
+            let dist_offset_col = config.columns.iter()
+                .find(|c| c.column_type == ColumnType::DistanceOffset && c.group_index.is_none())
+                .map(|c| c.column_index);
+
             let line_name = config.group_line_names.get(&group_idx)
                 .cloned()
                 .or_else(|| {
@@ -722,6 +730,7 @@ fn build_line_groups(config: &CsvImportConfig) -> Vec<LineGroupData> {
                 platform_column: platform_col,
                 track_number_column: track_num_col,
                 track_distance_column: track_dist_col,
+                distance_offset_column: dist_offset_col,
             }
         }).filter(|g| {
             // Include groups with time columns OR infrastructure columns (for infrastructure-only imports)
@@ -732,6 +741,7 @@ fn build_line_groups(config: &CsvImportConfig) -> Vec<LineGroupData> {
             || g.platform_column.is_some()
             || g.track_number_column.is_some()
             || g.track_distance_column.is_some()
+            || g.distance_offset_column.is_some()
         })
           .collect()
 }
@@ -794,6 +804,10 @@ fn collect_station_data(
                 .and_then(|col| row.get(col))
                 .and_then(|s| s.trim().parse::<f64>().ok());
 
+            let distance_offset = group.distance_offset_column
+                .and_then(|col| row.get(col))
+                .and_then(|s| s.trim().parse::<f64>().ok());
+
             let track_number = group.track_number_column
                 .and_then(|col| row.get(col))
                 .and_then(|s| s.trim().parse::<usize>().ok());
@@ -805,6 +819,7 @@ fn collect_station_data(
                 wait_time,
                 platform,
                 track_distance,
+                distance_offset,
                 track_number,
             });
         }
@@ -813,6 +828,21 @@ fn collect_station_data(
             name: station_name.to_string(),
             line_data,
         });
+    }
+
+    // Convert distance offsets to inter-node distances
+    // For each line (column in line_data vectors)
+    for line_idx in 0..line_groups.len() {
+        for station_idx in 1..station_data.len() {
+            let prev_offset = station_data[station_idx - 1].line_data[line_idx].distance_offset;
+            let curr_offset = station_data[station_idx].line_data[line_idx].distance_offset;
+
+            if let (Some(prev), Some(curr)) = (prev_offset, curr_offset) {
+                // Calculate inter-node distance and store in track_distance
+                let inter_node_distance = curr - prev;
+                station_data[station_idx].line_data[line_idx].track_distance = Some(inter_node_distance);
+            }
+        }
     }
 
     station_data
@@ -1332,6 +1362,7 @@ struct LineGroupData {
     platform_column: Option<usize>,
     track_number_column: Option<usize>,
     track_distance_column: Option<usize>,
+    distance_offset_column: Option<usize>,
 }
 
 struct StationRowData {
@@ -1347,6 +1378,7 @@ struct LineStationData {
     wait_time: Option<Duration>,
     platform: Option<String>,
     track_distance: Option<f64>,
+    distance_offset: Option<f64>,
     track_number: Option<usize>,
 }
 

@@ -48,6 +48,13 @@ Distance from the previous station in kilometers.
 - **Example:** `6.63`, `12.5`
 - **Note:** This is a global column (not per-line in multi-line format)
 
+#### Distance Offset
+Cumulative distance from the start of the line in kilometers.
+- **Format:** Decimal number
+- **Example:** `0`, `6.63`, `13.52` (automatically converted to inter-node distances: 6.63, 6.89)
+- **Note:** This is a global column (not per-line in multi-line format)
+- **Usage:** Useful when you have total distance markers but not segment distances. The importer automatically calculates the distance between each pair of consecutive stations.
+
 ### Timing Columns
 
 These columns define when trains arrive and depart. You must use **one** of these timing methods per line:
@@ -272,7 +279,27 @@ Trondheim,0.791,0:38:35,,3,2
 - Track 2 from Heimdal to Trondheim (double-track section)
 - Routes with proper timing
 
-### Example 2: Infrastructure-Only Import
+### Example 2: Using Distance Offset (Cumulative Distance)
+
+Same line as Example 1, but using cumulative distance markers instead of segment distances.
+
+```csv
+Station,Distance Offset,Offset,Wait,Platform,Track
+Støren,0,0:00:00,,4,
+Hovin,6.63,0:05:11,,2,
+Lundamo,13.52,0:09:59,,2,
+Ler,18.128,0:13:57,,2,
+Melhus,23.548,0:22:21,,2,
+Heimdal,25.548,0:29:41,,3,2
+Trondheim,26.339,0:38:35,,3,2
+```
+
+**Creates:**
+- Same infrastructure as Example 1
+- Distances automatically converted: 0→6.63 km, 6.63→13.52 km (=6.89 km), etc.
+- Useful when you have kilometer markers along the route
+
+### Example 3: Infrastructure-Only Import
 
 Create network infrastructure without timetables.
 
@@ -292,7 +319,7 @@ Notodden,12,2,
 - Double-track from Nordagutu to Notodden
 - No lines or timetables
 
-### Example 3: Arrival/Departure Times
+### Example 4: Arrival/Departure Times
 
 Using absolute arrival and departure times.
 
@@ -310,7 +337,7 @@ Hamar,6:40:00,6:42:00,3
 - Wait times calculated from Departure - Arrival
 - First station departs at 5:00 (waits 5 minutes)
 
-### Example 4: Travel Time Format
+### Example 5: Travel Time Format
 
 Using incremental travel times between stations.
 
@@ -328,7 +355,7 @@ Stjørdal,15min,
 - Custom wait times at each station
 - Automatic schedule generation
 
-### Example 5: Multi-Line Grouped Format
+### Example 6: Multi-Line Grouped Format
 
 Import multiple lines in one CSV using pattern repeat.
 
@@ -347,7 +374,7 @@ Stjørdal,18,0:42:00,,0:48:00,
 - Different timetables for each line
 - Distance column shared by both lines
 
-### Example 6: Mixed Format with Junctions
+### Example 7: Mixed Format with Junctions
 
 Complex example with junctions, passing loops, and double-track.
 
@@ -369,7 +396,7 @@ Drammen,12.3,0:45:00,4,1
 - Single-track after junction with passing loop
 - Platform configurations
 
-### Example 7: Pathfinding Mode
+### Example 8: Pathfinding Mode
 
 Using existing infrastructure (must check "Don't create new infrastructure").
 
