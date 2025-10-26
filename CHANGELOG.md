@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Bug Fixes
+- Fixed error list items shifting right and overflowing when hovered
 - Fixed false head-on conflicts on multi-track railways when trains travel in opposite directions on different tracks
 - Fixed time and duration inputs accepting invalid values - invalid input is now reset to the last valid value
 - Fixed "Add stop to start" on return route adding stops to the end instead
