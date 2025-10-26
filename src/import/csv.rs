@@ -924,10 +924,40 @@ fn create_manual_departure(
     let first_segment = route.first()?;
     let last_segment = route.last()?;
 
-    let from_station = graph.graph.edge_endpoints(EdgeIndex::new(first_segment.edge_index))
-        .map(|(from, _)| from)?;
-    let to_station = graph.graph.edge_endpoints(EdgeIndex::new(last_segment.edge_index))
-        .map(|(_, to)| to)?;
+    // Determine actual start station by considering travel direction
+    let first_edge_idx = EdgeIndex::new(first_segment.edge_index);
+    let (from1, to1) = graph.get_track_endpoints(first_edge_idx)?;
+
+    let from_station = if route.len() > 1 {
+        let second_edge_idx = EdgeIndex::new(route[1].edge_index);
+        let (from2, to2) = graph.get_track_endpoints(second_edge_idx)?;
+        // Start from the endpoint NOT shared with the second edge
+        if from1 == from2 || from1 == to2 {
+            to1
+        } else {
+            from1
+        }
+    } else {
+        from1
+    };
+
+    // Determine actual end station by considering travel direction
+    let last_edge_idx = EdgeIndex::new(last_segment.edge_index);
+    let (from_last, to_last) = graph.get_track_endpoints(last_edge_idx)?;
+
+    let to_station = if route.len() > 1 {
+        let second_last_idx = route.len() - 2;
+        let second_last_edge_idx = EdgeIndex::new(route[second_last_idx].edge_index);
+        let (from_sl, to_sl) = graph.get_track_endpoints(second_last_edge_idx)?;
+        // End at the endpoint NOT shared with the second-to-last edge
+        if from_last == from_sl || from_last == to_sl {
+            to_last
+        } else {
+            from_last
+        }
+    } else {
+        to_last
+    };
 
     Some(ManualDeparture {
         id: uuid::Uuid::new_v4(),
@@ -1051,7 +1081,11 @@ fn get_or_create_edge(
 ) -> EdgeIndex {
     *edge_map.entry((prev_idx, station_idx))
         .or_insert_with(|| {
+            // Check for edge in requested direction
             if let Some(existing_edge) = graph.graph.find_edge(prev_idx, station_idx) {
+                existing_edge
+            // Also check reverse direction - bidirectional tracks can be traversed either way
+            } else if let Some(existing_edge) = graph.graph.find_edge(station_idx, prev_idx) {
                 existing_edge
             } else {
                 let track_count = prev_line_data.track_number.unwrap_or(1);
@@ -1647,5 +1681,76 @@ mod tests {
             hommelvik_hell_conflicts.len(),
             hommelvik_hell_conflicts
         );
+    }
+
+    #[test]
+    fn test_import_line_on_existing_infrastructure() {
+        use crate::train_journey::TrainJourney;
+
+        // First, import infrastructure from infra.csv
+        let infra_csv = std::fs::read_to_string("infra.csv").expect("infra.csv should exist");
+
+        let infra_config = analyze_csv(&infra_csv, Some("infra".to_string())).expect("Should analyze infra CSV");
+        let mut graph = RailwayGraph::new();
+        let _infra_lines = parse_csv_with_mapping(&infra_csv, &infra_config, &mut graph, 0, crate::models::TrackHandedness::RightHand);
+
+        // Verify infrastructure was created - should have stations
+        let stations = graph.get_all_stations_ordered();
+        assert!(!stations.is_empty(), "Should have created stations from infra.csv");
+
+        // Check that CSMT and DR exist
+        let csmt = stations.iter().find(|(_, s)| s.name == "CSMT");
+        let dr = stations.iter().find(|(_, s)| s.name == "DR");
+        assert!(csmt.is_some(), "CSMT station should exist");
+        assert!(dr.is_some(), "DR station should exist");
+
+        // Now import the line from 11008.csv, but use the 'code' column as station names
+        let line_csv = std::fs::read_to_string("11008.csv").expect("11008.csv should exist");
+
+        // Manually create config to use 'code' column as station names instead of 'station' column
+        let mut line_config = analyze_csv(&line_csv, Some("11008".to_string())).expect("Should analyze line CSV");
+
+        // Find the 'code' column and mark it as StationName, and the 'station' column as Skip
+        let mut reader = csv::ReaderBuilder::new().has_headers(true).from_reader(line_csv.as_bytes());
+        let headers = reader.headers().expect("Should have headers");
+
+        for col in &mut line_config.columns {
+            if let Some(header) = headers.get(col.column_index) {
+                if header.to_lowercase().contains("code") && !header.to_lowercase().contains("station") {
+                    col.column_type = ColumnType::StationName;
+                } else if header.to_lowercase() == "station" {
+                    col.column_type = ColumnType::Skip;
+                }
+            }
+        }
+
+        let lines = parse_csv_with_mapping(&line_csv, &line_config, &mut graph, 0, crate::models::TrackHandedness::RightHand);
+
+        assert!(!lines.is_empty(), "Should have imported at least one line");
+        let line = &lines[0];
+
+        // The route should have 9 segments (10 stations means 9 edges)
+        // PUNE -> SVJR -> KK -> TGN -> LNL -> KJT -> KYN -> TNA -> DR -> CSMT
+        assert_eq!(line.forward_route.len(), 9,
+            "Route should have 9 segments for 10 stations, but has {}",
+            line.forward_route.len());
+
+        // Verify journey generation includes the last segment
+        let journeys = TrainJourney::generate_journeys(&lines, &graph, Some(chrono::Weekday::Mon));
+
+        assert!(!journeys.is_empty(), "Should generate at least one journey");
+
+        for journey in journeys.values() {
+            // Each journey should have 10 station times (one for each stop)
+            assert_eq!(journey.station_times.len(), 10,
+                "Journey should have 10 station times, but has {}",
+                journey.station_times.len());
+
+            // Verify the last station is CSMT
+            let last_station_idx = journey.station_times.last().map(|(idx, _, _)| *idx);
+            let last_station_name = last_station_idx.and_then(|idx| graph.get_station_name(idx));
+            assert_eq!(last_station_name, Some("CSMT"),
+                "Last station should be CSMT, but is {last_station_name:?}");
+        }
     }
 }
