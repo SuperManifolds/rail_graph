@@ -286,6 +286,14 @@ fn detect_line_ids(config: &CsvImportConfig) -> Vec<String> {
                     .get(&group_idx)
                     .cloned()
                     .filter(|name| !name.trim().is_empty())
+                    .or_else(|| {
+                        // For single-group imports, use filename as fallback
+                        if num_groups == 1 {
+                            config.filename.clone()
+                        } else {
+                            None
+                        }
+                    })
                     .unwrap_or_else(|| format!("Line {}", group_idx + 1))
             })
             .collect();

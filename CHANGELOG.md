@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Bug Fixes
+- Fixed CSV import not using auto-detected line name from filename for single-line imports
 - Fixed error list items shifting right and overflowing when hovered
 - Fixed false head-on conflicts on multi-track railways when trains travel in opposite directions on different tracks
 - Fixed time and duration inputs accepting invalid values - invalid input is now reset to the last valid value
