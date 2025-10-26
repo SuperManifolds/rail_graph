@@ -18,6 +18,8 @@ pub fn ConfirmationDialog(
 
     let on_cancel_window = on_cancel.clone();
     let on_cancel_button = on_cancel.clone();
+    let on_cancel_key = on_cancel.clone();
+    let on_confirm_key = on_confirm.clone();
 
     view! {
         <Window
@@ -25,7 +27,18 @@ pub fn ConfirmationDialog(
             title=title
             on_close=move || on_cancel_window()
         >
-            <div class="confirmation-dialog-content">
+            <div
+                class="confirmation-dialog-content"
+                tabindex="-1"
+                on:keydown=move |ev| {
+                    if ev.key() == "Enter" {
+                        on_confirm_key();
+                    } else if ev.key() == "Escape" {
+                        on_cancel_key();
+                    }
+                }
+                prop:autofocus=true
+            >
                 <p class="confirmation-message">
                     {move || message.get()}
                 </p>
