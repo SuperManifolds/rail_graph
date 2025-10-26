@@ -221,6 +221,7 @@ impl Project {
         for line in &mut self.lines {
             let fixed_count = line.validate_and_fix_track_indices(&self.graph);
             if fixed_count > 0 {
+                #[cfg(target_arch = "wasm32")]
                 web_sys::console::log_1(&format!(
                     "Fixed {} invalid track indices in line '{}'",
                     fixed_count, line.name

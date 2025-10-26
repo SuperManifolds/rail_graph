@@ -64,15 +64,33 @@ pub fn StationSelect(
                                     };
 
                                     if let Some(path) = path {
+                                        // Determine starting node for path traversal
+                                        let mut current_node = match (route_direction, position) {
+                                            (RouteDirection::Forward | RouteDirection::Return, StationPosition::Start) => new_station_idx,
+                                            (RouteDirection::Forward | RouteDirection::Return, StationPosition::End) => existing_idx,
+                                        };
+
                                         // Convert path edges into route segments
                                         for (i, edge) in path.iter().enumerate() {
-                                            // Get the source node of this edge
-                                            let Some((source, _)) = graph.graph.edge_endpoints(*edge) else {
+                                            // Get the endpoints of this edge
+                                            let Some((source, target)) = graph.graph.edge_endpoints(*edge) else {
                                                 continue;
                                             };
 
+                                            // Determine direction: are we going source→target (forward) or target→source (backward)?
+                                            let is_forward = current_node == source;
+                                            let next_node = if is_forward { target } else { source };
+
+                                            // Get track segment to determine compatible track
+                                            let track_segment = graph.graph.edge_weight(*edge);
+                                            let track_index = Line::find_compatible_track(
+                                                track_segment,
+                                                is_forward,
+                                                track_segment.map_or(0, |ts| ts.tracks.len().saturating_sub(1))
+                                            );
+
                                             // Check if station is a passing loop
-                                            let is_passing_loop = graph.graph.node_weight(source)
+                                            let is_passing_loop = graph.graph.node_weight(current_node)
                                                 .and_then(|node| node.as_station())
                                                 .is_some_and(|s| s.passing_loop);
                                             let default_wait = if is_passing_loop {
@@ -83,13 +101,16 @@ pub fn StationSelect(
 
                                             let segment = RouteSegment {
                                                 edge_index: edge.index(),
-                                                track_index: 0,
+                                                track_index,
                                                 origin_platform: 0,
                                                 destination_platform: 0,
                                                 duration: None,
                                                 // Use default wait time for stations, zero for passing loops
                                                 wait_time: default_wait,
                                             };
+
+                                            // Update current node for next iteration
+                                            current_node = next_node;
 
                                             match (route_direction, position) {
                                                 (RouteDirection::Forward, StationPosition::Start) => {

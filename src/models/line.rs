@@ -309,30 +309,79 @@ impl Line {
 
         let mut fixed_count = 0;
 
-        // Fix forward route (traveling forward)
+        eprintln!("\n=== Fixing tracks for line '{}' ===", self.name);
+
+        // Fix forward route - track current node as we traverse
+        let mut current_node: Option<petgraph::stable_graph::NodeIndex> = None;
         for segment in &mut self.forward_route {
             let edge_idx = EdgeIndex::new(segment.edge_index);
-            let track_segment = graph.get_track(edge_idx);
 
-            // Check if current track is invalid (out of bounds or incompatible direction)
-            if Self::is_track_incompatible(track_segment, segment.track_index, true) {
-                let correct_track = graph.select_track_for_direction(edge_idx, false);
+            // Get edge endpoints to determine travel direction
+            let Some((source, target)) = graph.graph.edge_endpoints(edge_idx) else {
+                continue;
+            };
+
+            // Determine direction: if this is our first segment or we don't have current node,
+            // check which endpoint leads to the next segment
+            if current_node.is_none() {
+                current_node = Some(source);
+            }
+
+            let is_forward = current_node == Some(source);
+            let next_node = if is_forward { target } else { source };
+
+            eprintln!("Forward route edge {}: track {}, traveling {} on edge",
+                segment.edge_index,
+                segment.track_index,
+                if is_forward { "forward" } else { "backward" }
+            );
+
+            // Check if current track is incompatible with actual travel direction
+            let track_segment = graph.get_track(edge_idx);
+            if Self::is_track_incompatible(track_segment, segment.track_index, is_forward) {
+                let correct_track = graph.select_track_for_direction(edge_idx, !is_forward);
+                eprintln!("  -> Fixing to track {correct_track}");
                 segment.track_index = correct_track;
                 fixed_count += 1;
             }
+
+            current_node = Some(next_node);
         }
 
-        // Fix return route (traveling backward)
+        // Fix return route - track current node as we traverse
+        let mut current_node: Option<petgraph::stable_graph::NodeIndex> = None;
         for segment in &mut self.return_route {
             let edge_idx = EdgeIndex::new(segment.edge_index);
-            let track_segment = graph.get_track(edge_idx);
 
-            // Check if current track is invalid (out of bounds or incompatible direction)
-            if Self::is_track_incompatible(track_segment, segment.track_index, false) {
-                let correct_track = graph.select_track_for_direction(edge_idx, true);
+            // Get edge endpoints to determine travel direction
+            let Some((source, target)) = graph.graph.edge_endpoints(edge_idx) else {
+                continue;
+            };
+
+            // Determine direction
+            if current_node.is_none() {
+                current_node = Some(source);
+            }
+
+            let is_forward = current_node == Some(source);
+            let next_node = if is_forward { target } else { source };
+
+            eprintln!("Return route edge {}: track {}, traveling {} on edge",
+                segment.edge_index,
+                segment.track_index,
+                if is_forward { "forward" } else { "backward" }
+            );
+
+            // Check if current track is incompatible with actual travel direction
+            let track_segment = graph.get_track(edge_idx);
+            if Self::is_track_incompatible(track_segment, segment.track_index, is_forward) {
+                let correct_track = graph.select_track_for_direction(edge_idx, !is_forward);
+                eprintln!("  -> Fixing to track {correct_track}");
                 segment.track_index = correct_track;
                 fixed_count += 1;
             }
+
+            current_node = Some(next_node);
         }
 
         fixed_count
@@ -358,7 +407,8 @@ impl Line {
     }
 
     /// Find a compatible track for a given route direction
-    fn find_compatible_track(track_segment: Option<&TrackSegment>, is_forward: bool, max_index: usize) -> usize {
+    #[must_use]
+    pub fn find_compatible_track(track_segment: Option<&TrackSegment>, is_forward: bool, max_index: usize) -> usize {
         let Some(ts) = track_segment else {
             return 0;
         };
