@@ -1,4 +1,4 @@
-# Unreleased
+# v0.1.7 - 2025-10-26
 
 ## Features
 - Lines can now be sorted alphabetically, by creation order, or manually reordered by dragging
