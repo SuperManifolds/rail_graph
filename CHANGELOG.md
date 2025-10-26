@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Bug Fixes
+- Fixed time and duration inputs accepting invalid values - invalid input is now reset to the last valid value
 - Fixed "Add stop to start" on return route adding stops to the end instead
 - Fixed route creation unable to find paths that require passing through a junction, and then re-entering that same junction from a different direction
 
