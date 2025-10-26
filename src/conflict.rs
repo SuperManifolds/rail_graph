@@ -1,4 +1,4 @@
-use crate::constants::BASE_DATE;
+use crate::constants::{BASE_DATE, BASE_MIDNIGHT};
 use crate::models::{RailwayGraph, TrackDirection, Junctions};
 use crate::time::time_to_fraction;
 use crate::train_journey::TrainJourney;
@@ -595,6 +595,12 @@ fn check_segments_for_pair_cached(
                 break;
             }
 
+            // Skip segments that are entirely before the week start (day -1 Sunday)
+            // Only process conflicts that could occur during the current week
+            if seg1.time_end < BASE_MIDNIGHT && seg2.time_end < BASE_MIDNIGHT {
+                continue;
+            }
+
             // Quick spatial overlap check before calling expensive function
             // This filters out ~50% of segment pairs that don't spatially overlap
             if cached1.idx_max <= cached2.idx_min || cached2.idx_max <= cached1.idx_min {
@@ -738,6 +744,15 @@ fn check_segment_pair(
             // Conflict occurs when the trailing train enters while leading train is still in block
             let conflict_time = segment1.time_start.max(segment2.time_start);
 
+            // Skip conflicts that occur before the week start (day -1 Sunday)
+            if conflict_time < BASE_MIDNIGHT {
+                #[cfg(target_arch = "wasm32")]
+                if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
+                    SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
+                }
+                return;
+            }
+
             // Calculate where the leading train is when the trailing train enters
             let (leading_start, leading_end) = if segment1.time_start < segment2.time_start {
                 (segment1.time_start, segment1.time_end)
@@ -834,15 +849,27 @@ fn check_segment_pair(
 
     // Check if crossing happens very close to a station
     if is_near_station(&intersection, segment1, segment2, ctx.station_margin) {
-        // This is a successful station crossing - add it to the list
-        let station_idx = find_nearest_station(&intersection, segment1, segment2);
-        results.station_crossings.push(StationCrossing {
-            time: intersection.time,
-            station_idx,
-            journey1_id: journey1.train_number.clone(),
-            journey2_id: journey2.train_number.clone(),
-        });
+        // This is a successful station crossing - add it to the list (if in current week)
+        // Skip crossings that occur before the week start (day -1 Sunday)
+        if intersection.time >= BASE_MIDNIGHT {
+            let station_idx = find_nearest_station(&intersection, segment1, segment2);
+            results.station_crossings.push(StationCrossing {
+                time: intersection.time,
+                station_idx,
+                journey1_id: journey1.train_number.clone(),
+                journey2_id: journey2.train_number.clone(),
+            });
+        }
 
+        #[cfg(target_arch = "wasm32")]
+        if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
+            SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
+        }
+        return;
+    }
+
+    // Skip conflicts that occur before the week start (day -1 Sunday)
+    if intersection.time < BASE_MIDNIGHT {
         #[cfg(target_arch = "wasm32")]
         if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
             SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
@@ -1119,6 +1146,11 @@ fn check_platform_conflicts_cached(
             if occ1.time_start < occ2.time_end && occ2.time_start < occ1.time_end {
                 // Platform conflict detected
                 let conflict_time = occ1.time_start.max(occ2.time_start);
+
+                // Skip conflicts that occur before the week start (day -1 Sunday)
+                if conflict_time < BASE_MIDNIGHT {
+                    continue;
+                }
 
                 results.conflicts.push(Conflict {
                     time: conflict_time,

@@ -1,6 +1,7 @@
 use web_sys::CanvasRenderingContext2d;
 use crate::models::Node;
 use crate::train_journey::TrainJourney;
+use crate::constants::BASE_MIDNIGHT;
 use super::types::GraphDimensions;
 use petgraph::stable_graph::NodeIndex;
 
@@ -145,27 +146,41 @@ pub fn draw_train_journeys(
             // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
             let y = station_y_positions[idx] - super::canvas::TOP_MARGIN;
 
+            // Check if this arrival is before the week start (day -1 Sunday)
+            let arrival_before_week_start = *arrival_time < BASE_MIDNIGHT;
+
             // Draw segment from previous point if applicable
-            if last_visible_point.is_some() {
+            // Skip drawing if the arrival is before the week start
+            if last_visible_point.is_some() && !arrival_before_week_start {
                 // Draw diagonal segment from last visible point to this arrival
                 // Consecutive journey stations always have a railway connection
                 ctx.line_to(arrival_x, y);
-            } else {
-                // First visible point - start the path
+            } else if !arrival_before_week_start {
+                // First visible point in the current week - start the path
                 ctx.move_to(arrival_x, y);
             }
 
             // Draw horizontal segment if there's wait time and this is a station (not a junction)
+            // Skip drawing wait segments that are entirely before the week start (day -1 Sunday)
             let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
             let has_wait_time = !is_junction && departure_x - arrival_x > f64::EPSILON;
+            let wait_before_week_start = *departure_time < BASE_MIDNIGHT;
 
-            if has_wait_time {
+            if has_wait_time && !wait_before_week_start {
                 ctx.line_to(departure_x, y);
             }
 
             // Update last visible point to the actual position we drew to
-            let last_x = if has_wait_time { departure_x } else { arrival_x };
-            last_visible_point = Some((last_x, y, idx));
+            // If we skipped the wait segment, use arrival_x instead of departure_x
+            // Only update if arrival is in the current week
+            if !arrival_before_week_start {
+                let last_x = if has_wait_time && !wait_before_week_start { departure_x } else { arrival_x };
+                last_visible_point = Some((last_x, y, idx));
+            } else if *departure_time >= BASE_MIDNIGHT {
+                // Arrival was before week start but departure is in current week
+                // Start the line at the departure point for next segment
+                last_visible_point = Some((departure_x, y, idx));
+            }
         }
 
         ctx.stroke();
@@ -204,31 +219,47 @@ pub fn draw_train_journeys(
             })
             .collect();
 
+        // Get journey station times for checking if dots are before week start
         for &(node_idx, idx, arrival_x, departure_x) in &visible_nodes {
+            // Find the corresponding station_times entry
+            // visible_nodes is a filtered version of station_times, need to find the original index
+            let station_time = journey.station_times.iter()
+                .enumerate()
+                .find(|(_, (n_idx, _, _))| *n_idx == node_idx)
+                .map(|(_, (_, arrival, departure))| (arrival, departure));
+
+            let Some((arrival_time, departure_time)) = station_time else {
+                continue;
+            };
+
             // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
             let y = station_y_positions[idx] - super::canvas::TOP_MARGIN;
 
             // Check if this is a station (not junction) with wait time
             let is_junction = matches!(nodes.get(idx).map(|(_, node)| node), Some(Node::Junction(_)));
             let has_wait_time = !is_junction && departure_x - arrival_x > f64::EPSILON;
+            let wait_before_week_start = *departure_time < BASE_MIDNIGHT;
 
             // Check if this is the actual start or end of the entire journey using stored route endpoints
             let is_route_start = Some(node_idx) == journey.route_start_node;
             let is_route_end = Some(node_idx) == journey.route_end_node;
 
-            // Draw dots if: has wait time, OR (is actual start/end of route AND not a junction)
-            let should_draw_endpoint = (is_route_start || is_route_end) && !is_junction;
+            // Draw dots if: has wait time (and not before week start), OR (is actual start/end of route AND not a junction AND not before week start)
+            let should_draw_endpoint = (is_route_start || is_route_end) && !is_junction && *arrival_time >= BASE_MIDNIGHT;
+            let should_draw_wait_dots = has_wait_time && !wait_before_week_start;
 
-            if has_wait_time || should_draw_endpoint {
-                // Add arrival dot to path (move_to starts a new subpath)
-                ctx.move_to(arrival_x + dot_radius / zoom_level, y);
-                let _ = ctx.arc(arrival_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+            if !should_draw_wait_dots && !should_draw_endpoint {
+                continue;
+            }
 
-                // Add departure dot if different from arrival and this is a station (not a junction)
-                if has_wait_time {
-                    ctx.move_to(departure_x + dot_radius / zoom_level, y);
-                    let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
-                }
+            // Add arrival dot to path (move_to starts a new subpath)
+            ctx.move_to(arrival_x + dot_radius / zoom_level, y);
+            let _ = ctx.arc(arrival_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+
+            // Add departure dot if different from arrival and this is a station (not a junction)
+            if should_draw_wait_dots {
+                ctx.move_to(departure_x + dot_radius / zoom_level, y);
+                let _ = ctx.arc(departure_x, y, dot_radius / zoom_level, 0.0, std::f64::consts::PI * 2.0);
             }
         }
 

@@ -1,6 +1,7 @@
 use super::types::GraphDimensions;
 use crate::models::Node;
 use crate::conflict::Conflict;
+use crate::constants::BASE_MIDNIGHT;
 use web_sys::{CanvasRenderingContext2d, Path2d};
 
 // Conflict highlight constants
@@ -367,6 +368,11 @@ pub fn draw_journey_blocks(
 
         let (_node_from, _arrival_from, departure_from) = journey.station_times[i];
         let (_node_to, arrival_to, _departure_to) = journey.station_times[i + 1];
+
+        // Skip blocks that end before the week start (day -1 Sunday)
+        if arrival_to < BASE_MIDNIGHT {
+            continue;
+        }
 
         // Get the matched view positions for this segment
         if let (Some(start_idx), Some(end_idx)) = (

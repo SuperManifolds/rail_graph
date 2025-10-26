@@ -4,6 +4,7 @@
 - Added Distance Offset column type for CSV imports - allows importing cumulative distances that are automatically converted to inter-node distances
 
 ## Bug Fixes
+- Fixed conflict detection not detecting conflicts between late Sunday departures and early Monday departures
 - Fixed CSV import not using auto-detected line name from filename for single-line imports
 - Fixed error list items shifting right and overflowing when hovered
 - Fixed false head-on conflicts on multi-track railways when trains travel in opposite directions on different tracks
