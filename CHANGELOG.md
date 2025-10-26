@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Bug Fixes
+- Fixed "Add stop to start" on return route adding stops to the end instead
 - Fixed route creation unable to find paths that require passing through a junction, and then re-entering that same junction from a different direction
 
 # v0.1.6 - 2025-10-25

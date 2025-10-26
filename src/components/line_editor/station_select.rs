@@ -55,12 +55,10 @@ pub fn StationSelect(
                                 ) {
                                     // Find path based on route direction and position
                                     let path = match (route_direction, position) {
-                                        (RouteDirection::Forward, StationPosition::Start)
-                                        | (RouteDirection::Return, StationPosition::End) => {
+                                        (RouteDirection::Forward | RouteDirection::Return, StationPosition::Start) => {
                                             graph.find_path_between_nodes(new_station_idx, existing_idx)
                                         }
-                                        (RouteDirection::Forward, StationPosition::End)
-                                        | (RouteDirection::Return, StationPosition::Start) => {
+                                        (RouteDirection::Forward | RouteDirection::Return, StationPosition::End) => {
                                             graph.find_path_between_nodes(existing_idx, new_station_idx)
                                         }
                                     };
