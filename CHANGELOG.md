@@ -2,9 +2,13 @@
 
 ## Features
 - Added Distance Offset column type for CSV imports - allows importing cumulative distances that are automatically converted to inter-node distances
+- View creation now supports multiple waypoints - create views that pass through any number of stations and junctions
+- Stations and junctions can now be selected from a dropdown when creating views
+- View creation now shows live preview of the path through waypoints, highlighted in blue on the infrastructure canvas
 
 ## Improvements
 - Confirmation dialogs now support keyboard shortcuts - Enter to confirm, Escape to cancel
+- Added disabled button styling to make it clearer when buttons cannot be clicked
 
 ## Bug Fixes
 - Fixed last segment not rendering when importing CSV lines onto existing infrastructure

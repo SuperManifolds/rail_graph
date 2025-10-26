@@ -1,0 +1,69 @@
+.add-station-form {
+    .stops-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        max-height: none;  // Allow natural height expansion
+        overflow: visible;  // No scrolling within the list
+
+        .stops-header {
+            display: grid;
+            grid-template-columns: 1fr 40px;
+            gap: 0.5rem;
+            padding: 0.25rem 0.5rem;
+            font-weight: 600;
+            color: #aaa;
+            font-size: 0.8rem;
+            border-bottom: 1px solid #333;
+        }
+
+        .stop-row {
+            display: grid;
+            grid-template-columns: 1fr 40px;
+            gap: 0.5rem;
+            align-items: center;
+            padding: 0.35rem 0.5rem;
+            background-color: #222;
+            border: 1px solid #444;
+            border-radius: 3px;
+
+            .station-name {
+                color: #fff;
+                font-size: 0.85rem;
+            }
+
+            .delete-stop-button {
+                background: none;
+                border: none;
+                color: #999;
+                cursor: pointer;
+                padding: 0.25rem;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 0.85rem;
+                transition: color 0.2s;
+
+                &:hover {
+                    color: #d32f2f;
+                }
+
+                &:focus {
+                    outline: none;
+                }
+
+                i {
+                    pointer-events: none;
+                }
+            }
+        }
+
+        .no-stops {
+            color: #888;
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 1rem;
+            margin: 0;
+        }
+    }
+}

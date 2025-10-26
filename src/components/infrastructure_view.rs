@@ -13,6 +13,7 @@ use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, In
 use crate::models::UserSettings;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+use std::collections::HashSet;
 use std::rc::Rc;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, MouseEvent, WheelEvent};
@@ -618,6 +619,7 @@ fn setup_auto_layout_effect(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn setup_render_effect(
     graph: ReadSignal<RailwayGraph>,
     zoom_level: ReadSignal<f64>,
@@ -626,6 +628,8 @@ fn setup_render_effect(
     canvas_ref: leptos::NodeRef<leptos::html::Canvas>,
     edit_mode: ReadSignal<EditMode>,
     selected_station: ReadSignal<Option<NodeIndex>>,
+    waypoints: ReadSignal<Vec<NodeIndex>>,
+    preview_path: ReadSignal<Option<Vec<EdgeIndex>>>,
 ) {
     create_effect(move |_| {
         let current_graph = graph.get();
@@ -634,6 +638,8 @@ fn setup_render_effect(
         let _ = pan_offset_y.get();
         let _ = edit_mode.get();
         let _ = selected_station.get();
+        let _ = waypoints.get();
+        let _ = preview_path.get();
 
         let Some(canvas) = canvas_ref.get() else { return };
 
@@ -662,14 +668,21 @@ fn setup_render_effect(
         let pan_x = pan_offset_x.get_untracked();
         let pan_y = pan_offset_y.get_untracked();
 
-        // Build list of selected stations when in CreatingView mode
+        // Build list of waypoints when in CreatingView mode
         let selected_stations: Vec<NodeIndex> = if matches!(edit_mode.get_untracked(), EditMode::CreatingView) {
-            selected_station.get_untracked().into_iter().collect()
+            waypoints.get_untracked()
         } else {
             Vec::new()
         };
 
-        renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations);
+        // Get preview path edges if in CreatingView mode
+        let highlighted_edges: HashSet<EdgeIndex> = if matches!(edit_mode.get_untracked(), EditMode::CreatingView) {
+            preview_path.get_untracked().unwrap_or_default().into_iter().collect()
+        } else {
+            HashSet::new()
+        };
+
+        renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges);
     });
 }
 
@@ -680,7 +693,7 @@ fn create_event_handlers(
     set_edit_mode: WriteSignal<EditMode>,
     selected_station: ReadSignal<Option<NodeIndex>>,
     set_selected_station: WriteSignal<Option<NodeIndex>>,
-    set_second_station_clicked: WriteSignal<Option<NodeIndex>>,
+    view_creation_callbacks: Rc<dyn Fn(NodeIndex)>,
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     lines: ReadSignal<Vec<Line>>,
@@ -732,20 +745,9 @@ fn create_event_handlers(
                 }
                 EditMode::CreatingView if is_single_click => {
                     let current_graph = graph.get();
-                    let Some(clicked_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) else {
-                        return;
-                    };
-                    // Only allow selecting stations, not junctions
-                    if current_graph.is_junction(clicked_station) {
-                        return;
-                    }
-
-                    if selected_station.get().is_none() {
-                        // First station selected
-                        set_selected_station.set(Some(clicked_station));
-                    } else if Some(clicked_station) != selected_station.get() {
-                        // Second station selected - trigger the dialog opening
-                        set_second_station_clicked.set(Some(clicked_station));
+                    // Allow clicking any node (station or junction)
+                    if let Some(clicked_node) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
+                        view_creation_callbacks(clicked_node);
                     }
                 }
                 EditMode::None => {
@@ -969,30 +971,9 @@ pub fn InfrastructureView(
     let (s_pressed, set_s_pressed) = create_signal(false);
     let (d_pressed, set_d_pressed) = create_signal(false);
 
-    // View creation state
-    let (view_start_station, set_view_start_station) = create_signal(None::<NodeIndex>);
-    let (view_end_station, set_view_end_station) = create_signal(None::<NodeIndex>);
-    let (show_create_view_dialog, set_show_create_view_dialog) = create_signal(false);
-
-    // Separate signal to trigger the dialog opening (to avoid effect loop)
-    let (second_station_clicked, set_second_station_clicked) = create_signal(None::<NodeIndex>);
-
-    // Watch for when second station is selected to open the dialog
-    create_effect(move |_| {
-        if let Some(end) = second_station_clicked.get() {
-            if let Some(start) = selected_station.get() {
-                if start != end {
-                    // Set the dialog's station signals
-                    set_view_start_station.set(Some(start));
-                    set_view_end_station.set(Some(end));
-                    set_show_create_view_dialog.set(true);
-                    // Clear the selection state
-                    set_selected_station.set(None);
-                    set_second_station_clicked.set(None);
-                }
-            }
-        }
-    });
+    // View creation state - multi-point waypoint approach
+    let view_creation = crate::components::view_creation::ViewCreationState::new(edit_mode);
+    let view_creation_callbacks = view_creation.create_callbacks(graph, set_edit_mode, on_create_view);
 
     let viewport = if let Some(initial) = initial_viewport {
         canvas_viewport::create_viewport_signals_with_initial(false, initial)
@@ -1071,10 +1052,10 @@ pub fn InfrastructureView(
     let (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
         create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, station_to_delete);
 
-    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station);
+    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path);
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_context_menu, handle_wheel) = create_event_handlers(
-        canvas_ref, edit_mode, set_edit_mode, selected_station, set_selected_station, set_second_station_clicked, graph, set_graph,
+        canvas_ref, edit_mode, set_edit_mode, selected_station, set_selected_station, view_creation_callbacks.on_add_waypoint.clone(), graph, set_graph,
         lines, set_lines,
         editing_station, set_editing_station, set_editing_junction, set_editing_track,
         dragging_station, set_dragging_station, set_is_over_station, set_is_over_track,
@@ -1087,21 +1068,6 @@ pub fn InfrastructureView(
         set_is_over_station.set(false);
         set_is_over_track.set(false);
     };
-
-    // Callback for creating a view from station range
-    let handle_create_view = Rc::new(move |name: String, start: NodeIndex, end: NodeIndex| {
-        let current_graph = graph.get();
-        match crate::models::GraphView::from_station_range(name, start, end, &current_graph) {
-            Ok(new_view) => {
-                on_create_view.call(new_view);
-                set_show_create_view_dialog.set(false);
-                set_edit_mode.set(EditMode::None);
-            }
-            Err(err) => {
-                web_sys::console::error_1(&format!("Failed to create view: {err}").into());
-            }
-        }
-    });
 
     view! {
         <div class="infrastructure-view">
@@ -1189,15 +1155,14 @@ pub fn InfrastructureView(
             />
 
             <CreateViewDialog
-                is_open=show_create_view_dialog
-                start_station=view_start_station
-                end_station=view_end_station
+                is_open=view_creation.show_dialog
+                waypoints=view_creation.waypoints
                 graph=graph
-                on_close=Rc::new(move || {
-                    set_show_create_view_dialog.set(false);
-                    set_edit_mode.set(EditMode::None);
-                })
-                on_create=handle_create_view
+                validation_error=view_creation.validation_error
+                on_close=view_creation_callbacks.on_close.clone()
+                on_create=view_creation_callbacks.on_create.clone()
+                on_add_waypoint=view_creation_callbacks.on_add_waypoint.clone()
+                on_remove_waypoint=view_creation_callbacks.on_remove_waypoint.clone()
             />
         </div>
     }

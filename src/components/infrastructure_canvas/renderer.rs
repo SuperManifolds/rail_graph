@@ -1,7 +1,8 @@
 use crate::models::RailwayGraph;
 use super::{track_renderer, station_renderer};
 use web_sys::CanvasRenderingContext2d;
-use petgraph::stable_graph::NodeIndex;
+use petgraph::stable_graph::{NodeIndex, EdgeIndex};
+use std::collections::HashSet;
 
 const CANVAS_BACKGROUND_COLOR: &str = "#0a0a0a";
 const EMPTY_MESSAGE_COLOR: &str = "#666";
@@ -71,6 +72,7 @@ pub fn draw_infrastructure(
     pan_x: f64,
     pan_y: f64,
     selected_stations: &[NodeIndex],
+    highlighted_edges: &HashSet<EdgeIndex>,
 ) {
     // Clear canvas
     ctx.set_fill_style_str(CANVAS_BACKGROUND_COLOR);
@@ -93,10 +95,10 @@ pub fn draw_infrastructure(
     let _ = ctx.scale(zoom, zoom);
 
     // Draw tracks first so they're behind nodes
-    track_renderer::draw_tracks(ctx, graph, zoom);
+    track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges);
 
     // Draw stations and junctions on top
-    station_renderer::draw_stations(ctx, graph, zoom, selected_stations);
+    station_renderer::draw_stations(ctx, graph, zoom, selected_stations, highlighted_edges);
 
     // Restore context
     ctx.restore();

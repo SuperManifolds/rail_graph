@@ -165,6 +165,7 @@ fn draw_station_nodes(
     graph: &RailwayGraph,
     zoom: f64,
     selected_stations: &[NodeIndex],
+    highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
 ) -> Vec<(NodeIndex, (f64, f64), f64)> {
     let mut node_positions = Vec::new();
 
@@ -200,7 +201,7 @@ fn draw_station_nodes(
             node_positions.push((idx, pos, radius));
         } else if graph.is_junction(idx) {
             // Draw junction
-            junction_renderer::draw_junction(ctx, graph, idx, pos, zoom);
+            junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges);
             // Use larger radius for label overlap to account for junction connection lines
             node_positions.push((idx, pos, JUNCTION_LABEL_RADIUS));
         }
@@ -650,12 +651,13 @@ pub fn draw_stations(
     graph: &RailwayGraph,
     zoom: f64,
     selected_stations: &[NodeIndex],
+    highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
 ) {
     let font_size = 14.0 / zoom;
     let mut track_segments = track_renderer::get_track_segments(graph);
     track_segments.extend(junction_renderer::get_junction_segments(graph));
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations);
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges);
 
     // Build node metadata (width, offset, position)
     let mut node_metadata: HashMap<NodeIndex, (f64, f64, (f64, f64))> = HashMap::new();
