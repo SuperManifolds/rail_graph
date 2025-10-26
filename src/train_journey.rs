@@ -297,7 +297,6 @@ impl TrainJourney {
         // Pre-compute route node indices
         let route_nodes = Self::build_route_nodes(&line.forward_route, graph);
 
-
         let mut journey_count = 0;
         let line_id = line.id;
         let line_name = line.name.clone();
