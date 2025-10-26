@@ -23,10 +23,25 @@ impl Default for TrackHandedness {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LineSortMode {
+    AddedOrder,
+    Alphabetical,
+    Manual,
+}
+
+impl Default for LineSortMode {
+    fn default() -> Self {
+        Self::AddedOrder
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProjectSettings {
     #[serde(default)]
     pub track_handedness: TrackHandedness,
+    #[serde(default)]
+    pub line_sort_mode: LineSortMode,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

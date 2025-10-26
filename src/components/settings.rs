@@ -16,6 +16,7 @@ pub fn Settings(
     let handle_handedness_change = move |handedness: TrackHandedness| {
         set_settings(ProjectSettings {
             track_handedness: handedness,
+            line_sort_mode: settings.get().line_sort_mode,
         });
     };
 

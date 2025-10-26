@@ -31,6 +31,7 @@ pub mod keyboard_shortcuts_editor;
 pub mod legend;
 pub mod line_controls;
 pub mod line_editor;
+pub mod line_sort_selector;
 pub mod platform_editor;
 pub mod project_manager;
 pub mod report_issue_button;
