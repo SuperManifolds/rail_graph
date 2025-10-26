@@ -3,11 +3,13 @@ use web_sys::CanvasRenderingContext2d;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::Direction;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+use std::collections::HashSet;
 use super::track_renderer;
 
 const JUNCTION_TRACK_DISTANCE: f64 = 14.0; // Match JUNCTION_STOP_DISTANCE from track_renderer
 const TRACK_SPACING: f64 = 3.0; // Match track_renderer
 const TRACK_COLOR: &str = "#444";
+const HIGHLIGHTED_TRACK_COLOR: &str = "#4a9eff";
 const TRACK_LINE_WIDTH: f64 = 2.0;
 
 /// Get all junction connection line segments for label overlap detection
@@ -126,6 +128,7 @@ fn draw_junction_track_connections(
     from_perp: (f64, f64),
     to_perp: (f64, f64),
     zoom: f64,
+    track_color: &str,
 ) {
     // Calculate position offsets for all tracks on from edge
     #[allow(clippy::cast_precision_loss)]
@@ -160,7 +163,7 @@ fn draw_junction_track_connections(
     }
 
     // Draw connections from every valid entry track to every valid exit track
-    ctx.set_stroke_style_str(TRACK_COLOR);
+    ctx.set_stroke_style_str(track_color);
     ctx.set_line_width(TRACK_LINE_WIDTH / zoom);
 
     for entry_point in &entry_points {
@@ -180,6 +183,7 @@ pub fn draw_junction(
     idx: NodeIndex,
     pos: (f64, f64),
     zoom: f64,
+    highlighted_edges: &HashSet<EdgeIndex>,
 ) {
     // Collect all connected edges - we need ALL edges connected to the junction
     // because an edge can have tracks going in either direction
@@ -357,6 +361,10 @@ pub fn draw_junction(
                 )
             };
 
+            // Determine track color based on whether both edges are highlighted
+            let is_highlighted = highlighted_edges.contains(from_edge) && highlighted_edges.contains(to_edge);
+            let track_color = if is_highlighted { HIGHLIGHTED_TRACK_COLOR } else { TRACK_COLOR };
+
             if arriving_tracks.len() == 1 && departing_tracks.len() == 1 {
                 // Single track to single track - draw simple connection
                 // Calculate the actual positions of these specific tracks
@@ -381,7 +389,7 @@ pub fn draw_junction(
                     exit_base.1 + to_perp.1 * to_offset
                 );
 
-                ctx.set_stroke_style_str(TRACK_COLOR);
+                ctx.set_stroke_style_str(track_color);
                 ctx.begin_path();
                 ctx.move_to(entry_point.0, entry_point.1);
                 ctx.line_to(exit_point.0, exit_point.1);
@@ -399,6 +407,7 @@ pub fn draw_junction(
                     from_perp,
                     to_perp,
                     zoom,
+                    track_color,
                 );
             }
         }

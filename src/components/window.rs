@@ -157,7 +157,7 @@ pub fn Window(
 
     // Watch for resize trigger changes and auto-size
     create_effect(move |_| {
-        let _ = resize_trigger.get(); // Track changes
+        let _ = resize_trigger.get();
         if is_open.get() {
             auto_size();
         }

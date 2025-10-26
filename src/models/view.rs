@@ -201,6 +201,39 @@ impl GraphView {
         })
     }
 
+    /// Create a view from multiple waypoints
+    ///
+    /// # Errors
+    /// Returns an error if fewer than 2 waypoints or no path exists through all waypoints
+    pub fn from_waypoints(
+        name: String,
+        waypoints: &[NodeIndex],
+        graph: &RailwayGraph,
+    ) -> Result<Self, String> {
+        if waypoints.len() < 2 {
+            return Err("At least 2 waypoints are required".to_string());
+        }
+
+        // Find path through all waypoints
+        let edge_indices = graph.find_multi_point_path(waypoints)
+            .ok_or_else(|| "No valid path exists through the selected waypoints".to_string())?;
+
+        // Convert EdgeIndex to usize for storage
+        let edge_path: Vec<usize> = edge_indices.iter().map(|e| e.index()).collect();
+
+        let from = waypoints[0];
+        let to = waypoints[waypoints.len() - 1];
+
+        Ok(Self {
+            id: Uuid::new_v4(),
+            name,
+            viewport_state: ViewportState::default(),
+            station_range: Some((from, to)),
+            edge_path: Some(edge_path),
+            source_line_id: None,
+        })
+    }
+
     /// Update this view's edge path and station range from a line's current route
     /// Keeps the view's ID, name, and viewport state
     /// Returns true if the view was updated, false if the line has no valid route

@@ -1,5 +1,6 @@
 use crate::models::{RailwayGraph, Stations, Junctions};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+use std::collections::HashSet;
 use web_sys::CanvasRenderingContext2d;
 
 // Track layout constants
@@ -14,6 +15,7 @@ const PROJECTION_MAX: f64 = 0.9; // Maximum projection parameter for station che
 // Track rendering constants
 const TRACK_LINE_WIDTH: f64 = 2.0;
 const TRACK_COLOR: &str = "#444";
+const HIGHLIGHTED_TRACK_COLOR: &str = "#4a9eff";
 const JUNCTION_STOP_DISTANCE: f64 = 14.0; // Stop drawing tracks this far from junction center
 
 /// Draw a track segment with optional avoidance transitions
@@ -264,8 +266,10 @@ pub fn draw_tracks(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
     zoom: f64,
+    highlighted_edges: &HashSet<petgraph::stable_graph::EdgeIndex>,
 ) {
     for edge in graph.graph.edge_references() {
+        let edge_id = edge.id();
         let source = edge.source();
         let target = edge.target();
         let Some(pos1) = graph.get_station_position(source) else { continue };
@@ -276,6 +280,10 @@ pub fn draw_tracks(
         if track_count == 0 {
             continue;
         }
+
+        // Check if this edge is highlighted (part of preview path)
+        let is_highlighted = highlighted_edges.contains(&edge_id);
+        let track_color = if is_highlighted { HIGHLIGHTED_TRACK_COLOR } else { TRACK_COLOR };
 
         // Check if source or target is a junction
         let source_is_junction = graph.is_junction(source);
@@ -320,7 +328,7 @@ pub fn draw_tracks(
 
         if track_count == 1 {
             // Single track - draw in center (with avoidance if needed)
-            ctx.set_stroke_style_str(TRACK_COLOR);
+            ctx.set_stroke_style_str(track_color);
             ctx.begin_path();
 
             if needs_avoidance {
@@ -352,7 +360,7 @@ pub fn draw_tracks(
                 let ox = nx * offset;
                 let oy = ny * offset;
 
-                ctx.set_stroke_style_str(TRACK_COLOR);
+                ctx.set_stroke_style_str(track_color);
                 ctx.begin_path();
 
                 if needs_avoidance {

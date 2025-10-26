@@ -42,6 +42,13 @@ pub trait Routes {
         from: NodeIndex,
         to: NodeIndex,
     ) -> Option<Vec<EdgeIndex>>;
+
+    /// Find a path through multiple waypoints
+    /// Returns a list of edge indices that form the complete path, or None if any segment has no path
+    fn find_multi_point_path(
+        &self,
+        waypoints: &[NodeIndex],
+    ) -> Option<Vec<EdgeIndex>>;
 }
 
 impl Routes for RailwayGraph {
@@ -325,6 +332,32 @@ impl Routes for RailwayGraph {
         }
 
         None
+    }
+
+    fn find_multi_point_path(
+        &self,
+        waypoints: &[NodeIndex],
+    ) -> Option<Vec<EdgeIndex>> {
+        // Need at least 2 waypoints to form a path
+        if waypoints.len() < 2 {
+            return None;
+        }
+
+        let mut complete_path = Vec::new();
+
+        // For each consecutive pair of waypoints, find the path between them
+        for window in waypoints.windows(2) {
+            let from = window[0];
+            let to = window[1];
+
+            // Find path for this segment
+            let segment_path = self.find_path_between_nodes(from, to)?;
+
+            // Add this segment's edges to the complete path
+            complete_path.extend(segment_path);
+        }
+
+        Some(complete_path)
     }
 }
 
