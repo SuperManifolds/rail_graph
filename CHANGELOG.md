@@ -3,6 +3,9 @@
 ## Features
 - Added Distance Offset column type for CSV imports - allows importing cumulative distances that are automatically converted to inter-node distances
 
+## Improvements
+- Confirmation dialogs now support keyboard shortcuts - Enter to confirm, Escape to cancel
+
 ## Bug Fixes
 - Fixed last segment not rendering when importing CSV lines onto existing infrastructure
 - Fixed conflict detection not detecting conflicts between late Sunday departures and early Monday departures
