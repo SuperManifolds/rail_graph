@@ -58,10 +58,12 @@ pub struct TrainJourney {
 
 impl TrainJourney {
     /// Process segments without duration (fallback for missing durations)
+    #[allow(clippy::too_many_arguments)]
     fn process_segments_without_duration(
         segments_without_duration: &[usize],
         route: &[crate::models::RouteSegment],
         route_nodes: &[Option<petgraph::stable_graph::NodeIndex>],
+        graph: &RailwayGraph,
         departure_time: NaiveDateTime,
         cumulative_time: &mut Duration,
         station_times: &mut Vec<(petgraph::stable_graph::NodeIndex, NaiveDateTime, NaiveDateTime)>,
@@ -70,7 +72,16 @@ impl TrainJourney {
         for &seg_idx in segments_without_duration {
             let seg = &route[seg_idx];
             let arrival_time = departure_time + *cumulative_time;
-            *cumulative_time += seg.wait_time;
+
+            // Only add wait time if the destination node is not a junction
+            let is_junction = route_nodes.get(seg_idx + 1)
+                .and_then(|&node_idx| node_idx)
+                .and_then(|node_idx| graph.graph.node_weight(node_idx))
+                .is_some_and(|node| node.as_junction().is_some());
+
+            if !is_junction {
+                *cumulative_time += seg.wait_time;
+            }
             let departure_from_station = departure_time + *cumulative_time;
 
             if let Some(node_idx) = route_nodes[seg_idx + 1] {
@@ -98,11 +109,13 @@ impl TrainJourney {
     }
 
     /// Process segments with duration inheritance and add station times/segments
+    #[allow(clippy::too_many_arguments)]
     fn process_segments_with_duration(
         segments_since_duration: &[usize],
         duration: Duration,
         route: &[crate::models::RouteSegment],
         route_nodes: &[Option<petgraph::stable_graph::NodeIndex>],
+        graph: &RailwayGraph,
         departure_time: NaiveDateTime,
         cumulative_time: &mut Duration,
         station_times: &mut Vec<(petgraph::stable_graph::NodeIndex, NaiveDateTime, NaiveDateTime)>,
@@ -120,7 +133,15 @@ impl TrainJourney {
             *cumulative_time += duration_per_segment;
             let arrival_time = departure_time + *cumulative_time;
 
-            *cumulative_time += seg.wait_time;
+            // Only add wait time if the destination node is not a junction
+            let is_junction = route_nodes.get(seg_idx + 1)
+                .and_then(|&node_idx| node_idx)
+                .and_then(|node_idx| graph.graph.node_weight(node_idx))
+                .is_some_and(|node| node.as_junction().is_some());
+
+            if !is_junction {
+                *cumulative_time += seg.wait_time;
+            }
             let departure_from_station = departure_time + *cumulative_time;
 
             if let Some(node_idx) = route_nodes[seg_idx + 1] {
@@ -332,6 +353,7 @@ impl TrainJourney {
                         duration,
                         &line.forward_route,
                         &route_nodes,
+                        graph,
                         departure_time,
                         &mut cumulative_time,
                         &mut station_times,
@@ -345,6 +367,7 @@ impl TrainJourney {
                         &[i],
                         &line.forward_route,
                         &route_nodes,
+                        graph,
                         departure_time,
                         &mut cumulative_time,
                         &mut station_times,
@@ -568,6 +591,7 @@ impl TrainJourney {
                     duration,
                     route,
                     &route_nodes_opt,
+                    graph,
                     departure_time,
                     &mut cumulative_time,
                     &mut station_times,
@@ -580,6 +604,7 @@ impl TrainJourney {
                     &[i],
                     route,
                     &route_nodes_opt,
+                    graph,
                     departure_time,
                     &mut cumulative_time,
                     &mut station_times,
@@ -660,6 +685,7 @@ impl TrainJourney {
                         duration,
                         &line.return_route,
                         &route_nodes,
+                        graph,
                         return_departure_time,
                         &mut cumulative_time,
                         &mut station_times,
@@ -672,6 +698,7 @@ impl TrainJourney {
                         &[i],
                         &line.return_route,
                         &route_nodes,
+                        graph,
                         return_departure_time,
                         &mut cumulative_time,
                         &mut station_times,
