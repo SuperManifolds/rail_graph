@@ -4,6 +4,7 @@
 - Improved infrastructure view performance when zooming and panning on large networks
 
 ## Bug Fixes
+- Fixed manual departures disappearing when auto scheduling is enabled - manual departures now run alongside auto-scheduled services
 - Fixed train journey lines in time-distance graph views connecting to wrong occurrence when a route visits the same junction multiple times (e.g., backtracking through a junction)
 - Fixed conflict list showing incorrect count with empty list - conflict filtering was using wrong index type causing mismatched visibility checks
 
