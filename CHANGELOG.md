@@ -1,4 +1,4 @@
-# Unreleased
+# v0.1.8 - 2025-10-27
 
 ## Performance
 - Improved infrastructure view performance when zooming and panning on large networks
