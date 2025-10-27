@@ -188,14 +188,17 @@ impl TrainJourney {
 
                 match line.schedule_mode {
                     ScheduleMode::Auto => {
-                        // Generate forward journeys
+                        // Generate auto-scheduled forward journeys
                         Self::generate_forward_journeys(&mut journeys, line, graph, current_date, day_end);
 
-                        // Generate return journeys
+                        // Generate auto-scheduled return journeys
                         Self::generate_return_journeys(&mut journeys, line, graph, current_date, day_end);
+
+                        // Also generate any manual departures (for special services)
+                        Self::generate_manual_journeys(&mut journeys, line, graph, current_date, day_filter);
                     }
                     ScheduleMode::Manual => {
-                        // Generate journeys from manual departures
+                        // Generate journeys from manual departures only
                         Self::generate_manual_journeys(&mut journeys, line, graph, current_date, day_filter);
                     }
                 }
