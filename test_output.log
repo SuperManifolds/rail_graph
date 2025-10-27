@@ -1,0 +1,879 @@
+
+running 1 test
+
+=== Project loaded: Untitled Project.2025-10-25-053753.2025-10-26-035828 ===
+Lines: 5
+
+--- Line: Glasgow - Oban ---
+Forward route segments: 17
+Return route segments: 17
+Sync routes enabled: false
+
+All edges in graph:
+  edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  edge 8: Tyndrum Lower [idx=8] -> Dalmally [idx=9]
+  edge 9: Dalmally [idx=9] -> Loch Awe [idx=10]
+  edge 10: Loch Awe [idx=10] -> Falls of Cruachan [idx=11]
+  edge 11: Falls of Cruachan [idx=11] -> Taynuilt [idx=12]
+  edge 12: Taynuilt [idx=12] -> Connel Ferry [idx=13]
+  edge 13: Connel Ferry [idx=13] -> Oban [idx=14]
+  edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  edge 15: Upper Tyndrum [idx=15] -> Bridge of Orchy [idx=16]
+  edge 16: Bridge of Orchy [idx=16] -> Rannoch [idx=17]
+  edge 17: Rannoch [idx=17] -> Corrour [idx=18]
+  edge 18: Corrour [idx=18] -> Tulloch [idx=19]
+  edge 19: Tulloch [idx=19] -> Roy Bridge [idx=20]
+  edge 20: Spean Bridge [idx=21] -> Roy Bridge [idx=20]
+  edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  edge 22: Craigendoran Junction [idx=39] -> Craigendoran [idx=38]
+  edge 23: Fort William [idx=22] -> Banavie Junction [idx=46]
+  edge 24: Banavie [idx=24] -> Corpach [idx=25]
+  edge 25: Corpach [idx=25] -> Loch Eli Outward Bound [idx=26]
+  edge 26: Loch Eli Outward Bound [idx=26] -> Locheliside [idx=27]
+  edge 27: Locheliside [idx=27] -> Glenfinnan [idx=28]
+  edge 28: Glenfinnan [idx=28] -> Lochailort [idx=29]
+  edge 29: Lochailort [idx=29] -> Beasdale [idx=30]
+  edge 30: Beasdale [idx=30] -> Arisaig [idx=31]
+  edge 31: Arisaig [idx=31] -> Morar [idx=32]
+  edge 32: Morar [idx=32] -> Mallaig [idx=33]
+  edge 33: Gairlochy [idx=23] -> Invergloy [idx=34]
+  edge 34: Invergloy [idx=34] -> Invergarry [idx=35]
+  edge 35: Invergarry [idx=35] -> Aberchalder [idx=36]
+  edge 36: Aberchalder [idx=36] -> Fort Augustus [idx=37]
+  edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  edge 38: Spean Bridge Junction [idx=47] -> Spean Bridge [idx=21]
+  edge 39: Craigendoran [idx=38] -> Helensburgh Central [idx=40]
+  edge 40: Tyndrum Lower [idx=8] -> Crianlarich West Junction [idx=43]
+  edge 41: Crianlarich North Junction [idx=42] -> Upper Tyndrum [idx=15]
+  edge 42: Crianlarich West Junction [idx=43] -> Crianlarich South Junction [idx=41]
+  edge 43: Crianlarich Lower  [idx=49] -> Crianlarich East Junction [idx=45]
+  edge 44: Crianlarich East Junction [idx=45] -> Benmore [idx=44]
+  edge 45: Crianlarich North Junction [idx=42] -> Crianlarich East Junction [idx=45]
+  edge 46: Banavie [idx=24] -> Banavie Junction [idx=46]
+  edge 47: Gairlochy [idx=23] -> Spean Bridge Junction [idx=47]
+  edge 48: Banavie Junction [idx=46] -> Fort William [idx=22]
+  edge 49: Crianlarich West Junction [idx=43] -> Crianlarich Lower  [idx=49]
+  edge 50: Benmore [idx=44] -> Luib [idx=50]
+  edge 51: Luib [idx=50] -> Killin Junction [idx=51]
+  edge 52: Glenoglehead [idx=52] -> Balquhidder Junction [idx=55]
+  edge 53: Killin Junction [idx=51] -> Killin [idx=53]
+  edge 54: Killin Junction [idx=51] -> Glenoglehead [idx=52]
+  edge 55: Balquhidder Junction [idx=55] -> Balquhidder [idx=54]
+  edge 56: Balquhidder Junction [idx=55] -> Lochearnhead [idx=56]
+  edge 57: Balquhidder [idx=54] -> Kingshouse [idx=57]
+  edge 58: Kingshouse [idx=57] -> Strathyre [idx=58]
+  edge 59: Strathyre [idx=58] -> Callander [idx=59]
+  edge 60: Callander [idx=59] -> Doune [idx=60]
+  edge 61: Doune [idx=60] -> Dunblane [idx=61]
+
+Forward route edges:
+  [0] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  [1] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [2] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [3] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [4] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [5] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [6] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [7] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [8] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [9] edge 42: Crianlarich West Junction [idx=43] -> Crianlarich South Junction [idx=41]
+  [10] edge 40: Tyndrum Lower [idx=8] -> Crianlarich West Junction [idx=43]
+  [11] edge 8: Tyndrum Lower [idx=8] -> Dalmally [idx=9]
+  [12] edge 9: Dalmally [idx=9] -> Loch Awe [idx=10]
+  [13] edge 10: Loch Awe [idx=10] -> Falls of Cruachan [idx=11]
+  [14] edge 11: Falls of Cruachan [idx=11] -> Taynuilt [idx=12]
+  [15] edge 12: Taynuilt [idx=12] -> Connel Ferry [idx=13]
+  [16] edge 13: Connel Ferry [idx=13] -> Oban [idx=14]
+
+Return route edges:
+  [0] edge 13: Connel Ferry [idx=13] -> Oban [idx=14]
+  [1] edge 12: Taynuilt [idx=12] -> Connel Ferry [idx=13]
+  [2] edge 11: Falls of Cruachan [idx=11] -> Taynuilt [idx=12]
+  [3] edge 10: Loch Awe [idx=10] -> Falls of Cruachan [idx=11]
+  [4] edge 9: Dalmally [idx=9] -> Loch Awe [idx=10]
+  [5] edge 8: Tyndrum Lower [idx=8] -> Dalmally [idx=9]
+  [6] edge 40: Tyndrum Lower [idx=8] -> Crianlarich West Junction [idx=43]
+  [7] edge 42: Crianlarich West Junction [idx=43] -> Crianlarich South Junction [idx=41]
+  [8] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [9] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [10] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [11] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [12] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [13] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [14] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [15] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [16] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+
+Generated 80 journeys
+
+First journey segments:
+  [0] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  [1] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [2] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [3] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [4] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [5] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [6] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [7] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [8] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [9] edge 42: Crianlarich West Junction [idx=43] -> Crianlarich South Junction [idx=41]
+  [10] edge 40: Tyndrum Lower [idx=8] -> Crianlarich West Junction [idx=43]
+  [11] edge 8: Tyndrum Lower [idx=8] -> Dalmally [idx=9]
+  [12] edge 9: Dalmally [idx=9] -> Loch Awe [idx=10]
+  [13] edge 10: Loch Awe [idx=10] -> Falls of Cruachan [idx=11]
+  [14] edge 11: Falls of Cruachan [idx=11] -> Taynuilt [idx=12]
+  [15] edge 12: Taynuilt [idx=12] -> Connel Ferry [idx=13]
+  [16] edge 13: Connel Ferry [idx=13] -> Oban [idx=14]
+
+Journey stations:
+  [0] Glasgow Queen Street [idx=0]: arrive 16:12:30, depart 16:12:30
+  [1] Dalmuir [idx=1]: arrive 16:22:00, depart 16:23:00
+  [2] Dumbarton Central [idx=2]: arrive 16:28:56, depart 16:30:56
+  [3] Craigendoran Junction [idx=39]: arrive 16:36:54, depart 16:36:54
+  [4] Helensburgh Upper [idx=3]: arrive 16:39:23, depart 16:40:23
+  [5] Garelochhead [idx=4]: arrive 16:47:07, depart 16:47:37
+  [6] Arrochar & Tarbet [idx=5]: arrive 16:57:22, depart 16:57:52
+  [7] Ardlui [idx=6]: arrive 17:04:49, depart 17:07:49
+  [8] Upper Crianlarich [idx=7]: arrive 17:14:59, depart 17:15:44
+  [9] Crianlarich South Junction [idx=41]: arrive 17:15:59, depart 17:15:59
+  [10] Crianlarich West Junction [idx=43]: arrive 17:16:38, depart 17:16:38
+  [11] Tyndrum Lower [idx=8]: arrive 17:20:59, depart 17:21:29
+  [12] Dalmally [idx=9]: arrive 17:32:25, depart 17:32:55
+  [13] Loch Awe [idx=10]: arrive 17:36:13, depart 17:36:43
+  [14] Falls of Cruachan [idx=11]: arrive 17:40:32, depart 17:41:02
+  [15] Taynuilt [idx=12]: arrive 17:47:28, depart 17:47:58
+  [16] Connel Ferry [idx=13]: arrive 17:55:18, depart 17:55:48
+  [17] Oban [idx=14]: arrive 18:03:10, depart 18:12:26
+
+--- Line: Glasgow - Dunblaine ---
+Forward route segments: 22
+Return route segments: 22
+Sync routes enabled: false
+
+All edges in graph:
+  edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  edge 8: Tyndrum Lower [idx=8] -> Dalmally [idx=9]
+  edge 9: Dalmally [idx=9] -> Loch Awe [idx=10]
+  edge 10: Loch Awe [idx=10] -> Falls of Cruachan [idx=11]
+  edge 11: Falls of Cruachan [idx=11] -> Taynuilt [idx=12]
+  edge 12: Taynuilt [idx=12] -> Connel Ferry [idx=13]
+  edge 13: Connel Ferry [idx=13] -> Oban [idx=14]
+  edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  edge 15: Upper Tyndrum [idx=15] -> Bridge of Orchy [idx=16]
+  edge 16: Bridge of Orchy [idx=16] -> Rannoch [idx=17]
+  edge 17: Rannoch [idx=17] -> Corrour [idx=18]
+  edge 18: Corrour [idx=18] -> Tulloch [idx=19]
+  edge 19: Tulloch [idx=19] -> Roy Bridge [idx=20]
+  edge 20: Spean Bridge [idx=21] -> Roy Bridge [idx=20]
+  edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  edge 22: Craigendoran Junction [idx=39] -> Craigendoran [idx=38]
+  edge 23: Fort William [idx=22] -> Banavie Junction [idx=46]
+  edge 24: Banavie [idx=24] -> Corpach [idx=25]
+  edge 25: Corpach [idx=25] -> Loch Eli Outward Bound [idx=26]
+  edge 26: Loch Eli Outward Bound [idx=26] -> Locheliside [idx=27]
+  edge 27: Locheliside [idx=27] -> Glenfinnan [idx=28]
+  edge 28: Glenfinnan [idx=28] -> Lochailort [idx=29]
+  edge 29: Lochailort [idx=29] -> Beasdale [idx=30]
+  edge 30: Beasdale [idx=30] -> Arisaig [idx=31]
+  edge 31: Arisaig [idx=31] -> Morar [idx=32]
+  edge 32: Morar [idx=32] -> Mallaig [idx=33]
+  edge 33: Gairlochy [idx=23] -> Invergloy [idx=34]
+  edge 34: Invergloy [idx=34] -> Invergarry [idx=35]
+  edge 35: Invergarry [idx=35] -> Aberchalder [idx=36]
+  edge 36: Aberchalder [idx=36] -> Fort Augustus [idx=37]
+  edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  edge 38: Spean Bridge Junction [idx=47] -> Spean Bridge [idx=21]
+  edge 39: Craigendoran [idx=38] -> Helensburgh Central [idx=40]
+  edge 40: Tyndrum Lower [idx=8] -> Crianlarich West Junction [idx=43]
+  edge 41: Crianlarich North Junction [idx=42] -> Upper Tyndrum [idx=15]
+  edge 42: Crianlarich West Junction [idx=43] -> Crianlarich South Junction [idx=41]
+  edge 43: Crianlarich Lower  [idx=49] -> Crianlarich East Junction [idx=45]
+  edge 44: Crianlarich East Junction [idx=45] -> Benmore [idx=44]
+  edge 45: Crianlarich North Junction [idx=42] -> Crianlarich East Junction [idx=45]
+  edge 46: Banavie [idx=24] -> Banavie Junction [idx=46]
+  edge 47: Gairlochy [idx=23] -> Spean Bridge Junction [idx=47]
+  edge 48: Banavie Junction [idx=46] -> Fort William [idx=22]
+  edge 49: Crianlarich West Junction [idx=43] -> Crianlarich Lower  [idx=49]
+  edge 50: Benmore [idx=44] -> Luib [idx=50]
+  edge 51: Luib [idx=50] -> Killin Junction [idx=51]
+  edge 52: Glenoglehead [idx=52] -> Balquhidder Junction [idx=55]
+  edge 53: Killin Junction [idx=51] -> Killin [idx=53]
+  edge 54: Killin Junction [idx=51] -> Glenoglehead [idx=52]
+  edge 55: Balquhidder Junction [idx=55] -> Balquhidder [idx=54]
+  edge 56: Balquhidder Junction [idx=55] -> Lochearnhead [idx=56]
+  edge 57: Balquhidder [idx=54] -> Kingshouse [idx=57]
+  edge 58: Kingshouse [idx=57] -> Strathyre [idx=58]
+  edge 59: Strathyre [idx=58] -> Callander [idx=59]
+  edge 60: Callander [idx=59] -> Doune [idx=60]
+  edge 61: Doune [idx=60] -> Dunblane [idx=61]
+
+Forward route edges:
+  [0] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  [1] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [2] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [3] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [4] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [5] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [6] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [7] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [8] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [9] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [10] edge 45: Crianlarich North Junction [idx=42] -> Crianlarich East Junction [idx=45]
+  [11] edge 44: Crianlarich East Junction [idx=45] -> Benmore [idx=44]
+  [12] edge 50: Benmore [idx=44] -> Luib [idx=50]
+  [13] edge 51: Luib [idx=50] -> Killin Junction [idx=51]
+  [14] edge 54: Killin Junction [idx=51] -> Glenoglehead [idx=52]
+  [15] edge 52: Glenoglehead [idx=52] -> Balquhidder Junction [idx=55]
+  [16] edge 55: Balquhidder Junction [idx=55] -> Balquhidder [idx=54]
+  [17] edge 57: Balquhidder [idx=54] -> Kingshouse [idx=57]
+  [18] edge 58: Kingshouse [idx=57] -> Strathyre [idx=58]
+  [19] edge 59: Strathyre [idx=58] -> Callander [idx=59]
+  [20] edge 60: Callander [idx=59] -> Doune [idx=60]
+  [21] edge 61: Doune [idx=60] -> Dunblane [idx=61]
+
+Return route edges:
+  [0] edge 61: Doune [idx=60] -> Dunblane [idx=61]
+  [1] edge 60: Callander [idx=59] -> Doune [idx=60]
+  [2] edge 59: Strathyre [idx=58] -> Callander [idx=59]
+  [3] edge 58: Kingshouse [idx=57] -> Strathyre [idx=58]
+  [4] edge 57: Balquhidder [idx=54] -> Kingshouse [idx=57]
+  [5] edge 55: Balquhidder Junction [idx=55] -> Balquhidder [idx=54]
+  [6] edge 52: Glenoglehead [idx=52] -> Balquhidder Junction [idx=55]
+  [7] edge 54: Killin Junction [idx=51] -> Glenoglehead [idx=52]
+  [8] edge 51: Luib [idx=50] -> Killin Junction [idx=51]
+  [9] edge 50: Benmore [idx=44] -> Luib [idx=50]
+  [10] edge 44: Crianlarich East Junction [idx=45] -> Benmore [idx=44]
+  [11] edge 45: Crianlarich North Junction [idx=42] -> Crianlarich East Junction [idx=45]
+  [12] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [13] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [14] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [15] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [16] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [17] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [18] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [19] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [20] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [21] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+
+Generated 90 journeys
+
+First journey segments:
+  [0] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  [1] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [2] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [3] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [4] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [5] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [6] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [7] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [8] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [9] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [10] edge 45: Crianlarich North Junction [idx=42] -> Crianlarich East Junction [idx=45]
+  [11] edge 44: Crianlarich East Junction [idx=45] -> Benmore [idx=44]
+  [12] edge 50: Benmore [idx=44] -> Luib [idx=50]
+  [13] edge 51: Luib [idx=50] -> Killin Junction [idx=51]
+  [14] edge 54: Killin Junction [idx=51] -> Glenoglehead [idx=52]
+  [15] edge 52: Glenoglehead [idx=52] -> Balquhidder Junction [idx=55]
+  [16] edge 55: Balquhidder Junction [idx=55] -> Balquhidder [idx=54]
+  [17] edge 57: Balquhidder [idx=54] -> Kingshouse [idx=57]
+  [18] edge 58: Kingshouse [idx=57] -> Strathyre [idx=58]
+  [19] edge 59: Strathyre [idx=58] -> Callander [idx=59]
+  [20] edge 60: Callander [idx=59] -> Doune [idx=60]
+  [21] edge 61: Doune [idx=60] -> Dunblane [idx=61]
+
+Journey stations:
+  [0] Glasgow Queen Street [idx=0]: arrive 09:12:30, depart 09:12:30
+  [1] Dalmuir [idx=1]: arrive 09:22:00, depart 09:23:00
+  [2] Dumbarton Central [idx=2]: arrive 09:28:56, depart 09:30:56
+  [3] Craigendoran Junction [idx=39]: arrive 09:36:54, depart 09:36:54
+  [4] Helensburgh Upper [idx=3]: arrive 09:39:23, depart 09:40:23
+  [5] Garelochhead [idx=4]: arrive 09:47:07, depart 09:47:37
+  [6] Arrochar & Tarbet [idx=5]: arrive 09:57:22, depart 09:57:52
+  [7] Ardlui [idx=6]: arrive 10:04:49, depart 10:07:49
+  [8] Upper Crianlarich [idx=7]: arrive 10:14:59, depart 10:15:29
+  [9] Crianlarich South Junction [idx=41]: arrive 10:15:44, depart 10:15:44
+  [10] Crianlarich North Junction [idx=42]: arrive 10:15:54, depart 10:15:54
+  [11] Crianlarich East Junction [idx=45]: arrive 10:16:29, depart 10:16:29
+  [12] Benmore [idx=44]: arrive 10:18:28, depart 10:18:58
+  [13] Luib [idx=50]: arrive 10:23:20, depart 10:23:50
+  [14] Killin Junction [idx=51]: arrive 10:27:58, depart 10:28:28
+  [15] Glenoglehead [idx=52]: arrive 10:31:16, depart 10:31:46
+  [16] Balquhidder Junction [idx=55]: arrive 10:36:40, depart 10:36:40
+  [17] Balquhidder [idx=54]: arrive 10:37:04, depart 10:37:34
+  [18] Kingshouse [idx=57]: arrive 10:39:00, depart 10:39:30
+  [19] Strathyre [idx=58]: arrive 10:42:21, depart 10:42:51
+  [20] Callander [idx=59]: arrive 10:51:32, depart 10:52:02
+  [21] Doune [idx=60]: arrive 10:58:37, depart 10:59:07
+  [22] Dunblane [idx=61]: arrive 11:03:17, depart 11:12:16
+
+--- Line: Glasgow - Fort Augustus ---
+Forward route segments: 27
+Return route segments: 27
+Sync routes enabled: false
+
+All edges in graph:
+  edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  edge 8: Tyndrum Lower [idx=8] -> Dalmally [idx=9]
+  edge 9: Dalmally [idx=9] -> Loch Awe [idx=10]
+  edge 10: Loch Awe [idx=10] -> Falls of Cruachan [idx=11]
+  edge 11: Falls of Cruachan [idx=11] -> Taynuilt [idx=12]
+  edge 12: Taynuilt [idx=12] -> Connel Ferry [idx=13]
+  edge 13: Connel Ferry [idx=13] -> Oban [idx=14]
+  edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  edge 15: Upper Tyndrum [idx=15] -> Bridge of Orchy [idx=16]
+  edge 16: Bridge of Orchy [idx=16] -> Rannoch [idx=17]
+  edge 17: Rannoch [idx=17] -> Corrour [idx=18]
+  edge 18: Corrour [idx=18] -> Tulloch [idx=19]
+  edge 19: Tulloch [idx=19] -> Roy Bridge [idx=20]
+  edge 20: Spean Bridge [idx=21] -> Roy Bridge [idx=20]
+  edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  edge 22: Craigendoran Junction [idx=39] -> Craigendoran [idx=38]
+  edge 23: Fort William [idx=22] -> Banavie Junction [idx=46]
+  edge 24: Banavie [idx=24] -> Corpach [idx=25]
+  edge 25: Corpach [idx=25] -> Loch Eli Outward Bound [idx=26]
+  edge 26: Loch Eli Outward Bound [idx=26] -> Locheliside [idx=27]
+  edge 27: Locheliside [idx=27] -> Glenfinnan [idx=28]
+  edge 28: Glenfinnan [idx=28] -> Lochailort [idx=29]
+  edge 29: Lochailort [idx=29] -> Beasdale [idx=30]
+  edge 30: Beasdale [idx=30] -> Arisaig [idx=31]
+  edge 31: Arisaig [idx=31] -> Morar [idx=32]
+  edge 32: Morar [idx=32] -> Mallaig [idx=33]
+  edge 33: Gairlochy [idx=23] -> Invergloy [idx=34]
+  edge 34: Invergloy [idx=34] -> Invergarry [idx=35]
+  edge 35: Invergarry [idx=35] -> Aberchalder [idx=36]
+  edge 36: Aberchalder [idx=36] -> Fort Augustus [idx=37]
+  edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  edge 38: Spean Bridge Junction [idx=47] -> Spean Bridge [idx=21]
+  edge 39: Craigendoran [idx=38] -> Helensburgh Central [idx=40]
+  edge 40: Tyndrum Lower [idx=8] -> Crianlarich West Junction [idx=43]
+  edge 41: Crianlarich North Junction [idx=42] -> Upper Tyndrum [idx=15]
+  edge 42: Crianlarich West Junction [idx=43] -> Crianlarich South Junction [idx=41]
+  edge 43: Crianlarich Lower  [idx=49] -> Crianlarich East Junction [idx=45]
+  edge 44: Crianlarich East Junction [idx=45] -> Benmore [idx=44]
+  edge 45: Crianlarich North Junction [idx=42] -> Crianlarich East Junction [idx=45]
+  edge 46: Banavie [idx=24] -> Banavie Junction [idx=46]
+  edge 47: Gairlochy [idx=23] -> Spean Bridge Junction [idx=47]
+  edge 48: Banavie Junction [idx=46] -> Fort William [idx=22]
+  edge 49: Crianlarich West Junction [idx=43] -> Crianlarich Lower  [idx=49]
+  edge 50: Benmore [idx=44] -> Luib [idx=50]
+  edge 51: Luib [idx=50] -> Killin Junction [idx=51]
+  edge 52: Glenoglehead [idx=52] -> Balquhidder Junction [idx=55]
+  edge 53: Killin Junction [idx=51] -> Killin [idx=53]
+  edge 54: Killin Junction [idx=51] -> Glenoglehead [idx=52]
+  edge 55: Balquhidder Junction [idx=55] -> Balquhidder [idx=54]
+  edge 56: Balquhidder Junction [idx=55] -> Lochearnhead [idx=56]
+  edge 57: Balquhidder [idx=54] -> Kingshouse [idx=57]
+  edge 58: Kingshouse [idx=57] -> Strathyre [idx=58]
+  edge 59: Strathyre [idx=58] -> Callander [idx=59]
+  edge 60: Callander [idx=59] -> Doune [idx=60]
+  edge 61: Doune [idx=60] -> Dunblane [idx=61]
+
+Forward route edges:
+  [0] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  [1] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [2] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [3] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [4] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [5] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [6] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [7] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [8] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [9] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [10] edge 41: Crianlarich North Junction [idx=42] -> Upper Tyndrum [idx=15]
+  [11] edge 15: Upper Tyndrum [idx=15] -> Bridge of Orchy [idx=16]
+  [12] edge 16: Bridge of Orchy [idx=16] -> Rannoch [idx=17]
+  [13] edge 17: Rannoch [idx=17] -> Corrour [idx=18]
+  [14] edge 18: Corrour [idx=18] -> Tulloch [idx=19]
+  [15] edge 19: Tulloch [idx=19] -> Roy Bridge [idx=20]
+  [16] edge 20: Spean Bridge [idx=21] -> Roy Bridge [idx=20]
+  [17] edge 38: Spean Bridge Junction [idx=47] -> Spean Bridge [idx=21]
+  [18] edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  [19] edge 48: Banavie Junction [idx=46] -> Fort William [idx=22]
+  [20] edge 23: Fort William [idx=22] -> Banavie Junction [idx=46]
+  [21] edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  [22] edge 47: Gairlochy [idx=23] -> Spean Bridge Junction [idx=47]
+  [23] edge 33: Gairlochy [idx=23] -> Invergloy [idx=34]
+  [24] edge 34: Invergloy [idx=34] -> Invergarry [idx=35]
+  [25] edge 35: Invergarry [idx=35] -> Aberchalder [idx=36]
+  [26] edge 36: Aberchalder [idx=36] -> Fort Augustus [idx=37]
+
+Return route edges:
+  [0] edge 36: Aberchalder [idx=36] -> Fort Augustus [idx=37]
+  [1] edge 35: Invergarry [idx=35] -> Aberchalder [idx=36]
+  [2] edge 34: Invergloy [idx=34] -> Invergarry [idx=35]
+  [3] edge 33: Gairlochy [idx=23] -> Invergloy [idx=34]
+  [4] edge 47: Gairlochy [idx=23] -> Spean Bridge Junction [idx=47]
+  [5] edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  [6] edge 23: Fort William [idx=22] -> Banavie Junction [idx=46]
+  [7] edge 48: Banavie Junction [idx=46] -> Fort William [idx=22]
+  [8] edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  [9] edge 38: Spean Bridge Junction [idx=47] -> Spean Bridge [idx=21]
+  [10] edge 20: Spean Bridge [idx=21] -> Roy Bridge [idx=20]
+  [11] edge 19: Tulloch [idx=19] -> Roy Bridge [idx=20]
+  [12] edge 18: Corrour [idx=18] -> Tulloch [idx=19]
+  [13] edge 17: Rannoch [idx=17] -> Corrour [idx=18]
+  [14] edge 16: Bridge of Orchy [idx=16] -> Rannoch [idx=17]
+  [15] edge 15: Upper Tyndrum [idx=15] -> Bridge of Orchy [idx=16]
+  [16] edge 41: Crianlarich North Junction [idx=42] -> Upper Tyndrum [idx=15]
+  [17] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [18] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [19] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [20] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [21] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [22] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [23] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [24] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [25] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [26] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+
+Generated 85 journeys
+
+First journey segments:
+  [0] edge 36: Aberchalder [idx=36] -> Fort Augustus [idx=37]
+  [1] edge 35: Invergarry [idx=35] -> Aberchalder [idx=36]
+  [2] edge 34: Invergloy [idx=34] -> Invergarry [idx=35]
+  [3] edge 33: Gairlochy [idx=23] -> Invergloy [idx=34]
+  [4] edge 47: Gairlochy [idx=23] -> Spean Bridge Junction [idx=47]
+  [5] edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  [6] edge 23: Fort William [idx=22] -> Banavie Junction [idx=46]
+  [7] edge 48: Banavie Junction [idx=46] -> Fort William [idx=22]
+  [8] edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  [9] edge 38: Spean Bridge Junction [idx=47] -> Spean Bridge [idx=21]
+  [10] edge 20: Spean Bridge [idx=21] -> Roy Bridge [idx=20]
+  [11] edge 19: Tulloch [idx=19] -> Roy Bridge [idx=20]
+  [12] edge 18: Corrour [idx=18] -> Tulloch [idx=19]
+  [13] edge 17: Rannoch [idx=17] -> Corrour [idx=18]
+  [14] edge 16: Bridge of Orchy [idx=16] -> Rannoch [idx=17]
+  [15] edge 15: Upper Tyndrum [idx=15] -> Bridge of Orchy [idx=16]
+  [16] edge 41: Crianlarich North Junction [idx=42] -> Upper Tyndrum [idx=15]
+  [17] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [18] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [19] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [20] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [21] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [22] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [23] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [24] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [25] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [26] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+
+Journey stations:
+  [0] Fort Augustus [idx=37]: arrive 06:00:00, depart 06:00:30
+  [1] Aberchalder [idx=36]: arrive 06:00:30, depart 06:01:00
+  [2] Invergarry [idx=35]: arrive 06:01:00, depart 06:01:30
+  [3] Invergloy [idx=34]: arrive 06:01:30, depart 06:02:00
+  [4] Gairlochy [idx=23]: arrive 06:02:00, depart 06:02:30
+  [5] Spean Bridge Junction [idx=47]: arrive 06:02:30, depart 06:03:00
+  [6] Banavie Junction [idx=46]: arrive 06:03:00, depart 06:03:30
+  [7] Fort William [idx=22]: arrive 06:03:30, depart 06:04:00
+  [8] Banavie Junction [idx=46]: arrive 06:04:44, depart 06:04:44
+  [9] Spean Bridge Junction [idx=47]: arrive 06:10:39, depart 06:10:39
+  [10] Spean Bridge [idx=21]: arrive 06:11:57, depart 06:12:27
+  [11] Roy Bridge [idx=20]: arrive 06:16:33, depart 06:17:03
+  [12] Tulloch [idx=19]: arrive 06:23:43, depart 06:24:13
+  [13] Corrour [idx=18]: arrive 06:34:04, depart 06:34:34
+  [14] Rannoch [idx=17]: arrive 06:41:29, depart 06:41:59
+  [15] Bridge of Orchy [idx=16]: arrive 06:55:57, depart 06:56:27
+  [16] Upper Tyndrum [idx=15]: arrive 07:02:31, depart 07:03:01
+  [17] Crianlarich North Junction [idx=42]: arrive 07:08:34, depart 07:08:34
+  [18] Crianlarich South Junction [idx=41]: arrive 07:08:44, depart 07:08:44
+  [19] Upper Crianlarich [idx=7]: arrive 07:09:00, depart 07:09:30
+  [20] Ardlui [idx=6]: arrive 07:16:40, depart 07:17:10
+  [21] Arrochar & Tarbet [idx=5]: arrive 07:24:07, depart 07:24:37
+  [22] Garelochhead [idx=4]: arrive 07:34:22, depart 07:34:52
+  [23] Helensburgh Upper [idx=3]: arrive 07:41:36, depart 07:42:36
+  [24] Craigendoran Junction [idx=39]: arrive 07:45:05, depart 07:45:05
+  [25] Dumbarton Central [idx=2]: arrive 07:51:03, depart 07:53:03
+  [26] Dalmuir [idx=1]: arrive 07:58:59, depart 07:59:59
+  [27] Glasgow Queen Street [idx=0]: arrive 08:09:29, depart 08:21:29
+
+--- Line: Glasgow - Mallaig ---
+Forward route segments: 31
+Return route segments: 31
+Sync routes enabled: false
+
+All edges in graph:
+  edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  edge 8: Tyndrum Lower [idx=8] -> Dalmally [idx=9]
+  edge 9: Dalmally [idx=9] -> Loch Awe [idx=10]
+  edge 10: Loch Awe [idx=10] -> Falls of Cruachan [idx=11]
+  edge 11: Falls of Cruachan [idx=11] -> Taynuilt [idx=12]
+  edge 12: Taynuilt [idx=12] -> Connel Ferry [idx=13]
+  edge 13: Connel Ferry [idx=13] -> Oban [idx=14]
+  edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  edge 15: Upper Tyndrum [idx=15] -> Bridge of Orchy [idx=16]
+  edge 16: Bridge of Orchy [idx=16] -> Rannoch [idx=17]
+  edge 17: Rannoch [idx=17] -> Corrour [idx=18]
+  edge 18: Corrour [idx=18] -> Tulloch [idx=19]
+  edge 19: Tulloch [idx=19] -> Roy Bridge [idx=20]
+  edge 20: Spean Bridge [idx=21] -> Roy Bridge [idx=20]
+  edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  edge 22: Craigendoran Junction [idx=39] -> Craigendoran [idx=38]
+  edge 23: Fort William [idx=22] -> Banavie Junction [idx=46]
+  edge 24: Banavie [idx=24] -> Corpach [idx=25]
+  edge 25: Corpach [idx=25] -> Loch Eli Outward Bound [idx=26]
+  edge 26: Loch Eli Outward Bound [idx=26] -> Locheliside [idx=27]
+  edge 27: Locheliside [idx=27] -> Glenfinnan [idx=28]
+  edge 28: Glenfinnan [idx=28] -> Lochailort [idx=29]
+  edge 29: Lochailort [idx=29] -> Beasdale [idx=30]
+  edge 30: Beasdale [idx=30] -> Arisaig [idx=31]
+  edge 31: Arisaig [idx=31] -> Morar [idx=32]
+  edge 32: Morar [idx=32] -> Mallaig [idx=33]
+  edge 33: Gairlochy [idx=23] -> Invergloy [idx=34]
+  edge 34: Invergloy [idx=34] -> Invergarry [idx=35]
+  edge 35: Invergarry [idx=35] -> Aberchalder [idx=36]
+  edge 36: Aberchalder [idx=36] -> Fort Augustus [idx=37]
+  edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  edge 38: Spean Bridge Junction [idx=47] -> Spean Bridge [idx=21]
+  edge 39: Craigendoran [idx=38] -> Helensburgh Central [idx=40]
+  edge 40: Tyndrum Lower [idx=8] -> Crianlarich West Junction [idx=43]
+  edge 41: Crianlarich North Junction [idx=42] -> Upper Tyndrum [idx=15]
+  edge 42: Crianlarich West Junction [idx=43] -> Crianlarich South Junction [idx=41]
+  edge 43: Crianlarich Lower  [idx=49] -> Crianlarich East Junction [idx=45]
+  edge 44: Crianlarich East Junction [idx=45] -> Benmore [idx=44]
+  edge 45: Crianlarich North Junction [idx=42] -> Crianlarich East Junction [idx=45]
+  edge 46: Banavie [idx=24] -> Banavie Junction [idx=46]
+  edge 47: Gairlochy [idx=23] -> Spean Bridge Junction [idx=47]
+  edge 48: Banavie Junction [idx=46] -> Fort William [idx=22]
+  edge 49: Crianlarich West Junction [idx=43] -> Crianlarich Lower  [idx=49]
+  edge 50: Benmore [idx=44] -> Luib [idx=50]
+  edge 51: Luib [idx=50] -> Killin Junction [idx=51]
+  edge 52: Glenoglehead [idx=52] -> Balquhidder Junction [idx=55]
+  edge 53: Killin Junction [idx=51] -> Killin [idx=53]
+  edge 54: Killin Junction [idx=51] -> Glenoglehead [idx=52]
+  edge 55: Balquhidder Junction [idx=55] -> Balquhidder [idx=54]
+  edge 56: Balquhidder Junction [idx=55] -> Lochearnhead [idx=56]
+  edge 57: Balquhidder [idx=54] -> Kingshouse [idx=57]
+  edge 58: Kingshouse [idx=57] -> Strathyre [idx=58]
+  edge 59: Strathyre [idx=58] -> Callander [idx=59]
+  edge 60: Callander [idx=59] -> Doune [idx=60]
+  edge 61: Doune [idx=60] -> Dunblane [idx=61]
+
+Forward route edges:
+  [0] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  [1] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [2] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [3] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [4] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [5] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [6] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [7] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [8] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [9] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [10] edge 41: Crianlarich North Junction [idx=42] -> Upper Tyndrum [idx=15]
+  [11] edge 15: Upper Tyndrum [idx=15] -> Bridge of Orchy [idx=16]
+  [12] edge 16: Bridge of Orchy [idx=16] -> Rannoch [idx=17]
+  [13] edge 17: Rannoch [idx=17] -> Corrour [idx=18]
+  [14] edge 18: Corrour [idx=18] -> Tulloch [idx=19]
+  [15] edge 19: Tulloch [idx=19] -> Roy Bridge [idx=20]
+  [16] edge 20: Spean Bridge [idx=21] -> Roy Bridge [idx=20]
+  [17] edge 38: Spean Bridge Junction [idx=47] -> Spean Bridge [idx=21]
+  [18] edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  [19] edge 48: Banavie Junction [idx=46] -> Fort William [idx=22]
+  [20] edge 23: Fort William [idx=22] -> Banavie Junction [idx=46]
+  [21] edge 46: Banavie [idx=24] -> Banavie Junction [idx=46]
+  [22] edge 24: Banavie [idx=24] -> Corpach [idx=25]
+  [23] edge 25: Corpach [idx=25] -> Loch Eli Outward Bound [idx=26]
+  [24] edge 26: Loch Eli Outward Bound [idx=26] -> Locheliside [idx=27]
+  [25] edge 27: Locheliside [idx=27] -> Glenfinnan [idx=28]
+  [26] edge 28: Glenfinnan [idx=28] -> Lochailort [idx=29]
+  [27] edge 29: Lochailort [idx=29] -> Beasdale [idx=30]
+  [28] edge 30: Beasdale [idx=30] -> Arisaig [idx=31]
+  [29] edge 31: Arisaig [idx=31] -> Morar [idx=32]
+  [30] edge 32: Morar [idx=32] -> Mallaig [idx=33]
+
+Return route edges:
+  [0] edge 32: Morar [idx=32] -> Mallaig [idx=33]
+  [1] edge 31: Arisaig [idx=31] -> Morar [idx=32]
+  [2] edge 30: Beasdale [idx=30] -> Arisaig [idx=31]
+  [3] edge 29: Lochailort [idx=29] -> Beasdale [idx=30]
+  [4] edge 28: Glenfinnan [idx=28] -> Lochailort [idx=29]
+  [5] edge 27: Locheliside [idx=27] -> Glenfinnan [idx=28]
+  [6] edge 26: Loch Eli Outward Bound [idx=26] -> Locheliside [idx=27]
+  [7] edge 25: Corpach [idx=25] -> Loch Eli Outward Bound [idx=26]
+  [8] edge 24: Banavie [idx=24] -> Corpach [idx=25]
+  [9] edge 46: Banavie [idx=24] -> Banavie Junction [idx=46]
+  [10] edge 23: Fort William [idx=22] -> Banavie Junction [idx=46]
+  [11] edge 48: Banavie Junction [idx=46] -> Fort William [idx=22]
+  [12] edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  [13] edge 38: Spean Bridge Junction [idx=47] -> Spean Bridge [idx=21]
+  [14] edge 20: Spean Bridge [idx=21] -> Roy Bridge [idx=20]
+  [15] edge 19: Tulloch [idx=19] -> Roy Bridge [idx=20]
+  [16] edge 18: Corrour [idx=18] -> Tulloch [idx=19]
+  [17] edge 17: Rannoch [idx=17] -> Corrour [idx=18]
+  [18] edge 16: Bridge of Orchy [idx=16] -> Rannoch [idx=17]
+  [19] edge 15: Upper Tyndrum [idx=15] -> Bridge of Orchy [idx=16]
+  [20] edge 41: Crianlarich North Junction [idx=42] -> Upper Tyndrum [idx=15]
+  [21] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [22] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [23] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [24] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [25] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [26] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [27] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [28] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [29] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [30] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+
+Generated 90 journeys
+
+First journey segments:
+  [0] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  [1] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [2] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [3] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [4] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [5] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [6] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [7] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [8] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [9] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [10] edge 41: Crianlarich North Junction [idx=42] -> Upper Tyndrum [idx=15]
+  [11] edge 15: Upper Tyndrum [idx=15] -> Bridge of Orchy [idx=16]
+  [12] edge 16: Bridge of Orchy [idx=16] -> Rannoch [idx=17]
+  [13] edge 17: Rannoch [idx=17] -> Corrour [idx=18]
+  [14] edge 18: Corrour [idx=18] -> Tulloch [idx=19]
+  [15] edge 19: Tulloch [idx=19] -> Roy Bridge [idx=20]
+  [16] edge 20: Spean Bridge [idx=21] -> Roy Bridge [idx=20]
+  [17] edge 38: Spean Bridge Junction [idx=47] -> Spean Bridge [idx=21]
+  [18] edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  [19] edge 48: Banavie Junction [idx=46] -> Fort William [idx=22]
+  [20] edge 23: Fort William [idx=22] -> Banavie Junction [idx=46]
+  [21] edge 46: Banavie [idx=24] -> Banavie Junction [idx=46]
+  [22] edge 24: Banavie [idx=24] -> Corpach [idx=25]
+  [23] edge 25: Corpach [idx=25] -> Loch Eli Outward Bound [idx=26]
+  [24] edge 26: Loch Eli Outward Bound [idx=26] -> Locheliside [idx=27]
+  [25] edge 27: Locheliside [idx=27] -> Glenfinnan [idx=28]
+  [26] edge 28: Glenfinnan [idx=28] -> Lochailort [idx=29]
+  [27] edge 29: Lochailort [idx=29] -> Beasdale [idx=30]
+  [28] edge 30: Beasdale [idx=30] -> Arisaig [idx=31]
+  [29] edge 31: Arisaig [idx=31] -> Morar [idx=32]
+  [30] edge 32: Morar [idx=32] -> Mallaig [idx=33]
+
+Journey stations:
+  [0] Glasgow Queen Street [idx=0]: arrive 13:42:30, depart 13:42:30
+  [1] Dalmuir [idx=1]: arrive 13:52:00, depart 13:53:00
+  [2] Dumbarton Central [idx=2]: arrive 13:58:56, depart 14:00:56
+  [3] Craigendoran Junction [idx=39]: arrive 14:06:54, depart 14:06:54
+  [4] Helensburgh Upper [idx=3]: arrive 14:09:23, depart 14:10:23
+  [5] Garelochhead [idx=4]: arrive 14:17:07, depart 14:17:37
+  [6] Arrochar & Tarbet [idx=5]: arrive 14:27:22, depart 14:27:52
+  [7] Ardlui [idx=6]: arrive 14:34:49, depart 14:35:19
+  [8] Upper Crianlarich [idx=7]: arrive 14:42:29, depart 14:42:59
+  [9] Crianlarich South Junction [idx=41]: arrive 14:43:15, depart 14:43:45
+  [10] Crianlarich North Junction [idx=42]: arrive 14:43:55, depart 14:44:25
+  [11] Upper Tyndrum [idx=15]: arrive 14:49:58, depart 14:50:28
+  [12] Bridge of Orchy [idx=16]: arrive 14:56:32, depart 14:57:02
+  [13] Rannoch [idx=17]: arrive 15:11:00, depart 15:11:30
+  [14] Corrour [idx=18]: arrive 15:18:25, depart 15:18:55
+  [15] Tulloch [idx=19]: arrive 15:28:46, depart 15:29:16
+  [16] Roy Bridge [idx=20]: arrive 15:35:56, depart 15:36:26
+  [17] Spean Bridge [idx=21]: arrive 15:40:32, depart 15:41:02
+  [18] Spean Bridge Junction [idx=47]: arrive 15:42:20, depart 15:42:50
+  [19] Banavie Junction [idx=46]: arrive 15:48:45, depart 15:49:15
+  [20] Fort William [idx=22]: arrive 15:49:18, depart 15:49:48
+  [21] Banavie Junction [idx=46]: arrive 15:49:52, depart 15:50:22
+  [22] Banavie [idx=24]: arrive 15:50:25, depart 15:50:55
+  [23] Corpach [idx=25]: arrive 15:50:59, depart 15:51:29
+  [24] Loch Eli Outward Bound [idx=26]: arrive 15:51:33, depart 15:52:03
+  [25] Locheliside [idx=27]: arrive 15:52:06, depart 15:52:36
+  [26] Glenfinnan [idx=28]: arrive 15:52:40, depart 15:53:10
+  [27] Lochailort [idx=29]: arrive 15:53:14, depart 15:53:44
+  [28] Beasdale [idx=30]: arrive 15:53:47, depart 15:54:17
+  [29] Arisaig [idx=31]: arrive 15:54:21, depart 15:54:51
+  [30] Morar [idx=32]: arrive 15:54:55, depart 15:55:25
+  [31] Mallaig [idx=33]: arrive 15:55:28, depart 15:55:58
+
+--- Line: UPC - Dunblaine (Short) ---
+Forward route segments: 22
+Return route segments: 22
+Sync routes enabled: false
+
+All edges in graph:
+  edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  edge 8: Tyndrum Lower [idx=8] -> Dalmally [idx=9]
+  edge 9: Dalmally [idx=9] -> Loch Awe [idx=10]
+  edge 10: Loch Awe [idx=10] -> Falls of Cruachan [idx=11]
+  edge 11: Falls of Cruachan [idx=11] -> Taynuilt [idx=12]
+  edge 12: Taynuilt [idx=12] -> Connel Ferry [idx=13]
+  edge 13: Connel Ferry [idx=13] -> Oban [idx=14]
+  edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  edge 15: Upper Tyndrum [idx=15] -> Bridge of Orchy [idx=16]
+  edge 16: Bridge of Orchy [idx=16] -> Rannoch [idx=17]
+  edge 17: Rannoch [idx=17] -> Corrour [idx=18]
+  edge 18: Corrour [idx=18] -> Tulloch [idx=19]
+  edge 19: Tulloch [idx=19] -> Roy Bridge [idx=20]
+  edge 20: Spean Bridge [idx=21] -> Roy Bridge [idx=20]
+  edge 21: Banavie Junction [idx=46] -> Spean Bridge Junction [idx=47]
+  edge 22: Craigendoran Junction [idx=39] -> Craigendoran [idx=38]
+  edge 23: Fort William [idx=22] -> Banavie Junction [idx=46]
+  edge 24: Banavie [idx=24] -> Corpach [idx=25]
+  edge 25: Corpach [idx=25] -> Loch Eli Outward Bound [idx=26]
+  edge 26: Loch Eli Outward Bound [idx=26] -> Locheliside [idx=27]
+  edge 27: Locheliside [idx=27] -> Glenfinnan [idx=28]
+  edge 28: Glenfinnan [idx=28] -> Lochailort [idx=29]
+  edge 29: Lochailort [idx=29] -> Beasdale [idx=30]
+  edge 30: Beasdale [idx=30] -> Arisaig [idx=31]
+  edge 31: Arisaig [idx=31] -> Morar [idx=32]
+  edge 32: Morar [idx=32] -> Mallaig [idx=33]
+  edge 33: Gairlochy [idx=23] -> Invergloy [idx=34]
+  edge 34: Invergloy [idx=34] -> Invergarry [idx=35]
+  edge 35: Invergarry [idx=35] -> Aberchalder [idx=36]
+  edge 36: Aberchalder [idx=36] -> Fort Augustus [idx=37]
+  edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  edge 38: Spean Bridge Junction [idx=47] -> Spean Bridge [idx=21]
+  edge 39: Craigendoran [idx=38] -> Helensburgh Central [idx=40]
+  edge 40: Tyndrum Lower [idx=8] -> Crianlarich West Junction [idx=43]
+  edge 41: Crianlarich North Junction [idx=42] -> Upper Tyndrum [idx=15]
+  edge 42: Crianlarich West Junction [idx=43] -> Crianlarich South Junction [idx=41]
+  edge 43: Crianlarich Lower  [idx=49] -> Crianlarich East Junction [idx=45]
+  edge 44: Crianlarich East Junction [idx=45] -> Benmore [idx=44]
+  edge 45: Crianlarich North Junction [idx=42] -> Crianlarich East Junction [idx=45]
+  edge 46: Banavie [idx=24] -> Banavie Junction [idx=46]
+  edge 47: Gairlochy [idx=23] -> Spean Bridge Junction [idx=47]
+  edge 48: Banavie Junction [idx=46] -> Fort William [idx=22]
+  edge 49: Crianlarich West Junction [idx=43] -> Crianlarich Lower  [idx=49]
+  edge 50: Benmore [idx=44] -> Luib [idx=50]
+  edge 51: Luib [idx=50] -> Killin Junction [idx=51]
+  edge 52: Glenoglehead [idx=52] -> Balquhidder Junction [idx=55]
+  edge 53: Killin Junction [idx=51] -> Killin [idx=53]
+  edge 54: Killin Junction [idx=51] -> Glenoglehead [idx=52]
+  edge 55: Balquhidder Junction [idx=55] -> Balquhidder [idx=54]
+  edge 56: Balquhidder Junction [idx=55] -> Lochearnhead [idx=56]
+  edge 57: Balquhidder [idx=54] -> Kingshouse [idx=57]
+  edge 58: Kingshouse [idx=57] -> Strathyre [idx=58]
+  edge 59: Strathyre [idx=58] -> Callander [idx=59]
+  edge 60: Callander [idx=59] -> Doune [idx=60]
+  edge 61: Doune [idx=60] -> Dunblane [idx=61]
+
+Forward route edges:
+  [0] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+  [1] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [2] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [3] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [4] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [5] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [6] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [7] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [8] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [9] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [10] edge 45: Crianlarich North Junction [idx=42] -> Crianlarich East Junction [idx=45]
+  [11] edge 44: Crianlarich East Junction [idx=45] -> Benmore [idx=44]
+  [12] edge 50: Benmore [idx=44] -> Luib [idx=50]
+  [13] edge 51: Luib [idx=50] -> Killin Junction [idx=51]
+  [14] edge 54: Killin Junction [idx=51] -> Glenoglehead [idx=52]
+  [15] edge 52: Glenoglehead [idx=52] -> Balquhidder Junction [idx=55]
+  [16] edge 55: Balquhidder Junction [idx=55] -> Balquhidder [idx=54]
+  [17] edge 57: Balquhidder [idx=54] -> Kingshouse [idx=57]
+  [18] edge 58: Kingshouse [idx=57] -> Strathyre [idx=58]
+  [19] edge 59: Strathyre [idx=58] -> Callander [idx=59]
+  [20] edge 60: Callander [idx=59] -> Doune [idx=60]
+  [21] edge 61: Doune [idx=60] -> Dunblane [idx=61]
+
+Return route edges:
+  [0] edge 61: Doune [idx=60] -> Dunblane [idx=61]
+  [1] edge 60: Callander [idx=59] -> Doune [idx=60]
+  [2] edge 59: Strathyre [idx=58] -> Callander [idx=59]
+  [3] edge 58: Kingshouse [idx=57] -> Strathyre [idx=58]
+  [4] edge 57: Balquhidder [idx=54] -> Kingshouse [idx=57]
+  [5] edge 55: Balquhidder Junction [idx=55] -> Balquhidder [idx=54]
+  [6] edge 52: Glenoglehead [idx=52] -> Balquhidder Junction [idx=55]
+  [7] edge 54: Killin Junction [idx=51] -> Glenoglehead [idx=52]
+  [8] edge 51: Luib [idx=50] -> Killin Junction [idx=51]
+  [9] edge 50: Benmore [idx=44] -> Luib [idx=50]
+  [10] edge 44: Crianlarich East Junction [idx=45] -> Benmore [idx=44]
+  [11] edge 45: Crianlarich North Junction [idx=42] -> Crianlarich East Junction [idx=45]
+  [12] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [13] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [14] edge 6: Ardlui [idx=6] -> Upper Crianlarich [idx=7]
+  [15] edge 5: Arrochar & Tarbet [idx=5] -> Ardlui [idx=6]
+  [16] edge 4: Garelochhead [idx=4] -> Arrochar & Tarbet [idx=5]
+  [17] edge 3: Helensburgh Upper [idx=3] -> Garelochhead [idx=4]
+  [18] edge 37: Craigendoran Junction [idx=39] -> Helensburgh Upper [idx=3]
+  [19] edge 2: Dumbarton Central [idx=2] -> Craigendoran Junction [idx=39]
+  [20] edge 1: Dalmuir [idx=1] -> Dumbarton Central [idx=2]
+  [21] edge 0: Glasgow Queen Street [idx=0] -> Dalmuir [idx=1]
+
+Generated 10 journeys
+
+First journey segments:
+  [0] edge 14: Upper Crianlarich [idx=7] -> Crianlarich South Junction [idx=41]
+  [1] edge 7: Crianlarich South Junction [idx=41] -> Crianlarich North Junction [idx=42]
+  [2] edge 45: Crianlarich North Junction [idx=42] -> Crianlarich East Junction [idx=45]
+  [3] edge 44: Crianlarich East Junction [idx=45] -> Benmore [idx=44]
+  [4] edge 50: Benmore [idx=44] -> Luib [idx=50]
+  [5] edge 51: Luib [idx=50] -> Killin Junction [idx=51]
+  [6] edge 54: Killin Junction [idx=51] -> Glenoglehead [idx=52]
+  [7] edge 52: Glenoglehead [idx=52] -> Balquhidder Junction [idx=55]
+  [8] edge 55: Balquhidder Junction [idx=55] -> Balquhidder [idx=54]
+  [9] edge 57: Balquhidder [idx=54] -> Kingshouse [idx=57]
+  [10] edge 58: Kingshouse [idx=57] -> Strathyre [idx=58]
+  [11] edge 59: Strathyre [idx=58] -> Callander [idx=59]
+  [12] edge 60: Callander [idx=59] -> Doune [idx=60]
+  [13] edge 61: Doune [idx=60] -> Dunblane [idx=61]
+
+Journey stations:
+  [0] Upper Crianlarich [idx=7]: arrive 04:15:29, depart 04:15:29
+  [1] Crianlarich South Junction [idx=41]: arrive 04:15:44, depart 04:15:44
+  [2] Crianlarich North Junction [idx=42]: arrive 04:15:54, depart 04:15:54
+  [3] Crianlarich East Junction [idx=45]: arrive 04:16:29, depart 04:16:29
+  [4] Benmore [idx=44]: arrive 04:18:28, depart 04:18:58
+  [5] Luib [idx=50]: arrive 04:23:20, depart 04:23:50
+  [6] Killin Junction [idx=51]: arrive 04:27:58, depart 04:28:28
+  [7] Glenoglehead [idx=52]: arrive 04:31:16, depart 04:31:46
+  [8] Balquhidder Junction [idx=55]: arrive 04:36:40, depart 04:37:10
+  [9] Balquhidder [idx=54]: arrive 04:37:34, depart 04:38:04
+  [10] Kingshouse [idx=57]: arrive 04:39:30, depart 04:40:00
+  [11] Strathyre [idx=58]: arrive 04:42:51, depart 04:43:21
+  [12] Callander [idx=59]: arrive 04:52:02, depart 04:52:32
+  [13] Doune [idx=60]: arrive 04:59:07, depart 04:59:37
+  [14] Dunblane [idx=61]: arrive 05:03:47, depart 05:12:16
+test storage::file::tests::test_junctions_rgproject ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 190 filtered out; finished in 0.01s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

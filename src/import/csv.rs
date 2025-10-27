@@ -1256,7 +1256,14 @@ fn build_routes(
                 continue;
             };
 
-            let travel_time = cumulative_time - prev_time;
+            // Calculate travel time: from previous station's DEPARTURE to current station's ARRIVAL
+            // If previous station has a departure time, use that; otherwise use arrival time
+            let prev_departure = if let Some(dep_time) = prev_line_data.departure_time {
+                normalize_time_with_wraparound(dep_time, Some(prev_time))
+            } else {
+                prev_time
+            };
+            let travel_time = cumulative_time - prev_departure;
 
             if config.disable_infrastructure {
                 // Use pathfinding to find route between prev_idx and station_idx
