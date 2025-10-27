@@ -39,8 +39,11 @@ impl UserSettings {
         // Parse JSON
         let json_str = result.as_string().ok_or("Invalid settings format")?;
 
-        let settings: Self = serde_json::from_str(&json_str)
+        let mut settings: Self = serde_json::from_str(&json_str)
             .map_err(|e| format!("Failed to parse settings: {e}"))?;
+
+        // Merge in any new shortcuts that were added since the settings were last saved
+        settings.keyboard_shortcuts.merge_with_defaults();
 
         Ok(settings)
     }

@@ -354,6 +354,16 @@ pub fn setup_keyboard_listeners(
                     apply_normal_zoom(0.9, center_x, center_y, &viewport_for_zoom, min_zoom, Some((width, height)));
                 }
             }
+            Some("reset_view") => {
+                ev.prevent_default();
+                // Reset viewport to default zoom and pan
+                viewport_for_zoom.set_zoom_level.set(1.0);
+                viewport_for_zoom.set_pan_offset_x.set(0.0);
+                viewport_for_zoom.set_pan_offset_y.set(0.0);
+                if let Some((_, set_zoom_level_x)) = viewport_for_zoom.zoom_level_x {
+                    set_zoom_level_x.set(1.0);
+                }
+            }
             _ => {}
         }
     });
