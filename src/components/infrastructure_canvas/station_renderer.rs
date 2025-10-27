@@ -21,7 +21,7 @@ const SELECTION_RING_WIDTH: f64 = 3.0;
 const SELECTION_RING_OFFSET: f64 = 4.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum LabelPosition {
+pub enum LabelPosition {
     Right,
     Left,
     Top,
@@ -30,6 +30,11 @@ enum LabelPosition {
     TopLeft,
     BottomRight,
     BottomLeft,
+}
+
+#[derive(Clone, Copy)]
+pub struct CachedLabelPosition {
+    pub position: LabelPosition,
 }
 
 impl LabelPosition {
@@ -643,6 +648,135 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
     label_positions.into_iter()
         .map(|(idx, (bounds, _))| (idx, (bounds.x, bounds.y, bounds.width, bounds.height)))
         .collect()
+}
+
+/// Draw stations with cached label positions for performance during zoom
+#[allow(clippy::cast_precision_loss)]
+pub fn draw_stations_with_cache(
+    ctx: &CanvasRenderingContext2d,
+    graph: &RailwayGraph,
+    zoom: f64,
+    selected_stations: &[NodeIndex],
+    highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
+    cache: &mut super::renderer::TopologyCache,
+    is_zooming: bool,
+) {
+    let font_size = 14.0 / zoom;
+
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges);
+
+    // Check if we can use cached label positions
+    let use_cache = if let Some((cached_zoom, _)) = &cache.label_cache {
+        // Use cache if zooming and zoom hasn't changed drastically (>20%)
+        is_zooming && (cached_zoom - zoom).abs() / cached_zoom < 0.2
+    } else {
+        false
+    };
+
+    if use_cache {
+        // Use cached positions
+        if let Some((_, cached_positions)) = &cache.label_cache {
+            draw_cached_labels(ctx, graph, &node_positions, cached_positions, font_size);
+        }
+        return;
+    }
+
+    // Full recomputation - compute optimal label positions
+    let mut track_segments = track_renderer::get_track_segments(graph);
+    track_segments.extend(junction_renderer::get_junction_segments(graph));
+
+    // Build node metadata
+    let mut node_metadata: HashMap<NodeIndex, (f64, f64, (f64, f64))> = HashMap::new();
+    for (idx, pos, _) in &node_positions {
+        if let Some(node) = graph.graph.node_weight(*idx) {
+            let name = node.display_name();
+            #[allow(clippy::cast_precision_loss)]
+            let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
+            let is_junction = graph.is_junction(*idx);
+            let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
+            node_metadata.insert(*idx, (text_width, label_offset, *pos));
+        }
+    }
+
+    // Compute optimal label positions
+    let branches = identify_branches(graph, &node_positions);
+    let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
+
+    for branch_nodes in &branches {
+        let station_only_nodes: Vec<NodeIndex> = branch_nodes.iter()
+            .filter(|idx| !graph.is_junction(**idx))
+            .copied()
+            .collect();
+
+        if !station_only_nodes.is_empty() {
+            process_node_group(
+                &station_only_nodes,
+                &node_metadata,
+                &node_positions,
+                &track_segments,
+                font_size,
+                &mut label_positions,
+            );
+        }
+    }
+
+    let junction_nodes: Vec<NodeIndex> = node_positions.iter()
+        .filter(|(idx, _, _)| graph.is_junction(*idx))
+        .map(|(idx, _, _)| *idx)
+        .collect();
+
+    for junction_idx in junction_nodes {
+        process_node_group(
+            &[junction_idx],
+            &node_metadata,
+            &node_positions,
+            &track_segments,
+            font_size,
+            &mut label_positions,
+        );
+    }
+
+    // Update cache with computed positions
+    let cached_positions: HashMap<NodeIndex, CachedLabelPosition> = label_positions.iter()
+        .map(|(idx, (_, position))| (*idx, CachedLabelPosition { position: *position }))
+        .collect();
+    cache.label_cache = Some((zoom, cached_positions));
+
+    // Draw labels using computed positions
+    ctx.set_fill_style_str(LABEL_COLOR);
+    ctx.set_font(&format!("{font_size}px sans-serif"));
+
+    for (idx, pos, radius) in &node_positions {
+        let Some(node) = graph.graph.node_weight(*idx) else { continue };
+        let Some((_, position)) = label_positions.get(idx) else { continue };
+        let is_junction = graph.is_junction(*idx);
+        let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
+        draw_station_label(ctx, &node.display_name(), *pos, *position, *radius, label_offset);
+    }
+}
+
+fn draw_cached_labels(
+    ctx: &CanvasRenderingContext2d,
+    graph: &RailwayGraph,
+    node_positions: &[(NodeIndex, (f64, f64), f64)],
+    cached_positions: &HashMap<NodeIndex, CachedLabelPosition>,
+    font_size: f64,
+) {
+    ctx.set_fill_style_str(LABEL_COLOR);
+    ctx.set_font(&format!("{font_size}px sans-serif"));
+
+    for (idx, pos, radius) in node_positions {
+        let Some(node) = graph.graph.node_weight(*idx) else { continue };
+        if let Some(cached) = cached_positions.get(idx) {
+            let is_junction = graph.is_junction(*idx);
+            let label_offset = if is_junction {
+                JUNCTION_LABEL_OFFSET
+            } else {
+                LABEL_OFFSET
+            };
+            draw_station_label(ctx, &node.display_name(), *pos, cached.position, *radius, label_offset);
+        }
+    }
 }
 
 #[allow(clippy::cast_precision_loss)]

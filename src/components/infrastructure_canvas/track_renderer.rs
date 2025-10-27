@@ -1,6 +1,7 @@
 use crate::models::{RailwayGraph, Stations, Junctions};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
-use std::collections::HashSet;
+use petgraph::stable_graph::EdgeIndex;
+use std::collections::{HashSet, HashMap};
 use web_sys::CanvasRenderingContext2d;
 
 // Track layout constants
@@ -267,6 +268,7 @@ pub fn draw_tracks(
     graph: &RailwayGraph,
     zoom: f64,
     highlighted_edges: &HashSet<petgraph::stable_graph::EdgeIndex>,
+    cached_avoidance: &HashMap<EdgeIndex, (f64, f64)>,
 ) {
     for edge in graph.graph.edge_references() {
         let edge_id = edge.id();
@@ -289,8 +291,8 @@ pub fn draw_tracks(
         let source_is_junction = graph.is_junction(source);
         let target_is_junction = graph.is_junction(target);
 
-        // Check if we need to offset to avoid any stations
-        let (avoid_x, avoid_y) = calculate_avoidance_offset(graph, pos1, pos2, source, target);
+        // Use cached avoidance offset
+        let (avoid_x, avoid_y) = cached_avoidance.get(&edge_id).copied().unwrap_or((0.0, 0.0));
         let needs_avoidance = avoid_x.abs() > AVOIDANCE_OFFSET_THRESHOLD || avoid_y.abs() > AVOIDANCE_OFFSET_THRESHOLD;
 
         // Calculate actual start and end points, stopping before junctions

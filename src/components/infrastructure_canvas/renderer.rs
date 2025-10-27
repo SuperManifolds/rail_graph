@@ -2,7 +2,21 @@ use crate::models::RailwayGraph;
 use super::{track_renderer, station_renderer};
 use web_sys::CanvasRenderingContext2d;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
-use std::collections::HashSet;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+use std::collections::{HashSet, HashMap};
+
+type EdgeSegments = Vec<((f64, f64), (f64, f64))>;
+type LabelPositionCache = HashMap<NodeIndex, station_renderer::CachedLabelPosition>;
+
+/// Topology-dependent cached data (exported for use by `infrastructure_view`)
+#[derive(Clone, Default)]
+pub struct TopologyCache {
+    pub topology: (usize, usize),
+    pub avoidance_offsets: HashMap<EdgeIndex, (f64, f64)>,
+    pub edge_segments: HashMap<EdgeIndex, EdgeSegments>,
+    /// Cached label positions (zoom level, positions)
+    pub label_cache: Option<(f64, LabelPositionCache)>,
+}
 
 const CANVAS_BACKGROUND_COLOR: &str = "#0a0a0a";
 const EMPTY_MESSAGE_COLOR: &str = "#666";
@@ -13,6 +27,41 @@ const EMPTY_MESSAGE_OFFSET_X: f64 = 80.0;
 const GRID_SIZE: f64 = 30.0; // Must match auto_layout.rs GRID_SIZE
 const GRID_COLOR: &str = "#141414";
 const GRID_LINE_WIDTH: f64 = 0.5;
+
+/// Build topology cache with avoidance offsets and edge segments
+#[must_use]
+pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
+    use crate::models::Stations;
+
+    let topology = (graph.graph.node_count(), graph.graph.edge_count());
+    let mut avoidance_offsets = HashMap::new();
+    let mut edge_segments = HashMap::new();
+
+    // Precompute avoidance offsets and segments for all edges
+    for edge in graph.graph.edge_references() {
+        let edge_id = edge.id();
+        let source = edge.source();
+        let target = edge.target();
+
+        let Some(pos1) = graph.get_station_position(source) else { continue };
+        let Some(pos2) = graph.get_station_position(target) else { continue };
+
+        // Calculate avoidance offset
+        let offset = track_renderer::calculate_avoidance_offset(graph, pos1, pos2, source, target);
+        avoidance_offsets.insert(edge_id, offset);
+
+        // Calculate segments
+        let segments = track_renderer::get_segments_for_edge(graph, source, target, pos1, pos2);
+        edge_segments.insert(edge_id, segments);
+    }
+
+    TopologyCache {
+        topology,
+        avoidance_offsets,
+        edge_segments,
+        label_cache: None,
+    }
+}
 
 /// Draw a subtle grid pattern to show snap points
 fn draw_grid(
@@ -64,6 +113,7 @@ fn draw_grid(
     ctx.restore();
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn draw_infrastructure(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
@@ -73,6 +123,8 @@ pub fn draw_infrastructure(
     pan_y: f64,
     selected_stations: &[NodeIndex],
     highlighted_edges: &HashSet<EdgeIndex>,
+    cache: &mut TopologyCache,
+    is_zooming: bool,
 ) {
     // Clear canvas
     ctx.set_fill_style_str(CANVAS_BACKGROUND_COLOR);
@@ -94,11 +146,11 @@ pub fn draw_infrastructure(
     let _ = ctx.translate(pan_x, pan_y);
     let _ = ctx.scale(zoom, zoom);
 
-    // Draw tracks first so they're behind nodes
-    track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges);
+    // Draw tracks first so they're behind nodes (using cached avoidance offsets)
+    track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets);
 
-    // Draw stations and junctions on top
-    station_renderer::draw_stations(ctx, graph, zoom, selected_stations, highlighted_edges);
+    // Draw stations and junctions on top (with label cache)
+    station_renderer::draw_stations_with_cache(ctx, graph, zoom, selected_stations, highlighted_edges, cache, is_zooming);
 
     // Restore context
     ctx.restore();

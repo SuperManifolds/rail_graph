@@ -4,11 +4,11 @@ use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::collections::HashMap;
 
+type TrackSegments = Vec<((f64, f64), (f64, f64))>;
+
 const STATION_CLICK_THRESHOLD: f64 = 15.0;
 const TRACK_CLICK_THRESHOLD: f64 = 8.0;
 const LABEL_CLICK_PADDING: f64 = 4.0;
-
-type TrackSegments = Vec<((f64, f64), (f64, f64))>;
 
 #[must_use]
 pub fn find_station_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<NodeIndex> {
@@ -79,6 +79,26 @@ pub fn find_track_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<Ed
             let dist = distance_to_segment((x, y), seg_start, seg_end);
             if dist <= TRACK_CLICK_THRESHOLD {
                 return Some(edge_id);
+            }
+        }
+    }
+
+    None
+}
+
+/// Faster version of `find_track_at_position` using pre-cached edge segments
+#[must_use]
+pub fn find_track_at_position_cached(
+    edge_segments: &HashMap<EdgeIndex, TrackSegments>,
+    x: f64,
+    y: f64,
+) -> Option<EdgeIndex> {
+    // Check each segment for each edge
+    for (edge_id, segments) in edge_segments {
+        for (seg_start, seg_end) in segments {
+            let dist = distance_to_segment((x, y), *seg_start, *seg_end);
+            if dist <= TRACK_CLICK_THRESHOLD {
+                return Some(*edge_id);
             }
         }
     }

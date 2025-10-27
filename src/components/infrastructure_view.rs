@@ -9,14 +9,19 @@ use crate::components::delete_station_confirmation::DeleteStationConfirmation;
 use crate::components::edit_junction::EditJunction;
 use crate::components::edit_station::EditStation;
 use crate::components::edit_track::EditTrack;
-use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, IntoView, create_node_ref, create_signal, create_effect, SignalGet, SignalSet, SignalGetUntracked, Callable, Signal, use_context};
+use leptos::{wasm_bindgen, web_sys, component, view, ReadSignal, WriteSignal, IntoView, create_node_ref, create_signal, create_effect, SignalGet, SignalSet, SignalGetUntracked, Callable, Signal, use_context, StoredValue, store_value};
+use wasm_bindgen::closure::Closure;
 use crate::models::UserSettings;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::collections::HashSet;
 use std::rc::Rc;
+use std::cell::RefCell;
 use wasm_bindgen::JsCast;
 use web_sys::{CanvasRenderingContext2d, MouseEvent, WheelEvent};
+
+// Use the TopologyCache from renderer module
+type TopologyCache = renderer::TopologyCache;
 
 fn handle_mouse_down_adding_track(
     clicked_station: NodeIndex,
@@ -47,6 +52,7 @@ fn handle_mouse_move_hover_detection(
     graph: ReadSignal<RailwayGraph>,
     set_is_over_station: WriteSignal<bool>,
     set_is_over_track: WriteSignal<bool>,
+    topology_cache: StoredValue<RefCell<TopologyCache>>,
 ) {
     let world_x = (x - viewport.pan_offset_x) / viewport.zoom_level;
     let world_y = (y - viewport.pan_offset_y) / viewport.zoom_level;
@@ -60,12 +66,19 @@ fn handle_mouse_move_hover_detection(
     if hovered_node.is_some() {
         set_is_over_station.set(true);
         set_is_over_track.set(false);
-    } else if hit_detection::find_track_at_position(&current_graph, world_x, world_y).is_some() {
-        set_is_over_station.set(false);
-        set_is_over_track.set(true);
     } else {
-        set_is_over_station.set(false);
-        set_is_over_track.set(false);
+        // Use cached edge segments for hit detection
+        let track_hit = topology_cache.with_value(|cache| {
+            hit_detection::find_track_at_position_cached(&cache.borrow().edge_segments, world_x, world_y)
+        });
+
+        if track_hit.is_some() {
+            set_is_over_station.set(false);
+            set_is_over_track.set(true);
+        } else {
+            set_is_over_station.set(false);
+            set_is_over_track.set(false);
+        }
     }
 }
 
@@ -556,6 +569,16 @@ fn get_canvas_cursor_style(
     }
 }
 
+fn update_cache_if_needed(topology_cache: StoredValue<RefCell<TopologyCache>>, current_graph: &RailwayGraph) {
+    topology_cache.with_value(|cache| {
+        let mut cache = cache.borrow_mut();
+        let current_topology = (current_graph.graph.node_count(), current_graph.graph.edge_count());
+        if cache.topology != current_topology {
+            *cache = renderer::build_topology_cache(current_graph);
+        }
+    });
+}
+
 fn setup_auto_layout_effect(
     auto_layout_enabled: ReadSignal<bool>,
     graph: ReadSignal<RailwayGraph>,
@@ -630,9 +653,14 @@ fn setup_render_effect(
     selected_station: ReadSignal<Option<NodeIndex>>,
     waypoints: ReadSignal<Vec<NodeIndex>>,
     preview_path: ReadSignal<Option<Vec<EdgeIndex>>>,
+    topology_cache: StoredValue<RefCell<TopologyCache>>,
+    is_zooming: ReadSignal<bool>,
+    render_requested: ReadSignal<bool>,
+    set_render_requested: WriteSignal<bool>,
 ) {
     create_effect(move |_| {
-        let current_graph = graph.get();
+        // Track all dependencies
+        let _ = graph.get();
         let _ = zoom_level.get();
         let _ = pan_offset_x.get();
         let _ = pan_offset_y.get();
@@ -641,48 +669,73 @@ fn setup_render_effect(
         let _ = waypoints.get();
         let _ = preview_path.get();
 
-        let Some(canvas) = canvas_ref.get() else { return };
+        // Throttle renders using requestAnimationFrame
+        if !render_requested.get_untracked() {
+            set_render_requested.set(true);
 
-        let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
-        // Browser dimensions are always non-negative
-        #[allow(clippy::cast_sign_loss)]
-        let container_width = canvas_elem.client_width() as u32;
-        #[allow(clippy::cast_sign_loss)]
-        let container_height = canvas_elem.client_height() as u32;
+            let Some(window) = web_sys::window() else { return };
+            let callback = Closure::once(move || {
+                set_render_requested.set(false);
 
-        if container_width > 0 && container_height > 0 {
-            canvas_elem.set_width(container_width);
-            canvas_elem.set_height(container_height);
+                let Some(canvas) = canvas_ref.get_untracked() else { return };
+
+                let current_graph = graph.get_untracked();
+                let zoom = zoom_level.get_untracked();
+                let pan_x = pan_offset_x.get_untracked();
+                let pan_y = pan_offset_y.get_untracked();
+                let current_edit_mode = edit_mode.get_untracked();
+                let current_waypoints = waypoints.get_untracked();
+                let current_preview = preview_path.get_untracked();
+                let zooming = is_zooming.get_untracked();
+
+                // Update topology cache if needed
+                update_cache_if_needed(topology_cache, &current_graph);
+
+                let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
+                // Browser dimensions are always non-negative
+                #[allow(clippy::cast_sign_loss)]
+                let container_width = canvas_elem.client_width() as u32;
+                #[allow(clippy::cast_sign_loss)]
+                let container_height = canvas_elem.client_height() as u32;
+
+                if container_width > 0 && container_height > 0 {
+                    canvas_elem.set_width(container_width);
+                    canvas_elem.set_height(container_height);
+                }
+
+                let Some(ctx) = canvas
+                    .get_context("2d")
+                    .ok()
+                    .flatten()
+                    .and_then(|ctx| ctx.dyn_into::<CanvasRenderingContext2d>().ok())
+                else {
+                    return;
+                };
+
+                // Build list of waypoints when in CreatingView mode
+                let selected_stations: Vec<NodeIndex> = if matches!(current_edit_mode, EditMode::CreatingView) {
+                    current_waypoints
+                } else {
+                    Vec::new()
+                };
+
+                // Get preview path edges if in CreatingView mode
+                let highlighted_edges: HashSet<EdgeIndex> = if matches!(current_edit_mode, EditMode::CreatingView) {
+                    current_preview.unwrap_or_default().into_iter().collect()
+                } else {
+                    HashSet::new()
+                };
+
+                // Pass cache to renderer (mutable to update label cache)
+                topology_cache.with_value(|cache| {
+                    let mut cache_mut = cache.borrow_mut();
+                    renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming);
+                });
+            });
+
+            let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
+            callback.forget();
         }
-
-        let Some(ctx) = canvas
-            .get_context("2d")
-            .ok()
-            .flatten()
-            .and_then(|ctx| ctx.dyn_into::<CanvasRenderingContext2d>().ok())
-        else {
-            return;
-        };
-
-        let zoom = zoom_level.get_untracked();
-        let pan_x = pan_offset_x.get_untracked();
-        let pan_y = pan_offset_y.get_untracked();
-
-        // Build list of waypoints when in CreatingView mode
-        let selected_stations: Vec<NodeIndex> = if matches!(edit_mode.get_untracked(), EditMode::CreatingView) {
-            waypoints.get_untracked()
-        } else {
-            Vec::new()
-        };
-
-        // Get preview path edges if in CreatingView mode
-        let highlighted_edges: HashSet<EdgeIndex> = if matches!(edit_mode.get_untracked(), EditMode::CreatingView) {
-            preview_path.get_untracked().unwrap_or_default().into_iter().collect()
-        } else {
-            HashSet::new()
-        };
-
-        renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges);
     });
 }
 
@@ -709,6 +762,8 @@ fn create_event_handlers(
     auto_layout_enabled: ReadSignal<bool>,
     space_pressed: ReadSignal<bool>,
     viewport: &canvas_viewport::ViewportSignals,
+    topology_cache: StoredValue<RefCell<TopologyCache>>,
+    set_is_zooming: WriteSignal<bool>,
 ) -> (impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(WheelEvent)) {
     let zoom_level = viewport.zoom_level;
     let pan_offset_x = viewport.pan_offset_x;
@@ -805,7 +860,7 @@ fn create_event_handlers(
                 };
                 handle_mouse_move_hover_detection(
                     x, y, viewport_state,
-                    graph, set_is_over_station, set_is_over_track
+                    graph, set_is_over_station, set_is_over_track, topology_cache
                 );
             }
         }
@@ -911,6 +966,9 @@ fn create_event_handlers(
     let handle_wheel = move |ev: WheelEvent| {
         ev.prevent_default();
 
+        // Mark as zooming when wheel event occurs
+        set_is_zooming.set(true);
+
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
@@ -964,6 +1022,15 @@ pub fn InfrastructureView(
     let (is_over_track, set_is_over_track) = create_signal(false);
     let (dragging_station, set_dragging_station) = create_signal(None::<NodeIndex>);
 
+    // Performance cache for topology-dependent data
+    let topology_cache: StoredValue<RefCell<TopologyCache>> = store_value(RefCell::new(TopologyCache::default()));
+
+    // Track zooming state to skip expensive operations during zoom
+    let (is_zooming, set_is_zooming) = create_signal(false);
+
+    // Throttle rendering using requestAnimationFrame (similar to graph_canvas)
+    let (render_requested, set_render_requested) = create_signal(false);
+
     // Panning keyboard state
     let (space_pressed, set_space_pressed) = create_signal(false);
     let (w_pressed, set_w_pressed) = create_signal(false);
@@ -986,6 +1053,39 @@ pub fn InfrastructureView(
     let pan_offset_y = viewport.pan_offset_y;
     let set_pan_offset_y = viewport.set_pan_offset_y;
     let is_panning = viewport.is_panning;
+
+    // Debounce is_zooming flag: clear it after 150ms of no zoom activity
+    let zoom_timeout_handle: Rc<RefCell<Option<i32>>> = Rc::new(RefCell::new(None));
+    create_effect({
+        let zoom_timeout_handle = zoom_timeout_handle.clone();
+        move |_| {
+            let _ = zoom_level.get();
+
+            // Clear any existing timeout
+            if let Some(handle) = *zoom_timeout_handle.borrow() {
+                if let Some(window) = web_sys::window() {
+                    window.clear_timeout_with_handle(handle);
+                }
+            }
+
+            // Set new timeout to clear is_zooming after 150ms
+            if let Some(window) = web_sys::window() {
+                let closure = Closure::once(move || {
+                    set_is_zooming.set(false);
+                });
+
+                let handle = window
+                    .set_timeout_with_callback_and_timeout_and_arguments_0(
+                        closure.as_ref().unchecked_ref(),
+                        150,
+                    )
+                    .ok();
+
+                *zoom_timeout_handle.borrow_mut() = handle;
+                closure.forget();
+            }
+        }
+    });
 
     // Create a signal for canvas dimensions
     let canvas_dimensions = Signal::derive(move || {
@@ -1052,14 +1152,14 @@ pub fn InfrastructureView(
     let (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
         create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, station_to_delete);
 
-    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path);
+    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested);
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_context_menu, handle_wheel) = create_event_handlers(
         canvas_ref, edit_mode, set_edit_mode, selected_station, set_selected_station, view_creation_callbacks.on_add_waypoint.clone(), graph, set_graph,
         lines, set_lines,
         editing_station, set_editing_station, set_editing_junction, set_editing_track,
         dragging_station, set_dragging_station, set_is_over_station, set_is_over_track,
-        auto_layout_enabled, space_pressed, &viewport
+        auto_layout_enabled, space_pressed, &viewport, topology_cache, set_is_zooming
     );
 
     let handle_mouse_leave = move |_: MouseEvent| {
