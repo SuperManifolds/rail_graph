@@ -229,6 +229,12 @@ fn get_all_shortcut_definitions() -> Vec<ShortcutEntry> {
             category: ShortcutCategory::Navigation,
             default_shortcut: KeyboardShortcut::key_only("Minus"),
         },
+        ShortcutEntry {
+            id: "reset_view",
+            description: "Reset View",
+            category: ShortcutCategory::Navigation,
+            default_shortcut: KeyboardShortcut::key_only("KeyR"),
+        },
         // Infrastructure
         ShortcutEntry {
             id: "add_station",
@@ -414,6 +420,24 @@ impl KeyboardShortcuts {
             vec![conflicting_id.clone()]
         } else {
             Vec::new()
+        }
+    }
+
+    /// Merge in any new shortcuts from defaults that aren't in the current settings
+    /// This is used for migrating settings when new shortcuts are added to the codebase
+    pub fn merge_with_defaults(&mut self) {
+        let defaults = Self::default_shortcuts();
+        let mut needs_rebuild = false;
+
+        for (id, default_shortcut) in defaults.shortcuts {
+            if let std::collections::hash_map::Entry::Vacant(e) = self.shortcuts.entry(id) {
+                e.insert(default_shortcut);
+                needs_rebuild = true;
+            }
+        }
+
+        if needs_rebuild {
+            self.rebuild_index();
         }
     }
 }
