@@ -146,7 +146,7 @@ pub fn ManualDepartureEditor(
                             local_departure.get().repeat_until
                                 .map_or(String::new(), |dt| dt.format("%H:%M:%S").to_string())
                         }
-                        on:input=move |ev| {
+                        on:change=move |ev| {
                             let time_str = event_target_value(&ev);
                             let repeat_until = if time_str.is_empty() {
                                 None

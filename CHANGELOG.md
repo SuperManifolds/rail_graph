@@ -3,6 +3,9 @@
 ## Performance
 - Improved infrastructure view performance when zooming and panning on large networks
 
+## Improvements
+- Manual departure 'Until' field now only updates when finished editing instead of on every keystroke
+
 ## Bug Fixes
 - Fixed manual departures disappearing when auto scheduling is enabled - manual departures now run alongside auto-scheduled services
 - Fixed train journey lines in time-distance graph views connecting to wrong occurrence when a route visits the same junction multiple times (e.g., backtracking through a junction)
