@@ -8,7 +8,6 @@ const TIME_SCRUBBER_BG_WIDTH: f64 = 8.0;
 const TIME_SCRUBBER_LINE_COLOR: &str = "#FF3333";
 const TIME_SCRUBBER_LINE_WIDTH: f64 = 2.0;
 const TIME_SCRUBBER_HANDLE_SIZE: f64 = 8.0;
-const TIME_SCRUBBER_LABEL_FONT: &str = "bold 12px monospace";
 
 pub fn draw_time_scrubber(
     ctx: &CanvasRenderingContext2d,
@@ -55,7 +54,7 @@ pub fn draw_time_scrubber(
 
     // Draw time label
     ctx.set_fill_style_str(TIME_SCRUBBER_LINE_COLOR);
-    ctx.set_font(TIME_SCRUBBER_LABEL_FONT);
+    ctx.set_font("bold 12px monospace");
     let _ = ctx.fill_text(
         &time.format("%H:%M").to_string(),
         x - 20.0,
