@@ -387,12 +387,19 @@ impl GraphView {
 
     /// Filter conflicts to only those within this path
     #[must_use]
-    pub fn filter_conflicts(&self, conflicts: &[Conflict], graph: &RailwayGraph, all_nodes: &[(petgraph::stable_graph::NodeIndex, crate::models::Node)]) -> Vec<Conflict> {
+    pub fn filter_conflicts(&self, conflicts: &[Conflict], graph: &RailwayGraph) -> Vec<Conflict> {
         // Build edge path set for O(1) lookup if we have an edge path
         let edge_set: Option<std::collections::HashSet<usize>> = self.edge_path.as_ref()
             .map(|path| path.iter().copied().collect());
 
         let visible_nodes = self.visible_stations(graph);
+
+        // Build enumeration_idx → NodeIndex mapping
+        // Conflicts store station indices as enumeration indices from node_indices().enumerate()
+        let enum_to_node: std::collections::HashMap<usize, petgraph::stable_graph::NodeIndex> =
+            graph.graph.node_indices()
+                .enumerate()
+                .collect();
 
         conflicts.iter()
             .filter(|conflict| {
@@ -404,8 +411,9 @@ impl GraphView {
                 }
 
                 // Fallback to station-based matching for platform conflicts or when no edge path
-                let node1 = all_nodes.get(conflict.station1_idx).map(|(node_idx, _)| node_idx);
-                let node2 = all_nodes.get(conflict.station2_idx).map(|(node_idx, _)| node_idx);
+                // Convert enumeration indices to NodeIndex values
+                let node1 = enum_to_node.get(&conflict.station1_idx);
+                let node2 = enum_to_node.get(&conflict.station2_idx);
 
                 match (node1, node2) {
                     (Some(n1), Some(n2)) => visible_nodes.contains(n1) && visible_nodes.contains(n2),
