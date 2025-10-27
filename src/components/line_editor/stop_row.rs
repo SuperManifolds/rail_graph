@@ -97,6 +97,13 @@ pub fn StopRow(
             .unwrap_or_default()
     });
 
+    // Check if this stop is a junction (junctions should not have editable wait times)
+    let is_junction = graph.with_untracked(|g| {
+        g.graph
+            .node_weight(station_idx)
+            .is_some_and(|node| node.as_junction().is_some())
+    });
+
     // Create memos for row-specific data to minimize re-renders
     let route_data = create_memo(move |_| {
         edited_line.with(|line| {
@@ -189,6 +196,7 @@ pub fn StopRow(
                                     route_direction=route_direction
                                     edited_line=edited_line
                                     on_save=on_save.clone()
+                                    is_junction=is_junction
                                 />
                                 <DeleteButton
                                     is_first=is_first

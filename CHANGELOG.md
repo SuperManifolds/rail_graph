@@ -10,6 +10,7 @@
 - Fixed manual departures disappearing when auto scheduling is enabled - manual departures now run alongside auto-scheduled services
 - Fixed train journey lines in time-distance graph views connecting to wrong occurrence when a route visits the same junction multiple times (e.g., backtracking through a junction)
 - Fixed conflict list showing incorrect count with empty list - conflict filtering was using wrong index type causing mismatched visibility checks
+- Fixed junctions incorrectly having wait time - junctions now show "-" in the wait time column and never add wait time to journeys
 
 # v0.1.7 - 2025-10-26
 

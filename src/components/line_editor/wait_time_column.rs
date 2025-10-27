@@ -41,7 +41,13 @@ pub fn WaitTimeColumn(
     route_direction: RouteDirection,
     edited_line: ReadSignal<Option<Line>>,
     on_save: Rc<dyn Fn(Line)>,
+    is_junction: bool,
 ) -> impl IntoView {
+    if is_junction {
+        // Junctions never have wait time - show placeholder
+        return view! { <span class="track-placeholder">"-"</span> }.into_view();
+    }
+
     view! {
         <DurationInput
             duration=Signal::derive(move || wait_duration)
@@ -52,5 +58,5 @@ pub fn WaitTimeColumn(
                 }
             }
         />
-    }
+    }.into_view()
 }

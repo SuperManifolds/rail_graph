@@ -89,11 +89,13 @@ pub fn StationSelect(
                                                 track_segment.map_or(0, |ts| ts.tracks.len().saturating_sub(1))
                                             );
 
-                                            // Check if station is a passing loop
-                                            let is_passing_loop = graph.graph.node_weight(current_node)
-                                                .and_then(|node| node.as_station())
-                                                .is_some_and(|s| s.passing_loop);
-                                            let default_wait = if is_passing_loop {
+                                            // Check if station is a passing loop or if node is a junction
+                                            let is_passing_loop_or_junction = graph.graph.node_weight(current_node)
+                                                .is_some_and(|node| {
+                                                    node.as_station().is_some_and(|s| s.passing_loop) ||
+                                                    node.as_junction().is_some()
+                                                });
+                                            let default_wait = if is_passing_loop_or_junction {
                                                 Duration::seconds(0)
                                             } else {
                                                 updated_line.default_wait_time
@@ -105,7 +107,7 @@ pub fn StationSelect(
                                                 origin_platform: 0,
                                                 destination_platform: 0,
                                                 duration: None,
-                                                // Use default wait time for stations, zero for passing loops
+                                                // Use default wait time for stations, zero for passing loops and junctions
                                                 wait_time: default_wait,
                                             };
 
