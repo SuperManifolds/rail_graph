@@ -274,8 +274,8 @@ impl GraphView {
         let mut path = vec![from];
         let mut current = from;
 
-        for edge_idx in edge_indices {
-            let edge = graph.graph.edge_endpoints(edge_idx)?;
+        for edge_idx in &edge_indices {
+            let edge = graph.graph.edge_endpoints(*edge_idx)?;
             let next = if edge.0 == current {
                 edge.1
             } else if edge.1 == current {
