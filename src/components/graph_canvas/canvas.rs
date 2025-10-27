@@ -737,19 +737,6 @@ fn render_graph(
         }
     }
 
-    // Draw current train positions
-    train_positions::draw_current_train_positions(
-        &ctx,
-        &zoomed_dimensions,
-        stations,
-        &journeys_vec,
-        &station_y_positions,
-        view_edge_path,
-        current_time,
-        viewport.zoom_level,
-        time_to_fraction,
-    );
-
     // Restore canvas context
     ctx.restore();
 
@@ -780,6 +767,35 @@ fn render_graph(
         viewport.pan_offset_x,
         time_to_fraction,
     );
+
+    // Draw current train positions last so they appear on top of scrubber
+    // Save and re-apply transformation for train positions
+    ctx.save();
+    ctx.begin_path();
+    ctx.rect(
+        dimensions.left_margin,
+        dimensions.top_margin,
+        dimensions.graph_width,
+        dimensions.graph_height,
+    );
+    ctx.clip();
+    let _ = ctx.translate(dimensions.left_margin, dimensions.top_margin);
+    let _ = ctx.translate(viewport.pan_offset_x, viewport.pan_offset_y);
+    let _ = ctx.scale(viewport.zoom_level, viewport.zoom_level);
+
+    train_positions::draw_current_train_positions(
+        &ctx,
+        &zoomed_dimensions,
+        stations,
+        &journeys_vec,
+        &station_y_positions,
+        view_edge_path,
+        current_time,
+        viewport.zoom_level,
+        time_to_fraction,
+    );
+
+    ctx.restore();
 }
 
 fn clear_canvas(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
