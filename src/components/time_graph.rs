@@ -201,8 +201,7 @@ pub fn TimeGraph(
             let all_conflicts = raw_conflicts.get();
             if let Some(ref graph_view) = view {
                 let current_graph = graph.get();
-                let nodes = display_stations.get();
-                graph_view.filter_conflicts(&all_conflicts, &current_graph, &nodes)
+                graph_view.filter_conflicts(&all_conflicts, &current_graph)
             } else {
                 all_conflicts
             }
