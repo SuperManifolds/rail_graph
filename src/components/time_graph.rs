@@ -12,7 +12,7 @@ use crate::components::{
 use crate::models::{Line, RailwayGraph, GraphView, Stations, Routes};
 use crate::train_journey::TrainJourney;
 use crate::conflict::Conflict;
-use leptos::{component, view, Signal, IntoView, SignalGet, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect};
+use leptos::{component, view, Signal, IntoView, SignalGet, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect, Callable};
 use petgraph::visit::EdgeRef;
 
 #[inline]
@@ -156,6 +156,8 @@ pub fn TimeGraph(
     on_create_view: leptos::Callback<GraphView>,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
     set_show_project_manager: WriteSignal<bool>,
+    #[prop(optional)]
+    on_open_changelog: Option<leptos::Callback<()>>,
 ) -> impl IntoView {
     let (visualization_time, set_visualization_time) =
         create_signal(chrono::Local::now().naive_local());
@@ -287,6 +289,11 @@ pub fn TimeGraph(
                     <Settings
                         settings=Signal::derive(move || settings.get())
                         set_settings=move |s| set_settings.set(s)
+                        on_open_changelog=move || {
+                            if let Some(cb) = on_open_changelog {
+                                cb.call(());
+                            }
+                        }
                     />
                 </div>
             </div>

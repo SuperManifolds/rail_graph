@@ -20,7 +20,10 @@ struct ChangelogRelease {
 
 #[component]
 #[must_use]
-pub fn ChangelogPopup() -> impl IntoView {
+pub fn ChangelogPopup(
+    #[prop(optional)] manual_open: Option<Signal<bool>>,
+    #[prop(optional)] set_manual_open: Option<impl Fn(bool) + 'static + Copy>,
+) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
     let (releases_to_show, set_releases_to_show) = create_signal(Vec::<ChangelogRelease>::new());
 
@@ -81,14 +84,38 @@ pub fn ChangelogPopup() -> impl IntoView {
             mark_version_viewed(&latest.tag_name);
         }
         set_is_open.set(false);
+        if let Some(setter) = set_manual_open {
+            setter(false);
+        }
     };
 
+    // Auto-show changelog for new versions
     create_effect(move |_| {
         if let Some(should_show_val) = should_show.get() {
             if should_show_val {
                 set_is_open.set(true);
             }
         }
+    });
+
+    // Manual open from About button
+    create_effect(move |_| {
+        let Some(manual_signal) = manual_open else { return };
+        if !manual_signal.get() {
+            return;
+        }
+
+        // Reset the signal immediately so it can be triggered again
+        if let Some(setter) = set_manual_open {
+            setter(false);
+        }
+
+        // Fetch all releases to show
+        leptos::spawn_local(async move {
+            let Ok(all_releases) = fetch_all_releases().await else { return };
+            set_releases_to_show.set(all_releases);
+            set_is_open.set(true);
+        });
     });
 
     view! {

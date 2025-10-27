@@ -118,6 +118,9 @@ pub fn App() -> impl IntoView {
     // Track when we're capturing keyboard shortcuts in the editor
     let (is_capturing_shortcut, set_is_capturing_shortcut) = create_signal(false);
 
+    // Signal for manually opening changelog from About button
+    let (manual_open_changelog, set_manual_open_changelog) = create_signal(false);
+
     // Load user settings on mount
     create_effect(move |_| {
         spawn_local(async move {
@@ -708,6 +711,9 @@ pub fn App() -> impl IntoView {
                                         on_viewport_change(view_id, viewport_state);
                                     })
                                     set_show_project_manager=set_show_project_manager
+                                    on_open_changelog=Callback::new(move |()| {
+                                        set_manual_open_changelog.set(true);
+                                    })
                                 />
                             }.into_view()
                         } else {
@@ -729,7 +735,10 @@ pub fn App() -> impl IntoView {
             />
 
             <AlphaDisclaimer />
-            <ChangelogPopup />
+            <ChangelogPopup
+                manual_open=Signal::derive(move || manual_open_changelog.get())
+                set_manual_open=move |v| set_manual_open_changelog.set(v)
+            />
         </div>
     }
 }

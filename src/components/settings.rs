@@ -9,6 +9,7 @@ use crate::models::{ProjectSettings, TrackHandedness};
 pub fn Settings(
     settings: Signal<ProjectSettings>,
     set_settings: impl Fn(ProjectSettings) + 'static + Copy,
+    #[prop(optional)] on_open_changelog: Option<impl Fn() + 'static + Copy>,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
     let active_tab = create_rw_signal("project".to_string());
@@ -87,6 +88,19 @@ pub fn Settings(
                                     </span>
                                 </label>
                             </div>
+                        </div>
+
+                        <div class="settings-section">
+                            <Button
+                                on_click=leptos::Callback::new(move |_| {
+                                    if let Some(handler) = on_open_changelog {
+                                        handler();
+                                        set_is_open.set(false);
+                                    }
+                                })
+                            >
+                                "About"
+                            </Button>
                         </div>
                     </div>
                 </TabPanel>
