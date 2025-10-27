@@ -1,3 +1,8 @@
+# Unreleased
+
+## Bug Fixes
+- Fixed train journey lines in time-distance graph views connecting to wrong occurrence when a route visits the same junction multiple times (e.g., backtracking through a junction)
+
 # v0.1.7 - 2025-10-26
 
 ## Features

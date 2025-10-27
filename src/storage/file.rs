@@ -179,4 +179,26 @@ mod tests {
         assert_eq!(prepared.metadata.name, new_name);
         assert_ne!(prepared.metadata.name, original.metadata.name);
     }
+
+    #[test]
+    fn test_deserialize_corrupted_rgproject() {
+        // This test attempts to load the corrupted.rgproject file to debug the import issue
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("corrupted.rgproject");
+
+        // Read the file
+        let bytes = std::fs::read(&path).expect("Failed to read corrupted.rgproject");
+
+        // Try to deserialize it
+        let result = deserialize_project_from_bytes(&bytes);
+
+        match result {
+            Ok(project) => {
+                println!("Successfully loaded project: {}", project.metadata.name);
+                println!("Project has {} lines", project.lines.len());
+            }
+            Err(e) => {
+                panic!("Failed to deserialize corrupted.rgproject: {e}");
+            }
+        }
+    }
 }

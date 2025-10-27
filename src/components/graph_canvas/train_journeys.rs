@@ -12,7 +12,19 @@ const DOT_RADIUS_MULTIPLIER: f64 = 1.5; // Scale dots relative to line thickness
 const MIN_DOT_RADIUS: f64 = 2.0; // Minimum dot radius in pixels
 const TOTAL_HOURS: f64 = 48.0; // Total hours displayed on the graph
 
+/// Update search direction based on position change
+fn update_search_direction(
+    search_direction_is_forward: &mut Option<bool>,
+    last_view_pos: Option<usize>,
+    current_view_pos: usize,
+) {
+    if let Some(last_pos) = last_view_pos {
+        *search_direction_is_forward = Some(current_view_pos > last_pos);
+    }
+}
+
 /// Assign view positions for a matched edge based on direction
+/// Does not overwrite positions that have already been set (important for duplicate nodes)
 fn assign_edge_positions(
     result: &mut [Option<usize>],
     seg_idx: usize,
@@ -28,12 +40,47 @@ fn assign_edge_positions(
     let going_forward = journey_start_node == view_edge_start_node;
 
     if going_forward {
-        result[seg_idx] = Some(view_pos);
-        result[seg_idx + 1] = Some(view_pos + 1);
+        // Only set if not already set (avoid overwriting in case of duplicate nodes)
+        if result[seg_idx].is_none() {
+            result[seg_idx] = Some(view_pos);
+        }
+        if result[seg_idx + 1].is_none() {
+            result[seg_idx + 1] = Some(view_pos + 1);
+        }
     } else {
         // Going backward along this edge
-        result[seg_idx] = Some(view_pos + 1);
-        result[seg_idx + 1] = Some(view_pos);
+        if result[seg_idx].is_none() {
+            result[seg_idx] = Some(view_pos + 1);
+        }
+        if result[seg_idx + 1].is_none() {
+            result[seg_idx + 1] = Some(view_pos);
+        }
+    }
+}
+
+/// Verify that an edge at `view_pos` connects to an existing position
+/// Returns true if the edge is valid for matching (either no existing position, or connects correctly)
+fn verify_edge_connectivity(
+    result: &[Option<usize>],
+    seg_idx: usize,
+    view_pos: usize,
+    journey_start_node: NodeIndex,
+    view_edge_start_node: NodeIndex,
+    view_nodes_len: usize,
+) -> bool {
+    if let Some(existing_pos) = result[seg_idx] {
+        let going_forward = journey_start_node == view_edge_start_node;
+        let edge_start_pos = if going_forward {
+            view_pos
+        } else if view_pos + 1 < view_nodes_len {
+            view_pos + 1
+        } else {
+            return false; // Invalid position
+        };
+
+        edge_start_pos == existing_pos
+    } else {
+        true // No existing position, so any edge is valid
     }
 }
 
@@ -49,6 +96,7 @@ pub fn match_journey_stations_to_view_by_edges(
 ) -> Vec<Option<usize>> {
     let mut result = vec![None; journey_stations.len()];
     let mut last_view_pos: Option<usize> = None;
+    let mut search_direction_is_forward: Option<bool> = None;
 
     // Match each journey segment to view edge path
     for (seg_idx, segment) in journey_segments.iter().enumerate() {
@@ -59,35 +107,58 @@ pub fn match_journey_stations_to_view_by_edges(
         }
 
         let journey_edge = segment.edge_index;
-
-        // Search bidirectionally from last position
         let start_pos = last_view_pos.unwrap_or(0);
         let mut matched = false;
 
-        // First try forward from start_pos
-        for view_pos in start_pos..view_edge_path.len() {
-            if view_edge_path[view_pos] == journey_edge {
+        // Determine search direction based on recent matches
+        // If we don't know the direction yet, try forward first (default behavior)
+        let try_forward_first = search_direction_is_forward.unwrap_or(true);
+
+        let search_ranges: [(std::ops::RangeInclusive<usize>, bool); 2] = if try_forward_first {
+            [(start_pos..=view_edge_path.len().saturating_sub(1), true), (0..=start_pos.saturating_sub(1), false)]
+        } else {
+            [(0..=start_pos.saturating_sub(1), false), (start_pos..=view_edge_path.len().saturating_sub(1), true)]
+        };
+
+        for (range, is_forward_search) in search_ranges {
+            let positions: Vec<usize> = if is_forward_search {
+                range.collect()
+            } else {
+                range.rev().collect()
+            };
+
+            for view_pos in positions {
+                if view_edge_path[view_pos] != journey_edge {
+                    continue;
+                }
+
                 let journey_start_node = journey_stations[seg_idx].0;
                 let view_edge_start_node = view_nodes[view_pos].0;
 
+                // If this journey station already has an assigned position (from previous segment),
+                // verify that this edge connects to it. This handles backtracking through duplicate nodes.
+                if !verify_edge_connectivity(
+                    &result,
+                    seg_idx,
+                    view_pos,
+                    journey_start_node,
+                    view_edge_start_node,
+                    view_nodes.len(),
+                ) {
+                    continue;
+                }
+
                 assign_edge_positions(&mut result, seg_idx, view_pos, journey_start_node, view_edge_start_node);
+
+                // Update search direction based on position change
+                update_search_direction(&mut search_direction_is_forward, last_view_pos, view_pos);
                 last_view_pos = Some(view_pos);
                 matched = true;
                 break;
             }
-        }
 
-        // If not found forward, try backward from start_pos
-        if !matched && start_pos > 0 {
-            for view_pos in (0..start_pos).rev() {
-                if view_edge_path[view_pos] == journey_edge {
-                    let journey_start_node = journey_stations[seg_idx].0;
-                    let view_edge_start_node = view_nodes[view_pos].0;
-
-                    assign_edge_positions(&mut result, seg_idx, view_pos, journey_start_node, view_edge_start_node);
-                    last_view_pos = Some(view_pos);
-                    break;
-                }
+            if matched {
+                break;
             }
         }
     }
