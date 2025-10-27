@@ -6,6 +6,7 @@
 ## Improvements
 - Manual departure 'Until' field now only updates when finished editing instead of on every keystroke
 - Added keyboard shortcut to reset view to default zoom and pan position (default: R key)
+- Added About button to Settings that opens the changelog
 
 ## Bug Fixes
 - Fixed train position dots and labels being obscured by the time scrubber line
