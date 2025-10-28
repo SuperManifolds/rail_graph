@@ -315,7 +315,24 @@ impl Line {
         eprintln!("\n=== Fixing tracks for line '{}' ===", self.name);
 
         // Fix forward route - track current node as we traverse
+        // First pass: determine initial direction by looking at first two segments
         let mut current_node: Option<petgraph::stable_graph::NodeIndex> = None;
+        if let (Some(first), Some(second)) = (self.forward_route.first(), self.forward_route.get(1)) {
+            let first_edge = EdgeIndex::new(first.edge_index);
+            let second_edge = EdgeIndex::new(second.edge_index);
+            if let (Some((source, target)), Some((next_source, next_target))) =
+                (graph.graph.edge_endpoints(first_edge), graph.graph.edge_endpoints(second_edge)) {
+                // If target connects to next edge, we start at source
+                if target == next_source || target == next_target {
+                    current_node = Some(source);
+                } else {
+                    current_node = Some(target);
+                }
+            } else {
+                current_node = Some(graph.graph.edge_endpoints(first_edge).map(|(s, _)| s)).flatten();
+            }
+        }
+
         for segment in &mut self.forward_route {
             let edge_idx = EdgeIndex::new(segment.edge_index);
 
@@ -324,8 +341,7 @@ impl Line {
                 continue;
             };
 
-            // Determine direction: if this is our first segment or we don't have current node,
-            // check which endpoint leads to the next segment
+            // If we still don't have current_node, default to source
             if current_node.is_none() {
                 current_node = Some(source);
             }
@@ -352,7 +368,24 @@ impl Line {
         }
 
         // Fix return route - track current node as we traverse
+        // First pass: determine initial direction by looking at first two segments
         let mut current_node: Option<petgraph::stable_graph::NodeIndex> = None;
+        if let (Some(first), Some(second)) = (self.return_route.first(), self.return_route.get(1)) {
+            let first_edge = EdgeIndex::new(first.edge_index);
+            let second_edge = EdgeIndex::new(second.edge_index);
+            if let (Some((source, target)), Some((next_source, next_target))) =
+                (graph.graph.edge_endpoints(first_edge), graph.graph.edge_endpoints(second_edge)) {
+                // If target connects to next edge, we start at source
+                if target == next_source || target == next_target {
+                    current_node = Some(source);
+                } else {
+                    current_node = Some(target);
+                }
+            } else {
+                current_node = Some(graph.graph.edge_endpoints(first_edge).map(|(s, _)| s)).flatten();
+            }
+        }
+
         for segment in &mut self.return_route {
             let edge_idx = EdgeIndex::new(segment.edge_index);
 
@@ -361,7 +394,7 @@ impl Line {
                 continue;
             };
 
-            // Determine direction
+            // If we still don't have current_node, default to source
             if current_node.is_none() {
                 current_node = Some(source);
             }
