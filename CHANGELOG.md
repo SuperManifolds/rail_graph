@@ -1,4 +1,4 @@
-# Unreleased
+# v0.1.9 - 2025-10-28
 
 ## Improvements
 - Station label section width is now resizable by dragging the edge
