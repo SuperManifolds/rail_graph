@@ -7,6 +7,7 @@
 
 ## Bug Fixes
 - Fixed sync forward and return routes feature to correctly calculate return journey times from forward route with proper inheritance of gap segments
+- Fixed conflicts from lines outside the current view appearing when those lines shared stations with the view but used different routes
 
 # v0.1.8 - 2025-10-27
 

@@ -375,11 +375,25 @@ impl GraphView {
     /// Journeys simply start/end at the view boundaries (which may be junctions)
     #[must_use]
     pub fn filter_journeys(&self, journeys: &[TrainJourney], graph: &RailwayGraph) -> Vec<TrainJourney> {
+        // Build edge set if view has an edge path
+        let edge_set: Option<std::collections::HashSet<usize>> = self.edge_path.as_ref()
+            .map(|path| path.iter().copied().collect());
+
         let visible_stations = self.visible_stations(graph);
 
         journeys.iter()
             .filter_map(|journey| {
-                // Simply filter to only visible nodes, keeping original times
+                // If view has an edge path, check if journey uses any of those edges
+                if let Some(ref edges) = edge_set {
+                    let uses_view_edges = journey.segments.iter()
+                        .any(|seg| edges.contains(&seg.edge_index));
+
+                    if !uses_view_edges {
+                        return None; // Journey doesn't use any edges in this view
+                    }
+                }
+
+                // Filter to only visible nodes, keeping original times
                 let filtered_times: Vec<_> = journey.station_times.iter()
                     .filter(|(node_idx, _, _)| visible_stations.contains(node_idx))
                     .copied()
@@ -401,7 +415,13 @@ impl GraphView {
 
     /// Filter conflicts to only those within this path
     #[must_use]
-    pub fn filter_conflicts(&self, conflicts: &[Conflict], graph: &RailwayGraph) -> Vec<Conflict> {
+    pub fn filter_conflicts(&self, conflicts: &[Conflict], graph: &RailwayGraph, visible_journeys: &[crate::train_journey::TrainJourney]) -> Vec<Conflict> {
+        // Build set of visible journey train numbers for O(1) lookup
+        let visible_journey_ids: std::collections::HashSet<&str> = visible_journeys
+            .iter()
+            .map(|j| j.train_number.as_str())
+            .collect();
+
         // Build edge path set for O(1) lookup if we have an edge path
         let edge_set: Option<std::collections::HashSet<usize>> = self.edge_path.as_ref()
             .map(|path| path.iter().copied().collect());
@@ -417,6 +437,13 @@ impl GraphView {
 
         conflicts.iter()
             .filter(|conflict| {
+                // Check if at least one journey involved in the conflict is visible in this view
+                // Only hide conflicts where NEITHER journey is visible
+                if !visible_journey_ids.contains(conflict.journey1_id.as_str()) &&
+                   !visible_journey_ids.contains(conflict.journey2_id.as_str()) {
+                    return false;
+                }
+
                 // For track/block conflicts with edge_index, use edge-based matching
                 if let Some(edge_idx) = conflict.edge_index {
                     if let Some(ref edges) = edge_set {
