@@ -180,25 +180,20 @@ pub fn check_conflict_hover(
     _stations: &[(petgraph::stable_graph::NodeIndex, Node)],
     station_y_positions: &[f64],
     view_edge_path: &[usize],
-    canvas_width: f64,
-    canvas_height: f64,
+    dims: &super::types::GraphDimensions,
     zoom_level: f64,
     zoom_level_x: f64,
     pan_offset_x: f64,
     pan_offset_y: f64,
     station_idx_map: &std::collections::HashMap<usize, usize>,
 ) -> Option<(Conflict, f64, f64)> {
-    use super::canvas::{BOTTOM_PADDING, LEFT_MARGIN, RIGHT_PADDING, TOP_MARGIN};
     use crate::time::time_to_fraction;
 
-    let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
-    let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
-
     // Check if mouse is within the graph area first
-    if mouse_x < LEFT_MARGIN
-        || mouse_x > LEFT_MARGIN + graph_width
-        || mouse_y < TOP_MARGIN
-        || mouse_y > TOP_MARGIN + graph_height
+    if mouse_x < dims.left_margin
+        || mouse_x > dims.left_margin + dims.graph_width
+        || mouse_y < dims.top_margin
+        || mouse_y > dims.top_margin + dims.graph_height
     {
         return None;
     }
@@ -230,22 +225,22 @@ pub fn check_conflict_hover(
         };
 
         // Calculate conflict position in screen coordinates
-        // The canvas uses: translate(LEFT_MARGIN, TOP_MARGIN) + translate(pan) + scale(zoom)
+        // The canvas uses: translate(left_margin, top_margin) + translate(pan) + scale(zoom)
         let time_fraction = time_to_fraction(conflict.time);
         let total_hours = 48.0;
-        let hour_width = graph_width / total_hours;
+        let hour_width = dims.graph_width / total_hours;
 
         // Position in zoomed coordinate system (before translation)
         let x_in_zoomed = time_fraction * hour_width;
 
         // Interpolate Y position between the two stations
-        let y1 = station_y_positions[display_idx1] - TOP_MARGIN;
-        let y2 = station_y_positions[display_idx2] - TOP_MARGIN;
+        let y1 = station_y_positions[display_idx1] - dims.top_margin;
+        let y2 = station_y_positions[display_idx2] - dims.top_margin;
         let y_in_zoomed = y1 + (conflict.position * (y2 - y1));
 
         // Transform to screen coordinates
-        let screen_x = LEFT_MARGIN + (x_in_zoomed * zoom_level * zoom_level_x) + pan_offset_x;
-        let screen_y = TOP_MARGIN + (y_in_zoomed * zoom_level) + pan_offset_y;
+        let screen_x = dims.left_margin + (x_in_zoomed * zoom_level * zoom_level_x) + pan_offset_x;
+        let screen_y = dims.top_margin + (y_in_zoomed * zoom_level) + pan_offset_y;
 
         // Check if mouse is within conflict marker bounds
         let size = CONFLICT_TRIANGLE_SIZE;

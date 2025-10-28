@@ -1,7 +1,6 @@
 use web_sys::CanvasRenderingContext2d;
 use crate::models::Node;
 use super::types::GraphDimensions;
-use super::canvas::LEFT_MARGIN;
 use petgraph::stable_graph::NodeIndex;
 
 // Station label constants
@@ -65,8 +64,10 @@ pub fn draw_station_labels(
     zoom_level: f64,
     pan_offset_y: f64,
 ) {
-    // Draw labels for each node in the stations list (includes both stations and junctions)
     use super::canvas::TOP_MARGIN as ORIGINAL_TOP_MARGIN;
+
+    let station_label_width = dims.left_margin;
+    // Draw labels for each node in the stations list (includes both stations and junctions)
 
     for (idx, (_, station_node)) in stations.iter().enumerate() {
         // station_y_positions include the original TOP_MARGIN, subtract it to get graph-relative coords
@@ -80,46 +81,46 @@ pub fn draw_station_labels(
             match station_node {
                 Node::Station(station) => {
                     if station.passing_loop {
-                        draw_passing_loop_label(ctx, &station_node.display_name(), adjusted_y);
+                        draw_passing_loop_label(ctx, &station_node.display_name(), adjusted_y, station_label_width);
                     } else if station.platforms.len() == 1 {
-                        draw_single_platform_label(ctx, &station_node.display_name(), adjusted_y);
+                        draw_single_platform_label(ctx, &station_node.display_name(), adjusted_y, station_label_width);
                     } else {
-                        draw_station_label(ctx, &station_node.display_name(), adjusted_y);
+                        draw_station_label(ctx, &station_node.display_name(), adjusted_y, station_label_width);
                     }
                 }
                 Node::Junction(_) => {
-                    draw_junction_label(ctx, Some(&station_node.display_name()), adjusted_y);
+                    draw_junction_label(ctx, Some(&station_node.display_name()), adjusted_y, station_label_width);
                 }
             }
         }
     }
 }
 
-fn draw_station_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
+fn draw_station_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64, station_label_width: f64) {
     ctx.set_fill_style_str(STATION_LABEL_COLOR);
     ctx.set_font(STATION_LABEL_FONT);
-    let max_width = LEFT_MARGIN - STATION_LABEL_X - LABEL_RIGHT_PADDING;
+    let max_width = station_label_width - STATION_LABEL_X - LABEL_RIGHT_PADDING;
     let text = truncate_text_with_ellipsis(ctx, station, max_width);
     let _ = ctx.fill_text(&text, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
 }
 
-fn draw_single_platform_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
+fn draw_single_platform_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64, station_label_width: f64) {
     ctx.set_fill_style_str(SINGLE_PLATFORM_LABEL_COLOR);
     ctx.set_font(STATION_LABEL_FONT);
-    let max_width = LEFT_MARGIN - STATION_LABEL_X - LABEL_RIGHT_PADDING;
+    let max_width = station_label_width - STATION_LABEL_X - LABEL_RIGHT_PADDING;
     let text = truncate_text_with_ellipsis(ctx, station, max_width);
     let _ = ctx.fill_text(&text, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
 }
 
-fn draw_passing_loop_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64) {
+fn draw_passing_loop_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64, station_label_width: f64) {
     ctx.set_fill_style_str(PASSING_LOOP_LABEL_COLOR);
     ctx.set_font(STATION_LABEL_FONT);
-    let max_width = LEFT_MARGIN - STATION_LABEL_X - LABEL_RIGHT_PADDING;
+    let max_width = station_label_width - STATION_LABEL_X - LABEL_RIGHT_PADDING;
     let text = truncate_text_with_ellipsis(ctx, station, max_width);
     let _ = ctx.fill_text(&text, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
 }
 
-fn draw_junction_label(ctx: &CanvasRenderingContext2d, junction_name: Option<&str>, y: f64) {
+fn draw_junction_label(ctx: &CanvasRenderingContext2d, junction_name: Option<&str>, y: f64, station_label_width: f64) {
     // Draw diamond icon
     ctx.set_fill_style_str(JUNCTION_LABEL_COLOR);
     ctx.set_stroke_style_str(JUNCTION_LABEL_COLOR);
@@ -138,7 +139,7 @@ fn draw_junction_label(ctx: &CanvasRenderingContext2d, junction_name: Option<&st
     if let Some(name) = junction_name {
         ctx.set_fill_style_str(JUNCTION_LABEL_COLOR);
         ctx.set_font(STATION_LABEL_FONT);
-        let max_width = LEFT_MARGIN - (STATION_LABEL_X + JUNCTION_LABEL_X_OFFSET) - LABEL_RIGHT_PADDING;
+        let max_width = station_label_width - (STATION_LABEL_X + JUNCTION_LABEL_X_OFFSET) - LABEL_RIGHT_PADDING;
         let text = truncate_text_with_ellipsis(ctx, name, max_width);
         let _ = ctx.fill_text(&text, STATION_LABEL_X + JUNCTION_LABEL_X_OFFSET, y + STATION_LABEL_Y_OFFSET);
     }
@@ -158,12 +159,13 @@ pub fn check_station_label_hover(
     top_margin: f64,
     zoom_level: f64,
     pan_offset_y: f64,
+    station_label_width: f64,
 ) -> Option<(String, f64, f64)> {
     use super::canvas::TOP_MARGIN as ORIGINAL_TOP_MARGIN;
     const HOVER_Y_TOLERANCE: f64 = 8.0; // Vertical tolerance for hover detection
 
     // Check if mouse is in the label area (left margin)
-    if canvas_x >= LEFT_MARGIN {
+    if canvas_x >= station_label_width {
         return None;
     }
 

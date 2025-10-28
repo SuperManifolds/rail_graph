@@ -1,4 +1,4 @@
-use super::canvas::{LEFT_MARGIN, TOP_MARGIN, RIGHT_PADDING, BOTTOM_PADDING};
+use super::canvas::{TOP_MARGIN, RIGHT_PADDING, BOTTOM_PADDING};
 use crate::conflict::Conflict;
 
 #[derive(Clone)]
@@ -12,13 +12,13 @@ pub struct GraphDimensions {
 
 impl GraphDimensions {
     #[must_use]
-    pub fn new(canvas_width: f64, canvas_height: f64) -> Self {
-        let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
+    pub fn new(canvas_width: f64, canvas_height: f64, station_label_width: f64) -> Self {
+        let graph_width = canvas_width - station_label_width - RIGHT_PADDING;
         let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
         let total_hours = 48.0; // Show 48 hours to support past-midnight
 
         Self {
-            left_margin: LEFT_MARGIN,
+            left_margin: station_label_width,
             top_margin: TOP_MARGIN,
             graph_width,
             graph_height,

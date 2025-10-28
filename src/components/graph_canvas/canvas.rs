@@ -39,6 +39,7 @@ fn setup_render_effect(
     display_stations: Signal<Vec<(petgraph::stable_graph::NodeIndex, crate::models::Node)>>,
     station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
     view_edge_path: Signal<Vec<usize>>,
+    station_label_width: ReadSignal<f64>,
 ) {
     let (render_requested, set_render_requested) = create_signal(false);
     let is_disposed = Rc::new(Cell::new(false));
@@ -72,6 +73,7 @@ fn setup_render_effect(
         let _ = show_line_blocks.get();
         let _ = hovered_journey_id.get();
         let _ = spacing_mode.get();
+        let _ = station_label_width.get();
 
         if !render_requested.get_untracked() {
             set_render_requested.set(true);
@@ -132,7 +134,8 @@ fn setup_render_effect(
                 };
                 let current_spacing_mode = spacing_mode.get_untracked();
                 let current_edge_path = view_edge_path.get_untracked();
-                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph, &idx_map, current_spacing_mode, &current_edge_path);
+                let label_width = station_label_width.get_untracked();
+                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph, &idx_map, current_spacing_mode, &current_edge_path, label_width);
             });
 
             let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
@@ -160,6 +163,7 @@ fn handle_mouse_move_hover(
     graph: ReadSignal<RailwayGraph>,
     spacing_mode: Signal<crate::models::SpacingMode>,
     view_edge_path: Signal<Vec<usize>>,
+    station_label_width: f64,
 ) {
     let current_conflicts = conflicts_memo.get();
     let current_stations = display_stations.get();
@@ -171,7 +175,7 @@ fn handle_mouse_move_hover(
     // Calculate station positions for accurate hover detection
     let canvas_width = f64::from(canvas.width());
     let canvas_height = f64::from(canvas.height());
-    let dimensions = GraphDimensions::new(canvas_width, canvas_height);
+    let dimensions = GraphDimensions::new(canvas_width, canvas_height, station_label_width);
     let station_y_positions = current_graph.calculate_station_positions(
         &current_stations,
         current_spacing_mode,
@@ -182,7 +186,7 @@ fn handle_mouse_move_hover(
     let hovered = conflict_indicators::check_conflict_hover(
         x, y, &current_conflicts, &current_stations, &station_y_positions,
         &current_edge_path,
-        canvas_width, canvas_height,
+        &dimensions,
         viewport.zoom_level, viewport.zoom_level_x, viewport.pan_offset_x, viewport.pan_offset_y,
         &idx_map,
     );
@@ -191,7 +195,7 @@ fn handle_mouse_move_hover(
     // Check for station label hover
     let hovered_label = station_labels::check_station_label_hover(
         x, y, viewport_x, viewport_y, &current_stations, &station_y_positions,
-        dimensions.top_margin, viewport.zoom_level, viewport.pan_offset_y,
+        dimensions.top_margin, viewport.zoom_level, viewport.pan_offset_y, station_label_width,
     );
     set_hovered_station_label.set(hovered_label);
 
@@ -202,7 +206,7 @@ fn handle_mouse_move_hover(
         let hovered_journey = train_journeys::check_journey_hover(
             x, y, &journeys_vec, &current_stations, &station_y_positions,
             &current_edge_path,
-            canvas_width, canvas_height,
+            &dimensions,
             &viewport
         );
         set_hovered_journey_id.set(hovered_journey);
@@ -242,6 +246,10 @@ pub fn GraphCanvas(
 
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
+    let (is_resizing_station_labels, set_is_resizing_station_labels) = create_signal(false);
+    let (resize_start_x, set_resize_start_x) = create_signal(0.0);
+    let (resize_start_width, set_resize_start_width) = create_signal(0.0);
+    let (is_hovering_resize_boundary, set_is_hovering_resize_boundary) = create_signal(false);
     let (hovered_conflict, set_hovered_conflict) = create_signal(None::<(Conflict, f64, f64)>);
     let (hovered_station_label, set_hovered_station_label) = create_signal(None::<(String, f64, f64)>);
     let (space_pressed, set_space_pressed) = create_signal(false);
@@ -296,6 +304,9 @@ pub fn GraphCanvas(
     let set_pan_offset_y = viewport.set_pan_offset_y;
     let is_panning = viewport.is_panning;
 
+    // Station label width (for resizable station labels)
+    let (station_label_width, set_station_label_width) = create_signal(initial_viewport.station_label_width);
+
     // WASD continuous panning
     canvas_viewport::setup_wasd_panning(
         w_pressed, a_pressed, s_pressed, d_pressed,
@@ -306,13 +317,14 @@ pub fn GraphCanvas(
     // Save viewport changes to the view (debounced)
     let debounce_handle = store_value(None::<leptos::leptos_dom::helpers::TimeoutHandle>);
 
-    create_effect(move |prev_state: Option<(f64, f64, f64, f64)>| {
+    create_effect(move |prev_state: Option<(f64, f64, f64, f64, f64)>| {
         let zoom = zoom_level.get();
         let zoom_x = zoom_level_x.get();
         let pan_x = pan_offset_x.get();
         let pan_y = pan_offset_y.get();
+        let label_width = station_label_width.get();
 
-        let current = (zoom, zoom_x, pan_x, pan_y);
+        let current = (zoom, zoom_x, pan_x, pan_y, label_width);
 
         // Only update if values actually changed (skip initial render)
         let Some(prev) = prev_state else {
@@ -335,6 +347,7 @@ pub fn GraphCanvas(
                         zoom_level_x: Some(zoom_x),
                         pan_offset_x: pan_x,
                         pan_offset_y: pan_y,
+                        station_label_width: label_width,
                     });
                 },
                 Duration::from_millis(300)
@@ -353,8 +366,9 @@ pub fn GraphCanvas(
                     let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
                     let canvas_width = f64::from(canvas.width());
                     let canvas_height = f64::from(canvas.height());
+                    let label_width = station_label_width.get();
 
-                    let dims = GraphDimensions::new(canvas_width, canvas_height);
+                    let dims = GraphDimensions::new(canvas_width, canvas_height, label_width);
 
                     let current_graph = graph.get();
                     let current_stations = display_stations.get();
@@ -409,7 +423,7 @@ pub fn GraphCanvas(
         canvas_ref, train_journeys, visualization_time, graph, &viewport,
         conflicts_memo, show_conflicts, show_line_blocks, spacing_mode,
         hovered_conflict, hovered_journey_id, display_stations, station_idx_map,
-        view_edge_path
+        view_edge_path, station_label_width
     );
 
     let handle_mouse_down = move |ev: MouseEvent| {
@@ -418,10 +432,19 @@ pub fn GraphCanvas(
             let rect = canvas.get_bounding_client_rect();
             let x = f64::from(ev.client_x()) - rect.left();
 
-            // Only handle time scrubbing if space is not pressed
-            if !space_pressed.get() {
+            let label_width = station_label_width.get();
+            let resize_boundary = label_width;
+            let resize_handle_width = 5.0;
+
+            // Check if mouse is near the resize boundary
+            if (x - resize_boundary).abs() < resize_handle_width {
+                set_is_resizing_station_labels.set(true);
+                set_resize_start_x.set(x);
+                set_resize_start_width.set(label_width);
+            } else if !space_pressed.get() {
+                // Only handle time scrubbing if not resizing and space is not pressed
                 let canvas_width = f64::from(canvas.width());
-                handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time);
+                handle_time_scrubbing(x, canvas_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_is_dragging, set_visualization_time, label_width);
             }
         }
     };
@@ -442,34 +465,48 @@ pub fn GraphCanvas(
                 canvas_viewport::handle_pan_start(x, y, &viewport);
             }
 
-            if is_panning.get() {
+            if is_resizing_station_labels.get() {
+                // Handle resizing station labels
+                let delta_x = x - resize_start_x.get();
+                let new_width = (resize_start_width.get() + delta_x).clamp(60.0, 500.0);
+                set_station_label_width.set(new_width);
+            } else if is_panning.get() {
                 canvas_viewport::handle_pan_move(x, y, &viewport);
             } else if is_dragging.get() {
                 let canvas_width = f64::from(canvas.width());
-                let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
+                let label_width = station_label_width.get();
+                let graph_width = canvas_width - label_width - RIGHT_PADDING;
 
-                if x >= LEFT_MARGIN && x <= LEFT_MARGIN + graph_width {
-                    update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_visualization_time);
+                if x >= label_width && x <= label_width + graph_width {
+                    update_time_from_x(x, label_width, graph_width, zoom_level.get(), zoom_level_x.get(), pan_offset_x.get(), set_visualization_time);
                 }
             } else {
+                // Check if hovering over resize boundary
+                let label_width = station_label_width.get();
+                let resize_handle_width = 5.0;
+                let is_near_boundary = (x - label_width).abs() < resize_handle_width;
+                set_is_hovering_resize_boundary.set(is_near_boundary);
+
                 let viewport_state = ViewportState {
                     zoom_level: zoom_level.get(),
                     zoom_level_x: zoom_level_x.get(),
                     pan_offset_x: pan_offset_x.get(),
                     pan_offset_y: pan_offset_y.get(),
                 };
-                handle_mouse_move_hover(x, y, viewport_x, viewport_y, canvas, viewport_state, conflicts_memo, display_stations, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id, set_hovered_station_label, station_idx_map, graph, spacing_mode, view_edge_path);
+                handle_mouse_move_hover(x, y, viewport_x, viewport_y, canvas, viewport_state, conflicts_memo, display_stations, show_line_blocks, train_journeys, set_hovered_conflict, set_hovered_journey_id, set_hovered_station_label, station_idx_map, graph, spacing_mode, view_edge_path, label_width);
             }
         }
     };
 
     let handle_mouse_up = move |_ev: MouseEvent| {
         set_is_dragging.set(false);
+        set_is_resizing_station_labels.set(false);
         canvas_viewport::handle_pan_end(&viewport);
     };
 
     let handle_mouse_leave = move |_ev: MouseEvent| {
         set_is_dragging.set(false);
+        set_is_resizing_station_labels.set(false);
         canvas_viewport::handle_pan_end(&viewport);
         set_hovered_conflict.set(None);
         set_hovered_station_label.set(None);
@@ -486,16 +523,17 @@ pub fn GraphCanvas(
 
             let canvas_width = f64::from(canvas.width());
             let canvas_height = f64::from(canvas.height());
-            let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
+            let label_width = station_label_width.get();
+            let graph_width = canvas_width - label_width - RIGHT_PADDING;
             let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
 
             // Check if cursor is over time labels section (top margin area)
-            let over_time_labels = mouse_y < TOP_MARGIN && mouse_x >= LEFT_MARGIN;
+            let over_time_labels = mouse_y < TOP_MARGIN && mouse_x >= label_width;
 
-            if over_time_labels || (mouse_x >= LEFT_MARGIN && mouse_x <= LEFT_MARGIN + graph_width &&
+            if over_time_labels || (mouse_x >= label_width && mouse_x <= label_width + graph_width &&
                mouse_y >= TOP_MARGIN && mouse_y <= TOP_MARGIN + graph_height) {
 
-                let graph_mouse_x = mouse_x - LEFT_MARGIN;
+                let graph_mouse_x = mouse_x - label_width;
                 let graph_mouse_y = mouse_y - TOP_MARGIN;
 
                 // Minimum zoom matches the default viewport zoom level of 1.0
@@ -508,12 +546,12 @@ pub fn GraphCanvas(
     };
 
     let cursor_style = move || {
-        if is_panning.get() {
-            "cursor: grabbing;"
-        } else if space_pressed.get() {
-            "cursor: grab;"
-        } else {
-            "cursor: crosshair;"
+        match () {
+            () if is_resizing_station_labels.get() => "cursor: ew-resize;",
+            () if is_hovering_resize_boundary.get() => "cursor: ew-resize;",
+            () if is_panning.get() => "cursor: grabbing;",
+            () if space_pressed.get() => "cursor: grab;",
+            () => "cursor: crosshair;",
         }
     };
 
@@ -583,13 +621,14 @@ fn render_graph(
     station_idx_map: &std::collections::HashMap<usize, usize>,
     spacing_mode: crate::models::SpacingMode,
     view_edge_path: &[usize],
+    station_label_width: f64,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = canvas;
     let canvas_width = f64::from(canvas_element.width());
     let canvas_height = f64::from(canvas_element.height());
 
     // Create dimensions once for the entire render
-    let dimensions = GraphDimensions::new(canvas_width, canvas_height);
+    let dimensions = GraphDimensions::new(canvas_width, canvas_height, station_label_width);
 
     // Calculate station Y positions based on spacing mode
     let station_y_positions = graph.calculate_station_positions(
@@ -810,11 +849,12 @@ fn handle_time_scrubbing(
     pan_offset_x: f64,
     set_is_dragging: WriteSignal<bool>,
     set_visualization_time: WriteSignal<NaiveDateTime>,
+    station_label_width: f64,
 ) {
-    let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
+    let graph_width = canvas_width - station_label_width - RIGHT_PADDING;
 
-    if x >= LEFT_MARGIN && x <= LEFT_MARGIN + graph_width {
+    if x >= station_label_width && x <= station_label_width + graph_width {
         set_is_dragging.set(true);
-        update_time_from_x(x, LEFT_MARGIN, graph_width, zoom_level, zoom_level_x, pan_offset_x, set_visualization_time);
+        update_time_from_x(x, station_label_width, graph_width, zoom_level, zoom_level_x, pan_offset_x, set_visualization_time);
     }
 }
