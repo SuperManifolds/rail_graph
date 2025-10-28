@@ -1,6 +1,8 @@
 use leptos::{component, view, Signal, IntoView, SignalGet, SignalGetUntracked, event_target_value, create_node_ref, html::Input};
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Duration};
 use crate::constants::BASE_DATE;
+use web_sys::KeyboardEvent;
+use std::rc::Rc;
 
 #[component]
 #[must_use]
@@ -11,6 +13,8 @@ pub fn TimeInput(
     on_change: Box<dyn Fn(NaiveDateTime) + 'static>,
 ) -> impl IntoView {
     let input_ref = create_node_ref::<Input>();
+    let on_change = Rc::new(on_change);
+    let on_change_clone = on_change.clone();
 
     view! {
         <label>
@@ -31,6 +35,26 @@ pub fn TimeInput(
                         if let Some(input_elem) = input_ref.get() {
                             input_elem.set_value(&value.get_untracked().format("%H:%M:%S").to_string());
                         }
+                    }
+                }
+                on:keydown=move |ev: KeyboardEvent| {
+                    let key = ev.key();
+                    let adjustment = if key == "j" {
+                        Some(Duration::seconds(-30))
+                    } else if key == "l" {
+                        Some(Duration::seconds(30))
+                    } else {
+                        None
+                    };
+
+                    if let Some(delta) = adjustment {
+                        ev.prevent_default();
+                        let current = value.get_untracked();
+                        let new_datetime = current + delta;
+                        if let Some(input_elem) = input_ref.get() {
+                            input_elem.set_value(&new_datetime.format("%H:%M:%S").to_string());
+                        }
+                        on_change_clone(new_datetime);
                     }
                 }
             />

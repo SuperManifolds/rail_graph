@@ -1,5 +1,7 @@
 use leptos::{component, event_target_value, IntoView, Signal, SignalGet, SignalGetUntracked, view};
 use chrono::Duration;
+use web_sys::KeyboardEvent;
+use std::rc::Rc;
 
 fn duration_to_hhmmss(duration: Duration) -> String {
     let total_seconds = duration.num_seconds();
@@ -44,6 +46,8 @@ pub fn DurationInput(
     use leptos::create_node_ref;
 
     let input_ref = create_node_ref::<Input>();
+    let on_change = Rc::new(on_change);
+    let on_change_clone = on_change.clone();
 
     view! {
         <input
@@ -63,6 +67,26 @@ pub fn DurationInput(
                     }
                 }
             }
+            on:keydown=move |ev: KeyboardEvent| {
+                let key = ev.key();
+                let adjustment = if key == "j" {
+                    Some(Duration::seconds(-30))
+                } else if key == "l" {
+                    Some(Duration::seconds(30))
+                } else {
+                    None
+                };
+
+                if let Some(delta) = adjustment {
+                    ev.prevent_default();
+                    let current = duration.get_untracked();
+                    let new_duration = current + delta;
+                    if let Some(input_elem) = input_ref.get() {
+                        input_elem.set_value(&duration_to_hhmmss(new_duration));
+                    }
+                    on_change_clone(new_duration);
+                }
+            }
         />
     }
 }
@@ -76,6 +100,8 @@ pub fn OptionalDurationInput(
     use leptos::create_node_ref;
 
     let input_ref = create_node_ref::<Input>();
+    let on_change = Rc::new(on_change);
+    let on_change_clone = on_change.clone();
 
     view! {
         <input
@@ -98,6 +124,28 @@ pub fn OptionalDurationInput(
                         let valid_value = duration.get_untracked().map_or(String::new(), duration_to_hhmmss);
                         input_elem.set_value(&valid_value);
                     }
+                }
+            }
+            on:keydown=move |ev: KeyboardEvent| {
+                let key = ev.key();
+                let adjustment = if key == "j" {
+                    Some(Duration::seconds(-30))
+                } else if key == "l" {
+                    Some(Duration::seconds(30))
+                } else {
+                    None
+                };
+
+                if let Some(delta) = adjustment {
+                    ev.prevent_default();
+                    let new_duration = match duration.get_untracked() {
+                        Some(current) => current + delta,
+                        None => delta, // Initialize to +30s or -30s if empty
+                    };
+                    if let Some(input_elem) = input_ref.get() {
+                        input_elem.set_value(&duration_to_hhmmss(new_duration));
+                    }
+                    on_change_clone(Some(new_duration));
                 }
             }
         />
