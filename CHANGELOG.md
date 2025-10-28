@@ -1,4 +1,4 @@
-# Unreleased
+# v0.1.10 - 2025-10-28
 
 ## Bug Fixes
 - Fixed false head-on conflicts on double-track railways caused by incorrect track assignment when the first edge of a route was traversed backward - track assignment now correctly determines edge traversal direction by examining connectivity between consecutive segments instead of assuming routes always start at the source of their first edge
