@@ -278,7 +278,6 @@ pub fn TimeGraph(
                 "mousemove",
                 mousemove_closure.as_ref().unchecked_ref()
             );
-            mousemove_closure.forget();
 
             // Handle mouse up
             let view_clone = view_for_effect.clone();
@@ -298,7 +297,19 @@ pub fn TimeGraph(
                 "mouseup",
                 mouseup_closure.as_ref().unchecked_ref()
             );
-            mouseup_closure.forget();
+
+            // Return cleanup function to remove listeners when effect re-runs or component unmounts
+            leptos::on_cleanup(move || {
+                let window = leptos::window();
+                let _ = window.remove_event_listener_with_callback(
+                    "mousemove",
+                    mousemove_closure.as_ref().unchecked_ref()
+                );
+                let _ = window.remove_event_listener_with_callback(
+                    "mouseup",
+                    mouseup_closure.as_ref().unchecked_ref()
+                );
+            });
         }
     });
 
