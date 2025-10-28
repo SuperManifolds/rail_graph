@@ -354,6 +354,22 @@ pub fn setup_keyboard_listeners(
                     apply_normal_zoom(0.9, center_x, center_y, &viewport_for_zoom, min_zoom, Some((width, height)));
                 }
             }
+            Some("horizontal_scale_increase") => {
+                ev.prevent_default();
+                // Increase horizontal scale at center of canvas
+                if let Some((width, _)) = canvas_dimensions.get_untracked() {
+                    let center_x = width / 2.0;
+                    apply_horizontal_zoom(1.1, center_x, &viewport_for_zoom);
+                }
+            }
+            Some("horizontal_scale_decrease") => {
+                ev.prevent_default();
+                // Decrease horizontal scale at center of canvas
+                if let Some((width, _)) = canvas_dimensions.get_untracked() {
+                    let center_x = width / 2.0;
+                    apply_horizontal_zoom(0.9, center_x, &viewport_for_zoom);
+                }
+            }
             Some("reset_view") => {
                 ev.prevent_default();
                 // Reset viewport to default zoom and pan
