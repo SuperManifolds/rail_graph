@@ -393,17 +393,36 @@ impl GraphView {
                     }
                 }
 
-                // Filter to only visible nodes, keeping original times
+                // Filter to only visible nodes, keeping track of which original indices are kept
+                let visible_station_indices: std::collections::HashSet<usize> = journey.station_times.iter()
+                    .enumerate()
+                    .filter(|(_, (node_idx, _, _))| visible_stations.contains(node_idx))
+                    .map(|(idx, _)| idx)
+                    .collect();
+
                 let filtered_times: Vec<_> = journey.station_times.iter()
-                    .filter(|(node_idx, _, _)| visible_stations.contains(node_idx))
-                    .copied()
+                    .enumerate()
+                    .filter(|(idx, _)| visible_station_indices.contains(idx))
+                    .map(|(_, station)| *station)
                     .collect();
 
                 if filtered_times.is_empty() {
                     None
                 } else {
+                    // Filter segments: keep segment i only if both station i and station i+1 are visible
+                    // (segment i connects station i to station i+1)
+                    let filtered_segments: Vec<_> = journey.segments.iter()
+                        .enumerate()
+                        .filter(|(i, _)| {
+                            visible_station_indices.contains(i) &&
+                            visible_station_indices.contains(&(i + 1))
+                        })
+                        .map(|(_, seg)| seg.clone())
+                        .collect();
+
                     let mut filtered_journey = journey.clone();
                     filtered_journey.station_times = filtered_times;
+                    filtered_journey.segments = filtered_segments;
                     // Preserve original route start/end nodes so we know true endpoints
                     filtered_journey.route_start_node = journey.route_start_node;
                     filtered_journey.route_end_node = journey.route_end_node;
