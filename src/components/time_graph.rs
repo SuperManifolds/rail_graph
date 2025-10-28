@@ -184,10 +184,22 @@ pub fn TimeGraph(
     // Filter journeys for this view
     let (filtered_journeys, set_filtered_journeys) = create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
 
+    let view_for_journeys = view.clone();
     create_effect(move |_| {
         let all_journeys = train_journeys.get();
-        // Don't filter journeys for views - the edge-based matching handles partial visibility
-        set_filtered_journeys.set(all_journeys);
+        if let Some(ref graph_view) = view_for_journeys {
+            // Filter journeys to only those with visible stations in this view
+            let current_graph = graph.get();
+            let all_journeys_vec: Vec<TrainJourney> = all_journeys.values().cloned().collect();
+            let filtered_vec = graph_view.filter_journeys(&all_journeys_vec, &current_graph);
+            let filtered_map: std::collections::HashMap<_, _> = filtered_vec.into_iter()
+                .map(|j| (j.id, j))
+                .collect();
+            set_filtered_journeys.set(filtered_map);
+        } else {
+            // No view, show all journeys
+            set_filtered_journeys.set(all_journeys);
+        }
     });
 
     // Get nodes (stations and junctions) to display based on view
@@ -204,7 +216,9 @@ pub fn TimeGraph(
             let all_conflicts = raw_conflicts.get();
             if let Some(ref graph_view) = view {
                 let current_graph = graph.get();
-                graph_view.filter_conflicts(&all_conflicts, &current_graph)
+                let journeys_map = filtered_journeys.get();
+                let journeys_vec: Vec<TrainJourney> = journeys_map.values().cloned().collect();
+                graph_view.filter_conflicts(&all_conflicts, &current_graph, &journeys_vec)
             } else {
                 all_conflicts
             }
