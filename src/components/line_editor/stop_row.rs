@@ -7,8 +7,26 @@ use leptos::{
 };
 use std::rc::Rc;
 
-fn segment_total_seconds(seg: &RouteSegment) -> i64 {
-    (seg.duration.unwrap_or(Duration::zero()) + seg.wait_time).num_seconds()
+fn calculate_cumulative_seconds(
+    display_durations: &[Option<Duration>],
+    route: &[RouteSegment],
+    index: usize,
+) -> i64 {
+    if index == 0 {
+        return 0;
+    }
+
+    (0..index)
+        .map(|i| {
+            let duration = display_durations
+                .get(i)
+                .copied()
+                .flatten()
+                .unwrap_or(Duration::zero());
+            let wait_time = route.get(i).map_or(Duration::zero(), |s| s.wait_time);
+            (duration + wait_time).num_seconds()
+        })
+        .sum()
 }
 
 fn delete_stop(
@@ -130,13 +148,19 @@ pub fn StopRow(
                     None
                 };
 
-                let cumulative_seconds: i64 = if index == 0 {
-                    0
+                // Get display durations - uses proper inheritance for synced return routes
+                let display_durations = if matches!(route_direction, RouteDirection::Return) && l.sync_routes {
+                    l.get_return_display_durations()
                 } else {
-                    route.iter().take(index).map(segment_total_seconds).sum()
+                    route.iter().map(|s| s.duration).collect()
                 };
 
-                (segment, prev_segment, cumulative_seconds, route.len(), first_stop_wait)
+                let display_duration = display_durations.get(index).copied().flatten();
+
+                // Calculate cumulative time using display durations
+                let cumulative_seconds = calculate_cumulative_seconds(&display_durations, route, index);
+
+                (segment, prev_segment, cumulative_seconds, route.len(), first_stop_wait, l.sync_routes, display_duration)
             })
         })
     });
@@ -147,8 +171,8 @@ pub fn StopRow(
             <span class="station-name">{name.clone()}</span>
             {move || {
                 route_data.with(|data| {
-                    data.as_ref().map(|(segment, prev_segment, cumulative_seconds, route_len, first_stop_wait)| {
-                        let segment_duration = segment.as_ref().and_then(|s| s.duration);
+                    data.as_ref().map(|(segment, prev_segment, cumulative_seconds, route_len, first_stop_wait, sync_routes, display_duration)| {
+                        let segment_duration = *display_duration;
                         let wait_duration = if is_first {
                             *first_stop_wait
                         } else {
@@ -189,6 +213,7 @@ pub fn StopRow(
                                     route_direction=route_direction
                                     edited_line=edited_line
                                     on_save=on_save.clone()
+                                    sync_routes=*sync_routes
                                 />
                                 <WaitTimeColumn
                                     index=index

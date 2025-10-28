@@ -105,6 +105,16 @@ pub fn parse_time_hms(s: &str) -> Result<NaiveTime, chrono::ParseError> {
     NaiveTime::parse_from_str(s, "%H:%M:%S")
 }
 
+/// Format a duration as HH:MM:SS
+#[must_use]
+pub fn format_duration_hms(duration: chrono::Duration) -> String {
+    let secs = duration.num_seconds();
+    let hours = secs / 3600;
+    let minutes = (secs % 3600) / 60;
+    let seconds = secs % 60;
+    format!("{hours:02}:{minutes:02}:{seconds:02}")
+}
+
 /// Format an RFC3339 timestamp string to local time using the user's locale
 ///
 /// Uses Intl.DateTimeFormat with the user's locale for proper localized formatting.

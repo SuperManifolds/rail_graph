@@ -529,9 +529,48 @@ impl Line {
         changed
     }
 
+    /// Get the effective display durations for return route when sync is enabled
+    /// Returns the durations that will actually be used during journey generation,
+    /// mirroring the forward route's inheritance pattern
+    #[must_use]
+    pub fn get_return_display_durations(&self) -> Vec<Option<chrono::Duration>> {
+        if !self.sync_routes || self.return_route.is_empty() {
+            return self.return_route.iter().map(|seg| seg.duration).collect();
+        }
+
+        let mut return_durations = vec![None; self.return_route.len()];
+
+        // Walk forward route to find segments with durations and their spans
+        let mut i = 0;
+        while i < self.forward_route.len() {
+            if let Some(duration) = self.forward_route[i].duration {
+                // Count how many segments this duration covers in forward route
+                let mut span_len = 1;
+                let mut j = i + 1;
+                while j < self.forward_route.len() && self.forward_route[j].duration.is_none() {
+                    span_len += 1;
+                    j += 1;
+                }
+
+                // Mirror this span to return route
+                let return_start = self.return_route.len().saturating_sub(i + span_len);
+                if return_start < return_durations.len() {
+                    return_durations[return_start] = Some(duration);
+                }
+
+                i += span_len;
+            } else {
+                i += 1;
+            }
+        }
+
+        return_durations
+    }
+
     /// Sync return route from forward route if `sync_routes` is enabled
-    /// Preserves user-configured wait times, track indices, and platform assignments
-    /// from existing return segments while syncing the route structure and durations
+    /// Preserves user-configured track indices and platform assignments
+    /// from existing return segments while syncing the route structure and wait times.
+    /// Clears all return route durations - they will be calculated from forward route during journey generation
     pub fn apply_route_sync_if_enabled(&mut self) {
         use std::collections::HashMap;
 
@@ -566,24 +605,24 @@ impl Line {
             // If we have existing settings for this edge in return route, preserve tracks/platforms
             if let Some((track_index, origin_platform, destination_platform)) =
                 existing_settings.get(&forward_seg.edge_index) {
-                // Preserve user-configured tracks and platforms, but sync wait time and duration from forward
+                // Preserve user-configured tracks and platforms, sync wait time, clear duration
                 new_return_route.push(RouteSegment {
                     edge_index: forward_seg.edge_index,
                     track_index: *track_index,
                     origin_platform: *origin_platform,
                     destination_platform: *destination_platform,
-                    duration: forward_seg.duration,
+                    duration: None,
                     wait_time,
                 });
             } else {
                 // This is a new edge not in the return route, use defaults from forward route
-                // but swap platforms for the reverse direction
+                // but swap platforms for the reverse direction and clear duration
                 new_return_route.push(RouteSegment {
                     edge_index: forward_seg.edge_index,
                     track_index: forward_seg.track_index,
                     origin_platform: forward_seg.destination_platform,
                     destination_platform: forward_seg.origin_platform,
-                    duration: forward_seg.duration,
+                    duration: None,
                     wait_time,
                 });
             }

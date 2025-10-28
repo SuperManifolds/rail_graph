@@ -1,6 +1,7 @@
 use crate::components::{duration_input::OptionalDurationInput, time_input::TimeInput};
 use crate::models::{Line, RouteDirection};
 use crate::constants::BASE_MIDNIGHT;
+use crate::time::format_duration_hms;
 use leptos::{component, view, ReadSignal, IntoView, Signal, SignalGetUntracked};
 use chrono::Duration;
 use std::rc::Rc;
@@ -96,43 +97,73 @@ pub fn TimeColumn(
     route_direction: RouteDirection,
     edited_line: ReadSignal<Option<Line>>,
     on_save: Rc<dyn Fn(Line)>,
+    sync_routes: bool,
 ) -> impl IntoView {
+    // Disable return route time inputs when sync is enabled (times calculated from forward route)
+    let is_disabled = matches!(route_direction, RouteDirection::Return) && sync_routes;
+
     match time_mode {
         TimeDisplayMode::Difference => {
             let preview_text = format_cumulative_time(cumulative_seconds);
 
-            view! {
-                <div class="time-input-with-preview">
-                    <OptionalDurationInput
-                        duration=Signal::derive(move || segment_duration)
-                        on_change={
-                            let on_save = on_save.clone();
-                            move |new_duration| {
-                                update_segment_duration(edited_line, route_direction, index, new_duration, &on_save);
+            if is_disabled {
+                // Show read-only display when sync is enabled for return route
+                let display_text = segment_duration
+                    .map_or_else(|| "—".to_string(), format_duration_hms);
+
+                view! {
+                    <div class="time-input-with-preview">
+                        <span class="travel-time disabled" title="Time calculated from forward route">{display_text}</span>
+                        <span class="cumulative-preview">{preview_text}</span>
+                    </div>
+                }.into_view()
+            } else {
+                view! {
+                    <div class="time-input-with-preview">
+                        <OptionalDurationInput
+                            duration=Signal::derive(move || segment_duration)
+                            on_change={
+                                let on_save = on_save.clone();
+                                move |new_duration| {
+                                    update_segment_duration(edited_line, route_direction, index, new_duration, &on_save);
+                                }
                             }
-                        }
-                    />
-                    <span class="cumulative-preview">{preview_text}</span>
-                </div>
-            }.into_view()
+                        />
+                        <span class="cumulative-preview">{preview_text}</span>
+                    </div>
+                }.into_view()
+            }
         }
         TimeDisplayMode::Absolute => {
             if index > 0 {
                 let cumulative_time = BASE_MIDNIGHT + Duration::seconds(cumulative_seconds);
-                view! {
-                    <TimeInput
-                        label=""
-                        value=Signal::derive(move || cumulative_time)
-                        default_time="00:00:00"
-                        on_change={
-                            let on_save = on_save.clone();
-                            Box::new(move |new_time| {
-                                let new_cumulative_seconds = (new_time - BASE_MIDNIGHT).num_seconds();
-                                update_absolute_time(edited_line, route_direction, index, new_cumulative_seconds, &on_save);
-                            })
-                        }
-                    />
-                }.into_view()
+                if is_disabled {
+                    // Show read-only display for absolute time when sync is enabled
+                    let display_text = {
+                        let hours = cumulative_seconds / 3600;
+                        let minutes = (cumulative_seconds % 3600) / 60;
+                        let seconds = cumulative_seconds % 60;
+                        format!("{hours:02}:{minutes:02}:{seconds:02}")
+                    };
+                    view! {
+                        <span class="travel-time disabled" title="Time calculated from forward route">{display_text}</span>
+                    }.into_view()
+                } else {
+                    view! {
+                        <TimeInput
+                            label=""
+                            value=Signal::derive(move || cumulative_time)
+                            default_time="00:00:00"
+                            on_change={
+                                let on_save = on_save.clone();
+                                Box::new(move |new_time| {
+                                    let new_cumulative_seconds = (new_time - BASE_MIDNIGHT).num_seconds();
+                                    update_absolute_time(edited_line, route_direction, index, new_cumulative_seconds, &on_save);
+                                })
+                            }
+                        />
+                    }.into_view()
+                }
             } else {
                 view! { <span class="travel-time">"00:00:00"</span> }.into_view()
             }
