@@ -347,18 +347,12 @@ pub fn check_journey_hover(
     nodes: &[(NodeIndex, Node)],
     station_y_positions: &[f64],
     view_edge_path: &[usize],
-    canvas_width: f64,
-    canvas_height: f64,
+    dims: &super::types::GraphDimensions,
     viewport: &super::types::ViewportState,
 ) -> Option<uuid::Uuid> {
-    use super::canvas::{LEFT_MARGIN, TOP_MARGIN, RIGHT_PADDING, BOTTOM_PADDING};
-
-    let graph_width = canvas_width - LEFT_MARGIN - RIGHT_PADDING;
-    let graph_height = canvas_height - TOP_MARGIN - BOTTOM_PADDING;
-
     // Check if mouse is within the graph area
-    if mouse_x < LEFT_MARGIN || mouse_x > LEFT_MARGIN + graph_width
-        || mouse_y < TOP_MARGIN || mouse_y > TOP_MARGIN + graph_height {
+    if mouse_x < dims.left_margin || mouse_x > dims.left_margin + dims.graph_width
+        || mouse_y < dims.top_margin || mouse_y > dims.top_margin + dims.graph_height {
         return None;
     }
 
@@ -370,7 +364,7 @@ pub fn check_journey_hover(
                 mouse_y,
                 journey,
                 nodes,
-                graph_width,
+                dims,
                 station_y_positions,
                 view_edge_path,
                 viewport,
@@ -384,12 +378,11 @@ fn check_single_journey_hover(
     mouse_y: f64,
     journey: &TrainJourney,
     nodes: &[(NodeIndex, Node)],
-    graph_width: f64,
+    dims: &super::types::GraphDimensions,
     station_y_positions: &[f64],
     view_edge_path: &[usize],
     viewport: &super::types::ViewportState,
 ) -> Option<uuid::Uuid> {
-    use super::canvas::{LEFT_MARGIN, TOP_MARGIN};
     use crate::time::time_to_fraction;
 
     // Match journey stations to view positions using edge-based matching
@@ -402,7 +395,7 @@ fn check_single_journey_hover(
 
     let mut prev_departure_point: Option<(f64, f64)> = None;
 
-    let hour_width = graph_width / TOTAL_HOURS;
+    let hour_width = dims.graph_width / TOTAL_HOURS;
     let mut first_point = true;
     let mut prev_x = 0.0;
 
@@ -416,19 +409,19 @@ fn check_single_journey_hover(
         let mut departure_x_zoomed = departure_fraction * hour_width;
 
         // Handle midnight wrap (same logic as drawing)
-        if !first_point && arrival_x_zoomed < prev_x - graph_width * MIDNIGHT_WRAP_THRESHOLD {
-            arrival_x_zoomed += graph_width;
-            departure_x_zoomed += graph_width;
+        if !first_point && arrival_x_zoomed < prev_x - dims.graph_width * MIDNIGHT_WRAP_THRESHOLD {
+            arrival_x_zoomed += dims.graph_width;
+            departure_x_zoomed += dims.graph_width;
         }
 
         // Only process hover detection for visible stations
         if let Some(idx) = station_idx {
-            let y_in_zoomed = station_y_positions[idx] - TOP_MARGIN;
+            let y_in_zoomed = station_y_positions[idx] - dims.top_margin;
 
             // Transform to screen coordinates
-            let arrival_screen_x = LEFT_MARGIN + (arrival_x_zoomed * viewport.zoom_level * viewport.zoom_level_x) + viewport.pan_offset_x;
-            let departure_screen_x = LEFT_MARGIN + (departure_x_zoomed * viewport.zoom_level * viewport.zoom_level_x) + viewport.pan_offset_x;
-            let screen_y = TOP_MARGIN + (y_in_zoomed * viewport.zoom_level) + viewport.pan_offset_y;
+            let arrival_screen_x = dims.left_margin + (arrival_x_zoomed * viewport.zoom_level * viewport.zoom_level_x) + viewport.pan_offset_x;
+            let departure_screen_x = dims.left_margin + (departure_x_zoomed * viewport.zoom_level * viewport.zoom_level_x) + viewport.pan_offset_x;
+            let screen_y = dims.top_margin + (y_in_zoomed * viewport.zoom_level) + viewport.pan_offset_y;
 
             // Check diagonal segment from previous departure to this arrival
             if let Some((prev_dep_x, prev_dep_y)) = prev_departure_point {
