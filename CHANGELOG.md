@@ -4,6 +4,7 @@
 - Station label section width is now resizable by dragging the edge
 - Line controls sidebar width is now resizable by dragging the edge
 - Return route travel times now display calculated values from forward route when sync is enabled
+- Add Station dialog now supports canvas-based placement - click on canvas while dialog is open to set station position (with preview shown on canvas), click on empty space to place at that position (snapped to grid), or click on a track segment to insert station in the middle and automatically split the segment and update affected lines. Right-click preview station to clear position
 
 ## Bug Fixes
 - Fixed sync forward and return routes feature to correctly calculate return journey times from forward route with proper inheritance of gap segments

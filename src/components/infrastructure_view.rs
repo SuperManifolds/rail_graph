@@ -86,6 +86,36 @@ fn screen_to_world(screen_x: f64, screen_y: f64, zoom: f64, pan_x: f64, pan_y: f
     ((screen_x - pan_x) / zoom, (screen_y - pan_y) / zoom)
 }
 
+/// Check if right-clicking on preview station and clear if so
+fn handle_preview_station_right_click(
+    world_x: f64,
+    world_y: f64,
+    show_add_station: ReadSignal<bool>,
+    station_dialog_clicked_position: ReadSignal<Option<(f64, f64)>>,
+    set_station_dialog_clicked_position: WriteSignal<Option<(f64, f64)>>,
+    set_station_dialog_clicked_segment: WriteSignal<Option<EdgeIndex>>,
+) -> bool {
+    const PREVIEW_CLICK_RADIUS: f64 = 15.0;
+
+    if !show_add_station.get() {
+        return false;
+    }
+
+    if let Some((preview_x, preview_y)) = station_dialog_clicked_position.get() {
+        let dx = world_x - preview_x;
+        let dy = world_y - preview_y;
+        let distance = (dx * dx + dy * dy).sqrt();
+
+        if distance <= PREVIEW_CLICK_RADIUS {
+            set_station_dialog_clicked_position.set(None);
+            set_station_dialog_clicked_segment.set(None);
+            return true;
+        }
+    }
+
+    false
+}
+
 /// Apply autolayout snapping after dragging a station
 fn apply_drag_snap(
     graph: ReadSignal<RailwayGraph>,
@@ -186,6 +216,62 @@ fn should_reorient_branch(graph: &RailwayGraph, station_idx: NodeIndex, target_x
 }
 
 #[allow(clippy::too_many_arguments)]
+/// Split a track segment by inserting a node in the middle
+/// Returns (`edge1_index`, `edge2_index`) where edge1 is `from_node` -> `new_node` and edge2 is `new_node` -> `to_node`
+fn split_segment_and_insert_node(
+    clicked_edge: EdgeIndex,
+    new_node_idx: NodeIndex,
+    updated_graph: &mut RailwayGraph,
+    current_lines: &mut [Line],
+    should_set_routing_rules: bool,
+) -> (EdgeIndex, EdgeIndex) {
+    use crate::models::Junctions;
+
+    // Get edge details before we modify the graph
+    let Some(edge_ref) = updated_graph.graph.edge_references().find(|e| e.id() == clicked_edge) else {
+        panic!("Clicked edge not found in graph");
+    };
+    let from_node = edge_ref.source();
+    let to_node = edge_ref.target();
+    let tracks = edge_ref.weight().tracks.clone();
+    let distance = edge_ref.weight().distance;
+    let old_edge_index = clicked_edge.index();
+    let track_count = tracks.len();
+
+    // Remove the old edge
+    updated_graph.graph.remove_edge(clicked_edge);
+
+    // Create two new edges: from_node -> new_node and new_node -> to_node
+    // If distance is set, split it in half
+    let edge1 = updated_graph.add_track(from_node, new_node_idx, tracks.clone());
+    let edge2 = updated_graph.add_track(new_node_idx, to_node, tracks);
+
+    if let Some(dist) = distance {
+        if let Some(edge1_weight) = updated_graph.graph.edge_weight_mut(edge1) {
+            edge1_weight.distance = Some(dist / 2.0);
+        }
+        if let Some(edge2_weight) = updated_graph.graph.edge_weight_mut(edge2) {
+            edge2_weight.distance = Some(dist / 2.0);
+        }
+    }
+
+    // Set default routing rules to allow through traffic (only for junctions)
+    if should_set_routing_rules {
+        if let Some(j) = updated_graph.get_junction_mut(new_node_idx) {
+            j.set_routing_rule(edge1, edge2, true);
+            j.set_routing_rule(edge2, edge1, true);
+        }
+    }
+
+    // Update all lines that used the old edge to now use the two new edges
+    for line in current_lines {
+        line.replace_split_edge(old_edge_index, edge1.index(), edge2.index(), track_count);
+    }
+
+    (edge1, edge2)
+}
+
+#[allow(clippy::too_many_arguments)]
 fn handle_adding_junction(
     world_x: f64,
     world_y: f64,
@@ -197,22 +283,12 @@ fn handle_adding_junction(
     set_edit_mode: WriteSignal<EditMode>,
     _auto_layout_enabled: ReadSignal<bool>,
 ) {
-    use crate::models::{Junction, Junctions, Tracks};
+    use crate::models::{Junction, Junctions};
 
     let current_graph = graph.get();
     let Some(clicked_edge) = hit_detection::find_track_at_position(&current_graph, world_x, world_y) else {
         return;
     };
-
-    // Get edge details before we modify the graph
-    let Some(edge_ref) = current_graph.graph.edge_references().find(|e| e.id() == clicked_edge) else {
-        return;
-    };
-    let from_node = edge_ref.source();
-    let to_node = edge_ref.target();
-    let tracks = edge_ref.weight().tracks.clone();
-    let old_edge_index = clicked_edge.index();
-    let track_count = tracks.len();
 
     let mut updated_graph = current_graph;
     let mut current_lines = lines.get();
@@ -225,23 +301,8 @@ fn handle_adding_junction(
     };
     let junction_idx = updated_graph.add_junction(junction);
 
-    // Remove the old edge
-    updated_graph.graph.remove_edge(clicked_edge);
-
-    // Create two new edges: from_node -> junction and junction -> to_node
-    let edge1 = updated_graph.add_track(from_node, junction_idx, tracks.clone());
-    let edge2 = updated_graph.add_track(junction_idx, to_node, tracks);
-
-    // Set default routing rules to allow through traffic
-    if let Some(j) = updated_graph.get_junction_mut(junction_idx) {
-        j.set_routing_rule(edge1, edge2, true);
-        j.set_routing_rule(edge2, edge1, true);
-    }
-
-    // Update all lines that used the old edge to now use the two new edges
-    for line in &mut current_lines {
-        line.replace_split_edge(old_edge_index, edge1.index(), edge2.index(), track_count);
-    }
+    // Split the segment and insert the junction
+    split_segment_and_insert_node(clicked_edge, junction_idx, &mut updated_graph, &mut current_lines, true);
 
     set_graph.set(updated_graph);
     set_lines.set(current_lines);
@@ -253,6 +314,7 @@ fn handle_adding_junction(
     set_edit_mode.set(EditMode::None);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn add_station_handler(
     name: String,
     passing_loop: bool,
@@ -260,10 +322,16 @@ fn add_station_handler(
     platforms: Vec<crate::models::Platform>,
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<Line>>,
+    set_lines: WriteSignal<Vec<Line>>,
     set_show_add_station: WriteSignal<bool>,
     set_last_added_station: WriteSignal<Option<NodeIndex>>,
+    clicked_position: ReadSignal<Option<(f64, f64)>>,
+    clicked_segment: ReadSignal<Option<EdgeIndex>>,
+    set_clicked_position: WriteSignal<Option<(f64, f64)>>,
+    set_clicked_segment: WriteSignal<Option<EdgeIndex>>,
 ) {
-    use crate::models::{Track, TrackDirection};
+    use crate::models::{Track, TrackDirection, Stations};
 
     let mut current_graph = graph.get();
     let node_idx = current_graph.add_or_get_station(name.clone());
@@ -275,7 +343,34 @@ fn add_station_handler(
         }
     }
 
-    if let Some(connect_idx) = connect_to {
+    // Check if we're placing on a track segment
+    if let Some(segment_edge) = clicked_segment.get_untracked() {
+        let mut current_lines = lines.get();
+
+        // Get endpoints for positioning the station at midpoint
+        if let Some((from_node, to_node)) = current_graph.get_track_endpoints(segment_edge) {
+            let from_pos = current_graph.get_station_position(from_node).unwrap_or((0.0, 0.0));
+            let to_pos = current_graph.get_station_position(to_node).unwrap_or((0.0, 0.0));
+            let midpoint = ((from_pos.0 + to_pos.0) / 2.0, (from_pos.1 + to_pos.1) / 2.0);
+            current_graph.set_station_position(node_idx, midpoint);
+        }
+
+        // Split the segment and insert the station
+        split_segment_and_insert_node(segment_edge, node_idx, &mut current_graph, &mut current_lines, false);
+
+        set_lines.set(current_lines);
+    }
+    // Check if we have a clicked position (but not on a segment)
+    else if let Some((x, y)) = clicked_position.get_untracked() {
+        current_graph.set_station_position(node_idx, (x, y));
+
+        // Still honor the connect_to dropdown if selected
+        if let Some(connect_idx) = connect_to {
+            current_graph.add_track(connect_idx, node_idx, vec![Track { direction: TrackDirection::Bidirectional }]);
+        }
+    }
+    // Default behavior: use connect_to logic
+    else if let Some(connect_idx) = connect_to {
         if let Some(connect_pos) = current_graph.get_station_position(connect_idx) {
             current_graph.set_station_position(node_idx, (connect_pos.0 + 80.0, connect_pos.1 + 40.0));
         }
@@ -285,6 +380,10 @@ fn add_station_handler(
     set_graph.set(current_graph);
     set_last_added_station.set(Some(node_idx));
     set_show_add_station.set(false);
+
+    // Clear clicked position/segment
+    set_clicked_position.set(None);
+    set_clicked_segment.set(None);
 }
 
 fn edit_station_handler(
@@ -495,6 +594,10 @@ fn create_handler_callbacks(
     set_delete_station_name: WriteSignal<String>,
     set_show_delete_confirmation: WriteSignal<bool>,
     station_to_delete: ReadSignal<Option<NodeIndex>>,
+    clicked_position: ReadSignal<Option<(f64, f64)>>,
+    clicked_segment: ReadSignal<Option<EdgeIndex>>,
+    set_clicked_position: WriteSignal<Option<(f64, f64)>>,
+    set_clicked_segment: WriteSignal<Option<EdgeIndex>>,
 ) -> (
     Rc<dyn Fn(String, bool, Option<NodeIndex>, Vec<crate::models::Platform>)>,
     Rc<dyn Fn(NodeIndex, String, bool, Vec<crate::models::Platform>)>,
@@ -506,7 +609,7 @@ fn create_handler_callbacks(
     Rc<dyn Fn(NodeIndex)>,
 ) {
     let handle_add_station = Rc::new(move |name: String, passing_loop: bool, connect_to: Option<NodeIndex>, platforms: Vec<crate::models::Platform>| {
-        add_station_handler(name, passing_loop, connect_to, platforms, graph, set_graph, set_show_add_station, set_last_added_station);
+        add_station_handler(name, passing_loop, connect_to, platforms, graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, clicked_position, clicked_segment, set_clicked_position, set_clicked_segment);
     });
 
     let handle_edit_station = Rc::new(move |station_idx: NodeIndex, new_name: String, passing_loop: bool, platforms: Vec<crate::models::Platform>| {
@@ -657,6 +760,7 @@ fn setup_render_effect(
     is_zooming: ReadSignal<bool>,
     render_requested: ReadSignal<bool>,
     set_render_requested: WriteSignal<bool>,
+    station_dialog_clicked_position: ReadSignal<Option<(f64, f64)>>,
 ) {
     create_effect(move |_| {
         // Track all dependencies
@@ -668,6 +772,7 @@ fn setup_render_effect(
         let _ = selected_station.get();
         let _ = waypoints.get();
         let _ = preview_path.get();
+        let _ = station_dialog_clicked_position.get();
 
         // Throttle renders using requestAnimationFrame
         if !render_requested.get_untracked() {
@@ -687,6 +792,7 @@ fn setup_render_effect(
                 let current_waypoints = waypoints.get_untracked();
                 let current_preview = preview_path.get_untracked();
                 let zooming = is_zooming.get_untracked();
+                let preview_station_pos = station_dialog_clicked_position.get_untracked();
 
                 // Update topology cache if needed
                 update_cache_if_needed(topology_cache, &current_graph);
@@ -729,7 +835,7 @@ fn setup_render_effect(
                 // Pass cache to renderer (mutable to update label cache)
                 topology_cache.with_value(|cache| {
                     let mut cache_mut = cache.borrow_mut();
-                    renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming);
+                    renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming, preview_station_pos);
                 });
             });
 
@@ -764,6 +870,10 @@ fn create_event_handlers(
     viewport: &canvas_viewport::ViewportSignals,
     topology_cache: StoredValue<RefCell<TopologyCache>>,
     set_is_zooming: WriteSignal<bool>,
+    show_add_station: ReadSignal<bool>,
+    station_dialog_clicked_position: ReadSignal<Option<(f64, f64)>>,
+    set_station_dialog_clicked_position: WriteSignal<Option<(f64, f64)>>,
+    set_station_dialog_clicked_segment: WriteSignal<Option<EdgeIndex>>,
 ) -> (impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(WheelEvent)) {
     let zoom_level = viewport.zoom_level;
     let pan_offset_x = viewport.pan_offset_x;
@@ -786,6 +896,18 @@ fn create_event_handlers(
 
             // ev.detail() returns click count: 1 for single, 2 for double, 3 for triple
             let is_single_click = ev.detail() == 1;
+
+            // Handle clicks while Add Station dialog is open
+            if show_add_station.get() && is_single_click {
+                let snapped_position = auto_layout::snap_to_grid(world_x, world_y);
+                set_station_dialog_clicked_position.set(Some(snapped_position));
+
+                // Check if clicking on a track segment
+                let current_graph = graph.get();
+                let clicked_segment = hit_detection::find_track_at_position(&current_graph, world_x, world_y);
+                set_station_dialog_clicked_segment.set(clicked_segment);
+                return;
+            }
 
             match current_mode {
                 EditMode::AddingTrack if is_single_click => {
@@ -942,6 +1064,11 @@ fn create_event_handlers(
             let pan_y = pan_offset_y.get();
             let (world_x, world_y) = screen_to_world(screen_x, screen_y, zoom, pan_x, pan_y);
 
+            // Check if right-clicking on preview station - clear position if so
+            if handle_preview_station_right_click(world_x, world_y, show_add_station, station_dialog_clicked_position, set_station_dialog_clicked_position, set_station_dialog_clicked_segment) {
+                return;
+            }
+
             let current_graph = graph.get();
 
             // Check for label click first, then node click
@@ -1021,6 +1148,8 @@ pub fn InfrastructureView(
     let (is_over_station, set_is_over_station) = create_signal(false);
     let (is_over_track, set_is_over_track) = create_signal(false);
     let (dragging_station, set_dragging_station) = create_signal(None::<NodeIndex>);
+    let (station_dialog_clicked_position, set_station_dialog_clicked_position) = create_signal(None::<(f64, f64)>);
+    let (station_dialog_clicked_segment, set_station_dialog_clicked_segment) = create_signal(None::<EdgeIndex>);
 
     // Performance cache for topology-dependent data
     let topology_cache: StoredValue<RefCell<TopologyCache>> = store_value(RefCell::new(TopologyCache::default()));
@@ -1152,16 +1281,17 @@ pub fn InfrastructureView(
     };
 
     let (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
-        create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, station_to_delete);
+        create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment);
 
-    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested);
+    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position);
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_context_menu, handle_wheel) = create_event_handlers(
         canvas_ref, edit_mode, set_edit_mode, selected_station, set_selected_station, view_creation_callbacks.on_add_waypoint.clone(), graph, set_graph,
         lines, set_lines,
         editing_station, set_editing_station, set_editing_junction, set_editing_track,
         dragging_station, set_dragging_station, set_is_over_station, set_is_over_track,
-        auto_layout_enabled, space_pressed, &viewport, topology_cache, set_is_zooming
+        auto_layout_enabled, space_pressed, &viewport, topology_cache, set_is_zooming,
+        show_add_station, station_dialog_clicked_position, set_station_dialog_clicked_position, set_station_dialog_clicked_segment
     );
 
     let handle_mouse_leave = move |_: MouseEvent| {
@@ -1198,10 +1328,15 @@ pub fn InfrastructureView(
 
             <AddStation
                 is_open=show_add_station
-                on_close=Rc::new(move || set_show_add_station.set(false))
+                on_close=Rc::new(move || {
+                    set_show_add_station.set(false);
+                    set_station_dialog_clicked_position.set(None);
+                    set_station_dialog_clicked_segment.set(None);
+                })
                 on_add=handle_add_station
                 graph=graph
                 last_added_station=last_added_station
+                clicked_segment=station_dialog_clicked_segment
             />
 
             <EditStation

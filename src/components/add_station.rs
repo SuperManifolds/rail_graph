@@ -3,6 +3,7 @@ use crate::components::platform_editor::PlatformEditor;
 use crate::models::{RailwayGraph, Platform};
 use leptos::{component, create_effect, create_signal, event_target_checked, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, view};
 use petgraph::stable_graph::NodeIndex;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::rc::Rc;
 
 type AddStationCallback = Rc<dyn Fn(String, bool, Option<NodeIndex>, Vec<Platform>)>;
@@ -14,6 +15,7 @@ pub fn AddStation(
     on_add: AddStationCallback,
     graph: ReadSignal<RailwayGraph>,
     last_added_station: ReadSignal<Option<NodeIndex>>,
+    clicked_segment: ReadSignal<Option<petgraph::stable_graph::EdgeIndex>>,
 ) -> impl IntoView {
     let (station_name, set_station_name) = create_signal(String::new());
     let (is_passing_loop, set_is_passing_loop) = create_signal(false);
@@ -77,9 +79,33 @@ pub fn AddStation(
                     set_platforms=set_platforms
                     is_passing_loop=is_passing_loop
                 />
-                <div class="form-field">
-                    <label>"Connect to (optional)"</label>
-                    <select
+
+                {move || {
+                    if let Some(edge_idx) = clicked_segment.get() {
+                        let current_graph = graph.get();
+                        if let Some(edge_ref) = current_graph.graph.edge_references().find(|e| e.id() == edge_idx) {
+                            let from_node = edge_ref.source();
+                            let to_node = edge_ref.target();
+                            let from_name = current_graph.graph.node_weight(from_node)
+                                .map_or_else(|| "Unknown".to_string(), crate::models::Node::display_name);
+                            let to_name = current_graph.graph.node_weight(to_node)
+                                .map_or_else(|| "Unknown".to_string(), crate::models::Node::display_name);
+
+                            return view! {
+                                <div class="form-field">
+                                    <label>"Connection"</label>
+                                    <div class="connection-info">
+                                        {format!("Connecting to {from_name} and {to_name}")}
+                                    </div>
+                                </div>
+                            }.into_view();
+                        }
+                    }
+
+                    view! {
+                        <div class="form-field">
+                            <label>"Connect to (optional)"</label>
+                            <select
                         prop:value=move || {
                             connect_to_station.get().and_then(|selected_idx| {
                                 let current_graph = graph.get();
@@ -115,7 +141,9 @@ pub fn AddStation(
                             }).collect::<Vec<_>>()
                         }}
                     </select>
-                </div>
+                        </div>
+                    }.into_view()
+                }}
                 <div class="form-buttons">
                     <button on:click=move |_| on_close()>"Cancel"</button>
                     <button class="primary" on:click=handle_add>"Add"</button>

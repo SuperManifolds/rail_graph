@@ -125,6 +125,7 @@ pub fn draw_infrastructure(
     highlighted_edges: &HashSet<EdgeIndex>,
     cache: &mut TopologyCache,
     is_zooming: bool,
+    preview_station_position: Option<(f64, f64)>,
 ) {
     // Clear canvas
     ctx.set_fill_style_str(CANVAS_BACKGROUND_COLOR);
@@ -151,6 +152,26 @@ pub fn draw_infrastructure(
 
     // Draw stations and junctions on top (with label cache)
     station_renderer::draw_stations_with_cache(ctx, graph, zoom, selected_stations, highlighted_edges, cache, is_zooming);
+
+    // Draw preview station if position is set
+    if let Some((x, y)) = preview_station_position {
+        const PREVIEW_NODE_RADIUS: f64 = 8.0;
+        const PREVIEW_STROKE_COLOR: &str = "#4a9eff"; // Same blue as stations
+        const PREVIEW_FILL_COLOR: &str = "#2a2a2a"; // Same as NODE_FILL_COLOR
+        const PREVIEW_ALPHA: f64 = 0.5;
+
+        ctx.save();
+        ctx.set_global_alpha(PREVIEW_ALPHA);
+        ctx.set_fill_style_str(PREVIEW_FILL_COLOR);
+        ctx.set_stroke_style_str(PREVIEW_STROKE_COLOR);
+        ctx.set_line_width(2.0 / zoom);
+        ctx.begin_path();
+        let _ = ctx.arc(x, y, PREVIEW_NODE_RADIUS, 0.0, 2.0 * std::f64::consts::PI);
+        ctx.fill();
+        ctx.stroke();
+        ctx.set_global_alpha(1.0);
+        ctx.restore();
+    }
 
     // Restore context
     ctx.restore();
