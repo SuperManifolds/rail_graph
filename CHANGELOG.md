@@ -2,6 +2,7 @@
 
 ## Bug Fixes
 - Fixed false head-on conflicts on double-track railways caused by incorrect track assignment when the first edge of a route was traversed backward - track assignment now correctly determines edge traversal direction by examining connectivity between consecutive segments instead of assuming routes always start at the source of their first edge
+- Fixed train journey rendering bug where final segments were not displayed on the graph when view filtering removed stations outside the visible path - view filtering now correctly filters both station_times and segments arrays to maintain data consistency
 
 # v0.1.9 - 2025-10-28
 

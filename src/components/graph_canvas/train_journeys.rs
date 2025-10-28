@@ -166,7 +166,7 @@ pub fn match_journey_stations_to_view_by_edges(
     result
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss, clippy::too_many_lines, clippy::cast_possible_truncation)]
 pub fn draw_train_journeys(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -213,6 +213,16 @@ pub fn draw_train_journeys(
                 last_visible_point = None;
                 continue;
             };
+
+            // Bounds check with logging
+            if idx >= station_y_positions.len() {
+                web_sys::console::warn_3(
+                    &wasm_bindgen::JsValue::from_str("Station index out of bounds for train"),
+                    &wasm_bindgen::JsValue::from_str(&journey.train_number),
+                    &wasm_bindgen::JsValue::from_str(&format!("idx: {}, len: {}, station: {}", idx, station_y_positions.len(), i))
+                );
+                continue;
+            }
 
             // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
             let y = station_y_positions[idx] - super::canvas::TOP_MARGIN;
