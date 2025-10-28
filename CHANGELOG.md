@@ -3,6 +3,10 @@
 ## Improvements
 - Station label section width is now resizable by dragging the edge
 - Line controls sidebar width is now resizable by dragging the edge
+- Return route travel times now display calculated values from forward route when sync is enabled
+
+## Bug Fixes
+- Fixed sync forward and return routes feature to correctly calculate return journey times from forward route with proper inheritance of gap segments
 
 # v0.1.8 - 2025-10-27
 

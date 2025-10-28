@@ -108,6 +108,58 @@ impl TrainJourney {
         segments_to_cover
     }
 
+    fn count_segments_from_duration_list(durations: &[Option<Duration>], start_index: usize) -> Vec<usize> {
+        let mut segments_to_cover = vec![start_index];
+        let mut j = start_index + 1;
+        while j < durations.len() && durations[j].is_none() {
+            segments_to_cover.push(j);
+            j += 1;
+        }
+        segments_to_cover
+    }
+
+    /// Build return route duration map from forward route, mirroring inheritance pattern
+    fn build_synced_return_durations(
+        forward_route: &[crate::models::RouteSegment],
+        return_route_len: usize,
+    ) -> Vec<Option<Duration>> {
+        // If routes have mismatched lengths, fall back to empty durations
+        if forward_route.len() != return_route_len {
+            #[cfg(target_arch = "wasm32")]
+            web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&format!(
+                "⚠️  Forward route has {} segments but return route has {} - durations may not sync correctly",
+                forward_route.len(), return_route_len
+            )));
+            return vec![None; return_route_len];
+        }
+
+        let mut durations = vec![None; return_route_len];
+
+        // Walk forward route to find segments with durations and their spans
+        let mut i = 0;
+        while i < forward_route.len() {
+            if let Some(duration) = forward_route[i].duration {
+                // Count how many segments this duration covers in forward route
+                let forward_span = Self::count_segments_without_duration(forward_route, i);
+                let span_len = forward_span.len();
+
+                // Mirror this span to return route
+                // Forward segment i covering span_len segments maps to:
+                // Return segment starting at (len - i - span_len)
+                let return_start = return_route_len.saturating_sub(i + span_len);
+                if return_start < durations.len() {
+                    durations[return_start] = Some(duration);
+                }
+
+                i += span_len;
+            } else {
+                i += 1;
+            }
+        }
+
+        durations
+    }
+
     /// Process segments with duration inheritance and add station times/segments
     #[allow(clippy::too_many_arguments)]
     fn process_segments_with_duration(
@@ -673,11 +725,21 @@ impl TrainJourney {
                 station_times.push((node_idx, return_departure_time, return_departure_time + first_wait_time));
             }
 
+            // Build duration lookup from forward route if sync is enabled
+            // This mirrors the forward route's duration inheritance pattern in reverse
+            let return_durations: Vec<Option<Duration>> = if line.sync_routes {
+                Self::build_synced_return_durations(&line.forward_route, line.return_route.len())
+            } else {
+                // Use return route's own durations
+                line.return_route.iter().map(|seg| seg.duration).collect()
+            };
+
             // Walk the return route, handling duration inheritance
             let mut i = 0;
             while i < line.return_route.len() {
-                if let Some(duration) = line.return_route[i].duration {
-                    let segments_to_cover = Self::count_segments_without_duration(&line.return_route, i);
+                if let Some(duration) = return_durations.get(i).and_then(|d| *d) {
+                    // Count segments covered by this duration (including segments without duration that follow)
+                    let segments_to_cover = Self::count_segments_from_duration_list(&return_durations, i);
                     let next_index = segments_to_cover.last().copied().unwrap_or(i) + 1;
 
                     Self::process_segments_with_duration(
@@ -1195,5 +1257,322 @@ mod tests {
         let expected_departure_b = expected_arrival_b + Duration::seconds(30);
         assert_eq!(journey.station_times[2].1, expected_arrival_b);
         assert_eq!(journey.station_times[2].2, expected_departure_b);
+    }
+
+    #[test]
+    fn test_sync_routes_with_gaps() {
+        // Create a graph with 6 stations: A -> B -> C -> D -> E -> F
+        let mut graph = RailwayGraph::new();
+        let station_a = graph.add_or_get_station("Station A".to_string());
+        let station_b = graph.add_or_get_station("Station B".to_string());
+        let station_c = graph.add_or_get_station("Station C".to_string());
+        let station_d = graph.add_or_get_station("Station D".to_string());
+        let station_e = graph.add_or_get_station("Station E".to_string());
+        let station_f = graph.add_or_get_station("Station F".to_string());
+
+        graph.add_track(station_a, station_b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(station_b, station_c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(station_c, station_d, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(station_d, station_e, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(station_e, station_f, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let edge_ab = graph.graph.find_edge(station_a, station_b).expect("edge exists");
+        let edge_bc = graph.graph.find_edge(station_b, station_c).expect("edge exists");
+        let edge_cd = graph.graph.find_edge(station_c, station_d).expect("edge exists");
+        let edge_de = graph.graph.find_edge(station_d, station_e).expect("edge exists");
+        let edge_ef = graph.graph.find_edge(station_e, station_f).expect("edge exists");
+
+        // Create a line with gaps in travel times
+        // Forward: A->B (12 min covering A->B, B->C, C->D), D->E (None), E->F (8 min covering E->F)
+        let mut line = Line {
+            id: uuid::Uuid::new_v4(),
+            name: "Test Line with Gaps".to_string(),
+            color: TEST_COLOR.to_string(),
+            thickness: TEST_THICKNESS,
+            visible: true,
+            forward_route: vec![
+                RouteSegment {
+                    edge_index: edge_ab.index(),
+                    track_index: 0,
+                    origin_platform: 0,
+                    destination_platform: 0,
+                    duration: Some(Duration::minutes(12)), // Covers segments 0, 1, 2
+                    wait_time: Duration::seconds(30),
+                },
+                RouteSegment {
+                    edge_index: edge_bc.index(),
+                    track_index: 0,
+                    origin_platform: 0,
+                    destination_platform: 0,
+                    duration: None, // Gap
+                    wait_time: Duration::seconds(30),
+                },
+                RouteSegment {
+                    edge_index: edge_cd.index(),
+                    track_index: 0,
+                    origin_platform: 0,
+                    destination_platform: 0,
+                    duration: None, // Gap
+                    wait_time: Duration::seconds(30),
+                },
+                RouteSegment {
+                    edge_index: edge_de.index(),
+                    track_index: 0,
+                    origin_platform: 0,
+                    destination_platform: 0,
+                    duration: Some(Duration::minutes(6)), // Covers segments 3, 4
+                    wait_time: Duration::seconds(30),
+                },
+                RouteSegment {
+                    edge_index: edge_ef.index(),
+                    track_index: 0,
+                    origin_platform: 0,
+                    destination_platform: 0,
+                    duration: None, // Gap
+                    wait_time: Duration::seconds(30),
+                },
+            ],
+            return_route: vec![],
+            first_departure: BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"),
+            return_first_departure: BASE_DATE.and_hms_opt(9, 0, 0).expect("valid time"),
+            frequency: Duration::hours(2),
+            schedule_mode: ScheduleMode::Auto,
+            days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
+            manual_departures: vec![],
+            sync_routes: true,
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+            last_departure: BASE_DATE.and_hms_opt(10, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(11, 0, 0).expect("valid time"),
+            default_wait_time: Duration::seconds(30),
+            first_stop_wait_time: Duration::zero(),
+            return_first_stop_wait_time: Duration::zero(),
+            sort_index: None,
+        };
+
+        // Apply sync to create return route
+        line.apply_route_sync_if_enabled();
+
+        // Test the synced return durations helper function
+        let return_durations = TrainJourney::build_synced_return_durations(&line.forward_route, line.return_route.len());
+
+        println!("Forward route durations:");
+        for (i, seg) in line.forward_route.iter().enumerate() {
+            println!("  Segment {i}: {:?}", seg.duration);
+        }
+
+        println!("\nComputed return durations:");
+        for (i, dur) in return_durations.iter().enumerate() {
+            println!("  Segment {i}: {dur:?}");
+        }
+
+        // Expected return durations:
+        // Forward seg 0 (12min) covers forward 0,1,2 -> should map to return 2,3,4
+        // Forward seg 3 (6min) covers forward 3,4 -> should map to return 0,1
+        // So return durations should be: [Some(6min), None, Some(12min), None, None]
+
+        assert_eq!(return_durations.len(), 5, "Return route should have 5 segments");
+        assert_eq!(return_durations[0], Some(Duration::minutes(6)), "Return seg 0 should have 6min (from forward seg 3)");
+        assert_eq!(return_durations[1], None, "Return seg 1 should be None");
+        assert_eq!(return_durations[2], Some(Duration::minutes(12)), "Return seg 2 should have 12min (from forward seg 0)");
+        assert_eq!(return_durations[3], None, "Return seg 3 should be None");
+        assert_eq!(return_durations[4], None, "Return seg 4 should be None");
+
+        // Now test actual journey generation
+        let journeys = TrainJourney::generate_journeys(&[line.clone()], &graph, None);
+
+        println!("\nGenerated {} journeys", journeys.len());
+
+        // We should have forward and return journeys
+        let forward_journeys: Vec<_> = journeys.values()
+            .filter(|j| j.train_number.contains("0001"))
+            .collect();
+        let return_journeys: Vec<_> = journeys.values()
+            .filter(|j| j.train_number.contains("0002"))
+            .collect();
+
+        println!("Forward journeys: {}", forward_journeys.len());
+        println!("Return journeys: {}", return_journeys.len());
+
+        assert!(!forward_journeys.is_empty(), "Should have forward journeys");
+        assert!(!return_journeys.is_empty(), "Should have return journeys");
+
+        // Check first forward journey timing
+        let forward = forward_journeys[0];
+        println!("\nForward journey stations: {}", forward.station_times.len());
+        for (i, (node, arrival, departure)) in forward.station_times.iter().enumerate() {
+            println!("  Stop {}: node={}, arrival={}, departure={}",
+                i, node.index(), arrival.format("%H:%M:%S"), departure.format("%H:%M:%S"));
+        }
+
+        assert_eq!(forward.station_times.len(), 6, "Forward should stop at 6 stations");
+
+        // Forward timing: Start at 08:00
+        // Seg 0,1,2: 12 min total = 4 min each
+        // Station A: 08:00 (depart)
+        // Station B: 08:04 arrive, 08:04:30 depart
+        // Station C: 08:08 arrive, 08:08:30 depart
+        // Station D: 08:12 arrive, 08:12:30 depart
+        // Seg 3,4: 6 min total = 3 min each
+        // Station E: 08:15:30 arrive, 08:16 depart
+        // Station F: 08:19 arrive
+
+        // Check first return journey timing
+        let return_j = return_journeys[0];
+        println!("\nReturn journey stations: {}", return_j.station_times.len());
+        println!("Return journey segments: {}", return_j.segments.len());
+        for (i, (node, arrival, departure)) in return_j.station_times.iter().enumerate() {
+            println!("  Stop {}: node={}, arrival={}, departure={}",
+                i, node.index(), arrival.format("%H:%M:%S"), departure.format("%H:%M:%S"));
+        }
+
+        assert_eq!(return_j.station_times.len(), 6, "Return should stop at 6 stations");
+        assert_eq!(return_j.segments.len(), 5, "Return should have 5 segments");
+
+        // Return timing should mirror forward:
+        // Return seg 0,1: 6 min total = 3 min each (from forward seg 3)
+        // Station F: 09:00 (depart)
+        // Station E: 09:03 arrive, 09:03:30 depart
+        // Station D: 09:06:30 arrive, 09:07 depart
+        // Return seg 2,3,4: 12 min total = 4 min each (from forward seg 0)
+        // Station C: 09:11 arrive, 09:11:30 depart
+        // Station B: 09:15 arrive, 09:15:30 depart
+        // Station A: 09:19 arrive
+    }
+
+    #[test]
+    fn test_sync_routes_with_standalone_gaps() {
+        // Test case where forward has: [10min covers just 0, gap at 1, 6min covers 2-3]
+        // This should map to return: [6min covers 0-1, gap at 2, 10min covers just 3]
+
+        let mut graph = RailwayGraph::new();
+        let station_a = graph.add_or_get_station("Station A".to_string());
+        let station_b = graph.add_or_get_station("Station B".to_string());
+        let station_c = graph.add_or_get_station("Station C".to_string());
+        let station_d = graph.add_or_get_station("Station D".to_string());
+
+        graph.add_track(station_a, station_b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(station_b, station_c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(station_c, station_d, vec![Track { direction: TrackDirection::Bidirectional }]);
+
+        let edge_ab = graph.graph.find_edge(station_a, station_b).expect("edge exists");
+        let edge_bc = graph.graph.find_edge(station_b, station_c).expect("edge exists");
+        let edge_cd = graph.graph.find_edge(station_c, station_d).expect("edge exists");
+
+        // Forward: seg 0 (10min, just covers itself), seg 1 (None, gap), seg 2 (6min, covers 2-3)
+        let forward_route = vec![
+            RouteSegment {
+                edge_index: edge_ab.index(),
+                track_index: 0,
+                origin_platform: 0,
+                destination_platform: 0,
+                duration: Some(Duration::minutes(10)), // Only covers segment 0
+                wait_time: Duration::seconds(30),
+            },
+            RouteSegment {
+                edge_index: edge_bc.index(),
+                track_index: 0,
+                origin_platform: 0,
+                destination_platform: 0,
+                duration: None, // Standalone gap - not covered by anything
+                wait_time: Duration::seconds(30),
+            },
+            RouteSegment {
+                edge_index: edge_cd.index(),
+                track_index: 0,
+                origin_platform: 0,
+                destination_platform: 0,
+                duration: Some(Duration::minutes(6)), // Covers segments 2-3 (but there's only seg 2, so just itself)
+                wait_time: Duration::seconds(30),
+            },
+        ];
+
+        println!("Forward route durations:");
+        for (i, seg) in forward_route.iter().enumerate() {
+            println!("  Segment {i}: {:?}", seg.duration);
+        }
+
+        // Build return durations
+        let return_durations = TrainJourney::build_synced_return_durations(&forward_route, 3);
+
+        println!("\nComputed return durations:");
+        for (i, dur) in return_durations.iter().enumerate() {
+            println!("  Segment {i}: {dur:?}");
+        }
+
+        // Expected mapping with inheritance:
+        // Forward: [A->B: 10min covering [0,1], B->C: None (inherited), C->D: 6min covering [2]]
+        // Return:  [D->C: 6min covering [0], C->B: 10min covering [1,2], B->A: None (inherited)]
+
+        println!("\nExpected return durations: [Some(6min), Some(10min), None]");
+
+        assert_eq!(return_durations.len(), 3);
+        assert_eq!(return_durations[0], Some(Duration::minutes(6)), "Return seg 0 should be 6min");
+        assert_eq!(return_durations[1], Some(Duration::minutes(10)), "Return seg 1 should be 10min");
+        assert_eq!(return_durations[2], None, "Return seg 2 should be None (inherited from seg 1)");
+
+        // Now test that actual journeys are generated and valid
+        let mut line = Line {
+            id: uuid::Uuid::new_v4(),
+            name: "Standalone Gap Test".to_string(),
+            color: TEST_COLOR.to_string(),
+            thickness: TEST_THICKNESS,
+            visible: true,
+            forward_route,
+            return_route: vec![],
+            first_departure: BASE_DATE.and_hms_opt(8, 0, 0).expect("valid time"),
+            return_first_departure: BASE_DATE.and_hms_opt(9, 0, 0).expect("valid time"),
+            frequency: Duration::hours(1),
+            schedule_mode: ScheduleMode::Auto,
+            days_of_week: crate::models::DaysOfWeek::ALL_DAYS,
+            manual_departures: vec![],
+            sync_routes: true,
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+            last_departure: BASE_DATE.and_hms_opt(10, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(11, 0, 0).expect("valid time"),
+            default_wait_time: Duration::seconds(30),
+            first_stop_wait_time: Duration::zero(),
+            return_first_stop_wait_time: Duration::zero(),
+            sort_index: None,
+        };
+
+        line.apply_route_sync_if_enabled();
+
+        let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
+
+        println!("\nGenerated {} total journeys", journeys.len());
+
+        let forward_journeys: Vec<_> = journeys.values()
+            .filter(|j| j.departure_time.time() == chrono::NaiveTime::from_hms_opt(8, 0, 0).expect("valid time"))
+            .collect();
+        let return_journeys: Vec<_> = journeys.values()
+            .filter(|j| j.departure_time.time() == chrono::NaiveTime::from_hms_opt(9, 0, 0).expect("valid time"))
+            .collect();
+
+        println!("Forward journeys: {}", forward_journeys.len());
+        println!("Return journeys: {}", return_journeys.len());
+
+        assert!(!return_journeys.is_empty(), "Should have return journeys");
+
+        let return_j = return_journeys[0];
+        println!("\nReturn journey validation:");
+        println!("  Stations: {}", return_j.station_times.len());
+        println!("  Segments: {}", return_j.segments.len());
+        println!("  Has route_start_node: {}", return_j.route_start_node.is_some());
+        println!("  Has route_end_node: {}", return_j.route_end_node.is_some());
+
+        assert_eq!(return_j.station_times.len(), 4, "Return should have 4 stations");
+        assert_eq!(return_j.segments.len(), 3, "Return should have 3 segments");
+        assert!(return_j.route_start_node.is_some(), "Return should have start node");
+        assert!(return_j.route_end_node.is_some(), "Return should have end node");
+
+        // Verify times are monotonically increasing
+        for i in 1..return_j.station_times.len() {
+            let prev_departure = return_j.station_times[i-1].2;
+            let curr_arrival = return_j.station_times[i].1;
+            assert!(curr_arrival >= prev_departure,
+                "Station {i} arrival ({curr_arrival}) should be >= previous departure ({prev_departure})");
+        }
+
+        println!("\n✓ Return journey is valid and renderable");
     }
 }
