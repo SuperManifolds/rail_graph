@@ -1,3 +1,8 @@
+# Unreleased
+
+## Improvements
+- Time and duration inputs now support j/l keyboard shortcuts to quickly adjust values by 30 seconds (j decreases, l increases)
+
 # v0.1.10 - 2025-10-28
 
 ## Bug Fixes
