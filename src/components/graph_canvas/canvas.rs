@@ -348,6 +348,7 @@ pub fn GraphCanvas(
                         pan_offset_x: pan_x,
                         pan_offset_y: pan_y,
                         station_label_width: label_width,
+                        sidebar_width: 320.0, // Will be overridden by TimeGraph wrapper
                     });
                 },
                 Duration::from_millis(300)
