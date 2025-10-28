@@ -36,6 +36,8 @@ pub struct ViewportState {
     pub pan_offset_y: f64,
     #[serde(default = "default_station_label_width")]
     pub station_label_width: f64,
+    #[serde(default = "default_sidebar_width")]
+    pub sidebar_width: f64,
 }
 
 fn default_zoom() -> f64 {
@@ -46,6 +48,10 @@ fn default_station_label_width() -> f64 {
     120.0
 }
 
+fn default_sidebar_width() -> f64 {
+    320.0
+}
+
 impl Default for ViewportState {
     fn default() -> Self {
         Self {
@@ -54,6 +60,7 @@ impl Default for ViewportState {
             pan_offset_x: 0.0,
             pan_offset_y: 0.0,
             station_label_width: 120.0,
+            sidebar_width: 320.0,
         }
     }
 }

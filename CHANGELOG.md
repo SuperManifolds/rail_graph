@@ -1,7 +1,8 @@
 # Unreleased
 
 ## Improvements
-- Station label section width is now resizable by dragging the edge (60-500px range)
+- Station label section width is now resizable by dragging the edge
+- Line controls sidebar width is now resizable by dragging the edge
 
 # v0.1.8 - 2025-10-27
 

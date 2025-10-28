@@ -12,8 +12,9 @@ use crate::components::{
 use crate::models::{Line, RailwayGraph, GraphView, Stations, Routes};
 use crate::train_journey::TrainJourney;
 use crate::conflict::Conflict;
-use leptos::{component, view, Signal, IntoView, SignalGet, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect, Callable};
+use leptos::{component, view, Signal, IntoView, SignalGet, SignalGetUntracked, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect, Callable};
 use petgraph::visit::EdgeRef;
+use wasm_bindgen::JsCast;
 
 #[inline]
 fn compute_display_nodes(
@@ -218,6 +219,98 @@ pub fn TimeGraph(
     let (new_line_dialog_open, set_new_line_dialog_open) = create_signal(false);
     let (next_line_number, set_next_line_number) = create_signal(1);
 
+    // Sidebar resize state
+    let initial_sidebar_width = view.as_ref().map_or(320.0, |v| v.viewport_state.sidebar_width);
+    let (sidebar_width, set_sidebar_width) = create_signal(initial_sidebar_width);
+    let (is_resizing_sidebar, set_is_resizing_sidebar) = create_signal(false);
+    let (resize_start_x, set_resize_start_x) = create_signal(0.0);
+    let (resize_start_width, set_resize_start_width) = create_signal(0.0);
+    let (is_hovering_resize_edge, set_is_hovering_resize_edge) = create_signal(false);
+
+    // Wrap on_viewport_change to always include current sidebar_width
+    let wrapped_viewport_change = leptos::Callback::new(move |mut viewport_state: crate::models::ViewportState| {
+        viewport_state.sidebar_width = sidebar_width.get_untracked();
+        on_viewport_change.call(viewport_state);
+    });
+
+    // Mouse event handlers for sidebar resize
+    let handle_sidebar_mousedown = move |ev: leptos::ev::MouseEvent| {
+        let x = f64::from(ev.offset_x());
+        let resize_handle_width = 5.0;
+
+        // Check if mouse is near the left edge
+        if x < resize_handle_width {
+            set_is_resizing_sidebar.set(true);
+            set_resize_start_x.set(f64::from(ev.client_x()));
+            set_resize_start_width.set(sidebar_width.get());
+            ev.prevent_default();
+        }
+    };
+
+    let handle_sidebar_mousemove = move |ev: leptos::ev::MouseEvent| {
+        // Check for hover (only when not resizing)
+        if !is_resizing_sidebar.get() {
+            let x = f64::from(ev.offset_x());
+            let resize_handle_width = 5.0;
+            set_is_hovering_resize_edge.set(x < resize_handle_width);
+        }
+    };
+
+    let handle_sidebar_mouseleave = move |_ev: leptos::ev::MouseEvent| {
+        set_is_hovering_resize_edge.set(false);
+    };
+
+    // Attach window-level event listeners when resizing starts
+    let view_for_effect = view.clone();
+    create_effect(move |_| {
+        if is_resizing_sidebar.get() {
+            let window = leptos::window();
+
+            // Handle mouse move
+            let mousemove_closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |ev: web_sys::MouseEvent| {
+                let client_x = f64::from(ev.client_x());
+                let delta_x = resize_start_x.get_untracked() - client_x;
+                let new_width = (resize_start_width.get_untracked() + delta_x).clamp(200.0, 600.0);
+                set_sidebar_width.set(new_width);
+            }) as Box<dyn FnMut(_)>);
+
+            let _ = window.add_event_listener_with_callback(
+                "mousemove",
+                mousemove_closure.as_ref().unchecked_ref()
+            );
+            mousemove_closure.forget();
+
+            // Handle mouse up
+            let view_clone = view_for_effect.clone();
+            let mouseup_closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |_ev: web_sys::MouseEvent| {
+                // Save sidebar width when resize completes
+                let viewport_state = view_clone.as_ref().map_or(
+                    crate::models::ViewportState::default(),
+                    |v| v.viewport_state.clone()
+                );
+                let mut updated_state = viewport_state;
+                updated_state.sidebar_width = sidebar_width.get_untracked();
+                on_viewport_change.call(updated_state);
+                set_is_resizing_sidebar.set(false);
+            }) as Box<dyn FnMut(_)>);
+
+            let _ = window.add_event_listener_with_callback(
+                "mouseup",
+                mouseup_closure.as_ref().unchecked_ref()
+            );
+            mouseup_closure.forget();
+        }
+    });
+
+    // Cursor style based on resize state
+    let sidebar_cursor_style = move || {
+        if is_resizing_sidebar.get() || is_hovering_resize_edge.get() {
+            "cursor: col-resize;"
+        } else {
+            ""
+        }
+    };
+
     view! {
         <div class="time-graph-container">
             <div class="main-content">
@@ -237,10 +330,16 @@ pub fn TimeGraph(
                     station_idx_map=station_idx_map
                     view_edge_path=view_edge_path
                     initial_viewport={view.as_ref().map_or(crate::models::ViewportState::default(), |v| v.viewport_state.clone())}
-                    on_viewport_change=on_viewport_change
+                    on_viewport_change=wrapped_viewport_change
                 />
             </div>
-            <div class="sidebar">
+            <div
+                class="sidebar"
+                style=move || format!("width: {}px; {}", sidebar_width.get(), sidebar_cursor_style())
+                on:mousedown=handle_sidebar_mousedown
+                on:mousemove=handle_sidebar_mousemove
+                on:mouseleave=handle_sidebar_mouseleave
+            >
                 <div class="sidebar-header">
                     <h2>
                         <img src="/static/railgraph.svg" alt="RailGraph" class="logo-icon" />

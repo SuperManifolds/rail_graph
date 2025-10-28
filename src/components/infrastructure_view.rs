@@ -1125,6 +1125,7 @@ pub fn InfrastructureView(
                 pan_offset_x: pan_offset_x.get(),
                 pan_offset_y: pan_offset_y.get(),
                 station_label_width: 120.0, // Infrastructure view uses default width
+                sidebar_width: 320.0, // Infrastructure view uses default width (no sidebar)
             };
             on_change.call(viewport_state);
         });
