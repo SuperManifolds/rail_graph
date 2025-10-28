@@ -5,6 +5,7 @@
 - Line controls sidebar width is now resizable by dragging the edge
 - Return route travel times now display calculated values from forward route when sync is enabled
 - Add Station dialog now supports canvas-based placement - click on canvas while dialog is open to set station position (with preview shown on canvas), click on empty space to place at that position (snapped to grid), or click on a track segment to insert station in the middle and automatically split the segment and update affected lines. Right-click preview station to clear position
+- Station deletion now intelligently handles 2-connection stations by creating direct bypass connections - when deleting a station with exactly 2 connections, a new direct connection is automatically created between the neighboring stations with combined distance and the track configuration from the segment with more tracks. Lines passing through are automatically updated to use the new bypass path. Stations with more than 2 connections will break lines at that point (with appropriate warning in delete confirmation dialog)
 
 ## Bug Fixes
 - Fixed sync forward and return routes feature to correctly calculate return journey times from forward route with proper inheritance of gap segments

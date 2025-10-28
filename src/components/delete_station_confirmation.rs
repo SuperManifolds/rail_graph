@@ -7,6 +7,7 @@ pub fn DeleteStationConfirmation(
     is_open: ReadSignal<bool>,
     station_name: ReadSignal<String>,
     affected_lines: ReadSignal<Vec<String>>,
+    bypass_info: ReadSignal<Option<(String, String)>>, // (from_station, to_station)
     on_cancel: Rc<dyn Fn()>,
     on_confirm: Rc<dyn Fn()>,
 ) -> impl IntoView {
@@ -40,9 +41,25 @@ pub fn DeleteStationConfirmation(
                                 view! { <li>{line_name}</li> }
                             }).collect::<Vec<_>>()}
                         </ul>
-                        <p class="info-message">
-                            "The station will be removed from these lines, and adjacent stops will be connected directly with combined travel times."
-                        </p>
+                        {move || {
+                            if let Some((from_station, to_station)) = bypass_info.get() {
+                                view! {
+                                    <p class="info-message">
+                                        "The station will be removed and a direct connection will be created between "
+                                        <strong>{from_station}</strong>
+                                        " and "
+                                        <strong>{to_station}</strong>
+                                        " with combined distance and travel times."
+                                    </p>
+                                }.into_view()
+                            } else {
+                                view! {
+                                    <p class="warning-message">
+                                        "This station has multiple connections. Lines passing through will be broken at this point."
+                                    </p>
+                                }.into_view()
+                            }
+                        }}
                     </div>
                 </Show>
 
