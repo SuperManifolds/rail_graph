@@ -25,8 +25,9 @@ pub trait Stations {
     fn get_station_edges(&self, index: NodeIndex) -> Vec<usize>;
 
     /// Find stations connected through a given station
-    /// Returns a Vec of (`station_before`, `station_after`, tracks) tuples
-    fn find_connections_through_station(&self, station_idx: NodeIndex) -> Vec<(NodeIndex, NodeIndex, Vec<crate::models::track::Track>)>;
+    /// Returns a Vec of (`station_before`, `station_after`, tracks, `combined_distance`) tuples
+    /// Only returns a bypass for stations with exactly 2 connections
+    fn find_connections_through_station(&self, station_idx: NodeIndex) -> Vec<(NodeIndex, NodeIndex, Vec<crate::models::track::Track>, Option<f64>)>;
 
     /// Delete a station and reconnect around it
     /// Returns (`removed_edges`, `bypass_mapping`) where `bypass_mapping` maps (`old_edge1`, `old_edge2`) -> `new_edge`
@@ -92,32 +93,45 @@ impl Stations for RailwayGraph {
             .collect()
     }
 
-    fn find_connections_through_station(&self, station_idx: NodeIndex) -> Vec<(NodeIndex, NodeIndex, Vec<crate::models::track::Track>)> {
+    fn find_connections_through_station(&self, station_idx: NodeIndex) -> Vec<(NodeIndex, NodeIndex, Vec<crate::models::track::Track>, Option<f64>)> {
         use petgraph::visit::EdgeRef;
         use petgraph::Direction;
-        use crate::models::track::{Track, TrackDirection};
 
         let mut connections = Vec::new();
 
-        // Get incoming edges (edges pointing to this station)
+        // Get all edges connected to this station
         let incoming: Vec<_> = self.graph.edges_directed(station_idx, Direction::Incoming)
-            .map(|e| (e.source(), &e.weight().tracks))
+            .map(|e| (e.source(), e.weight().tracks.clone(), e.weight().distance))
             .collect();
 
-        // Get outgoing edges (edges from this station)
         let outgoing: Vec<_> = self.graph.edges(station_idx)
-            .map(|e| (e.target(), &e.weight().tracks))
+            .map(|e| (e.target(), e.weight().tracks.clone(), e.weight().distance))
             .collect();
 
-        // Create connections from each incoming station to each outgoing station
-        for (from_station, from_tracks) in &incoming {
-            for (to_station, to_tracks) in &outgoing {
-                // Use the max number of tracks from either segment
-                let track_count = from_tracks.len().max(to_tracks.len());
-                let tracks = (0..track_count).map(|_| Track { direction: TrackDirection::Bidirectional }).collect();
-                connections.push((*from_station, *to_station, tracks));
-            }
+        let total_connections = incoming.len() + outgoing.len();
+
+        // Only create bypass for exactly 2 connections (1 incoming + 1 outgoing)
+        if total_connections == 2 && incoming.len() == 1 && outgoing.len() == 1 {
+            let (from_station, from_tracks, from_distance) = &incoming[0];
+            let (to_station, to_tracks, to_distance) = &outgoing[0];
+
+            // Choose track configuration with more tracks
+            let tracks = if from_tracks.len() >= to_tracks.len() {
+                from_tracks.clone()
+            } else {
+                to_tracks.clone()
+            };
+
+            // Combine distances if both are present
+            let combined_distance = match (from_distance, to_distance) {
+                (Some(d1), Some(d2)) => Some(d1 + d2),
+                (Some(d), None) | (None, Some(d)) => Some(*d),
+                (None, None) => None,
+            };
+
+            connections.push((*from_station, *to_station, tracks, combined_distance));
         }
+        // For stations with more or fewer than 2 connections, don't create any bypass
 
         connections
     }
@@ -133,7 +147,7 @@ impl Stations for RailwayGraph {
         // Create bypass edges and track the mapping
         let mut bypass_mapping = std::collections::HashMap::new();
 
-        for (from_station, to_station, tracks) in connections {
+        for (from_station, to_station, tracks, combined_distance) in connections {
             // Find the incoming and outgoing edges for this connection
             let incoming_edge = self.graph.edges_directed(index, Direction::Incoming)
                 .find(|e| e.source() == from_station)
@@ -143,10 +157,19 @@ impl Stations for RailwayGraph {
                 .find(|e| e.target() == to_station)
                 .map(|e| e.id().index());
 
-            if let (Some(edge1), Some(edge2)) = (incoming_edge, outgoing_edge) {
-                let new_edge = self.add_track(from_station, to_station, tracks);
-                bypass_mapping.insert((edge1, edge2), new_edge.index());
+            let Some(edge1) = incoming_edge else { continue };
+            let Some(edge2) = outgoing_edge else { continue };
+
+            let new_edge = self.add_track(from_station, to_station, tracks);
+
+            // Set the combined distance on the bypass edge
+            if let Some(distance) = combined_distance {
+                if let Some(edge_weight) = self.graph.edge_weight_mut(new_edge) {
+                    edge_weight.distance = Some(distance);
+                }
             }
+
+            bypass_mapping.insert((edge1, edge2), new_edge.index());
         }
 
         // Get edges that will be removed

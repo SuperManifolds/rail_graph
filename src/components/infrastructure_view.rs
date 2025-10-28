@@ -413,6 +413,7 @@ fn edit_station_handler(
     set_editing_station.set(None);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn delete_station_handler(
     station_idx: NodeIndex,
     graph: ReadSignal<RailwayGraph>,
@@ -420,6 +421,7 @@ fn delete_station_handler(
     set_delete_affected_lines: WriteSignal<Vec<String>>,
     set_station_to_delete: WriteSignal<Option<NodeIndex>>,
     set_delete_station_name: WriteSignal<String>,
+    set_delete_bypass_info: WriteSignal<Option<(String, String)>>,
     set_show_delete_confirmation: WriteSignal<bool>,
     set_editing_station: WriteSignal<Option<NodeIndex>>,
 ) {
@@ -434,8 +436,22 @@ fn delete_station_handler(
         .map(|line| line.name.clone())
         .collect();
 
+    // Check if a bypass connection will be created
+    let connections = current_graph.find_connections_through_station(station_idx);
+    let bypass_info = if connections.len() == 1 {
+        let (from_idx, to_idx, _, _) = &connections[0];
+        let from_name = current_graph.graph.node_weight(*from_idx)
+            .map_or_else(|| "Unknown".to_string(), crate::models::Node::display_name);
+        let to_name = current_graph.graph.node_weight(*to_idx)
+            .map_or_else(|| "Unknown".to_string(), crate::models::Node::display_name);
+        Some((from_name, to_name))
+    } else {
+        None
+    };
+
     set_delete_affected_lines.set(affected);
     set_station_to_delete.set(Some(station_idx));
+    set_delete_bypass_info.set(bypass_info);
     if let Some(name) = current_graph.get_station_name(station_idx) {
         set_delete_station_name.set(name.to_string());
     }
@@ -592,6 +608,7 @@ fn create_handler_callbacks(
     set_delete_affected_lines: WriteSignal<Vec<String>>,
     set_station_to_delete: WriteSignal<Option<NodeIndex>>,
     set_delete_station_name: WriteSignal<String>,
+    set_delete_bypass_info: WriteSignal<Option<(String, String)>>,
     set_show_delete_confirmation: WriteSignal<bool>,
     station_to_delete: ReadSignal<Option<NodeIndex>>,
     clicked_position: ReadSignal<Option<(f64, f64)>>,
@@ -617,7 +634,7 @@ fn create_handler_callbacks(
     });
 
     let handle_delete_station = Rc::new(move |station_idx: NodeIndex| {
-        delete_station_handler(station_idx, graph, lines, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, set_editing_station);
+        delete_station_handler(station_idx, graph, lines, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_delete_bypass_info, set_show_delete_confirmation, set_editing_station);
     });
 
     let confirm_delete_station = Rc::new(move || {
@@ -1145,6 +1162,7 @@ pub fn InfrastructureView(
     let (station_to_delete, set_station_to_delete) = create_signal(None::<NodeIndex>);
     let (delete_affected_lines, set_delete_affected_lines) = create_signal(Vec::<String>::new());
     let (delete_station_name, set_delete_station_name) = create_signal(String::new());
+    let (delete_bypass_info, set_delete_bypass_info) = create_signal(None::<(String, String)>);
     let (is_over_station, set_is_over_station) = create_signal(false);
     let (is_over_track, set_is_over_track) = create_signal(false);
     let (dragging_station, set_dragging_station) = create_signal(None::<NodeIndex>);
@@ -1281,7 +1299,7 @@ pub fn InfrastructureView(
     };
 
     let (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
-        create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment);
+        create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_delete_bypass_info, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment);
 
     setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position);
 
@@ -1387,6 +1405,7 @@ pub fn InfrastructureView(
                 is_open=show_delete_confirmation
                 station_name=delete_station_name
                 affected_lines=delete_affected_lines
+                bypass_info=delete_bypass_info
                 on_cancel=Rc::new(move || set_show_delete_confirmation.set(false))
                 on_confirm=confirm_delete_station
             />
