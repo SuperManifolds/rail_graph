@@ -11,6 +11,8 @@ const HOVER_DISTANCE_THRESHOLD: f64 = 10.0; // pixels
 const DOT_RADIUS_MULTIPLIER: f64 = 1.5; // Scale dots relative to line thickness
 const MIN_DOT_RADIUS: f64 = 2.0; // Minimum dot radius in pixels
 const TOTAL_HOURS: f64 = 48.0; // Total hours displayed on the graph
+const CONTINUATION_ARROW_LENGTH: f64 = 12.0; // Length of continuation arrow
+const CONTINUATION_ARROW_HEAD_SIZE: f64 = 6.0; // Size of arrow head
 
 /// Update search direction based on position change
 fn update_search_direction(
@@ -166,6 +168,53 @@ pub fn match_journey_stations_to_view_by_edges(
     result
 }
 
+/// Draw an arrow indicator showing that a journey continues beyond the visible view
+/// `pointing_downward`: true = arrow points down (↓, journey continues below), false = arrow points up (↑, journey came from above)
+fn draw_continuation_indicator(
+    ctx: &CanvasRenderingContext2d,
+    x: f64,
+    y: f64,
+    color: &str,
+    line_width: f64,
+    zoom_level: f64,
+    pointing_downward: bool,
+) {
+    let arrow_length = CONTINUATION_ARROW_LENGTH / zoom_level;
+    let head_size = CONTINUATION_ARROW_HEAD_SIZE / zoom_level;
+
+    ctx.save();
+    ctx.set_stroke_style_str(color);
+    ctx.set_line_width(line_width);
+    ctx.set_line_cap("round");
+    ctx.set_line_join("round");
+    ctx.begin_path();
+
+    if pointing_downward {
+        // Draw ↓ arrow (journey continues below)
+        // Vertical line going down
+        ctx.move_to(x, y);
+        ctx.line_to(x, y + arrow_length);
+
+        // Arrow head at bottom
+        ctx.move_to(x - head_size / 2.0, y + arrow_length - head_size / 2.0);
+        ctx.line_to(x, y + arrow_length);
+        ctx.line_to(x + head_size / 2.0, y + arrow_length - head_size / 2.0);
+    } else {
+        // Draw ↑ arrow (journey came from above)
+        // Vertical line going up
+        ctx.move_to(x, y);
+        ctx.line_to(x, y - arrow_length);
+
+        // Arrow head at top
+        ctx.move_to(x - head_size / 2.0, y - arrow_length + head_size / 2.0);
+        ctx.line_to(x, y - arrow_length);
+        ctx.line_to(x + head_size / 2.0, y - arrow_length + head_size / 2.0);
+    }
+
+    ctx.stroke();
+    ctx.restore();
+}
+
 #[allow(clippy::cast_precision_loss, clippy::too_many_lines, clippy::cast_possible_truncation)]
 pub fn draw_train_journeys(
     ctx: &CanvasRenderingContext2d,
@@ -196,8 +245,11 @@ pub fn draw_train_journeys(
         ctx.begin_path();
 
         let mut last_visible_point: Option<(f64, f64, usize)> = None; // (x, y, view_position)
+        let mut first_visible_point: Option<(f64, f64)> = None; // (x, y) of first visible station
+        let mut first_visible_node: Option<NodeIndex> = None;
+        let mut last_visible_node: Option<NodeIndex> = None;
 
-        for (i, (_node_idx, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
+        for (i, (node_idx, arrival_time, departure_time)) in journey.station_times.iter().enumerate() {
             // Look up the display position for this station
             let station_idx = station_positions.get(i).and_then(|&opt| opt);
 
@@ -257,14 +309,61 @@ pub fn draw_train_journeys(
             if !arrival_before_week_start {
                 let last_x = if has_wait_time && !wait_before_week_start { departure_x } else { arrival_x };
                 last_visible_point = Some((last_x, y, idx));
+
+                // Track first visible point
+                if first_visible_point.is_none() {
+                    first_visible_point = Some((arrival_x, y));
+                    first_visible_node = Some(*node_idx);
+                }
+
+                // Always update last visible node
+                last_visible_node = Some(*node_idx);
             } else if *departure_time >= BASE_MIDNIGHT {
                 // Arrival was before week start but departure is in current week
                 // Start the line at the departure point for next segment
                 last_visible_point = Some((departure_x, y, idx));
+
+                if first_visible_point.is_none() {
+                    first_visible_point = Some((departure_x, y));
+                    first_visible_node = Some(*node_idx);
+                }
+
+                last_visible_node = Some(*node_idx);
             }
         }
 
         ctx.stroke();
+
+        // Draw continuation indicators if journey extends beyond visible area
+        if let Some((first_x, first_y)) = first_visible_point {
+            // Check if first visible node is NOT the actual route start
+            if first_visible_node != journey.route_start_node {
+                draw_continuation_indicator(
+                    ctx,
+                    first_x,
+                    first_y,
+                    &journey.color,
+                    journey.thickness / zoom_level,
+                    zoom_level,
+                    false, // Arrow points up (journey came from above)
+                );
+            }
+        }
+
+        if let Some((last_x, last_y, _)) = last_visible_point {
+            // Check if last visible node is NOT the actual route end
+            if last_visible_node != journey.route_end_node {
+                draw_continuation_indicator(
+                    ctx,
+                    last_x,
+                    last_y,
+                    &journey.color,
+                    journey.thickness / zoom_level,
+                    zoom_level,
+                    true, // Arrow points down (journey continues below)
+                );
+            }
+        }
     }
 
     // Draw dots for each journey
