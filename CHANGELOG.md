@@ -1,4 +1,7 @@
-# Unreleased
+# v0.1.11 - 2025-10-29
+
+## Features
+- Added undo/redo functionality - use Cmd/Ctrl+Z to undo changes and Cmd/Ctrl+Shift+Z (or Ctrl+Y on Windows) to redo
 
 ## Improvements
 - Time and duration inputs now support j/l keyboard shortcuts to quickly adjust values by 30 seconds (j decreases, l increases)
