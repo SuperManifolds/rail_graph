@@ -3,6 +3,7 @@
 ## Improvements
 - Time and duration inputs now support j/l keyboard shortcuts to quickly adjust values by 30 seconds (j decreases, l increases)
 - Added keyboard shortcuts for horizontal scale adjustment: [ to decrease, ] to increase (adjusts time axis zoom in time-distance graphs)
+- Train journey lines in time-distance graphs now show arrow indicators (↑ ↓) when routes extend beyond the visible station range, making it clear when journeys start before or continue after the filtered view
 
 # v0.1.10 - 2025-10-28
 
