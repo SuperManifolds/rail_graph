@@ -43,6 +43,7 @@ pub mod tab_view;
 pub mod text_input_dialog;
 pub mod time_graph;
 pub mod time_input;
+pub mod toast;
 pub mod view_creation;
 pub mod window;
 

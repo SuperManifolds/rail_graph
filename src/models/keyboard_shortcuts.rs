@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use leptos::SignalGet;
+use wasm_bindgen::JsCast;
 
 /// Keyboard shortcut definition
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -312,6 +314,26 @@ fn get_all_shortcut_definitions() -> Vec<ShortcutEntry> {
             category: ShortcutCategory::Project,
             default_shortcut: KeyboardShortcut::new("Comma".to_string(), true, false, false, false),
         },
+        ShortcutEntry {
+            id: "undo",
+            description: "Undo",
+            category: ShortcutCategory::Project,
+            default_shortcut: if is_mac {
+                KeyboardShortcut::new("KeyZ".to_string(), false, false, false, true)
+            } else {
+                KeyboardShortcut::new("KeyZ".to_string(), true, false, false, false)
+            },
+        },
+        ShortcutEntry {
+            id: "redo",
+            description: "Redo",
+            category: ShortcutCategory::Project,
+            default_shortcut: if is_mac {
+                KeyboardShortcut::new("KeyZ".to_string(), false, true, false, true)
+            } else {
+                KeyboardShortcut::new("KeyY".to_string(), true, false, false, false)
+            },
+        },
     ]
 }
 
@@ -473,4 +495,49 @@ impl Default for KeyboardShortcuts {
     fn default() -> Self {
         Self::default_shortcuts()
     }
+}
+
+/// Helper function to setup keyboard shortcut handlers with common filtering logic
+pub fn setup_shortcut_handler<F, S>(
+    is_capturing_shortcut: leptos::ReadSignal<bool>,
+    shortcuts: S,
+    handler: F,
+) where
+    F: Fn(&str, &web_sys::KeyboardEvent) + 'static,
+    S: SignalGet<Value = KeyboardShortcuts> + Copy + 'static,
+{
+    leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
+        // Don't handle shortcuts when capturing in the shortcuts editor
+        if is_capturing_shortcut.get() {
+            return;
+        }
+
+        // Don't handle keyboard shortcuts when typing in input fields
+        let Some(target) = ev.target() else { return };
+        let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() else { return };
+        let tag_name = element.tag_name().to_lowercase();
+        if tag_name == "input" || tag_name == "textarea" {
+            return;
+        }
+
+        // Ignore repeat events
+        if ev.repeat() {
+            return;
+        }
+
+        // Find matching action
+        let current_shortcuts = shortcuts.get();
+        let action = current_shortcuts.find_action(
+            &ev.code(),
+            ev.ctrl_key(),
+            ev.shift_key(),
+            ev.alt_key(),
+            ev.meta_key(),
+        );
+
+        // Call handler if action found
+        if let Some(action_id) = action {
+            handler(action_id, &ev);
+        }
+    });
 }

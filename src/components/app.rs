@@ -4,8 +4,9 @@ use crate::components::infrastructure_view::InfrastructureView;
 use crate::components::project_manager::ProjectManager;
 use crate::components::report_issue_button::ReportIssueButton;
 use crate::components::time_graph::TimeGraph;
+use crate::components::toast::{Toast, ToastNotification};
 use crate::conflict::Conflict;
-use crate::models::{GraphView, Legend, Project, RailwayGraph, Routes, ViewportState};
+use crate::models::{GraphView, Legend, Project, RailwayGraph, Routes, ViewportState, UndoManager, UndoSnapshot};
 use crate::storage::{IndexedDbStorage, Storage};
 use crate::train_journey::TrainJourney;
 use crate::worker_bridge::ConflictDetector;
@@ -120,6 +121,65 @@ pub fn App() -> impl IntoView {
 
     // Signal for manually opening changelog from About button
     let (manual_open_changelog, set_manual_open_changelog) = create_signal(false);
+
+    // Toast notification
+    let (toast, set_toast) = create_signal(Toast::default());
+
+    // Helper to show toast with auto-hide
+    let show_toast = move |message: String| {
+        set_toast.set(Toast::new(message));
+
+        // Hide after 2 seconds
+        if let Some(window) = web_sys::window() {
+            let callback = wasm_bindgen::closure::Closure::once(move || {
+                set_toast.update(|t| t.visible = false);
+            });
+            let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                callback.as_ref().unchecked_ref(),
+                2000,
+            );
+            callback.forget();
+        }
+    };
+
+    // Undo/redo management
+    let undo_manager = store_value(UndoManager::default());
+    let (is_performing_undo_redo, set_is_performing_undo_redo) = create_signal(false);
+
+    // Create debounced function for capturing snapshots
+    let record_snapshot = store_value(leptos::leptos_dom::helpers::debounce(
+        std::time::Duration::from_millis(300),
+        move |snapshot: UndoSnapshot| {
+            // Check flag again when the debounced callback actually fires
+            // in case an undo/redo happened while we were waiting
+            if is_performing_undo_redo.get_untracked() {
+                return;
+            }
+
+            undo_manager.update_value(|manager| {
+                manager.push_snapshot(snapshot);
+            });
+        },
+    ));
+
+    // Record state changes for undo with debouncing
+    create_effect(move |_| {
+        let current_graph = graph.get();
+        let current_lines = lines.get();
+
+        // Skip during initial load
+        if !initial_load_complete.get() {
+            return;
+        }
+
+        // Skip during undo/redo operations (use untracked to avoid re-running when flag changes)
+        if is_performing_undo_redo.get_untracked() {
+            return;
+        }
+
+        let snapshot = UndoSnapshot::new(current_graph, current_lines);
+        record_snapshot.update_value(|f| f(snapshot));
+    });
 
     // Load user settings on mount
     create_effect(move |_| {
@@ -480,6 +540,112 @@ pub fn App() -> impl IntoView {
         set_active_tab,
     );
 
+    // Helper to restore snapshot state
+    let restore_snapshot = move |snapshot: UndoSnapshot| {
+        set_graph.set(snapshot.graph);
+        set_lines.set(snapshot.lines);
+    };
+
+    // Setup undo/redo keyboard shortcuts
+    leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
+        // Don't handle shortcuts when capturing in the shortcuts editor
+        if is_capturing_shortcut.get() {
+            return;
+        }
+
+        // Don't handle keyboard shortcuts when typing in input fields
+        let Some(target) = ev.target() else { return };
+        let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() else { return };
+        let tag_name = element.tag_name().to_lowercase();
+        if tag_name == "input" || tag_name == "textarea" {
+            return;
+        }
+
+        // Ignore repeat events
+        if ev.repeat() {
+            return;
+        }
+
+        // Find matching action
+        let current_shortcuts = user_settings.get().keyboard_shortcuts;
+        let action = current_shortcuts.find_action(
+            &ev.code(),
+            ev.ctrl_key(),
+            ev.shift_key(),
+            ev.alt_key(),
+            ev.meta_key(),
+        );
+
+        match action {
+            Some("undo") => {
+                ev.prevent_default();
+
+                if !undo_manager.get_value().can_undo() {
+                    show_toast("Nothing to undo".to_string());
+                    return;
+                }
+
+                set_is_performing_undo_redo.set(true);
+
+                spawn_local(async move {
+                    let current_snapshot = UndoSnapshot::new(
+                        graph.get_untracked(),
+                        lines.get_untracked(),
+                    );
+
+                    let snapshot_opt = std::cell::RefCell::new(None);
+                    undo_manager.update_value(|manager| {
+                        *snapshot_opt.borrow_mut() = manager.undo(current_snapshot);
+                    });
+
+                    if let Some(snapshot) = snapshot_opt.into_inner() {
+                        restore_snapshot(snapshot);
+                        show_toast("Undoing last change".to_string());
+
+                        // Wait longer than the debounce delay to ensure pending debounced
+                        // calls don't record the restored state
+                        gloo_timers::future::TimeoutFuture::new(400).await;
+                    }
+
+                    set_is_performing_undo_redo.set(false);
+                });
+            }
+            Some("redo") => {
+                ev.prevent_default();
+
+                if !undo_manager.get_value().can_redo() {
+                    show_toast("Nothing to redo".to_string());
+                    return;
+                }
+
+                set_is_performing_undo_redo.set(true);
+
+                spawn_local(async move {
+                    let current_snapshot = UndoSnapshot::new(
+                        graph.get_untracked(),
+                        lines.get_untracked(),
+                    );
+
+                    let snapshot_opt = std::cell::RefCell::new(None);
+                    undo_manager.update_value(|manager| {
+                        *snapshot_opt.borrow_mut() = manager.redo(current_snapshot);
+                    });
+
+                    if let Some(snapshot) = snapshot_opt.into_inner() {
+                        restore_snapshot(snapshot);
+                        show_toast("Redoing last change".to_string());
+
+                        // Wait longer than the debounce delay to ensure pending debounced
+                        // calls don't record the restored state
+                        gloo_timers::future::TimeoutFuture::new(400).await;
+                    }
+                    set_is_performing_undo_redo.set(false);
+                });
+            }
+            _ => {}
+        }
+    });
+
     view! {
         <Title text="RailGraph"/>
 
@@ -739,6 +905,7 @@ pub fn App() -> impl IntoView {
                 manual_open=Signal::derive(move || manual_open_changelog.get())
                 set_manual_open=move |v| set_manual_open_changelog.set(v)
             />
+            <ToastNotification toast=toast />
         </div>
     }
 }
