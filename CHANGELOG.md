@@ -1,3 +1,8 @@
+# v0.1.12 - 2025-10-29
+
+## Bug Fixes
+- Fixed sync forward and return journey feature overwriting user-configured wait times in return route - wait times are now preserved when syncing routes
+
 # v0.1.11 - 2025-10-29
 
 ## Features
