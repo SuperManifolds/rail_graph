@@ -13,7 +13,11 @@ mod view;
 
 pub use days_of_week::DaysOfWeek;
 pub use junction::{Junction, RoutingRule};
-pub use keyboard_shortcuts::{KeyboardShortcut, KeyboardShortcuts, ShortcutCategory, ShortcutMetadata, setup_shortcut_handler};
+pub use keyboard_shortcuts::{
+    KeyboardShortcut, KeyboardShortcuts, ShortcutCategory, ShortcutMetadata,
+    setup_shortcut_handler, setup_single_shortcut_handler,
+    is_mac_platform, is_windows_platform, is_input_field_target,
+};
 pub use line::{Line, ScheduleMode, ManualDeparture, RouteSegment, generate_random_color};
 pub use node::Node;
 pub use project::{Project, ProjectMetadata, Legend, SpacingMode, ProjectSettings, TrackHandedness, LineSortMode};

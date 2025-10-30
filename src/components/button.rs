@@ -1,21 +1,6 @@
-use leptos::{component, view, IntoView, Children, Callback, create_effect, SignalGet, MaybeSignal, Callable, use_context, ReadSignal, WriteSignal};
-use wasm_bindgen::{prelude::*, JsCast};
+use leptos::{component, view, IntoView, Children, Callback, SignalGet, MaybeSignal, Callable, use_context, ReadSignal, WriteSignal, create_rw_signal};
 use web_sys;
-use crate::models::{UserSettings, KeyboardShortcut};
-
-/// Detects if the current platform uses Cmd (Mac/iOS) or Ctrl (Windows/Linux)
-fn is_mac_platform() -> bool {
-    let Some(window) = web_sys::window() else { return false };
-    let Some(navigator) = window.navigator().platform().ok() else { return false };
-    navigator.contains("Mac") || navigator.contains("iPhone") || navigator.contains("iPad")
-}
-
-/// Detects if the current platform is Windows
-fn is_windows_platform() -> bool {
-    let Some(window) = web_sys::window() else { return false };
-    let Some(navigator) = window.navigator().platform().ok() else { return false };
-    navigator.contains("Win")
-}
+use crate::models::{UserSettings, is_mac_platform, is_windows_platform, setup_single_shortcut_handler};
 
 #[component]
 #[must_use]
@@ -63,39 +48,14 @@ pub fn Button(
 
     // Set up keyboard shortcut listener if shortcut is provided
     if let Some(shortcut) = shortcut_info {
-        create_effect(move |_| {
-            let Some(window) = web_sys::window() else { return };
-            let Some(document) = window.document() else { return };
+        // Get is_capturing_shortcut from context, default to false if not available
+        let is_capturing_shortcut = use_context::<ReadSignal<bool>>()
+            .unwrap_or_else(|| create_rw_signal(false).read_only());
 
-            let shortcut = shortcut.clone();
-            let handler = Closure::wrap(Box::new(move |ev: web_sys::KeyboardEvent| {
-                // Don't handle keyboard shortcuts when typing in input fields
-                let Some(target) = ev.target() else { return };
-                let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() else { return };
-                let tag_name = element.tag_name().to_lowercase();
-                if tag_name == "input" || tag_name == "textarea" {
-                    return;
-                }
-
-                // Check if this event matches our shortcut
-                let event_shortcut = KeyboardShortcut::new(
-                    ev.code(),
-                    ev.ctrl_key(),
-                    ev.shift_key(),
-                    ev.alt_key(),
-                    ev.meta_key()
-                );
-                if shortcut != event_shortcut {
-                    return;
-                }
-
-                ev.prevent_default();
-                let Ok(mouse_ev) = web_sys::MouseEvent::new("click") else { return };
-                on_click.call(mouse_ev);
-            }) as Box<dyn FnMut(_)>);
-
-            let _ = document.add_event_listener_with_callback("keydown", handler.as_ref().unchecked_ref());
-            handler.forget();
+        setup_single_shortcut_handler(is_capturing_shortcut, shortcut, move |ev| {
+            ev.prevent_default();
+            let Ok(mouse_ev) = web_sys::MouseEvent::new("click") else { return };
+            on_click.call(mouse_ev);
         });
     }
 

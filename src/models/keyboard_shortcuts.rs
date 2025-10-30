@@ -152,6 +152,18 @@ impl KeyboardShortcut {
 
         false
     }
+
+    /// Create a `KeyboardShortcut` from a `KeyboardEvent`
+    #[must_use]
+    pub fn from_event(ev: &web_sys::KeyboardEvent) -> Self {
+        Self::new(
+            ev.code(),
+            ev.ctrl_key(),
+            ev.shift_key(),
+            ev.alt_key(),
+            ev.meta_key(),
+        )
+    }
 }
 
 /// Shortcut category
@@ -182,7 +194,8 @@ pub struct ShortcutEntry {
 }
 
 /// Detect if running on Mac platform
-fn is_mac_platform() -> bool {
+#[must_use]
+pub fn is_mac_platform() -> bool {
     let Some(window) = web_sys::window() else {
         return false;
     };
@@ -190,6 +203,31 @@ fn is_mac_platform() -> bool {
         return false;
     };
     platform.contains("Mac") || platform.contains("iPhone") || platform.contains("iPad")
+}
+
+/// Detect if running on Windows platform
+#[must_use]
+pub fn is_windows_platform() -> bool {
+    let Some(window) = web_sys::window() else {
+        return false;
+    };
+    let Ok(platform) = window.navigator().platform() else {
+        return false;
+    };
+    platform.contains("Win")
+}
+
+/// Check if the event target is an input field where keyboard shortcuts should be ignored
+#[must_use]
+pub fn is_input_field_target(ev: &web_sys::KeyboardEvent) -> bool {
+    let Some(target) = ev.target() else {
+        return false;
+    };
+    let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() else {
+        return false;
+    };
+    let tag_name = element.tag_name().to_lowercase();
+    tag_name == "input" || tag_name == "textarea"
 }
 
 /// Get all shortcut definitions
@@ -513,10 +551,7 @@ pub fn setup_shortcut_handler<F, S>(
         }
 
         // Don't handle keyboard shortcuts when typing in input fields
-        let Some(target) = ev.target() else { return };
-        let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() else { return };
-        let tag_name = element.tag_name().to_lowercase();
-        if tag_name == "input" || tag_name == "textarea" {
+        if is_input_field_target(&ev) {
             return;
         }
 
@@ -539,5 +574,35 @@ pub fn setup_shortcut_handler<F, S>(
         if let Some(action_id) = action {
             handler(action_id, &ev);
         }
+    });
+}
+
+/// Helper function to setup a listener for a single specific keyboard shortcut
+/// This is useful for components that need to respond to one shortcut
+pub fn setup_single_shortcut_handler<F>(
+    is_capturing_shortcut: leptos::ReadSignal<bool>,
+    shortcut: KeyboardShortcut,
+    handler: F,
+) where
+    F: Fn(&web_sys::KeyboardEvent) + 'static,
+{
+    leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
+        // Don't handle shortcuts when capturing in the shortcuts editor
+        if is_capturing_shortcut.get() {
+            return;
+        }
+
+        // Don't handle keyboard shortcuts when typing in input fields
+        if is_input_field_target(&ev) {
+            return;
+        }
+
+        // Check if this event matches our shortcut
+        let event_shortcut = KeyboardShortcut::from_event(&ev);
+        if shortcut != event_shortcut {
+            return;
+        }
+
+        handler(&ev);
     });
 }
