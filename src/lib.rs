@@ -8,6 +8,7 @@ pub mod storage;
 pub mod import;
 pub mod constants;
 pub mod time;
+pub mod geometry;
 pub mod conflict;
 pub mod train_journey;
 

@@ -1,5 +1,6 @@
 use crate::models::{RailwayGraph, Stations, Junctions};
 use crate::components::infrastructure_canvas::{track_renderer, junction_renderer};
+use crate::geometry::line_segments_intersect;
 use web_sys::CanvasRenderingContext2d;
 use std::collections::HashMap;
 use petgraph::stable_graph::NodeIndex;
@@ -139,7 +140,7 @@ impl LabelBounds {
         for i in 0..4 {
             let c1 = corners[i];
             let c2 = corners[(i + 1) % 4];
-            if lines_intersect(p1, p2, c1, c2) {
+            if line_segments_intersect(p1, p2, c1, c2) {
                 return true;
             }
         }
@@ -151,18 +152,6 @@ impl LabelBounds {
         point.0 >= self.x && point.0 <= self.x + self.width &&
         point.1 >= self.y && point.1 <= self.y + self.height
     }
-}
-
-fn lines_intersect(p1: (f64, f64), p2: (f64, f64), p3: (f64, f64), p4: (f64, f64)) -> bool {
-    let d = (p2.0 - p1.0) * (p4.1 - p3.1) - (p2.1 - p1.1) * (p4.0 - p3.0);
-    if d.abs() < 1e-10 {
-        return false;
-    }
-
-    let t = ((p3.0 - p1.0) * (p4.1 - p3.1) - (p3.1 - p1.1) * (p4.0 - p3.0)) / d;
-    let u = ((p3.0 - p1.0) * (p2.1 - p1.1) - (p3.1 - p1.1) * (p2.0 - p1.0)) / d;
-
-    (0.0..=1.0).contains(&t) && (0.0..=1.0).contains(&u)
 }
 
 fn draw_station_nodes(
