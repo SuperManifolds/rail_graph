@@ -1,6 +1,6 @@
 use crate::components::duration_input::DurationInput;
 use crate::models::{Line, RouteDirection};
-use leptos::{component, view, ReadSignal, IntoView, Signal, SignalGetUntracked};
+use leptos::{component, view, ReadSignal, IntoView, Signal, SignalGetUntracked, SignalWith};
 use chrono::Duration;
 use std::rc::Rc;
 
@@ -37,20 +37,46 @@ fn update_wait_time(
 #[component]
 pub fn WaitTimeColumn(
     index: usize,
-    wait_duration: Duration,
+    #[prop(optional)] wait_duration: Option<Duration>,
     route_direction: RouteDirection,
     edited_line: ReadSignal<Option<Line>>,
     on_save: Rc<dyn Fn(Line)>,
     is_junction: bool,
+    is_first: bool,
 ) -> impl IntoView {
     if is_junction {
         // Junctions never have wait time - show placeholder
         return view! { <span class="track-placeholder">"-"</span> }.into_view();
     }
 
+    // Compute wait_duration reactively from edited_line
+    #[allow(clippy::excessive_nesting)]
+    let wait_duration_signal = Signal::derive(move || {
+        edited_line.with(|line| {
+            line.as_ref().map_or(wait_duration.unwrap_or(Duration::zero()), |l| {
+                if is_first {
+                    match route_direction {
+                        RouteDirection::Forward => l.first_stop_wait_time,
+                        RouteDirection::Return => l.return_first_stop_wait_time,
+                    }
+                } else {
+                    let route = match route_direction {
+                        RouteDirection::Forward => &l.forward_route,
+                        RouteDirection::Return => &l.return_route,
+                    };
+                    if index > 0 && index - 1 < route.len() {
+                        route[index - 1].wait_time
+                    } else {
+                        Duration::zero()
+                    }
+                }
+            })
+        })
+    });
+
     view! {
         <DurationInput
-            duration=Signal::derive(move || wait_duration)
+            duration=wait_duration_signal
             on_change={
                 let on_save = on_save.clone();
                 move |new_wait_time| {
