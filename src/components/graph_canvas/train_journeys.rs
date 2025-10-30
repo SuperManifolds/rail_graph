@@ -169,7 +169,7 @@ pub fn match_journey_stations_to_view_by_edges(
 }
 
 /// Draw an arrow indicator showing that a journey continues beyond the visible view
-/// `pointing_downward`: true = arrow points down (↓, journey continues below), false = arrow points up (↑, journey came from above)
+/// Always draws a right-pointing arrow (→) to indicate the direction of travel
 fn draw_continuation_indicator(
     ctx: &CanvasRenderingContext2d,
     x: f64,
@@ -177,7 +177,6 @@ fn draw_continuation_indicator(
     color: &str,
     line_width: f64,
     zoom_level: f64,
-    pointing_downward: bool,
 ) {
     let arrow_length = CONTINUATION_ARROW_LENGTH / zoom_level;
     let head_size = CONTINUATION_ARROW_HEAD_SIZE / zoom_level;
@@ -189,27 +188,15 @@ fn draw_continuation_indicator(
     ctx.set_line_join("round");
     ctx.begin_path();
 
-    if pointing_downward {
-        // Draw ↓ arrow (journey continues below)
-        // Vertical line going down
-        ctx.move_to(x, y);
-        ctx.line_to(x, y + arrow_length);
+    // Draw → arrow (direction of travel)
+    // Horizontal line going right
+    ctx.move_to(x, y);
+    ctx.line_to(x + arrow_length, y);
 
-        // Arrow head at bottom
-        ctx.move_to(x - head_size / 2.0, y + arrow_length - head_size / 2.0);
-        ctx.line_to(x, y + arrow_length);
-        ctx.line_to(x + head_size / 2.0, y + arrow_length - head_size / 2.0);
-    } else {
-        // Draw ↑ arrow (journey came from above)
-        // Vertical line going up
-        ctx.move_to(x, y);
-        ctx.line_to(x, y - arrow_length);
-
-        // Arrow head at top
-        ctx.move_to(x - head_size / 2.0, y - arrow_length + head_size / 2.0);
-        ctx.line_to(x, y - arrow_length);
-        ctx.line_to(x + head_size / 2.0, y - arrow_length + head_size / 2.0);
-    }
+    // Arrow head at right
+    ctx.move_to(x + arrow_length - head_size / 2.0, y - head_size / 2.0);
+    ctx.line_to(x + arrow_length, y);
+    ctx.line_to(x + arrow_length - head_size / 2.0, y + head_size / 2.0);
 
     ctx.stroke();
     ctx.restore();
@@ -345,7 +332,6 @@ pub fn draw_train_journeys(
                     &journey.color,
                     journey.thickness / zoom_level,
                     zoom_level,
-                    false, // Arrow points up (journey came from above)
                 );
             }
         }
@@ -360,7 +346,6 @@ pub fn draw_train_journeys(
                     &journey.color,
                     journey.thickness / zoom_level,
                     zoom_level,
-                    true, // Arrow points down (journey continues below)
                 );
             }
         }
