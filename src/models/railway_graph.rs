@@ -1,7 +1,7 @@
 use petgraph::stable_graph::{StableGraph, NodeIndex};
 use petgraph::algo::dijkstra;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use super::node::Node;
 use super::track::TrackSegment;
 use super::project::SpacingMode;
@@ -146,6 +146,101 @@ impl RailwayGraph {
         );
 
         distances.get(&to).copied().unwrap_or(0.0)
+    }
+
+    /// Finds the longest simple path in the graph (path with most nodes, no cycles).
+    ///
+    /// Tries starting from each node and returns the longest path found using DFS.
+    #[must_use]
+    pub fn find_longest_path(&self) -> Vec<NodeIndex> {
+        let mut longest_path = Vec::new();
+
+        // Try starting from each node
+        for start_node in self.graph.node_indices() {
+            let mut visited = HashSet::new();
+            let mut current_path = Vec::new();
+
+            Self::dfs_longest_path(self, start_node, &mut visited, &mut current_path, &mut longest_path);
+        }
+
+        longest_path
+    }
+
+    /// Finds the longest path starting from a specific node, avoiding already visited nodes.
+    ///
+    /// # Arguments
+    /// * `start` - Starting node for the search
+    /// * `global_visited` - Set of nodes to exclude from the search
+    #[must_use]
+    pub fn find_longest_path_from(
+        &self,
+        start: NodeIndex,
+        global_visited: &HashSet<NodeIndex>,
+    ) -> Vec<NodeIndex> {
+        let mut longest_path = Vec::new();
+        let mut visited = global_visited.clone();
+        let mut current_path = Vec::new();
+
+        Self::dfs_longest_path_excluding(self, start, &mut visited, &mut current_path, &mut longest_path);
+
+        longest_path
+    }
+
+    /// DFS helper to find longest simple path.
+    fn dfs_longest_path(
+        &self,
+        current: NodeIndex,
+        visited: &mut HashSet<NodeIndex>,
+        current_path: &mut Vec<NodeIndex>,
+        longest_path: &mut Vec<NodeIndex>,
+    ) {
+        visited.insert(current);
+        current_path.push(current);
+
+        // Update longest if current is longer
+        if current_path.len() > longest_path.len() {
+            *longest_path = current_path.clone();
+        }
+
+        // Try extending path to each unvisited neighbor
+        for neighbor in self.graph.neighbors_undirected(current) {
+            if !visited.contains(&neighbor) {
+                Self::dfs_longest_path(self, neighbor, visited, current_path, longest_path);
+            }
+        }
+
+        // Backtrack
+        current_path.pop();
+        visited.remove(&current);
+    }
+
+    /// DFS helper that respects global visited set.
+    fn dfs_longest_path_excluding(
+        &self,
+        current: NodeIndex,
+        visited: &mut HashSet<NodeIndex>,
+        current_path: &mut Vec<NodeIndex>,
+        longest_path: &mut Vec<NodeIndex>,
+    ) {
+        if visited.contains(&current) {
+            return;
+        }
+
+        visited.insert(current);
+        current_path.push(current);
+
+        if current_path.len() > longest_path.len() {
+            *longest_path = current_path.clone();
+        }
+
+        for neighbor in self.graph.neighbors_undirected(current) {
+            if !visited.contains(&neighbor) {
+                Self::dfs_longest_path_excluding(self, neighbor, visited, current_path, longest_path);
+            }
+        }
+
+        current_path.pop();
+        visited.remove(&current);
     }
 }
 
