@@ -20,20 +20,20 @@ pub trait Routes {
     ) -> (Option<NodeIndex>, Option<NodeIndex>);
 
     /// Get available stations that can be added at the start of a route
-    /// Returns station names that have edges connecting to the first station
+    /// Returns (`station_name`, `NodeIndex`) pairs for stations that have edges connecting to the first station
     fn get_available_start_stations(
         &self,
         route: &[crate::models::RouteSegment],
         direction: crate::models::RouteDirection,
-    ) -> Vec<String>;
+    ) -> Vec<(String, NodeIndex)>;
 
     /// Get available stations that can be added at the end of a route
-    /// Returns station names that have edges connecting from the last station
+    /// Returns (`station_name`, `NodeIndex`) pairs for stations that have edges connecting from the last station
     fn get_available_end_stations(
         &self,
         route: &[crate::models::RouteSegment],
         direction: crate::models::RouteDirection,
-    ) -> Vec<String>;
+    ) -> Vec<(String, NodeIndex)>;
 
     /// Find a path between two nodes, potentially going through junctions
     /// Returns a list of edge indices that form the path, or None if no path exists
@@ -156,7 +156,7 @@ impl Routes for RailwayGraph {
         &self,
         route: &[crate::models::RouteSegment],
         direction: crate::models::RouteDirection,
-    ) -> Vec<String> {
+    ) -> Vec<(String, NodeIndex)> {
         use super::stations::Stations;
 
         let (first_idx, _) = self.get_route_endpoints(route, direction);
@@ -175,7 +175,7 @@ impl Routes for RailwayGraph {
                     crate::models::RouteDirection::Return => self.find_path_between_nodes(first_idx, *node_idx).is_some(),
                 };
                 if has_path {
-                    Some(station.name.clone())
+                    Some((station.name.clone(), *node_idx))
                 } else {
                     None
                 }
@@ -187,7 +187,7 @@ impl Routes for RailwayGraph {
         &self,
         route: &[crate::models::RouteSegment],
         direction: crate::models::RouteDirection,
-    ) -> Vec<String> {
+    ) -> Vec<(String, NodeIndex)> {
         use super::stations::Stations;
 
         let (_, last_idx) = self.get_route_endpoints(route, direction);
@@ -206,7 +206,7 @@ impl Routes for RailwayGraph {
                     crate::models::RouteDirection::Return => self.find_path_between_nodes(*node_idx, last_idx).is_some(),
                 };
                 if has_path {
-                    Some(station.name.clone())
+                    Some((station.name.clone(), *node_idx))
                 } else {
                     None
                 }
@@ -577,8 +577,8 @@ mod tests {
 
         let available = graph.get_available_start_stations(&route, RouteDirection::Forward);
         assert_eq!(available.len(), 2);
-        assert!(available.contains(&"Station A".to_string()));
-        assert!(available.contains(&"Station C".to_string()));
+        assert!(available.iter().any(|(name, _)| name == "Station A"));
+        assert!(available.iter().any(|(name, _)| name == "Station C"));
     }
 
     #[test]
@@ -597,8 +597,8 @@ mod tests {
 
         let available = graph.get_available_end_stations(&route, RouteDirection::Forward);
         assert_eq!(available.len(), 2);
-        assert!(available.contains(&"Station A".to_string()));
-        assert!(available.contains(&"Station C".to_string()));
+        assert!(available.iter().any(|(name, _)| name == "Station A"));
+        assert!(available.iter().any(|(name, _)| name == "Station C"));
     }
 
     #[test]

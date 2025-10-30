@@ -2,7 +2,7 @@ use chrono::{Duration, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 use crate::constants::{BASE_DATE, BASE_MIDNIGHT};
 use petgraph::stable_graph::NodeIndex;
-use super::{RailwayGraph, TrackSegment, TrackDirection, Tracks, DaysOfWeek};
+use super::{RailwayGraph, TrackSegment, TrackDirection, Tracks, DaysOfWeek, RouteDirection, TrackHandedness, Stations, Routes, StationPosition};
 
 #[must_use]
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
@@ -751,6 +751,270 @@ impl Line {
         duplicated.id = uuid::Uuid::new_v4();
         duplicated.name = Self::generate_duplicate_name(&self.name);
         duplicated
+    }
+
+    /// Creates a route between two stations and adds it to the specified direction.
+    ///
+    /// # Arguments
+    /// * `first_name` - Name of the starting station
+    /// * `second_name` - Name of the ending station
+    /// * `graph` - Railway graph to use for pathfinding
+    /// * `direction` - Which route to populate (Forward or Return)
+    /// * `handedness` - Track handedness for platform selection
+    ///
+    /// # Returns
+    /// `true` if the route was created successfully, `false` if no path exists
+    pub fn create_route_between_stations(
+        &mut self,
+        first_name: &str,
+        second_name: &str,
+        graph: &RailwayGraph,
+        direction: RouteDirection,
+        handedness: TrackHandedness,
+    ) -> bool {
+        let Some(first_idx) = graph.get_station_index(first_name) else {
+            return false;
+        };
+        let Some(second_idx) = graph.get_station_index(second_name) else {
+            return false;
+        };
+        let Some(path) = graph.find_path_between_nodes(first_idx, second_idx) else {
+            return false;
+        };
+
+        for edge in &path {
+            let Some((source, target)) = graph.graph.edge_endpoints(*edge) else {
+                continue;
+            };
+
+            let is_passing_loop = graph.graph.node_weight(source)
+                .and_then(|node| node.as_station())
+                .is_some_and(|s| s.passing_loop);
+            let default_wait = if is_passing_loop {
+                Duration::seconds(0)
+            } else {
+                self.default_wait_time
+            };
+
+            let source_platform_count = graph.graph.node_weight(source)
+                .and_then(|n| n.as_station())
+                .map_or(1, |s| s.platforms.len());
+
+            let target_platform_count = graph.graph.node_weight(target)
+                .and_then(|n| n.as_station())
+                .map_or(1, |s| s.platforms.len());
+
+            let origin_platform = graph.get_default_platform_for_arrival(*edge, false, source_platform_count, handedness);
+            let destination_platform = graph.get_default_platform_for_arrival(*edge, true, target_platform_count, handedness);
+
+            // Select track compatible with route direction
+            let traveling_backward = matches!(direction, RouteDirection::Return);
+            let track_index = graph.select_track_for_direction(*edge, traveling_backward);
+
+            let segment = RouteSegment {
+                edge_index: edge.index(),
+                track_index,
+                origin_platform,
+                destination_platform,
+                duration: None,
+                wait_time: default_wait,
+            };
+
+            match direction {
+                RouteDirection::Forward => {
+                    self.forward_route.push(segment);
+                }
+                RouteDirection::Return => {
+                    self.return_route.push(segment);
+                }
+            }
+        }
+
+        if matches!(direction, RouteDirection::Forward) {
+            self.apply_route_sync_if_enabled();
+        }
+
+        true
+    }
+
+    /// Adds a station to a route at the specified position (start or end).
+    ///
+    /// # Arguments
+    /// * `station_idx` - `NodeIndex` of the station to add
+    /// * `graph` - Railway graph to use for pathfinding
+    /// * `direction` - Which route to modify (Forward or Return)
+    /// * `position` - Whether to add at start or end of route
+    /// * `handedness` - Track handedness for platform selection
+    ///
+    /// # Returns
+    /// `true` if the station was added successfully, `false` if no path exists
+    pub fn add_station_to_route(
+        &mut self,
+        station_idx: NodeIndex,
+        graph: &RailwayGraph,
+        direction: RouteDirection,
+        position: StationPosition,
+        handedness: TrackHandedness,
+    ) -> bool {
+        // Get the current route
+        let current_route = match direction {
+            RouteDirection::Forward => &self.forward_route,
+            RouteDirection::Return => &self.return_route,
+        };
+
+        // Handle empty route case - just return true (no segments to add yet)
+        if current_route.is_empty() {
+            return true;
+        }
+
+        // Get the existing endpoint based on position
+        let existing_idx = match position {
+            StationPosition::Start => {
+                // Get the first node in the route
+                let Some(first_edge) = current_route.first().map(|seg| seg.edge_index) else {
+                    return false;
+                };
+                let first_edge_idx = petgraph::stable_graph::EdgeIndex::new(first_edge);
+                let Some((source, target)) = graph.graph.edge_endpoints(first_edge_idx) else {
+                    return false;
+                };
+
+                // Determine which endpoint is the start
+                if current_route.len() > 1 {
+                    let second_edge = current_route[1].edge_index;
+                    let second_edge_idx = petgraph::stable_graph::EdgeIndex::new(second_edge);
+                    let Some((second_source, second_target)) = graph.graph.edge_endpoints(second_edge_idx) else {
+                        return false;
+                    };
+
+                    // If target connects to second edge, we started at source
+                    if target == second_source || target == second_target {
+                        source
+                    } else {
+                        target
+                    }
+                } else {
+                    source
+                }
+            }
+            StationPosition::End => {
+                // Get the last node in the route
+                let Some(last_edge) = current_route.last().map(|seg| seg.edge_index) else {
+                    return false;
+                };
+                let last_edge_idx = petgraph::stable_graph::EdgeIndex::new(last_edge);
+                let Some((source, target)) = graph.graph.edge_endpoints(last_edge_idx) else {
+                    return false;
+                };
+
+                // Determine which endpoint is the end
+                if current_route.len() > 1 {
+                    let second_last_edge = current_route[current_route.len() - 2].edge_index;
+                    let second_last_idx = petgraph::stable_graph::EdgeIndex::new(second_last_edge);
+                    let Some((second_source, second_target)) = graph.graph.edge_endpoints(second_last_idx) else {
+                        return false;
+                    };
+
+                    // If source connects to second-last edge, we ended at target
+                    if source == second_source || source == second_target {
+                        target
+                    } else {
+                        source
+                    }
+                } else {
+                    target
+                }
+            }
+        };
+
+        // Find path based on position
+        let Some(path) = (match position {
+            StationPosition::Start => graph.find_path_between_nodes(station_idx, existing_idx),
+            StationPosition::End => graph.find_path_between_nodes(existing_idx, station_idx),
+        }) else {
+            return false;
+        };
+
+        // Determine starting node for path traversal
+        let mut current_node = match position {
+            StationPosition::Start => station_idx,
+            StationPosition::End => existing_idx,
+        };
+
+        // Convert path edges into route segments
+        let mut new_segments = Vec::new();
+        for edge in &path {
+            let Some((source, target)) = graph.graph.edge_endpoints(*edge) else {
+                continue;
+            };
+
+            // Determine direction
+            let is_forward = current_node == source;
+            let next_node = if is_forward { target } else { source };
+
+            // Select track
+            let traveling_backward = !is_forward;
+            let track_index = graph.select_track_for_direction(*edge, traveling_backward);
+
+            // Check for passing loop or junction
+            let is_passing_loop_or_junction = graph.graph.node_weight(current_node)
+                .is_some_and(|node| {
+                    node.as_station().is_some_and(|s| s.passing_loop) ||
+                    node.as_junction().is_some()
+                });
+            let default_wait = if is_passing_loop_or_junction {
+                Duration::seconds(0)
+            } else {
+                self.default_wait_time
+            };
+
+            // Get platform counts
+            let source_platform_count = graph.graph.node_weight(source)
+                .and_then(|n| n.as_station())
+                .map_or(1, |s| s.platforms.len());
+
+            let target_platform_count = graph.graph.node_weight(target)
+                .and_then(|n| n.as_station())
+                .map_or(1, |s| s.platforms.len());
+
+            let origin_platform = graph.get_default_platform_for_arrival(*edge, false, source_platform_count, handedness);
+            let destination_platform = graph.get_default_platform_for_arrival(*edge, true, target_platform_count, handedness);
+
+            new_segments.push(RouteSegment {
+                edge_index: edge.index(),
+                track_index,
+                origin_platform,
+                destination_platform,
+                duration: None,
+                wait_time: default_wait,
+            });
+
+            current_node = next_node;
+        }
+
+        // Insert segments
+        let route = match direction {
+            RouteDirection::Forward => &mut self.forward_route,
+            RouteDirection::Return => &mut self.return_route,
+        };
+
+        match position {
+            StationPosition::Start => {
+                for (i, segment) in new_segments.into_iter().enumerate() {
+                    route.insert(i, segment);
+                }
+            }
+            StationPosition::End => {
+                route.extend(new_segments);
+            }
+        }
+
+        // Sync return route if needed
+        if matches!(direction, RouteDirection::Forward) {
+            self.apply_route_sync_if_enabled();
+        }
+
+        true
     }
 }
 

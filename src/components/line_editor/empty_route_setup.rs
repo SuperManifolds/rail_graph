@@ -1,6 +1,5 @@
-use crate::models::{Line, RailwayGraph, RouteDirection, RouteSegment, Stations, Routes, Tracks};
+use crate::models::{Line, RailwayGraph, RouteDirection, Stations};
 use leptos::*;
-use chrono::Duration;
 
 #[component]
 fn NoStationsMessage() -> impl IntoView {
@@ -37,74 +36,6 @@ fn FirstStationSelect(
     }
 }
 
-fn create_route_between_stations(
-    first_name: &str,
-    second_name: &str,
-    mut line: Line,
-    graph: &RailwayGraph,
-    direction: RouteDirection,
-    handedness: crate::models::TrackHandedness,
-) -> Option<Line> {
-    let first_idx = graph.get_station_index(first_name)?;
-    let second_idx = graph.get_station_index(second_name)?;
-    let path = graph.find_path_between_nodes(first_idx, second_idx)?;
-
-    for edge in &path {
-        let Some((source, target)) = graph.graph.edge_endpoints(*edge) else {
-            continue;
-        };
-
-        let is_passing_loop = graph.graph.node_weight(source)
-            .and_then(|node| node.as_station())
-            .is_some_and(|s| s.passing_loop);
-        let default_wait = if is_passing_loop {
-            Duration::seconds(0)
-        } else {
-            line.default_wait_time
-        };
-
-        let source_platform_count = graph.graph.node_weight(source)
-            .and_then(|n| n.as_station())
-            .map_or(1, |s| s.platforms.len());
-
-        let target_platform_count = graph.graph.node_weight(target)
-            .and_then(|n| n.as_station())
-            .map_or(1, |s| s.platforms.len());
-
-        let origin_platform = graph.get_default_platform_for_arrival(*edge, false, source_platform_count, handedness);
-        let destination_platform = graph.get_default_platform_for_arrival(*edge, true, target_platform_count, handedness);
-
-        // Select track compatible with route direction
-        let traveling_backward = matches!(direction, RouteDirection::Return);
-        let track_index = graph.select_track_for_direction(*edge, traveling_backward);
-
-        let segment = RouteSegment {
-            edge_index: edge.index(),
-            track_index,
-            origin_platform,
-            destination_platform,
-            duration: None,
-            // Use default wait time for stations, zero for passing loops
-            wait_time: default_wait,
-        };
-
-        match direction {
-            RouteDirection::Forward => {
-                line.forward_route.push(segment);
-            }
-            RouteDirection::Return => {
-                line.return_route.push(segment);
-            }
-        }
-    }
-
-    if matches!(direction, RouteDirection::Forward) {
-        line.apply_route_sync_if_enabled();
-    }
-
-    Some(line)
-}
-
 #[component]
 #[allow(clippy::too_many_arguments)]
 fn SecondStationSelect(
@@ -129,13 +60,13 @@ fn SecondStationSelect(
             return;
         }
 
-        let Some(line) = edited_line.get_untracked() else { return };
+        let Some(mut line) = edited_line.get_untracked() else { return };
         let graph_data = graph.get();
         let direction = route_direction.get();
         let handedness = settings.get().track_handedness;
 
-        if let Some(updated_line) = create_route_between_stations(&first_name_for_handler, &second_name, line, &graph_data, direction, handedness) {
-            on_save(updated_line);
+        if line.create_route_between_stations(&first_name_for_handler, &second_name, &graph_data, direction, handedness) {
+            on_save(line);
             first_station.set(None);
         }
     };
