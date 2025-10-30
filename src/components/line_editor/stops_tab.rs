@@ -20,6 +20,7 @@ fn RouteStopsList(
     graph: ReadSignal<RailwayGraph>,
     time_mode: RwSignal<TimeDisplayMode>,
     on_save: std::rc::Rc<dyn Fn(Line)>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
     let route_data = create_memo(move |_| {
         edited_line.with(|line| {
@@ -39,14 +40,6 @@ fn RouteStopsList(
         route_data.with(|route_opt| {
             route_opt.as_ref().map(|route| {
                 graph.with_untracked(|g| g.get_stations_from_route(route, dir.get_untracked()))
-            })
-        })
-    });
-
-    let endpoints = create_memo(move |_| {
-        route_data.with(|route_opt| {
-            route_opt.as_ref().map(|route| {
-                graph.with_untracked(|g| g.get_route_endpoints(route, dir.get()))
             })
         })
     });
@@ -85,18 +78,17 @@ fn RouteStopsList(
         </div>
 
         {move || {
-            let eps = endpoints.get()?;
             let avail = available_start.get()?;
             let current_dir = dir.get();
             Some(view! {
                 <StationSelect
                     available_stations=avail
-                    station_idx=eps.0
                     position=StationPosition::Start
                     route_direction=current_dir
                     graph=graph
                     edited_line=edited_line
                     on_save=on_save_for_start.clone()
+                    settings=settings
                 />
             })
         }}
@@ -134,18 +126,17 @@ fn RouteStopsList(
         />
 
         {move || {
-            let eps = endpoints.get()?;
             let avail = available_end.get()?;
             let current_dir = dir.get();
             Some(view! {
                 <StationSelect
                     available_stations=avail
-                    station_idx=eps.1
                     position=StationPosition::End
                     route_direction=current_dir
                     graph=graph
                     edited_line=edited_line
                     on_save=on_save_for_end.clone()
+                    settings=settings
                 />
             })
         }}
@@ -242,6 +233,7 @@ pub fn StopsTab(
                                 graph=graph
                                 time_mode=time_mode
                                 on_save=on_save_stored.get_value()
+                                settings=settings
                             />
                         }
                     >

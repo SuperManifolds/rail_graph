@@ -30,3 +30,9 @@ pub enum RouteDirection {
     Return,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum StationPosition {
+    Start,
+    End,
+}
+

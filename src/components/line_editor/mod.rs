@@ -19,12 +19,13 @@ pub use manual_departures_list::ManualDeparturesList;
 pub use platform_column::PlatformColumn;
 pub use platform_select::{PlatformField, PlatformSelect};
 pub use schedule_tab::ScheduleTab;
-pub use station_select::{StationPosition, StationSelect};
+pub use station_select::StationSelect;
 pub use stop_row::StopRow;
 pub use stops_tab::StopsTab;
 pub use time_column::{TimeColumn, TimeDisplayMode};
 pub use track_column::TrackColumn;
 pub use wait_time_column::WaitTimeColumn;
+pub use crate::models::StationPosition;
 
 use crate::components::{
     tab_view::{Tab, TabView},
