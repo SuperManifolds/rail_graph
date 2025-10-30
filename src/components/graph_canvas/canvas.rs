@@ -23,6 +23,27 @@ pub const TOP_MARGIN: f64 = 60.0;
 pub const RIGHT_PADDING: f64 = 20.0;
 pub const BOTTOM_PADDING: f64 = 20.0;
 
+/// Calculates a Y position from a station position index (can be fractional for interpolation).
+/// For integer positions (e.g., 2.0), returns the position at that index.
+/// For fractional positions (e.g., 2.5), linearly interpolates between two positions.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn interpolate_position(pos: f64, positions: &[f64]) -> f64 {
+    if pos.fract() < f64::EPSILON {
+        // Integer position - use direct lookup
+        let idx = pos as usize;
+        positions.get(idx).copied().unwrap_or(0.0)
+    } else {
+        // Fractional position - interpolate between two stations
+        let idx1 = pos.floor() as usize;
+        let idx2 = pos.ceil() as usize;
+        let fraction = pos.fract();
+
+        let y1 = positions.get(idx1).copied().unwrap_or(0.0);
+        let y2 = positions.get(idx2).copied().unwrap_or(y1);
+        y1 + (fraction * (y2 - y1))
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn setup_render_effect(
     canvas_ref: leptos::NodeRef<leptos::html::Canvas>,
@@ -387,27 +408,7 @@ pub fn GraphCanvas(
                     set_zoom_level.set(target_zoom);
 
                     // Calculate Y position using actual station positions
-                    #[allow(clippy::excessive_nesting)]
-                    let calculate_y_pos = |pos: f64, positions: &[f64]| -> f64 {
-                        if pos.fract() < f64::EPSILON {
-                            // Integer position - use direct lookup
-                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                            let idx = pos as usize;
-                            positions.get(idx).copied().unwrap_or(0.0)
-                        } else {
-                            // Fractional position - interpolate between two stations
-                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                            let idx1 = pos.floor() as usize;
-                            let idx2 = pos.ceil() as usize;
-                            let fraction = pos.fract();
-
-                            let y1 = positions.get(idx1).copied().unwrap_or(0.0);
-                            let y2 = positions.get(idx2).copied().unwrap_or(y1);
-                            y1 + (fraction * (y2 - y1))
-                        }
-                    };
-
-                    let y_pos = calculate_y_pos(station_pos, &station_y_positions);
+                    let y_pos = interpolate_position(station_pos, &station_y_positions);
 
                     let target_x = (time_fraction * dims.hour_width * target_zoom * target_zoom) - (canvas_width / 2.0);
                     // Subtract TOP_MARGIN since station_y_positions include it but we're in transformed coords
