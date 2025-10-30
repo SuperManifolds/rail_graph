@@ -10,6 +10,7 @@
 
 ## Bug Fixes
 - Fixed keyboard shortcuts (j/l) in time and duration inputs losing focus when used repeatedly in the stops list - inputs now maintain focus allowing for rapid adjustments
+- Fixed infrastructure view station labels overlapping and aligning horizontally when zoomed out - labels now avoid positioning in the direction of connected tracks, resulting in better distribution and readability at all zoom levels
 
 # v0.1.12 - 2025-10-29
 
