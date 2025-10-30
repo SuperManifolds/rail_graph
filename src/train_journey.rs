@@ -876,12 +876,13 @@ mod tests {
             manual_departures: vec![],
             sync_routes: true,
             auto_train_number_format: "{line} {seq:04}".to_string(),
-                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                default_wait_time: Duration::seconds(30),
-                first_stop_wait_time: Duration::zero(),
-                return_first_stop_wait_time: Duration::zero(),
+            last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            default_wait_time: Duration::seconds(30),
+            first_stop_wait_time: Duration::zero(),
+            return_first_stop_wait_time: Duration::zero(),
             sort_index: None,
+            sync_departure_offsets: false,
         }
     }
 
@@ -1216,12 +1217,13 @@ mod tests {
             manual_departures: vec![],
             sync_routes: true,
             auto_train_number_format: "{line} {seq:04}".to_string(),
-                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                default_wait_time: Duration::seconds(30),
-                first_stop_wait_time: Duration::zero(),
-                return_first_stop_wait_time: Duration::zero(),
+            last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            default_wait_time: Duration::seconds(30),
+            first_stop_wait_time: Duration::zero(),
+            return_first_stop_wait_time: Duration::zero(),
             sort_index: None,
+            sync_departure_offsets: false,
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
@@ -1347,6 +1349,7 @@ mod tests {
             first_stop_wait_time: Duration::zero(),
             return_first_stop_wait_time: Duration::zero(),
             sort_index: None,
+            sync_departure_offsets: false,
         };
 
         // Apply sync to create return route
@@ -1533,6 +1536,7 @@ mod tests {
             first_stop_wait_time: Duration::zero(),
             return_first_stop_wait_time: Duration::zero(),
             sort_index: None,
+            sync_departure_offsets: false,
         };
 
         line.apply_route_sync_if_enabled();

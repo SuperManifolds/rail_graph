@@ -127,6 +127,8 @@ pub struct Line {
     pub return_first_stop_wait_time: Duration,
     #[serde(default)]
     pub sort_index: Option<f64>,
+    #[serde(default = "default_sync_departure_offsets")]
+    pub sync_departure_offsets: bool,
 }
 
 fn default_visible() -> bool {
@@ -139,6 +141,10 @@ fn default_thickness() -> f64 {
 
 fn default_sync_routes() -> bool {
     true
+}
+
+fn default_sync_departure_offsets() -> bool {
+    false
 }
 
 fn default_train_number_format() -> String {
@@ -190,6 +196,7 @@ impl Line {
                     first_stop_wait_time: default_first_stop_wait_time(),
                     return_first_stop_wait_time: default_first_stop_wait_time(),
                     sort_index: None,
+                    sync_departure_offsets: false,
                 }
             })
             .collect()
@@ -918,13 +925,14 @@ mod tests {
             forward_route: vec![create_test_segment(1), create_test_segment(2)],
             return_route: vec![create_test_segment(3)],
             sync_routes: true,
-                auto_train_number_format: "{line} {seq:04}".to_string(),
-                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                default_wait_time: default_wait_time(),
-                first_stop_wait_time: default_first_stop_wait_time(),
-                return_first_stop_wait_time: default_first_stop_wait_time(),
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+            last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            default_wait_time: default_wait_time(),
+            first_stop_wait_time: default_first_stop_wait_time(),
+            return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
+            sync_departure_offsets: false,
         };
 
         assert!(line.uses_edge(1));
@@ -950,13 +958,14 @@ mod tests {
             forward_route: vec![create_test_segment(1), create_test_segment(2)],
             return_route: vec![],
             sync_routes: true,
-                auto_train_number_format: "{line} {seq:04}".to_string(),
-                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                default_wait_time: default_wait_time(),
-                first_stop_wait_time: default_first_stop_wait_time(),
-                return_first_stop_wait_time: default_first_stop_wait_time(),
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+            last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            default_wait_time: default_wait_time(),
+            first_stop_wait_time: default_first_stop_wait_time(),
+            return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
+            sync_departure_offsets: false,
         };
 
         assert!(line.uses_any_edge(&[1, 5, 6]));
@@ -985,13 +994,14 @@ mod tests {
             ],
             return_route: vec![],
             sync_routes: true,
-                auto_train_number_format: "{line} {seq:04}".to_string(),
-                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                default_wait_time: default_wait_time(),
-                first_stop_wait_time: default_first_stop_wait_time(),
-                return_first_stop_wait_time: default_first_stop_wait_time(),
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+            last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            default_wait_time: default_wait_time(),
+            first_stop_wait_time: default_first_stop_wait_time(),
+            return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
+            sync_departure_offsets: false,
         };
 
         // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
@@ -1031,13 +1041,14 @@ mod tests {
             ],
             return_route: vec![],
             sync_routes: true,
-                auto_train_number_format: "{line} {seq:04}".to_string(),
-                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                default_wait_time: default_wait_time(),
-                first_stop_wait_time: default_first_stop_wait_time(),
-                return_first_stop_wait_time: default_first_stop_wait_time(),
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+            last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            default_wait_time: default_wait_time(),
+            first_stop_wait_time: default_first_stop_wait_time(),
+            return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
+            sync_departure_offsets: false,
         };
 
         // Remove edge 1 but no bypass mapping
@@ -1085,13 +1096,14 @@ mod tests {
             }],
             return_route: vec![],
             sync_routes: true,
-                auto_train_number_format: "{line} {seq:04}".to_string(),
-                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                default_wait_time: default_wait_time(),
-                first_stop_wait_time: default_first_stop_wait_time(),
-                return_first_stop_wait_time: default_first_stop_wait_time(),
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+            last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            default_wait_time: default_wait_time(),
+            first_stop_wait_time: default_first_stop_wait_time(),
+            return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
+            sync_departure_offsets: false,
         };
 
         line.fix_track_indices_after_change(edge.index(), 2, &graph);
@@ -1180,13 +1192,14 @@ mod tests {
                 create_test_segment(5),
             ],
             sync_routes: true,
-                auto_train_number_format: "{line} {seq:04}".to_string(),
-                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                default_wait_time: default_wait_time(),
-                first_stop_wait_time: default_first_stop_wait_time(),
-                return_first_stop_wait_time: default_first_stop_wait_time(),
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+            last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            default_wait_time: default_wait_time(),
+            first_stop_wait_time: default_first_stop_wait_time(),
+            return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
+            sync_departure_offsets: false,
         };
 
         // Split edge 10 into edges 20 and 21
@@ -1253,13 +1266,14 @@ mod tests {
             ],
             return_route: vec![],
             sync_routes: true,
-                auto_train_number_format: "{line} {seq:04}".to_string(),
-                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                default_wait_time: default_wait_time(),
-                first_stop_wait_time: default_first_stop_wait_time(),
-                return_first_stop_wait_time: default_first_stop_wait_time(),
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+            last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            default_wait_time: default_wait_time(),
+            first_stop_wait_time: default_first_stop_wait_time(),
+            return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
+            sync_departure_offsets: false,
         };
 
         // Delete the direct edge B -> C
@@ -1301,13 +1315,14 @@ mod tests {
             forward_route: vec![create_test_segment(e1.index())],
             return_route: vec![],
             sync_routes: true,
-                auto_train_number_format: "{line} {seq:04}".to_string(),
-                last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
-                default_wait_time: default_wait_time(),
-                first_stop_wait_time: default_first_stop_wait_time(),
-                return_first_stop_wait_time: default_first_stop_wait_time(),
+            auto_train_number_format: "{line} {seq:04}".to_string(),
+            last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            return_last_departure: BASE_DATE.and_hms_opt(22, 0, 0).expect("valid time"),
+            default_wait_time: default_wait_time(),
+            first_stop_wait_time: default_first_stop_wait_time(),
+            return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
+            sync_departure_offsets: false,
         };
 
         // Delete the edge

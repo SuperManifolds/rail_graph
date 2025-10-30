@@ -7,6 +7,7 @@ use crate::models::{Line, DaysOfWeek};
 use leptos::{component, view, IntoView, Signal, SignalGet, event_target_value, SignalGetUntracked, Callback, Callable};
 
 #[component]
+#[allow(clippy::too_many_lines)]
 pub fn AutoScheduleForm(
     edited_line: Signal<Option<Line>>,
     on_update: Callback<Line>,
@@ -63,24 +64,61 @@ pub fn AutoScheduleForm(
                     label=""
                     value=Signal::derive(move || edited_line.get().map(|l| l.first_departure).unwrap_or_default())
                     default_time="05:00"
-                    on_change=Box::new(move |time| {
+                    on_change=Box::new(move |new_time| {
                         if let Some(mut updated_line) = edited_line.get_untracked() {
-                            updated_line.first_departure = time;
+                            if updated_line.sync_departure_offsets {
+                                let offset = new_time.signed_duration_since(updated_line.first_departure);
+                                updated_line.first_departure = new_time;
+                                updated_line.return_first_departure += offset;
+                            } else {
+                                updated_line.first_departure = new_time;
+                            }
                             on_update.call(updated_line);
                         }
                     })
                 />
             </div>
 
+            <button
+                class=move || if edited_line.get().is_some_and(|l| l.sync_departure_offsets) {
+                    "sync-toggle active"
+                } else {
+                    "sync-toggle"
+                }
+                on:click=move |_| {
+                    if let Some(mut updated_line) = edited_line.get_untracked() {
+                        updated_line.sync_departure_offsets = !updated_line.sync_departure_offsets;
+                        on_update.call(updated_line);
+                    }
+                }
+                title=move || if edited_line.get().is_some_and(|l| l.sync_departure_offsets) {
+                    "Unlock departure offset (times change independently)"
+                } else {
+                    "Lock departure offset (times change together)"
+                }
+            >
+                <i class=move || if edited_line.get().is_some_and(|l| l.sync_departure_offsets) {
+                    "fa-solid fa-lock"
+                } else {
+                    "fa-solid fa-unlock"
+                }></i>
+            </button>
+
             <div class="form-group">
-                <label>"Last Departure Before"</label>
+                <label>"Return First Departure"</label>
                 <TimeInput
                     label=""
-                    value=Signal::derive(move || edited_line.get().map(|l| l.last_departure).unwrap_or_default())
-                    default_time="22:00"
-                    on_change=Box::new(move |time| {
+                    value=Signal::derive(move || edited_line.get().map(|l| l.return_first_departure).unwrap_or_default())
+                    default_time="06:00"
+                    on_change=Box::new(move |new_time| {
                         if let Some(mut updated_line) = edited_line.get_untracked() {
-                            updated_line.last_departure = time;
+                            if updated_line.sync_departure_offsets {
+                                let offset = new_time.signed_duration_since(updated_line.return_first_departure);
+                                updated_line.return_first_departure = new_time;
+                                updated_line.first_departure += offset;
+                            } else {
+                                updated_line.return_first_departure = new_time;
+                            }
                             on_update.call(updated_line);
                         }
                     })
@@ -90,19 +128,27 @@ pub fn AutoScheduleForm(
 
         <div class="time-fields-row">
             <div class="form-group">
-                <label>"Return First Departure"</label>
+                <label>"Last Departure Before"</label>
                 <TimeInput
                     label=""
-                    value=Signal::derive(move || edited_line.get().map(|l| l.return_first_departure).unwrap_or_default())
-                    default_time="06:00"
-                    on_change=Box::new(move |time| {
+                    value=Signal::derive(move || edited_line.get().map(|l| l.last_departure).unwrap_or_default())
+                    default_time="22:00"
+                    on_change=Box::new(move |new_time| {
                         if let Some(mut updated_line) = edited_line.get_untracked() {
-                            updated_line.return_first_departure = time;
+                            if updated_line.sync_departure_offsets {
+                                let offset = new_time.signed_duration_since(updated_line.last_departure);
+                                updated_line.last_departure = new_time;
+                                updated_line.return_last_departure += offset;
+                            } else {
+                                updated_line.last_departure = new_time;
+                            }
                             on_update.call(updated_line);
                         }
                     })
                 />
             </div>
+
+            <div class="sync-toggle-placeholder"></div>
 
             <div class="form-group">
                 <label>"Return Last Departure Before"</label>
@@ -110,9 +156,15 @@ pub fn AutoScheduleForm(
                     label=""
                     value=Signal::derive(move || edited_line.get().map(|l| l.return_last_departure).unwrap_or_default())
                     default_time="22:00"
-                    on_change=Box::new(move |time| {
+                    on_change=Box::new(move |new_time| {
                         if let Some(mut updated_line) = edited_line.get_untracked() {
-                            updated_line.return_last_departure = time;
+                            if updated_line.sync_departure_offsets {
+                                let offset = new_time.signed_duration_since(updated_line.return_last_departure);
+                                updated_line.return_last_departure = new_time;
+                                updated_line.last_departure += offset;
+                            } else {
+                                updated_line.return_last_departure = new_time;
+                            }
                             on_update.call(updated_line);
                         }
                     })
