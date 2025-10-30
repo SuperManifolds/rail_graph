@@ -140,11 +140,86 @@
 
     .time-fields-row {
         display: flex;
-        gap: 1.5rem;
-        align-items: flex-start;
+        gap: 0;
+        align-items: flex-end;
 
         > .form-group {
-            flex: 0 0 200px;
+            flex: 0 1 auto;
+        }
+
+        .sync-toggle {
+            position: relative;
+            align-self: flex-end;
+            padding: 0.25rem 0.4rem;
+            background-color: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 3px;
+            color: #aaa;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin: 0 3.5rem 0.5rem 3.5rem;
+            flex-shrink: 0;
+
+            // Left connecting line
+            &::before {
+                content: '';
+                position: absolute;
+                right: 100%;
+                top: 50%;
+                transform: translateY(-50%);
+                width: 3.5rem;
+                height: 1px;
+                background-color: #444;
+                transition: background-color 0.2s;
+            }
+
+            // Right connecting line
+            &::after {
+                content: '';
+                position: absolute;
+                left: 100%;
+                top: 50%;
+                transform: translateY(-50%);
+                width: 3.5rem;
+                height: 1px;
+                background-color: #444;
+                transition: background-color 0.2s;
+            }
+
+            &:hover {
+                background-color: #333;
+                border-color: #555;
+
+                &::before,
+                &::after {
+                    background-color: #555;
+                }
+            }
+
+            &.active {
+                background-color: #3a5a7a;
+                border-color: #4a7aaa;
+                color: #fff;
+
+                &::before,
+                &::after {
+                    background-color: #4a7aaa;
+                }
+
+                &:hover {
+                    background-color: #4a6a8a;
+                }
+            }
+
+            i {
+                font-size: 0.75rem;
+                display: block;
+            }
+        }
+
+        .sync-toggle-placeholder {
+            width: 7rem;
+            flex-shrink: 0;
         }
     }
 
