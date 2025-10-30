@@ -5,6 +5,7 @@ use web_sys::CanvasRenderingContext2d;
 use std::collections::HashMap;
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+use petgraph::Direction;
 
 type TrackSegment = ((f64, f64), (f64, f64));
 
@@ -345,6 +346,59 @@ fn get_node_positions_and_radii(graph: &RailwayGraph) -> Vec<(NodeIndex, (f64, f
     node_positions
 }
 
+fn get_conflicting_label_positions(
+    node_idx: NodeIndex,
+    graph: &RailwayGraph,
+    node_pos: (f64, f64),
+) -> Vec<LabelPosition> {
+    let mut conflicting_positions = Vec::new();
+
+    // Get all neighbors - check both outgoing and incoming edges
+    let mut neighbors = Vec::new();
+
+    // Outgoing edges
+    for edge in graph.graph.edges(node_idx) {
+        neighbors.push(edge.target());
+    }
+
+    // Incoming edges
+    for edge in graph.graph.edges_directed(node_idx, Direction::Incoming) {
+        neighbors.push(edge.source());
+    }
+
+    for neighbor_idx in neighbors {
+        if let Some(neighbor_pos) = graph.get_station_position(neighbor_idx) {
+            // Calculate angle from node to neighbor
+            let dx = neighbor_pos.0 - node_pos.0;
+            let dy = neighbor_pos.1 - node_pos.1;
+            let angle = dy.atan2(dx).to_degrees();
+
+            // Map angle to LabelPosition (with 22.5° tolerance on each side)
+            let position = if (-22.5..22.5).contains(&angle) {
+                LabelPosition::Right
+            } else if (22.5..67.5).contains(&angle) {
+                LabelPosition::BottomRight
+            } else if (67.5..112.5).contains(&angle) {
+                LabelPosition::Bottom
+            } else if (112.5..157.5).contains(&angle) {
+                LabelPosition::BottomLeft
+            } else if !(-157.5..157.5).contains(&angle) {
+                LabelPosition::Left
+            } else if (-157.5..-112.5).contains(&angle) {
+                LabelPosition::TopLeft
+            } else if (-112.5..-67.5).contains(&angle) {
+                LabelPosition::Top
+            } else {
+                LabelPosition::TopRight
+            };
+
+            conflicting_positions.push(position);
+        }
+    }
+
+    conflicting_positions
+}
+
 fn identify_branches(graph: &RailwayGraph, node_positions: &[(NodeIndex, (f64, f64), f64)]) -> Vec<Vec<NodeIndex>> {
     use std::collections::HashSet;
 
@@ -495,30 +549,56 @@ fn process_node_group(
     track_segments: &[TrackSegment],
     font_size: f64,
     label_positions: &mut HashMap<NodeIndex, (LabelBounds, LabelPosition)>,
+    graph: &RailwayGraph,
 ) {
     if nodes.is_empty() {
         return;
+    }
+
+    // Build map of conflicting positions for each node
+    let mut node_conflicts: HashMap<NodeIndex, Vec<LabelPosition>> = HashMap::new();
+    for &node_idx in nodes {
+        if let Some((_, _, pos)) = node_metadata.get(&node_idx) {
+            node_conflicts.insert(node_idx, get_conflicting_label_positions(node_idx, graph, *pos));
+        }
     }
 
     // Try all orientations and find the one with minimum overlaps
     let mut best_orientation = LabelPosition::Right;
     let mut best_total_overlaps = usize::MAX;
 
+    let mut best_conflict_count = usize::MAX;
+
     for orientation in LabelPosition::all() {
         let mut total_overlaps = 0;
+        let mut conflict_count = 0;
 
         for &node_idx in nodes {
             if let Some((text_width, label_offset, pos)) = node_metadata.get(&node_idx) {
                 let bounds = calculate_label_bounds(orientation, *pos, *text_width, font_size, *label_offset);
                 let overlaps = count_label_overlaps(&bounds, node_idx, label_positions, node_positions, track_segments);
+
+                let has_conflict = node_conflicts
+                    .get(&node_idx)
+                    .is_some_and(|conflicts| conflicts.contains(&orientation));
+
+                if has_conflict {
+                    conflict_count += 1;
+                }
+
                 total_overlaps += overlaps;
             }
         }
 
-        if total_overlaps < best_total_overlaps {
+        // Prefer orientations with fewer track conflicts, then by overlaps
+        let is_better = conflict_count < best_conflict_count
+            || (conflict_count == best_conflict_count && total_overlaps < best_total_overlaps);
+
+        if is_better {
+            best_conflict_count = conflict_count;
             best_total_overlaps = total_overlaps;
             best_orientation = orientation;
-            if total_overlaps == 0 {
+            if conflict_count == 0 && total_overlaps == 0 {
                 break;
             }
         }
@@ -554,6 +634,7 @@ fn process_node_group(
             track_segments,
             font_size,
             label_positions,
+            graph,
         );
     } else if !conflicting_nodes.is_empty() {
         // No progress made (all nodes still conflict), just place them with best orientation
@@ -613,6 +694,7 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
                 &track_segments,
                 font_size,
                 &mut label_positions,
+                graph,
             );
         }
     }
@@ -631,6 +713,7 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
             &track_segments,
             font_size,
             &mut label_positions,
+            graph,
         );
     }
 
@@ -705,6 +788,7 @@ pub fn draw_stations_with_cache(
                 &track_segments,
                 font_size,
                 &mut label_positions,
+                graph,
             );
         }
     }
@@ -722,6 +806,7 @@ pub fn draw_stations_with_cache(
             &track_segments,
             font_size,
             &mut label_positions,
+            graph,
         );
     }
 
@@ -814,6 +899,7 @@ pub fn draw_stations(
                 &track_segments,
                 font_size,
                 &mut label_positions,
+                graph,
             );
         }
     }
@@ -832,6 +918,7 @@ pub fn draw_stations(
             &track_segments,
             font_size,
             &mut label_positions,
+            graph,
         );
     }
 
