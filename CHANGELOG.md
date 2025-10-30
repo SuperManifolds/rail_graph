@@ -5,6 +5,7 @@
 
 ## Improvements
 - Reorganized auto schedule time fields - forward and return departures are now side-by-side for easier comparison
+- Improved performance when making rapid edits - conflict detection now waits until you're done making changes before recalculating
 
 # v0.1.12 - 2025-10-29
 

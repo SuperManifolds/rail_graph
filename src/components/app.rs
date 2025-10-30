@@ -409,13 +409,23 @@ pub fn App() -> impl IntoView {
 
     let detector = store_value(ConflictDetector::new(set_conflicts));
 
+    // Create debounced conflict detection to avoid excessive recomputation
+    let debounced_detect_conflicts = store_value(leptos::leptos_dom::helpers::debounce(
+        std::time::Duration::from_millis(300),
+        move |(journeys_vec, current_graph): (Vec<TrainJourney>, RailwayGraph)| {
+            detector.update_value(|d| {
+                d.detect(journeys_vec, current_graph);
+            });
+        },
+    ));
+
     create_effect(move |_| {
         let journeys = train_journeys.get();
         let journeys_vec: Vec<_> = journeys.values().cloned().collect();
         let current_graph = graph.get();
 
-        detector.update_value(|d| {
-            d.detect(journeys_vec, current_graph);
+        debounced_detect_conflicts.update_value(|f| {
+            f((journeys_vec, current_graph));
         });
     });
 
