@@ -1,4 +1,4 @@
-use leptos::{component, event_target_value, IntoView, Signal, SignalGet, SignalGetUntracked, view};
+use leptos::{component, event_target_value, IntoView, Signal, SignalGetUntracked, SignalGet, view};
 use chrono::Duration;
 use web_sys::KeyboardEvent;
 use std::rc::Rc;
@@ -42,12 +42,8 @@ pub fn DurationInput(
     duration: Signal<Duration>,
     on_change: impl Fn(Duration) + 'static,
 ) -> impl IntoView {
-    use leptos::html::Input;
-    use leptos::create_node_ref;
-
-    let input_ref = create_node_ref::<Input>();
     let on_change = Rc::new(on_change);
-    let on_change_clone = on_change.clone();
+    let on_change_keydown = on_change.clone();
 
     view! {
         <input
@@ -55,16 +51,10 @@ pub fn DurationInput(
             class="duration-input"
             placeholder="00:30:00"
             prop:value=move || duration_to_hhmmss(duration.get())
-            node_ref=input_ref
             on:change=move |ev| {
                 let input_str = event_target_value(&ev);
                 if let Some(new_duration) = parse_hhmmss(&input_str) {
                     on_change(new_duration);
-                } else {
-                    // Reset to last valid value if parsing fails
-                    if let Some(input_elem) = input_ref.get() {
-                        input_elem.set_value(&duration_to_hhmmss(duration.get_untracked()));
-                    }
                 }
             }
             on:keydown=move |ev: KeyboardEvent| {
@@ -81,10 +71,7 @@ pub fn DurationInput(
                     ev.prevent_default();
                     let current = duration.get_untracked();
                     let new_duration = current + delta;
-                    if let Some(input_elem) = input_ref.get() {
-                        input_elem.set_value(&duration_to_hhmmss(new_duration));
-                    }
-                    on_change_clone(new_duration);
+                    on_change_keydown(new_duration);
                 }
             }
         />
@@ -96,34 +83,21 @@ pub fn OptionalDurationInput(
     duration: Signal<Option<Duration>>,
     on_change: impl Fn(Option<Duration>) + 'static,
 ) -> impl IntoView {
-    use leptos::html::Input;
-    use leptos::create_node_ref;
-
-    let input_ref = create_node_ref::<Input>();
     let on_change = Rc::new(on_change);
-    let on_change_clone = on_change.clone();
+    let on_change_keydown = on_change.clone();
 
     view! {
         <input
             type="text"
             class="duration-input"
             placeholder="-"
-            prop:value=move || {
-                duration.get().map_or(String::new(), duration_to_hhmmss)
-            }
-            node_ref=input_ref
+            prop:value=move || duration.get().map_or(String::new(), duration_to_hhmmss)
             on:change=move |ev| {
                 let input_str = event_target_value(&ev).trim().to_string();
                 if input_str.is_empty() || input_str == "-" {
                     on_change(None);
                 } else if let Some(new_duration) = parse_hhmmss(&input_str) {
                     on_change(Some(new_duration));
-                } else {
-                    // Reset to last valid value if parsing fails
-                    if let Some(input_elem) = input_ref.get() {
-                        let valid_value = duration.get_untracked().map_or(String::new(), duration_to_hhmmss);
-                        input_elem.set_value(&valid_value);
-                    }
                 }
             }
             on:keydown=move |ev: KeyboardEvent| {
@@ -142,10 +116,7 @@ pub fn OptionalDurationInput(
                         Some(current) => current + delta,
                         None => delta, // Initialize to +30s or -30s if empty
                     };
-                    if let Some(input_elem) = input_ref.get() {
-                        input_elem.set_value(&duration_to_hhmmss(new_duration));
-                    }
-                    on_change_clone(Some(new_duration));
+                    on_change_keydown(Some(new_duration));
                 }
             }
         />

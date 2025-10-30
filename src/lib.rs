@@ -6,6 +6,7 @@ pub mod models;
 pub mod components;
 pub mod storage;
 pub mod import;
+pub mod api;
 pub mod constants;
 pub mod time;
 pub mod geometry;

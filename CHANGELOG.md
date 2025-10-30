@@ -8,6 +8,9 @@
 - Improved performance when making rapid edits - conflict detection now waits until you're done making changes before recalculating
 - Journey continuation arrows in time-distance graphs now point horizontally to show the direction of travel
 
+## Bug Fixes
+- Fixed keyboard shortcuts (j/l) in time and duration inputs losing focus when used repeatedly in the stops list - inputs now maintain focus allowing for rapid adjustments
+
 # v0.1.12 - 2025-10-29
 
 ## Bug Fixes

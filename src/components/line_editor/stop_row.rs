@@ -7,7 +7,7 @@ use leptos::{
 };
 use std::rc::Rc;
 
-fn calculate_cumulative_seconds(
+pub(super) fn calculate_cumulative_seconds(
     display_durations: &[Option<Duration>],
     route: &[RouteSegment],
     index: usize,
@@ -122,73 +122,54 @@ pub fn StopRow(
             .is_some_and(|node| node.as_junction().is_some())
     });
 
-    // Create memos for row-specific data to minimize re-renders
-    let route_data = create_memo(move |_| {
+    // Separate structural data (rarely changes) from duration data (changes often)
+    // This allows Leptos to skip re-rendering structural elements when only durations change
+    #[allow(clippy::items_after_statements)]
+    type StructData = (Option<usize>, Option<usize>, Option<petgraph::graph::EdgeIndex>, Option<usize>, Option<usize>);
+
+    #[allow(clippy::excessive_nesting)]
+    let struct_data: leptos::Memo<Option<StructData>> = create_memo(move |_| {
         edited_line.with(|line| {
-            line.as_ref().map(|l| {
+            line.as_ref().and_then(|l| {
                 let route = match route_direction {
                     RouteDirection::Forward => &l.forward_route,
                     RouteDirection::Return => &l.return_route,
                 };
 
-                let first_stop_wait = match route_direction {
-                    RouteDirection::Forward => l.first_stop_wait_time,
-                    RouteDirection::Return => l.return_first_stop_wait_time,
-                };
+                if index < route.len() {
+                    let segment = &route[index];
+                    let prev_dest_platform = if index > 0 && index - 1 < route.len() {
+                        Some(route[index - 1].destination_platform)
+                    } else {
+                        None
+                    };
 
-                let segment = if index < route.len() {
-                    Some(route[index].clone())
+                    Some((
+                        Some(segment.origin_platform),
+                        prev_dest_platform,
+                        Some(petgraph::graph::EdgeIndex::new(segment.edge_index)),
+                        Some(segment.track_index),
+                        Some(route.len()),
+                    ))
                 } else {
                     None
-                };
-
-                let prev_segment = if index > 0 && index - 1 < route.len() {
-                    Some(route[index - 1].clone())
-                } else {
-                    None
-                };
-
-                // Get display durations - uses proper inheritance for synced return routes
-                let display_durations = if matches!(route_direction, RouteDirection::Return) && l.sync_routes {
-                    l.get_return_display_durations()
-                } else {
-                    route.iter().map(|s| s.duration).collect()
-                };
-
-                let display_duration = display_durations.get(index).copied().flatten();
-
-                // Calculate cumulative time using display durations
-                let cumulative_seconds = calculate_cumulative_seconds(&display_durations, route, index);
-
-                (segment, prev_segment, cumulative_seconds, route.len(), first_stop_wait, l.sync_routes, display_duration)
+                }
             })
         })
     });
-
 
     view! {
         <div class="stop-row">
             <span class="station-name">{name.clone()}</span>
             {move || {
-                route_data.with(|data| {
-                    data.as_ref().map(|(segment, prev_segment, cumulative_seconds, route_len, first_stop_wait, sync_routes, display_duration)| {
-                        let segment_duration = *display_duration;
-                        let wait_duration = if is_first {
-                            *first_stop_wait
-                        } else {
-                            prev_segment.as_ref().map_or(Duration::zero(), |s| s.wait_time)
-                        };
-                        let current_platform_origin = segment.as_ref().map(|s| s.origin_platform);
-                        let current_platform_dest = prev_segment.as_ref().map(|s| s.destination_platform);
-                        let current_track = segment.as_ref().map(|s| s.track_index);
-                        let edge_idx = segment.as_ref().map(|s| petgraph::graph::EdgeIndex::new(s.edge_index));
-
+                struct_data.with(|struct_opt| {
+                    struct_opt.as_ref().map(|(current_platform_origin, current_platform_dest, edge_idx, current_track, route_len)| {
                         view! {
                             <>
                                 <PlatformColumn
                                     platforms=platforms.clone()
-                                    current_platform_origin=current_platform_origin
-                                    current_platform_dest=current_platform_dest
+                                    current_platform_origin=*current_platform_origin
+                                    current_platform_dest=*current_platform_dest
                                     index=index
                                     is_first=is_first
                                     is_last=is_last
@@ -198,8 +179,8 @@ pub fn StopRow(
                                 />
                                 <TrackColumn
                                     graph=graph
-                                    edge_idx=edge_idx
-                                    current_track=current_track
+                                    edge_idx=*edge_idx
+                                    current_track=*current_track
                                     index=index
                                     route_direction=route_direction
                                     edited_line=edited_line
@@ -208,25 +189,22 @@ pub fn StopRow(
                                 <TimeColumn
                                     time_mode=time_mode
                                     index=index
-                                    segment_duration=segment_duration
-                                    cumulative_seconds=*cumulative_seconds
                                     route_direction=route_direction
                                     edited_line=edited_line
                                     on_save=on_save.clone()
-                                    sync_routes=*sync_routes
                                 />
                                 <WaitTimeColumn
                                     index=index
-                                    wait_duration=wait_duration
                                     route_direction=route_direction
                                     edited_line=edited_line
                                     on_save=on_save.clone()
                                     is_junction=is_junction
+                                    is_first=is_first
                                 />
                                 <DeleteButton
                                     is_first=is_first
                                     is_last=is_last
-                                    route_len=*route_len
+                                    route_len=route_len.unwrap_or(0)
                                     route_direction=route_direction
                                     edited_line=edited_line
                                     on_save=on_save.clone()
