@@ -1,4 +1,5 @@
 use crate::models::{RailwayGraph, Stations};
+use crate::geometry::{angle_difference, line_segment_distance};
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::collections::HashSet;
@@ -24,16 +25,6 @@ pub fn snap_to_grid(x: f64, y: f64) -> (f64, f64) {
     let snapped_x = (x / GRID_SIZE).round() * GRID_SIZE;
     let snapped_y = (y / GRID_SIZE).round() * GRID_SIZE;
     (snapped_x, snapped_y)
-}
-
-/// Get angle difference in [0, PI]
-fn angle_difference(a1: f64, a2: f64) -> f64 {
-    let diff = (a1 - a2).abs();
-    if diff > std::f64::consts::PI {
-        2.0 * std::f64::consts::PI - diff
-    } else {
-        diff
-    }
 }
 
 /// Get all nodes reachable from `start_node`, excluding path back through `exclude_node`
@@ -177,7 +168,7 @@ fn would_overlap_existing_edges(
             }
         } else {
             // Edges don't share an endpoint - check normal segment distance
-            let dist = segment_distance(pos1, pos2, source_pos, target_pos);
+            let dist = line_segment_distance(pos1, pos2, source_pos, target_pos);
             if dist < MIN_DISTANCE {
                 return true;
             }
@@ -185,72 +176,6 @@ fn would_overlap_existing_edges(
     }
 
     false
-}
-
-/// Calculate minimum distance between two line segments
-fn segment_distance(
-    a1: (f64, f64),
-    a2: (f64, f64),
-    b1: (f64, f64),
-    b2: (f64, f64),
-) -> f64 {
-    // Check if segments intersect
-    if segments_intersect(a1, a2, b1, b2) {
-        return 0.0;
-    }
-
-    // Check distances from endpoints to opposite segments
-    let d1 = point_to_segment_distance(a1, b1, b2);
-    let d2 = point_to_segment_distance(a2, b1, b2);
-    let d3 = point_to_segment_distance(b1, a1, a2);
-    let d4 = point_to_segment_distance(b2, a1, a2);
-
-    d1.min(d2).min(d3).min(d4)
-}
-
-/// Check if two line segments intersect
-fn segments_intersect(
-    a1: (f64, f64),
-    a2: (f64, f64),
-    b1: (f64, f64),
-    b2: (f64, f64),
-) -> bool {
-    let d1 = cross_product_sign(b1, b2, a1);
-    let d2 = cross_product_sign(b1, b2, a2);
-    let d3 = cross_product_sign(a1, a2, b1);
-    let d4 = cross_product_sign(a1, a2, b2);
-
-    ((d1 > 0.0 && d2 < 0.0) || (d1 < 0.0 && d2 > 0.0)) &&
-    ((d3 > 0.0 && d4 < 0.0) || (d3 < 0.0 && d4 > 0.0))
-}
-
-/// Cross product to determine which side of a line a point is on
-fn cross_product_sign(line_start: (f64, f64), line_end: (f64, f64), point: (f64, f64)) -> f64 {
-    (line_end.0 - line_start.0) * (point.1 - line_start.1) -
-    (line_end.1 - line_start.1) * (point.0 - line_start.0)
-}
-
-/// Distance from point to line segment
-fn point_to_segment_distance(point: (f64, f64), seg_start: (f64, f64), seg_end: (f64, f64)) -> f64 {
-    let dx = seg_end.0 - seg_start.0;
-    let dy = seg_end.1 - seg_start.1;
-    let len_sq = dx * dx + dy * dy;
-
-    if len_sq == 0.0 {
-        let px = point.0 - seg_start.0;
-        let py = point.1 - seg_start.1;
-        return (px * px + py * py).sqrt();
-    }
-
-    let t = ((point.0 - seg_start.0) * dx + (point.1 - seg_start.1) * dy) / len_sq;
-    let t = t.clamp(0.0, 1.0);
-
-    let closest_x = seg_start.0 + t * dx;
-    let closest_y = seg_start.1 + t * dy;
-
-    let px = point.0 - closest_x;
-    let py = point.1 - closest_y;
-    (px * px + py * py).sqrt()
 }
 
 /// Find best direction and spacing for a branch node
@@ -387,49 +312,6 @@ fn score_direction_for_branch(
     score
 }
 
-/// Find longest simple path in the graph (path with most nodes, no cycles)
-fn find_longest_path(graph: &RailwayGraph) -> Vec<NodeIndex> {
-    let mut longest_path = Vec::new();
-
-    // Try starting from each node
-    for start_node in graph.graph.node_indices() {
-        let mut visited = HashSet::new();
-        let mut current_path = Vec::new();
-
-        dfs_longest_path(graph, start_node, &mut visited, &mut current_path, &mut longest_path);
-    }
-
-    longest_path
-}
-
-/// DFS helper to find longest simple path
-fn dfs_longest_path(
-    graph: &RailwayGraph,
-    current: NodeIndex,
-    visited: &mut HashSet<NodeIndex>,
-    current_path: &mut Vec<NodeIndex>,
-    longest_path: &mut Vec<NodeIndex>,
-) {
-    visited.insert(current);
-    current_path.push(current);
-
-    // Update longest if current is longer
-    if current_path.len() > longest_path.len() {
-        *longest_path = current_path.clone();
-    }
-
-    // Try extending path to each unvisited neighbor
-    for neighbor in graph.graph.neighbors_undirected(current) {
-        if !visited.contains(&neighbor) {
-            dfs_longest_path(graph, neighbor, visited, current_path, longest_path);
-        }
-    }
-
-    // Backtrack
-    current_path.pop();
-    visited.remove(&current);
-}
-
 #[allow(clippy::too_many_lines, clippy::missing_panics_doc, clippy::cast_precision_loss)]
 pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
     let start_x = 150.0;
@@ -446,7 +328,7 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
     }
 
     // Phase 1: Find longest path (the main spine)
-    let spine = find_longest_path(graph);
+    let spine = graph.find_longest_path();
 
     if spine.is_empty() {
         return;
@@ -537,7 +419,7 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
             }
 
             // Find longest path in this disconnected component
-            let component_spine = find_longest_path_from(graph, node, &visited);
+            let component_spine = graph.find_longest_path_from(node, &visited);
 
             for (i, &comp_node) in component_spine.iter().enumerate() {
                 let offset = i as f64 * BASE_STATION_SPACING;
@@ -571,50 +453,6 @@ fn find_placed_target(
         }
     }
     None
-}
-
-/// Find longest path starting from a specific node, avoiding already visited nodes
-fn find_longest_path_from(
-    graph: &RailwayGraph,
-    start: NodeIndex,
-    global_visited: &HashSet<NodeIndex>,
-) -> Vec<NodeIndex> {
-    let mut longest_path = Vec::new();
-    let mut visited = global_visited.clone();
-    let mut current_path = Vec::new();
-
-    dfs_longest_path_excluding(graph, start, &mut visited, &mut current_path, &mut longest_path);
-
-    longest_path
-}
-
-/// DFS helper that respects global visited set
-fn dfs_longest_path_excluding(
-    graph: &RailwayGraph,
-    current: NodeIndex,
-    visited: &mut HashSet<NodeIndex>,
-    current_path: &mut Vec<NodeIndex>,
-    longest_path: &mut Vec<NodeIndex>,
-) {
-    if visited.contains(&current) {
-        return;
-    }
-
-    visited.insert(current);
-    current_path.push(current);
-
-    if current_path.len() > longest_path.len() {
-        *longest_path = current_path.clone();
-    }
-
-    for neighbor in graph.graph.neighbors_undirected(current) {
-        if !visited.contains(&neighbor) {
-            dfs_longest_path_excluding(graph, neighbor, visited, current_path, longest_path);
-        }
-    }
-
-    current_path.pop();
-    visited.remove(&current);
 }
 
 pub fn adjust_layout(_graph: &mut RailwayGraph) {
