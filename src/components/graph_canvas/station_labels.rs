@@ -176,7 +176,7 @@ pub fn check_station_label_hover(
 
         // Check if mouse y is near this station's label
         if (canvas_y - adjusted_y).abs() < HOVER_Y_TOLERANCE {
-            let full_name = station_node.display_name().to_string();
+            let full_name = station_node.display_name().clone();
             return Some((full_name, viewport_x, viewport_y));
         }
     }

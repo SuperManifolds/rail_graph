@@ -20,9 +20,9 @@ pub fn ConflictTooltip(
 
                 // Get station names from the full graph using conflict indices
                 let station1_name = all_nodes.get(conflict.station1_idx)
-                    .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
+                    .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().clone());
                 let station2_name = all_nodes.get(conflict.station2_idx)
-                    .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
+                    .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().clone());
 
                 let message = if conflict.conflict_type == crate::conflict::ConflictType::PlatformViolation {
                     let platform_name = conflict.platform_idx.and_then(|idx| {

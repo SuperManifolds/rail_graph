@@ -75,9 +75,9 @@ fn ErrorListPopover(
 
                                         // Get node names
                                         let station1_name = current_nodes.get(display_idx1)
-                                            .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
+                                            .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().clone());
                                         let station2_name = current_nodes.get(display_idx2)
-                                            .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().to_string());
+                                            .map_or_else(|| "Unknown".to_string(), |(_, n)| n.display_name().clone());
 
                                         let conflict_message = if conflict.conflict_type == crate::conflict::ConflictType::PlatformViolation {
                                             // Look up platform name directly from nodes to avoid expensive graph traversal
