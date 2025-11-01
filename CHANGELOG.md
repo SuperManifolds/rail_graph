@@ -1,4 +1,4 @@
-# v0.1.13 - 2025-10-29
+# v0.1.13 - 2025-11-01
 
 ## Features
 - Added departure offset lock feature in auto schedule settings - toggle the padlock button to maintain the time offset between forward and return departures. When locked, adjusting one departure time automatically shifts the corresponding return departure by the same amount, making it easy to maintain consistent scheduling patterns
