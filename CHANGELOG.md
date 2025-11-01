@@ -13,6 +13,7 @@
 - Fixed keyboard shortcuts (j/l) in time and duration inputs losing focus when used repeatedly in the stops list - inputs now maintain focus allowing for rapid adjustments
 - Fixed infrastructure view station labels overlapping and aligning horizontally when zoomed out - labels now avoid positioning in the direction of connected tracks, resulting in better distribution and readability at all zoom levels
 - Fixed stale values displaying in text inputs when switching between items in infrastructure view - track distance, station name, and junction name inputs now correctly update to show the current item's values instead of retaining previous values
+- Fixed passing loop platform assignment when inserting station on existing track - both directions of lines now correctly use direction-based platform assignment instead of both being assigned to platform 0
 
 # v0.1.12 - 2025-10-29
 

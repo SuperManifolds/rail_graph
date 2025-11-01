@@ -224,6 +224,7 @@ fn split_segment_and_insert_node(
     updated_graph: &mut RailwayGraph,
     current_lines: &mut [Line],
     should_set_routing_rules: bool,
+    handedness: crate::models::TrackHandedness,
 ) -> (EdgeIndex, EdgeIndex) {
     use crate::models::Junctions;
 
@@ -237,6 +238,11 @@ fn split_segment_and_insert_node(
     let distance = edge_ref.weight().distance;
     let old_edge_index = clicked_edge.index();
     let track_count = tracks.len();
+
+    // Get platform count from the new node
+    let platform_count = updated_graph.graph.node_weight(new_node_idx)
+        .and_then(|node| node.as_station())
+        .map_or(1, |station| station.platforms.len());
 
     // Remove the old edge
     updated_graph.graph.remove_edge(clicked_edge);
@@ -265,7 +271,7 @@ fn split_segment_and_insert_node(
 
     // Update all lines that used the old edge to now use the two new edges
     for line in current_lines {
-        line.replace_split_edge(old_edge_index, edge1.index(), edge2.index(), track_count);
+        line.replace_split_edge(old_edge_index, edge1.index(), edge2.index(), track_count, updated_graph, platform_count, handedness);
     }
 
     (edge1, edge2)
@@ -282,6 +288,7 @@ fn handle_adding_junction(
     set_editing_junction: WriteSignal<Option<NodeIndex>>,
     set_edit_mode: WriteSignal<EditMode>,
     _auto_layout_enabled: ReadSignal<bool>,
+    handedness: crate::models::TrackHandedness,
 ) {
     use crate::models::{Junction, Junctions};
 
@@ -302,7 +309,7 @@ fn handle_adding_junction(
     let junction_idx = updated_graph.add_junction(junction);
 
     // Split the segment and insert the junction
-    split_segment_and_insert_node(clicked_edge, junction_idx, &mut updated_graph, &mut current_lines, true);
+    split_segment_and_insert_node(clicked_edge, junction_idx, &mut updated_graph, &mut current_lines, true, handedness);
 
     set_graph.set(updated_graph);
     set_lines.set(current_lines);
@@ -330,6 +337,7 @@ fn add_station_handler(
     clicked_segment: ReadSignal<Option<EdgeIndex>>,
     set_clicked_position: WriteSignal<Option<(f64, f64)>>,
     set_clicked_segment: WriteSignal<Option<EdgeIndex>>,
+    handedness: crate::models::TrackHandedness,
 ) {
     use crate::models::{Track, TrackDirection, Stations};
 
@@ -356,7 +364,7 @@ fn add_station_handler(
         }
 
         // Split the segment and insert the station
-        split_segment_and_insert_node(segment_edge, node_idx, &mut current_graph, &mut current_lines, false);
+        split_segment_and_insert_node(segment_edge, node_idx, &mut current_graph, &mut current_lines, false, handedness);
 
         set_lines.set(current_lines);
     }
@@ -615,6 +623,7 @@ fn create_handler_callbacks(
     clicked_segment: ReadSignal<Option<EdgeIndex>>,
     set_clicked_position: WriteSignal<Option<(f64, f64)>>,
     set_clicked_segment: WriteSignal<Option<EdgeIndex>>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> (
     Rc<dyn Fn(String, bool, Option<NodeIndex>, Vec<crate::models::Platform>)>,
     Rc<dyn Fn(NodeIndex, String, bool, Vec<crate::models::Platform>)>,
@@ -626,7 +635,8 @@ fn create_handler_callbacks(
     Rc<dyn Fn(NodeIndex)>,
 ) {
     let handle_add_station = Rc::new(move |name: String, passing_loop: bool, connect_to: Option<NodeIndex>, platforms: Vec<crate::models::Platform>| {
-        add_station_handler(name, passing_loop, connect_to, platforms, graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, clicked_position, clicked_segment, set_clicked_position, set_clicked_segment);
+        let handedness = settings.get().track_handedness;
+        add_station_handler(name, passing_loop, connect_to, platforms, graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, clicked_position, clicked_segment, set_clicked_position, set_clicked_segment, handedness);
     });
 
     let handle_edit_station = Rc::new(move |station_idx: NodeIndex, new_name: String, passing_loop: bool, platforms: Vec<crate::models::Platform>| {
@@ -891,6 +901,7 @@ fn create_event_handlers(
     station_dialog_clicked_position: ReadSignal<Option<(f64, f64)>>,
     set_station_dialog_clicked_position: WriteSignal<Option<(f64, f64)>>,
     set_station_dialog_clicked_segment: WriteSignal<Option<EdgeIndex>>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> (impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(WheelEvent)) {
     let zoom_level = viewport.zoom_level;
     let pan_offset_x = viewport.pan_offset_x;
@@ -935,7 +946,8 @@ fn create_event_handlers(
                     handle_mouse_down_adding_track(clicked_station, selected_station, set_selected_station, graph, set_graph);
                 }
                 EditMode::AddingJunction if is_single_click => {
-                    handle_adding_junction(world_x, world_y, graph, set_graph, lines, set_lines, set_editing_junction, set_edit_mode, auto_layout_enabled);
+                    let handedness = settings.get().track_handedness;
+                    handle_adding_junction(world_x, world_y, graph, set_graph, lines, set_lines, set_editing_junction, set_edit_mode, auto_layout_enabled, handedness);
                 }
                 EditMode::CreatingView if is_single_click => {
                     let current_graph = graph.get();
@@ -1303,7 +1315,7 @@ pub fn InfrastructureView(
     };
 
     let (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
-        create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_delete_bypass_info, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment);
+        create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_delete_bypass_info, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment, settings);
 
     setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position);
 
@@ -1313,7 +1325,8 @@ pub fn InfrastructureView(
         editing_station, set_editing_station, set_editing_junction, set_editing_track,
         dragging_station, set_dragging_station, set_is_over_station, set_is_over_track,
         auto_layout_enabled, space_pressed, &viewport, topology_cache, set_is_zooming,
-        show_add_station, station_dialog_clicked_position, set_station_dialog_clicked_position, set_station_dialog_clicked_segment
+        show_add_station, station_dialog_clicked_position, set_station_dialog_clicked_position, set_station_dialog_clicked_segment,
+        settings
     );
 
     let handle_mouse_leave = move |_: MouseEvent| {
