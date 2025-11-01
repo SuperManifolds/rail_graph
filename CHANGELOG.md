@@ -9,6 +9,7 @@
 - Improved performance when making rapid edits - conflict detection now waits until you're done making changes before recalculating
 - Journey continuation arrows in time-distance graphs now point horizontally to show the direction of travel
 - Single-platform stations in time graph view now display with more muted colors to visually distinguish them from multi-platform stations that can support passing loops
+- Passing stops (zero wait time) in line editor stops list now display at reduced opacity to emphasize actual stops where trains wait, improving visual hierarchy
 
 ## Bug Fixes
 - Fixed keyboard shortcuts (j/l) in time and duration inputs losing focus when used repeatedly in the stops list - inputs now maintain focus allowing for rapid adjustments

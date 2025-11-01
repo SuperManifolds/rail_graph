@@ -2,8 +2,8 @@ use super::{PlatformColumn, TimeColumn, TimeDisplayMode, TrackColumn, WaitTimeCo
 use crate::models::{Line, RailwayGraph, RouteDirection, RouteSegment};
 use chrono::Duration;
 use leptos::{
-    component, create_memo, view, IntoView, ReadSignal, SignalGetUntracked, SignalWith,
-    SignalWithUntracked,
+    component, create_memo, view, IntoView, ReadSignal, SignalGet, SignalGetUntracked,
+    SignalWith, SignalWithUntracked,
 };
 use std::rc::Rc;
 
@@ -122,6 +122,37 @@ pub fn StopRow(
             .is_some_and(|node| node.as_junction().is_some())
     });
 
+    // Check if this stop has zero wait time (for muted styling)
+    let has_zero_wait = create_memo(move |_| {
+        // Junctions are excluded from passing stop styling
+        if is_junction {
+            return false;
+        }
+
+        edited_line.with(|line| {
+            line.as_ref().is_some_and(|l| {
+                let route = match route_direction {
+                    RouteDirection::Forward => &l.forward_route,
+                    RouteDirection::Return => &l.return_route,
+                };
+
+                if is_first {
+                    // Check first stop wait time
+                    let first_wait = match route_direction {
+                        RouteDirection::Forward => l.first_stop_wait_time,
+                        RouteDirection::Return => l.return_first_stop_wait_time,
+                    };
+                    first_wait == Duration::zero()
+                } else if index > 0 && index - 1 < route.len() {
+                    // Check wait time from previous segment
+                    route[index - 1].wait_time == Duration::zero()
+                } else {
+                    false
+                }
+            })
+        })
+    });
+
     // Separate structural data (rarely changes) from duration data (changes often)
     // This allows Leptos to skip re-rendering structural elements when only durations change
     #[allow(clippy::items_after_statements)]
@@ -159,7 +190,7 @@ pub fn StopRow(
     });
 
     view! {
-        <div class="stop-row">
+        <div class="stop-row" class:passing-stop=move || has_zero_wait.get()>
             <span class="station-name">{name.clone()}</span>
             {move || {
                 struct_data.with(|struct_opt| {
