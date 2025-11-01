@@ -11,29 +11,19 @@ pub struct ProjectMetadata {
     pub updated_at: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TrackHandedness {
+    #[default]
     RightHand,
     LeftHand,
 }
 
-impl Default for TrackHandedness {
-    fn default() -> Self {
-        Self::RightHand
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum LineSortMode {
+    #[default]
     AddedOrder,
     Alphabetical,
     Manual,
-}
-
-impl Default for LineSortMode {
-    fn default() -> Self {
-        Self::AddedOrder
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -44,16 +34,11 @@ pub struct ProjectSettings {
     pub line_sort_mode: LineSortMode,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SpacingMode {
+    #[default]
     Equal,
     DistanceBased,
-}
-
-impl Default for SpacingMode {
-    fn default() -> Self {
-        Self::Equal
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

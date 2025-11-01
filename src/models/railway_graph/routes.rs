@@ -88,13 +88,13 @@ impl Routes for RailwayGraph {
                     // Add the origin node if this is the first segment
                     if idx == 0 {
                         if let Some(node) = self.graph.node_weight(travel_from) {
-                            stations.push((node.display_name().to_string(), travel_from));
+                            stations.push((node.display_name().clone(), travel_from));
                         }
                     }
 
                     // Add the destination node (allow duplicates)
                     if let Some(node) = self.graph.node_weight(travel_to) {
-                        stations.push((node.display_name().to_string(), travel_to));
+                        stations.push((node.display_name().clone(), travel_to));
                     }
                     current_node = Some(travel_to);
                 }
@@ -124,13 +124,13 @@ impl Routes for RailwayGraph {
                     // Add the origin node if this is the first segment
                     if idx == 0 {
                         if let Some(node) = self.graph.node_weight(travel_from) {
-                            stations.push((node.display_name().to_string(), travel_from));
+                            stations.push((node.display_name().clone(), travel_from));
                         }
                     }
 
                     // Add the destination node (allow duplicates)
                     if let Some(node) = self.graph.node_weight(travel_to) {
-                        stations.push((node.display_name().to_string(), travel_to));
+                        stations.push((node.display_name().clone(), travel_to));
                     }
                     current_node = Some(travel_to);
                 }

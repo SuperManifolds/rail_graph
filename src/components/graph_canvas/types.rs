@@ -49,18 +49,18 @@ pub struct HoverState<'a> {
 /// Convert a hex color to rgba with the specified opacity
 #[must_use]
 pub fn hex_to_rgba(hex: &str, opacity: f64) -> String {
-    let hex = hex.trim_start_matches('#');
+    let trimmed = hex.trim_start_matches('#');
 
-    if hex.len() == 6 {
+    if trimmed.len() == 6 {
         if let (Ok(r), Ok(g), Ok(b)) = (
-            u8::from_str_radix(&hex[0..2], 16),
-            u8::from_str_radix(&hex[2..4], 16),
-            u8::from_str_radix(&hex[4..6], 16),
+            u8::from_str_radix(&trimmed[0..2], 16),
+            u8::from_str_radix(&trimmed[2..4], 16),
+            u8::from_str_radix(&trimmed[4..6], 16),
         ) {
             return format!("rgba({r}, {g}, {b}, {opacity})");
         }
     }
 
     // Fallback: return original color if parsing fails
-    hex.to_string()
+    hex.to_owned()
 }

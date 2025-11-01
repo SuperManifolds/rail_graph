@@ -33,7 +33,7 @@ fn CreateViewDialogContent(
     let get_node_name = move |idx: NodeIndex| -> String {
         let g = graph.get();
         g.graph.node_weight(idx)
-            .map(|node| node.display_name().to_string())
+            .map(|node| node.display_name().clone())
             .unwrap_or_default()
     };
 
@@ -43,7 +43,7 @@ fn CreateViewDialogContent(
         g.graph.node_indices()
             .filter_map(|idx| {
                 g.graph.node_weight(idx).map(|node| {
-                    (idx, node.display_name().to_string())
+                    (idx, node.display_name().clone())
                 })
             })
             .collect()
