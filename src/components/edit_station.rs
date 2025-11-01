@@ -206,7 +206,7 @@ pub fn EditStation(
                     <label>"Station Name"</label>
                     <input
                         type="text"
-                        value=move || station_name.get()
+                        prop:value=move || station_name.get()
                         on:input=move |ev| set_station_name.set(event_target_value(&ev))
                     />
                 </div>

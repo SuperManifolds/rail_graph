@@ -69,7 +69,7 @@ pub fn EditJunction(
                     <input
                         type="text"
                         placeholder="Unnamed Junction"
-                        value=move || junction_name.get()
+                        prop:value=move || junction_name.get()
                         on:input=move |ev| set_junction_name.set(event_target_value(&ev))
                     />
                 </div>
