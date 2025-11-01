@@ -5,7 +5,7 @@ use petgraph::stable_graph::NodeIndex;
 
 // Station label constants
 const STATION_LABEL_COLOR: &str = "#ddd";
-const SINGLE_PLATFORM_LABEL_COLOR: &str = "#999";
+const SINGLE_PLATFORM_LABEL_COLOR: &str = "#888";
 const PASSING_LOOP_LABEL_COLOR: &str = "#777";
 const STATION_LABEL_FONT: &str = "11px monospace";
 const STATION_LABEL_X: f64 = 5.0;
