@@ -520,29 +520,50 @@ impl Line {
 
     /// Replace an edge that was split by a junction with two new edges
     /// This is used when inserting a junction in the middle of an existing edge
-    pub fn replace_split_edge(&mut self, old_edge: usize, new_edge1: usize, new_edge2: usize, track_count: usize) {
-        Self::replace_split_edge_in_route(&mut self.forward_route, old_edge, new_edge1, new_edge2, track_count);
-        Self::replace_split_edge_in_route(&mut self.return_route, old_edge, new_edge2, new_edge1, track_count);
+    pub fn replace_split_edge(&mut self, old_edge: usize, new_edge1: usize, new_edge2: usize, track_count: usize, graph: &RailwayGraph, middle_node_platform_count: usize, handedness: TrackHandedness) {
+        Self::replace_split_edge_in_route(&mut self.forward_route, old_edge, new_edge1, new_edge2, track_count, graph, middle_node_platform_count, handedness);
+        Self::replace_split_edge_in_route(&mut self.return_route, old_edge, new_edge2, new_edge1, track_count, graph, middle_node_platform_count, handedness);
     }
 
-    fn replace_split_edge_in_route(route: &mut Vec<RouteSegment>, old_edge: usize, first_edge: usize, second_edge: usize, track_count: usize) {
+    fn replace_split_edge_in_route(route: &mut Vec<RouteSegment>, old_edge: usize, first_edge: usize, second_edge: usize, track_count: usize, graph: &RailwayGraph, middle_node_platform_count: usize, handedness: TrackHandedness) {
+        use petgraph::prelude::*;
+
         let mut new_route = Vec::new();
 
         for segment in route.iter() {
             if segment.edge_index == old_edge {
+                // Calculate platform for middle station using direction-based logic
+                // The train arrives at middle station via first_edge and departs via second_edge
+                let first_edge_idx = EdgeIndex::new(first_edge);
+                let second_edge_idx = EdgeIndex::new(second_edge);
+
+                let middle_platform_arriving = graph.get_default_platform_for_arrival(
+                    first_edge_idx,
+                    true,  // arriving at target of first_edge (the middle station)
+                    middle_node_platform_count,
+                    handedness
+                );
+
+                let middle_platform_departing = graph.get_default_platform_for_arrival(
+                    second_edge_idx,
+                    false,  // departing from source of second_edge (the middle station)
+                    middle_node_platform_count,
+                    handedness
+                );
+
                 // Split this segment into two through the junction
                 new_route.push(RouteSegment {
                     edge_index: first_edge,
                     track_index: segment.track_index.min(track_count.saturating_sub(1)),
                     origin_platform: segment.origin_platform,
-                    destination_platform: 0,
+                    destination_platform: middle_platform_arriving,
                     duration: segment.duration.map(|d| d / 2),
                     wait_time: segment.wait_time,
                 });
                 new_route.push(RouteSegment {
                     edge_index: second_edge,
                     track_index: segment.track_index.min(track_count.saturating_sub(1)),
-                    origin_platform: 0,
+                    origin_platform: middle_platform_departing,
                     destination_platform: segment.destination_platform,
                     duration: segment.duration.map(|d| d / 2),
                     wait_time: Duration::zero(),
@@ -1475,8 +1496,13 @@ mod tests {
             folder_id: None,
         };
 
+        // Create a minimal test graph for platform assignment
+        let graph = RailwayGraph::new();
+        let platform_count = 2; // Passing loop with 2 platforms
+        let handedness = TrackHandedness::RightHand;
+
         // Split edge 10 into edges 20 and 21
-        line.replace_split_edge(10, 20, 21, 1);
+        line.replace_split_edge(10, 20, 21, 1, &graph, platform_count, handedness);
 
         // Forward route should have: 5, 20, 21, 15
         assert_eq!(line.forward_route.len(), 4);
