@@ -9,6 +9,7 @@
 ///
 /// # Examples
 /// ```
+/// use nimby_graph::geometry::angle_difference;
 /// use std::f64::consts::PI;
 ///
 /// // Angles close together
