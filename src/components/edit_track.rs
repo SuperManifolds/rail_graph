@@ -156,7 +156,7 @@ pub fn EditTrack(
                     <input
                         type="text"
                         placeholder="e.g., 5.2"
-                        value=move || distance.get()
+                        prop:value=move || distance.get()
                         on:input=move |ev| set_distance.set(event_target_value(&ev))
                     />
                 </div>
