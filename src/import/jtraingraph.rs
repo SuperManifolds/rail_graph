@@ -695,6 +695,7 @@ pub fn import_jtraingraph(
             return_first_stop_wait_time: Duration::zero(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         new_lines.push(line);

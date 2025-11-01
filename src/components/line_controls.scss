@@ -1,8 +1,30 @@
 // LineControls component styles
 .controls {
+    .controls-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--spacing-md);
+    }
+
+    .add-folder-button {
+        @include button-base;
+        padding: var(--spacing-xs) var(--spacing-sm);
+        background-color: var(--color-bg-secondary);
+        border: 1px solid var(--color-border-darker);
+        border-radius: var(--radius-md);
+        color: var(--color-text-secondary);
+        transition: all 0.15s ease;
+
+        &:hover {
+            background-color: var(--color-bg-tertiary);
+            border-color: var(--color-accent);
+            color: var(--color-accent);
+        }
+    }
+
     .sort-mode-selector {
         display: inline-flex;
-        margin-bottom: var(--spacing-md);
         border-radius: var(--radius-md);
         overflow: hidden;
         border: 1px solid var(--color-border-darker);
@@ -38,12 +60,58 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
+    min-height: 200px;
+    padding-bottom: var(--spacing-lg);
+
+    .tree-item-wrapper {
+        display: flex;
+        flex-direction: column;
+
+        .drop-zone {
+            height: 8px;
+            transition: all 0.15s ease;
+            position: relative;
+            margin: -4px 0;
+
+            &.drop-zone-active {
+                height: 16px;
+                margin: -8px 0;
+                background-color: var(--color-accent);
+                border-radius: var(--radius-sm);
+
+                &::before {
+                    content: '';
+                    position: absolute;
+                    left: 0;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    width: 8px;
+                    height: 8px;
+                    background-color: var(--color-accent);
+                    border-radius: 50%;
+                }
+
+                &::after {
+                    content: '';
+                    position: absolute;
+                    right: 0;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    width: 8px;
+                    height: 8px;
+                    background-color: var(--color-accent);
+                    border-radius: 50%;
+                }
+            }
+        }
+    }
 
     .line-control {
         background-color: var(--color-bg-primary);
         border-radius: var(--radius-lg);
         padding: var(--spacing-md);
         border: 1px solid var(--color-border-darker);
+        border-left: 4px solid var(--line-color, var(--color-border-darker));
         cursor: grab;
         transition: opacity 0.2s, transform 0.1s;
 
@@ -53,11 +121,6 @@
 
         &.dragging {
             opacity: 0.5;
-        }
-
-        &.drag-over {
-            border-top: 2px solid var(--color-accent);
-            transform: translateY(2px);
         }
 
         .line-header {
@@ -98,6 +161,70 @@
                     font-size: var(--font-size-base);
                 }
             }
+        }
+    }
+
+    .folder-control {
+        .folder-header {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-sm) var(--spacing-sm) var(--spacing-sm) 0;
+            background-color: var(--color-bg-secondary);
+            border-radius: var(--radius-md);
+            font-weight: var(--font-weight-medium);
+            user-select: none;
+            cursor: grab;
+            transition: opacity 0.2s, transform 0.1s;
+
+            &:active {
+                cursor: grabbing;
+            }
+
+            &.drag-over {
+                background-color: var(--color-bg-tertiary);
+                opacity: 0.8;
+            }
+
+            .folder-toggle {
+                @include button-base;
+                padding: var(--spacing-xs);
+                color: var(--color-text-tertiary);
+                background-color: transparent;
+                border: none;
+                transition: all 0.15s ease;
+
+                &:hover {
+                    color: var(--color-text-primary);
+                }
+
+                i {
+                    font-size: var(--font-size-xs);
+                    display: block;
+                }
+            }
+
+            i.fa-folder {
+                color: var(--folder-color);
+                font-size: 1.25rem;
+            }
+
+            strong {
+                flex: 1;
+            }
+
+            .folder-header-controls {
+                display: flex;
+                align-items: center;
+                gap: var(--spacing-sm);
+            }
+        }
+
+        .folder-children {
+            margin-top: var(--spacing-sm);
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-md);
         }
     }
 }

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use super::{Line, RailwayGraph, GraphView, ViewportState};
+use super::{Line, LineFolder, RailwayGraph, GraphView, ViewportState};
 use crate::storage::{CURRENT_PROJECT_VERSION, idb};
 use wasm_bindgen::prelude::*;
 
@@ -90,6 +90,8 @@ pub struct Project {
     pub active_tab_id: Option<String>,
     #[serde(default)]
     pub infrastructure_viewport: ViewportState,
+    #[serde(default)]
+    pub folders: Vec<LineFolder>,
 }
 
 impl Project {
@@ -110,6 +112,7 @@ impl Project {
             views: Vec::new(),
             active_tab_id: None,
             infrastructure_viewport: ViewportState::default(),
+            folders: Vec::new(),
         }
     }
 
@@ -130,6 +133,7 @@ impl Project {
             views: Vec::new(),
             active_tab_id: None,
             infrastructure_viewport: ViewportState::default(),
+            folders: Vec::new(),
         }
     }
 
@@ -150,6 +154,7 @@ impl Project {
             views: Vec::new(),
             active_tab_id: None,
             infrastructure_viewport: ViewportState::default(),
+            folders: Vec::new(),
         }
     }
 
@@ -174,6 +179,7 @@ impl Project {
             views: self.views.clone(),
             active_tab_id: self.active_tab_id.clone(),
             infrastructure_viewport: self.infrastructure_viewport.clone(),
+            folders: self.folders.clone(),
         }
     }
 }

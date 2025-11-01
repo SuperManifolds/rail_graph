@@ -883,6 +883,7 @@ mod tests {
             return_first_stop_wait_time: Duration::zero(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         }
     }
 
@@ -1224,6 +1225,7 @@ mod tests {
             return_first_stop_wait_time: Duration::zero(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
@@ -1350,6 +1352,7 @@ mod tests {
             return_first_stop_wait_time: Duration::zero(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         // Apply sync to create return route
@@ -1537,6 +1540,7 @@ mod tests {
             return_first_stop_wait_time: Duration::zero(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         line.apply_route_sync_if_enabled();

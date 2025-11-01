@@ -1,4 +1,5 @@
 mod days_of_week;
+mod folder;
 mod junction;
 mod keyboard_shortcuts;
 mod line;
@@ -12,6 +13,7 @@ mod user_settings;
 mod view;
 
 pub use days_of_week::DaysOfWeek;
+pub use folder::LineFolder;
 pub use junction::{Junction, RoutingRule};
 pub use keyboard_shortcuts::{
     KeyboardShortcut, KeyboardShortcuts, ShortcutCategory, ShortcutMetadata,

@@ -1134,6 +1134,10 @@ pub fn InfrastructureView(
     set_graph: WriteSignal<RailwayGraph>,
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
+    #[allow(unused_variables)]
+    folders: ReadSignal<Vec<crate::models::LineFolder>>,
+    #[allow(unused_variables)]
+    set_folders: WriteSignal<Vec<crate::models::LineFolder>>,
     on_create_view: leptos::Callback<crate::models::GraphView>,
     settings: ReadSignal<crate::models::ProjectSettings>,
     #[prop(optional)]

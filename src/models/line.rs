@@ -129,6 +129,8 @@ pub struct Line {
     pub sort_index: Option<f64>,
     #[serde(default = "default_sync_departure_offsets")]
     pub sync_departure_offsets: bool,
+    #[serde(default)]
+    pub folder_id: Option<uuid::Uuid>,
 }
 
 fn default_visible() -> bool {
@@ -197,6 +199,7 @@ impl Line {
                     return_first_stop_wait_time: default_first_stop_wait_time(),
                     sort_index: None,
                     sync_departure_offsets: false,
+                    folder_id: None,
                 }
             })
             .collect()
@@ -1197,6 +1200,7 @@ mod tests {
             return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         assert!(line.uses_edge(1));
@@ -1230,6 +1234,7 @@ mod tests {
             return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         assert!(line.uses_any_edge(&[1, 5, 6]));
@@ -1266,6 +1271,7 @@ mod tests {
             return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
@@ -1313,6 +1319,7 @@ mod tests {
             return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         // Remove edge 1 but no bypass mapping
@@ -1368,6 +1375,7 @@ mod tests {
             return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         line.fix_track_indices_after_change(edge.index(), 2, &graph);
@@ -1464,6 +1472,7 @@ mod tests {
             return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         // Split edge 10 into edges 20 and 21
@@ -1538,6 +1547,7 @@ mod tests {
             return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         // Delete the direct edge B -> C
@@ -1587,6 +1597,7 @@ mod tests {
             return_first_stop_wait_time: default_first_stop_wait_time(),
             sort_index: None,
             sync_departure_offsets: false,
+            folder_id: None,
         };
 
         // Delete the edge
