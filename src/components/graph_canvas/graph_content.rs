@@ -9,7 +9,7 @@ const BACKGROUND_COLOR: &str = "#0a0a0a";
 
 // Station grid constants
 const STATION_GRID_COLOR: &str = "#1a1a1a";
-const SINGLE_PLATFORM_GRID_COLOR: &str = "#141414";
+const SINGLE_PLATFORM_GRID_COLOR: &str = "#121212";
 const GRID_PADDING_HOURS: i32 = 5;
 
 // Double track indicator constants

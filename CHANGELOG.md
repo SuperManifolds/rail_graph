@@ -8,6 +8,7 @@
 - Reorganized auto schedule time fields - forward and return departures are now side-by-side for easier comparison
 - Improved performance when making rapid edits - conflict detection now waits until you're done making changes before recalculating
 - Journey continuation arrows in time-distance graphs now point horizontally to show the direction of travel
+- Single-platform stations in time graph view now display with more muted colors to visually distinguish them from multi-platform stations that can support passing loops
 
 ## Bug Fixes
 - Fixed keyboard shortcuts (j/l) in time and duration inputs losing focus when used repeatedly in the stops list - inputs now maintain focus allowing for rapid adjustments
