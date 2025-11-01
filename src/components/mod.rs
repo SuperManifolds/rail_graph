@@ -8,7 +8,9 @@ pub mod modal_overlay;
 pub mod confirmation_dialog;
 pub mod connect_to_station;
 pub mod create_view_dialog;
+pub mod delete_folder_confirmation;
 pub mod delete_station_confirmation;
+pub mod edit_folder_dialog;
 pub mod edit_junction;
 pub mod edit_station;
 pub mod edit_track;
@@ -44,6 +46,7 @@ pub mod text_input_dialog;
 pub mod time_graph;
 pub mod time_input;
 pub mod toast;
+pub mod tree_item;
 pub mod view_creation;
 pub mod window;
 

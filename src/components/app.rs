@@ -91,6 +91,7 @@ pub fn App() -> impl IntoView {
 
     // Shared graph, lines, and views state
     let (lines, set_lines) = create_signal(Vec::new());
+    let (folders, set_folders) = create_signal(Vec::new());
     let (graph, set_graph) = create_signal(RailwayGraph::new());
     let (legend, set_legend) = create_signal(Legend::default());
     let (settings, set_settings) = create_signal(crate::models::ProjectSettings::default());
@@ -226,6 +227,7 @@ pub fn App() -> impl IntoView {
 
             set_current_project.set(project.clone());
             set_lines.set(project.lines.clone());
+            set_folders.set(project.folders.clone());
             set_graph.set(project.graph.clone());
             set_legend.set(project.legend);
             set_settings.set(project.settings);
@@ -321,9 +323,10 @@ pub fn App() -> impl IntoView {
         (node_count, edge_count)
     });
 
-    // Auto-save project whenever lines, graph, legend, settings, views, viewport states, or active tab change
+    // Auto-save project whenever lines, folders, graph, legend, settings, views, viewport states, or active tab change
     create_effect(move |_| {
         let current_lines = lines.get();
+        let current_folders = folders.get();
         let current_graph = graph.get();
         let current_legend = legend.get();
         let current_settings = settings.get();
@@ -353,6 +356,7 @@ pub fn App() -> impl IntoView {
 
             // Update project with current data, preserving metadata
             proj.lines = current_lines;
+            proj.folders = current_folders;
             proj.graph = current_graph;
             proj.legend = current_legend;
             proj.settings = current_settings;
@@ -516,6 +520,7 @@ pub fn App() -> impl IntoView {
         leptos::batch(move || {
             set_current_project.set(project.clone());
             set_lines.set(project.lines.clone());
+            set_folders.set(project.folders.clone());
             set_graph.set(project.graph.clone());
             set_legend.set(project.legend.clone());
             set_settings.set(project.settings.clone());
@@ -856,6 +861,8 @@ pub fn App() -> impl IntoView {
                             set_graph=set_graph
                             lines=lines
                             set_lines=set_lines
+                            folders=folders
+                            set_folders=set_folders
                             on_create_view=on_create_view
                             settings=settings
                             initial_viewport=infrastructure_viewport.get_untracked()
@@ -871,6 +878,8 @@ pub fn App() -> impl IntoView {
                                 <TimeGraph
                                     lines=lines
                                     set_lines=set_lines
+                                    folders=folders
+                                    set_folders=set_folders
                                     graph=graph
                                     set_graph=set_graph
                                     legend=legend

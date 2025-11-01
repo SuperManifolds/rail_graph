@@ -12,7 +12,7 @@ use crate::components::{
 use crate::models::{Line, RailwayGraph, GraphView, Stations, Routes};
 use crate::train_journey::TrainJourney;
 use crate::conflict::Conflict;
-use leptos::{component, view, Signal, IntoView, SignalGet, SignalGetUntracked, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect, Callable};
+use leptos::{component, view, Signal, IntoView, SignalGet, SignalGetUntracked, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, SignalWith, create_effect, Callable};
 use petgraph::visit::EdgeRef;
 use wasm_bindgen::JsCast;
 
@@ -142,6 +142,8 @@ fn compute_station_index_map(
 pub fn TimeGraph(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
+    folders: ReadSignal<Vec<crate::models::LineFolder>>,
+    set_folders: WriteSignal<Vec<crate::models::LineFolder>>,
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     legend: ReadSignal<crate::models::Legend>,
@@ -250,7 +252,7 @@ pub fn TimeGraph(
     // Mouse event handlers for sidebar resize
     let handle_sidebar_mousedown = move |ev: leptos::ev::MouseEvent| {
         let x = f64::from(ev.offset_x());
-        let resize_handle_width = 5.0;
+        let resize_handle_width = 3.0;
 
         // Check if mouse is near the left edge
         if x < resize_handle_width {
@@ -265,7 +267,7 @@ pub fn TimeGraph(
         // Check for hover (only when not resizing)
         if !is_resizing_sidebar.get() {
             let x = f64::from(ev.offset_x());
-            let resize_handle_width = 5.0;
+            let resize_handle_width = 3.0;
             set_is_hovering_resize_edge.set(x < resize_handle_width);
         }
     };
@@ -383,7 +385,7 @@ pub fn TimeGraph(
                         station_idx_map=station_idx_map
                     />
                 </div>
-                <LineControls lines=lines set_lines=set_lines graph=graph on_create_view=on_create_view settings=settings set_settings=set_settings />
+                <LineControls lines=lines set_lines=set_lines folders=folders set_folders=set_folders graph=graph on_create_view=on_create_view settings=settings set_settings=set_settings />
                 <div class="sidebar-footer">
                     <Button
                         class="import-button"
@@ -454,14 +456,23 @@ pub fn TimeGraph(
                     }
                 }
                 graph=graph
-                on_save=move |new_line: Line| {
+                on_save=move |mut new_line: Line| {
                     set_lines.update(|lines_vec| {
                         // Check if this is a new line or an existing one
                         if let Some(existing) = lines_vec.iter_mut().find(|l| l.id == new_line.id) {
                             // Update existing line
                             *existing = new_line;
                         } else {
-                            // Add new line
+                            // Add new line - assign sort_index if in Manual mode
+                            if settings.with(|s| s.line_sort_mode == crate::models::LineSortMode::Manual) {
+                                #[allow(clippy::cast_precision_loss)]
+                                let max_sort_index = lines_vec
+                                    .iter()
+                                    .filter_map(|l| l.sort_index)
+                                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                                    .unwrap_or(-1.0);
+                                new_line.sort_index = Some(max_sort_index + 1.0);
+                            }
                             lines_vec.push(new_line);
                         }
                     });

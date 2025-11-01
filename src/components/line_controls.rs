@@ -1,65 +1,200 @@
-use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, create_memo, SignalGet, SignalUpdate, SignalSet, For, Signal, store_value, Callback, Callable, SignalWith, SignalGetUntracked};
-use crate::models::{Line, RailwayGraph, GraphView, ViewportState, Routes, LineSortMode};
+use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, create_memo, SignalGet, SignalUpdate, SignalSet, For, Signal, Callback, SignalWith, SignalGetUntracked, event_target_value};
+use crate::models::{Line, LineFolder, RailwayGraph, GraphView, LineSortMode};
 use crate::components::line_editor::LineEditor;
 use crate::components::confirmation_dialog::ConfirmationDialog;
-use crate::components::dropdown_menu::{DropdownMenu, MenuItem};
+use crate::components::delete_folder_confirmation::DeleteFolderConfirmation;
+use crate::components::edit_folder_dialog::EditFolderDialog;
 use crate::components::line_sort_selector::LineSortSelector;
+use crate::components::window::Window;
+use crate::components::button::Button;
+use crate::components::tree_item::{TreeItem, DraggedItem, DropZone, find_item_context, build_tree};
 use std::collections::HashSet;
 use std::rc::Rc;
 
-fn calculate_new_sort_index(lines: &[Line], _dragged_id: uuid::Uuid, drop_target_id: uuid::Uuid) -> Option<f64> {
-    // Find the dragged line and target line in the sorted list
-    let target_pos = lines.iter().position(|l| l.id == drop_target_id)?;
+fn initialize_sort_indices_recursive(
+    items: &[TreeItem],
+    set_lines: WriteSignal<Vec<Line>>,
+    set_folders: WriteSignal<Vec<LineFolder>>,
+) {
+    #[allow(clippy::cast_precision_loss)]
+    #[allow(clippy::excessive_nesting)]
+    for (index, item) in items.iter().enumerate() {
+        let new_index = index as f64;
 
-    // Get the sort indices before and after the drop position
-    let before_idx = if target_pos > 0 {
-        lines[target_pos - 1].sort_index
-    } else {
-        None
-    };
-    let after_idx = lines[target_pos].sort_index;
-
-    // Calculate midpoint between before and after
-    match (before_idx, after_idx) {
-        (Some(before), Some(after)) => Some((before + after) / 2.0),
-        (None, Some(after)) => Some(after / 2.0),
-        (Some(before), None) => Some(before + 1.0),
-        (None, None) => {
-            #[allow(clippy::cast_precision_loss)]
-            let index = target_pos as f64;
-            Some(index)
+        match item {
+            TreeItem::Line(line) if line.sort_index.is_none() => {
+                let line_id = line.id;
+                set_lines.update(|lines_vec| {
+                    let Some(l) = lines_vec.iter_mut().find(|l| l.id == line_id) else { return };
+                    l.sort_index = Some(new_index);
+                });
+            }
+            TreeItem::Folder { folder, children } => {
+                if folder.sort_index.is_none() {
+                    let folder_id = folder.id;
+                    set_folders.update(move |folders_vec| {
+                        if let Some(f) = folders_vec.iter_mut().find(|f| f.id == folder_id) {
+                            f.sort_index = Some(new_index);
+                        }
+                    });
+                }
+                // Recursively initialize children
+                initialize_sort_indices_recursive(children, set_lines, set_folders);
+            }
+            TreeItem::Line(_) => {}
         }
     }
 }
 
-fn sort_lines(mut lines: Vec<Line>, mode: LineSortMode) -> Vec<Line> {
-    match mode {
-        LineSortMode::AddedOrder => {
-            // Keep original order
+fn is_ancestor(
+    folder_id: uuid::Uuid,
+    potential_ancestor_id: uuid::Uuid,
+    folders: &[LineFolder],
+) -> bool {
+    let mut current_id = Some(folder_id);
+    let mut visited = std::collections::HashSet::new();
+
+    while let Some(id) = current_id {
+        if id == potential_ancestor_id {
+            return true;
         }
-        LineSortMode::Alphabetical => {
-            lines.sort_by(|a, b| a.name.cmp(&b.name));
+
+        if !visited.insert(id) {
+            // Cycle detected
+            return false;
         }
-        LineSortMode::Manual => {
-            // Sort by sort_index, falling back to original order for None values
-            lines.sort_by(|a, b| {
-                match (a.sort_index, b.sort_index) {
-                    (Some(a_idx), Some(b_idx)) => a_idx.partial_cmp(&b_idx).unwrap_or(std::cmp::Ordering::Equal),
-                    (Some(_), None) => std::cmp::Ordering::Less,
-                    (None, Some(_)) => std::cmp::Ordering::Greater,
-                    (None, None) => std::cmp::Ordering::Equal,
+
+        current_id = folders.iter()
+            .find(|f| f.id == id)
+            .and_then(|f| f.parent_folder_id);
+    }
+
+    false
+}
+
+pub fn handle_drop_into_folder(
+    dragged: DraggedItem,
+    folder_id: uuid::Uuid,
+    set_lines: WriteSignal<Vec<Line>>,
+    set_folders: WriteSignal<Vec<LineFolder>>,
+) {
+    match dragged {
+        DraggedItem::Line(dragged_line_id) => {
+            set_lines.update(|lines_vec| {
+                if let Some(line) = lines_vec.iter_mut().find(|l| l.id == dragged_line_id) {
+                    line.folder_id = Some(folder_id);
+                    line.sort_index = None;
+                }
+            });
+        }
+        DraggedItem::Folder(dragged_folder_id) => {
+            if dragged_folder_id == folder_id {
+                return;
+            }
+
+            set_folders.update(|folders_vec| {
+                // Check if target folder is a descendant of dragged folder
+                if is_ancestor(folder_id, dragged_folder_id, folders_vec) {
+                    return;
+                }
+
+                if let Some(f) = folders_vec.iter_mut().find(|f| f.id == dragged_folder_id) {
+                    f.parent_folder_id = Some(folder_id);
+                    f.sort_index = None;
                 }
             });
         }
     }
-    lines
+}
+
+pub fn handle_drop_in_zone(
+    dragged: DraggedItem,
+    drop_zone: DropZone,
+    tree_items: Vec<TreeItem>,
+    set_lines: WriteSignal<Vec<Line>>,
+    set_folders: WriteSignal<Vec<LineFolder>>,
+) {
+    let reference_id = match drop_zone {
+        DropZone::Before(id) | DropZone::After(id) => id,
+    };
+
+    // Find the reference item and its context (siblings and parent folder)
+    let Some((siblings, folder_id)) = find_item_context(&tree_items, reference_id, None) else {
+        return;
+    };
+
+    // Find the position in the siblings list
+    let reference_index = siblings.iter().position(|item| item.id() == reference_id);
+    let Some(reference_index) = reference_index else { return };
+
+    // Calculate the new sort_index based on neighbors
+    // All items should have sort_index in Manual mode
+    let new_sort_index = match drop_zone {
+        DropZone::Before(_) => {
+            if reference_index > 0 {
+                let prev = &siblings[reference_index - 1];
+                let curr = &siblings[reference_index];
+                let prev_idx = prev.sort_index().unwrap_or(0.0);
+                let curr_idx = curr.sort_index().unwrap_or(1.0);
+                Some((prev_idx + curr_idx) / 2.0)
+            } else {
+                // First item - use value before first item's index
+                let first_idx = siblings[0].sort_index().unwrap_or(0.0);
+                Some(first_idx - 1.0)
+            }
+        }
+        DropZone::After(_) => {
+            if reference_index < siblings.len() - 1 {
+                let curr = &siblings[reference_index];
+                let next = &siblings[reference_index + 1];
+                let curr_idx = curr.sort_index().unwrap_or(0.0);
+                let next_idx = next.sort_index().unwrap_or(1.0);
+                Some((curr_idx + next_idx) / 2.0)
+            } else {
+                // Last item - use value after last item's index
+                let last_idx = siblings[reference_index].sort_index().unwrap_or(0.0);
+                Some(last_idx + 1.0)
+            }
+        }
+    };
+
+    // Update the dragged item
+    match dragged {
+        DraggedItem::Line(dragged_line_id) => {
+            set_lines.update(|lines_vec| {
+                if let Some(line) = lines_vec.iter_mut().find(|l| l.id == dragged_line_id) {
+                    line.folder_id = folder_id;
+                    line.sort_index = new_sort_index;
+                }
+            });
+        }
+        DraggedItem::Folder(dragged_folder_id) => {
+            set_folders.update(|folders_vec| {
+                // If target has a folder, check if it's a descendant of dragged folder
+                if let Some(target_folder_id) = folder_id {
+                    if is_ancestor(target_folder_id, dragged_folder_id, folders_vec) {
+                        return;
+                    }
+                }
+
+                if let Some(f) = folders_vec.iter_mut().find(|f| f.id == dragged_folder_id) {
+                    f.parent_folder_id = folder_id;
+                    f.sort_index = new_sort_index;
+                }
+            });
+        }
+    }
 }
 
 #[component]
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn LineControls(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
+    #[allow(unused_variables)]
+    folders: ReadSignal<Vec<LineFolder>>,
+    set_folders: WriteSignal<Vec<LineFolder>>,
     graph: ReadSignal<RailwayGraph>,
     on_create_view: Callback<GraphView>,
     settings: ReadSignal<crate::models::ProjectSettings>,
@@ -67,39 +202,109 @@ pub fn LineControls(
 ) -> impl IntoView {
     let (open_editors, set_open_editors) = create_signal(HashSet::<uuid::Uuid>::new());
     let (delete_pending, set_delete_pending) = create_signal(None::<uuid::Uuid>);
+    let (folder_delete_pending, set_folder_delete_pending) = create_signal(None::<uuid::Uuid>);
+    let (folder_edit_pending, set_folder_edit_pending) = create_signal(None::<uuid::Uuid>);
 
     let editors_list = move || {
         open_editors.get().into_iter().collect::<Vec<_>>()
     };
 
-    let sorted_lines = create_memo(move |_| {
+    let (drag_over_id, set_drag_over_id) = create_signal(None::<uuid::Uuid>);
+    let (dragged_item, set_dragged_item) = create_signal(None::<DraggedItem>);
+    let (drop_zone_hover, set_drop_zone_hover) = create_signal(None::<DropZone>);
+    let (show_folder_dialog, set_show_folder_dialog) = create_signal(false);
+    let (folder_name, set_folder_name) = create_signal(String::from("New Folder"));
+    let (folder_color, set_folder_color) = create_signal(String::from("#808080"));
+
+    let tree = create_memo(move |_| {
         let lines_vec = lines.get();
+        let folders_vec = folders.get();
         let sort_mode = settings.with(|s| s.line_sort_mode);
-        sort_lines(lines_vec, sort_mode)
+        build_tree(lines_vec, folders_vec, sort_mode)
     });
 
-    let (drag_over_id, set_drag_over_id) = create_signal(None::<uuid::Uuid>);
-    let (dragged_id, set_dragged_id) = create_signal(None::<uuid::Uuid>);
+    // Initialize sort indices when switching to Manual mode
+    leptos::create_effect(move |prev_mode| {
+        let current_mode = settings.with(|s| s.line_sort_mode);
+        if current_mode == LineSortMode::Manual && prev_mode != Some(LineSortMode::Manual) {
+            let tree_items = tree.get_untracked();
+            initialize_sort_indices_recursive(&tree_items, set_lines, set_folders);
+        }
+        current_mode
+    });
 
     view! {
         <div class="controls">
-            <LineSortSelector settings=settings set_settings=set_settings />
-            <div class="line-controls">
+            <div class="controls-header">
+                <LineSortSelector settings=settings set_settings=set_settings />
+                <Button
+                    class="add-folder-button"
+                    on_click=Callback::new(move |_| set_show_folder_dialog.set(true))
+                    title="Create new folder"
+                >
+                    <i class="fa-solid fa-folder-plus"></i>
+                </Button>
+            </div>
+            <div class="line-controls"
+                on:dragover=move |ev| {
+                    ev.prevent_default();
+                    if let Some(dt) = ev.data_transfer() {
+                        dt.set_drop_effect("move");
+                    }
+                }
+                on:drop=move |ev| {
+                    ev.prevent_default();
+
+                    if let Some(dragged) = dragged_item.get_untracked() {
+                        match dragged {
+                            DraggedItem::Line(dragged_line_id) => {
+                                set_lines.update(|lines_vec| {
+                                    if let Some(line) = lines_vec.iter_mut().find(|l| l.id == dragged_line_id) {
+                                        line.folder_id = None;
+                                        line.sort_index = None;
+                                    }
+                                });
+                            }
+                            DraggedItem::Folder(dragged_folder_id) => {
+                                set_folders.update(|folders_vec| {
+                                    if let Some(f) = folders_vec.iter_mut().find(|f| f.id == dragged_folder_id) {
+                                        f.parent_folder_id = None;
+                                        f.sort_index = None;
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    set_dragged_item.set(None);
+                    set_drag_over_id.set(None);
+                }
+            >
                 <For
-                    each={move || sorted_lines.get().into_iter().map(|line| line.id).collect::<Vec<_>>()}
-                    key={|line_id| *line_id}
-                    children={move |line_id: uuid::Uuid| {
+                    each={move || {
+                        let items = tree.get();
+                        let len = items.len();
+                        items.into_iter().enumerate().map(|(idx, item)| (item, idx == len - 1)).collect::<Vec<_>>()
+                    }}
+                    key={|(item, _)| item.id()}
+                    children={move |(tree_item, is_last): (TreeItem, bool)| {
                         view! {
-                            <LineControl
-                                line_id=line_id
+                            <TreeItem
+                                tree_item=tree_item
+                                is_last=is_last
+                                tree=tree
                                 lines=lines
                                 set_lines=set_lines
+                                folders=folders
+                                set_folders=set_folders
                                 graph=graph
+                                settings=settings
                                 set_settings=set_settings
-                                dragged_id=dragged_id
-                                set_dragged_id=set_dragged_id
+                                dragged_item=dragged_item
+                                set_dragged_item=set_dragged_item
                                 drag_over_id=drag_over_id
                                 set_drag_over_id=set_drag_over_id
+                                drop_zone_hover=drop_zone_hover
+                                set_drop_zone_hover=set_drop_zone_hover
                                 on_edit=move |id: uuid::Uuid| {
                                     set_open_editors.update(|editors| {
                                         editors.insert(id);
@@ -111,12 +316,29 @@ pub fn LineControls(
                                 on_duplicate=move |id: uuid::Uuid| {
                                     set_lines.update(|lines_vec| {
                                         if let Some(line) = lines_vec.iter().find(|l| l.id == id) {
-                                            let duplicated = line.duplicate();
+                                            let mut duplicated = line.duplicate();
+                                            // Assign sort_index if in Manual mode
+                                            if settings.with(|s| s.line_sort_mode == LineSortMode::Manual) {
+                                                #[allow(clippy::cast_precision_loss)]
+                                                let max_sort_index = lines_vec
+                                                    .iter()
+                                                    .filter_map(|l| l.sort_index)
+                                                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                                                    .unwrap_or(-1.0);
+                                                duplicated.sort_index = Some(max_sort_index + 1.0);
+                                            }
                                             lines_vec.push(duplicated);
                                         }
                                     });
                                 }
+                                on_folder_edit=move |id: uuid::Uuid| {
+                                    set_folder_edit_pending.set(Some(id));
+                                }
+                                on_folder_delete=move |id: uuid::Uuid| {
+                                    set_folder_delete_pending.set(Some(id));
+                                }
                                 on_create_view=on_create_view
+                                depth=0
                             />
                         }
                     }}
@@ -190,166 +412,103 @@ pub fn LineControls(
             on_cancel=Rc::new(move || set_delete_pending.set(None))
             confirm_text="Delete".to_string()
         />
-    }
-}
 
-#[component]
-pub fn LineControl(
-    line_id: uuid::Uuid,
-    lines: ReadSignal<Vec<Line>>,
-    set_lines: WriteSignal<Vec<Line>>,
-    graph: ReadSignal<RailwayGraph>,
-    set_settings: WriteSignal<crate::models::ProjectSettings>,
-    dragged_id: ReadSignal<Option<uuid::Uuid>>,
-    set_dragged_id: WriteSignal<Option<uuid::Uuid>>,
-    drag_over_id: ReadSignal<Option<uuid::Uuid>>,
-    set_drag_over_id: WriteSignal<Option<uuid::Uuid>>,
-    on_edit: impl Fn(uuid::Uuid) + 'static,
-    on_delete: impl Fn(uuid::Uuid) + 'static,
-    on_duplicate: impl Fn(uuid::Uuid) + 'static,
-    on_create_view: Callback<GraphView>,
-) -> impl IntoView {
-    let current_line = Signal::derive(move || {
-        lines.get().into_iter().find(|l| l.id == line_id)
-    });
-
-    let on_edit = store_value(on_edit);
-    let on_delete = store_value(on_delete);
-    let on_duplicate = store_value(on_duplicate);
-
-    view! {
-        {move || {
-            current_line.get().map(|line| {
-                let is_dragging = move || dragged_id.get() == Some(line_id);
-                let is_drag_over = move || drag_over_id.get() == Some(line_id);
-
-                view! {
-                    <div
-                        class=move || {
-                            let mut classes = vec!["line-control"];
-                            if is_dragging() { classes.push("dragging"); }
-                            if is_drag_over() { classes.push("drag-over"); }
-                            classes.join(" ")
-                        }
-                        style=format!("border-left: 4px solid {}", line.color)
-                        draggable="true"
-                        on:dragstart=move |ev| {
-                            if let Some(dt) = ev.data_transfer() {
-                                let _ = dt.set_data("text/plain", &line_id.to_string());
-                                dt.set_effect_allowed("move");
-                            }
-                            set_dragged_id.set(Some(line_id));
-                            // Switch to Manual mode when starting drag
-                            set_settings.update(|s| s.line_sort_mode = LineSortMode::Manual);
-                        }
-                        on:dragover=move |ev| {
-                            ev.prevent_default();
-                            if let Some(dt) = ev.data_transfer() {
-                                dt.set_drop_effect("move");
-                            }
-                            set_drag_over_id.set(Some(line_id));
-                        }
-                        on:dragleave=move |_| {
-                            set_drag_over_id.set(None);
-                        }
-                        on:drop=move |ev| {
-                            ev.prevent_default();
-                            ev.stop_propagation();
-
-                            if let Some(dragged) = dragged_id.get_untracked() {
-                                if dragged != line_id {
-                                    let sorted = sort_lines(lines.get_untracked(), LineSortMode::Manual);
-                                    if let Some(new_index) = calculate_new_sort_index(&sorted, dragged, line_id) {
-                                        set_lines.update(|lines_vec| {
-                                            if let Some(line) = lines_vec.iter_mut().find(|l| l.id == dragged) {
-                                                line.sort_index = Some(new_index);
-                                            }
-                                        });
+        <Window
+            is_open=Signal::derive(move || show_folder_dialog.get())
+            title=Signal::derive(|| "Create Folder".to_string())
+            on_close=move || set_show_folder_dialog.set(false)
+            max_size=(400.0, 300.0)
+        >
+            <div class="add-station-form">
+                <div class="form-field">
+                    <label>"Folder Name"</label>
+                    <input
+                        type="text"
+                        placeholder="Enter folder name"
+                        value=folder_name
+                        on:input=move |ev| set_folder_name.set(event_target_value(&ev))
+                        on:keydown=move |ev| {
+                            if ev.key() == "Enter" && !folder_name.get().trim().is_empty() {
+                                let mut new_folder = LineFolder::new(folder_name.get(), folder_color.get());
+                                set_folders.update(|folders_vec| {
+                                    // Assign sort_index if in Manual mode
+                                    if settings.with(|s| s.line_sort_mode == LineSortMode::Manual) {
+                                        #[allow(clippy::cast_precision_loss)]
+                                        let max_sort_index = folders_vec
+                                            .iter()
+                                            .filter_map(|f| f.sort_index)
+                                            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                                            .unwrap_or(-1.0);
+                                        new_folder.sort_index = Some(max_sort_index + 1.0);
                                     }
-                                }
+                                    folders_vec.push(new_folder);
+                                });
+                                set_folder_name.set(String::from("New Folder"));
+                                set_folder_color.set(String::from("#808080"));
+                                set_show_folder_dialog.set(false);
                             }
-                            set_dragged_id.set(None);
-                            set_drag_over_id.set(None);
                         }
-                        on:dragend=move |_| {
-                            set_dragged_id.set(None);
-                            set_drag_over_id.set(None);
+                        prop:autofocus=true
+                    />
+                </div>
+
+                <div class="form-field">
+                    <label>"Color"</label>
+                    <input
+                        type="color"
+                        value=folder_color
+                        on:input=move |ev| set_folder_color.set(event_target_value(&ev))
+                    />
+                </div>
+
+                <div class="form-buttons">
+                    <button on:click=move |_| set_show_folder_dialog.set(false)>
+                        "Cancel"
+                    </button>
+                    <button
+                        class="primary"
+                        on:click=move |_| {
+                            if !folder_name.get().trim().is_empty() {
+                                let mut new_folder = LineFolder::new(folder_name.get(), folder_color.get());
+                                set_folders.update(|folders_vec| {
+                                    // Assign sort_index if in Manual mode
+                                    if settings.with(|s| s.line_sort_mode == LineSortMode::Manual) {
+                                        #[allow(clippy::cast_precision_loss)]
+                                        let max_sort_index = folders_vec
+                                            .iter()
+                                            .filter_map(|f| f.sort_index)
+                                            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                                            .unwrap_or(-1.0);
+                                        new_folder.sort_index = Some(max_sort_index + 1.0);
+                                    }
+                                    folders_vec.push(new_folder);
+                                });
+                                set_folder_name.set(String::from("New Folder"));
+                                set_folder_color.set(String::from("#808080"));
+                                set_show_folder_dialog.set(false);
+                            }
                         }
+                        prop:disabled=move || folder_name.get().trim().is_empty()
                     >
-                        <div
-                            class="line-header"
-                            on:dblclick=move |_| on_edit.with_value(|f| f(line_id))
-                        >
-                            <div class="drag-handle">
-                                <i class="fa-solid fa-grip-vertical"></i>
-                            </div>
-                            <strong>{line.name.clone()}</strong>
-                            <div class="line-header-controls">
-                                <button
-                                    class="visibility-toggle"
-                                    on:click={
-                                        move |_| {
-                                            set_lines.update(|lines_vec| {
-                                                if let Some(line) = lines_vec.iter_mut().find(|l| l.id == line_id) {
-                                                    line.visible = !line.visible;
-                                                }
-                                            });
-                                        }
-                                    }
-                                    title=if line.visible { "Hide line" } else { "Show line" }
-                                >
-                                    <i class=if line.visible { "fa-solid fa-eye" } else { "fa-solid fa-eye-slash" }></i>
-                                </button>
-                                <DropdownMenu items={
-                                    let line_clone = line.clone();
-                                    vec![
-                                        MenuItem {
-                                            label: "Open in View",
-                                            icon: "fa-solid fa-arrow-up-right-from-square",
-                                            on_click: Rc::new(move || {
-                                                use crate::models::RouteDirection;
+                        "Create"
+                    </button>
+                </div>
+            </div>
+        </Window>
 
-                                                let edge_path: Vec<usize> = line_clone.forward_route.iter().map(|seg| seg.edge_index).collect();
-                                                if !edge_path.is_empty() {
-                                                    let current_graph = graph.get();
-                                                    let (from, to) = current_graph.get_route_endpoints(&line_clone.forward_route, RouteDirection::Forward);
+        <DeleteFolderConfirmation
+            folder_delete_pending=folder_delete_pending
+            set_folder_delete_pending=set_folder_delete_pending
+            folders=folders
+            set_folders=set_folders
+            set_lines=set_lines
+        />
 
-                                                    if let (Some(from), Some(to)) = (from, to) {
-                                                        let view = GraphView {
-                                                            id: uuid::Uuid::new_v4(),
-                                                            name: line_clone.name.clone(),
-                                                            viewport_state: ViewportState::default(),
-                                                            station_range: Some((from, to)),
-                                                            edge_path: Some(edge_path),
-                                                            source_line_id: Some(line_clone.id),
-                                                        };
-                                                        on_create_view.call(view);
-                                                    }
-                                                }
-                                            }),
-                                        },
-                                        MenuItem {
-                                            label: "Edit",
-                                            icon: "fa-solid fa-pen",
-                                            on_click: Rc::new(move || on_edit.with_value(|f| f(line_id))),
-                                        },
-                                        MenuItem {
-                                            label: "Duplicate",
-                                            icon: "fa-solid fa-copy",
-                                            on_click: Rc::new(move || on_duplicate.with_value(|f| f(line_id))),
-                                        },
-                                        MenuItem {
-                                            label: "Delete",
-                                            icon: "fa-solid fa-trash",
-                                            on_click: Rc::new(move || on_delete.with_value(|f| f(line_id))),
-                                        },
-                                    ]
-                                } />
-                            </div>
-                        </div>
-                    </div>
-                }
-            })
-        }}
+        <EditFolderDialog
+            folder_edit_pending=folder_edit_pending
+            set_folder_edit_pending=set_folder_edit_pending
+            folders=folders
+            set_folders=set_folders
+        />
     }
 }
