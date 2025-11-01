@@ -163,7 +163,7 @@ pub struct JTrainGraphTrainTime {
 ///
 /// # Errors
 /// Returns error if XML parsing fails
-pub fn parse_jtraingraph(xml_content: &str) -> Result<JTrainGraphTimetable, quick_xml::DeError> {
+fn parse_jtraingraph(xml_content: &str) -> Result<JTrainGraphTimetable, quick_xml::DeError> {
     quick_xml::de::from_str(xml_content)
 }
 
@@ -478,7 +478,7 @@ fn create_route_segments(
 /// # Errors
 /// Returns error if edge not found between stations or invalid time data
 #[allow(clippy::too_many_lines)]
-pub fn import_jtraingraph(
+fn import_jtraingraph(
     timetable: &JTrainGraphTimetable,
     graph: &mut RailwayGraph,
     starting_line_count: usize,
@@ -990,5 +990,54 @@ mod tests {
                     stations[i], stations[i + 1], track_segment.distance);
             }
         }
+    }
+}
+
+/// `JTrainGraph` importer implementing the Import trait
+pub struct JTrainGraphImport;
+
+/// Empty configuration for `JTrainGraph` import (format is self-describing)
+#[derive(Debug, Clone)]
+pub struct JTrainGraphConfig;
+
+impl super::Import for JTrainGraphImport {
+    type Config = JTrainGraphConfig;
+    type Parsed = JTrainGraphTimetable;
+    type ParseError = quick_xml::DeError;
+
+    fn parse(content: &str) -> Result<Self::Parsed, Self::ParseError> {
+        parse_jtraingraph(content)
+    }
+
+    fn import(
+        parsed: &Self::Parsed,
+        _config: &Self::Config,
+        mode: super::ImportMode,
+        graph: &mut RailwayGraph,
+        starting_line_count: usize,
+        existing_line_ids: &[String],
+        handedness: crate::models::TrackHandedness,
+    ) -> Result<super::ImportResult, String> {
+        // Track graph size before import
+        let stations_before = graph.graph.node_count();
+        let edges_before = graph.graph.edge_count();
+
+        // Note: JTrainGraph format always creates infrastructure as needed
+        // UseExisting mode will reuse existing stations by name but may still create missing tracks
+        if mode == super::ImportMode::UseExisting {
+            leptos::logging::warn!("JTrainGraph import in UseExisting mode: will reuse existing stations but may create new tracks");
+        }
+
+        let lines = import_jtraingraph(parsed, graph, starting_line_count, existing_line_ids, handedness)?;
+
+        // Calculate what was added
+        let stations_added = graph.graph.node_count().saturating_sub(stations_before);
+        let edges_added = graph.graph.edge_count().saturating_sub(edges_before);
+
+        Ok(super::ImportResult {
+            lines,
+            stations_added,
+            edges_added,
+        })
     }
 }

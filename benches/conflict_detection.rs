@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use nimby_graph::train_journey::TrainJourney;
 use nimby_graph::conflict::{detect_line_conflicts, SerializableConflictContext};
-use nimby_graph::import::csv::{analyze_csv, parse_csv_with_mapping};
+use nimby_graph::import::{Import, ImportMode, CsvImport};
 use nimby_graph::models::RailwayGraph;
 
 fn benchmark_conflict_detection(c: &mut Criterion) {
@@ -9,9 +9,18 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
     let csv_content = std::fs::read_to_string("test-data/R70.csv")
         .expect("Failed to read test-data/R70.csv");
 
-    let config = analyze_csv(&csv_content, None).expect("Failed to analyze CSV");
+    let config = CsvImport::analyze(&csv_content, None).expect("Failed to analyze CSV");
     let mut graph = RailwayGraph::new();
-    let lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0, nimby_graph::models::TrackHandedness::RightHand);
+    let result = CsvImport::import_from_content(
+        &csv_content,
+        &config,
+        ImportMode::CreateInfrastructure,
+        &mut graph,
+        0,
+        &[],
+        nimby_graph::models::TrackHandedness::RightHand,
+    ).expect("Failed to import CSV");
+    let lines = result.lines;
 
     let journeys = TrainJourney::generate_journeys(&lines, &graph, None);
     let journeys_vec: Vec<_> = journeys.values().cloned().collect();

@@ -79,7 +79,7 @@ pub struct CsvImportConfig {
 }
 
 /// Analyze CSV content and suggest column mappings
-pub fn analyze_csv(content: &str, filename: Option<String>) -> Option<CsvImportConfig> {
+fn analyze_csv(content: &str, filename: Option<String>) -> Option<CsvImportConfig> {
     let mut reader = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_reader(content.as_bytes());
@@ -563,85 +563,6 @@ fn is_duration_format(s: &str) -> bool {
 
     // Also accept plain time format as duration
     is_time_format(&s)
-}
-
-/// Parse CSV content with the given column mapping configuration
-/// Merges stations and tracks into the existing graph
-/// `existing_line_count` is used to offset colors to avoid duplicates
-#[must_use]
-pub fn parse_csv_with_mapping(content: &str, config: &CsvImportConfig, graph: &mut RailwayGraph, existing_line_count: usize, handedness: crate::models::TrackHandedness) -> Vec<Line> {
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_reader(content.as_bytes());
-
-    let mut records = reader.records();
-
-    // Skip header row if present
-    if config.has_headers {
-        let _ = records.next();
-    }
-
-    let line_groups = build_line_groups(config);
-    if line_groups.is_empty() {
-        return Vec::new();
-    }
-
-    let line_ids: Vec<String> = line_groups.iter().map(|g| g.line_name.clone()).collect();
-    let mut lines = Line::create_from_ids(&line_ids, existing_line_count);
-
-    let station_data = collect_station_data(&mut records, config, &line_groups);
-
-    // build_routes now returns Result, but parse_csv_with_mapping returns Vec<Line> for backward compatibility
-    // In the old mode (disable_infrastructure=false), errors shouldn't occur, so we can unwrap or log
-    if let Err(e) = build_routes(&mut lines, graph, &station_data, &line_groups, config, handedness) {
-        leptos::logging::error!("Error building routes: {}", e);
-        return Vec::new();
-    }
-
-    // If no routes were created (infrastructure-only import), don't return any lines
-    if lines.iter().all(|line| line.forward_route.is_empty()) {
-        return Vec::new();
-    }
-
-    lines
-}
-
-/// Parse CSV content using existing infrastructure only (no new stations/tracks created)
-/// Uses pathfinding to create routes between stations listed in CSV
-///
-/// # Errors
-/// Returns error if any station is not found or if no path exists between consecutive stations
-pub fn parse_csv_with_existing_infrastructure(
-    content: &str,
-    config: &CsvImportConfig,
-    graph: &mut RailwayGraph,
-    existing_line_count: usize,
-    handedness: crate::models::TrackHandedness,
-) -> Result<Vec<Line>, String> {
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_reader(content.as_bytes());
-
-    let mut records = reader.records();
-
-    // Skip header row if present
-    if config.has_headers {
-        let _ = records.next();
-    }
-
-    let line_groups = build_line_groups(config);
-    if line_groups.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let line_ids: Vec<String> = line_groups.iter().map(|g| g.line_name.clone()).collect();
-    let mut lines = Line::create_from_ids(&line_ids, existing_line_count);
-
-    let station_data = collect_station_data(&mut records, config, &line_groups);
-
-    build_routes(&mut lines, graph, &station_data, &line_groups, config, handedness)?;
-
-    Ok(lines)
 }
 
 /// Build line groups from column configuration
@@ -1436,9 +1357,101 @@ fn parse_time_to_duration(s: &str) -> Option<Duration> {
         })
 }
 
+/// CSV importer implementing the Import trait
+pub struct CsvImport;
+
+/// Parsed CSV data structure
+pub struct ParsedCsv {
+    pub content: String,
+}
+
+impl super::Import for CsvImport {
+    type Config = CsvImportConfig;
+    type Parsed = ParsedCsv;
+    type ParseError = std::io::Error;
+
+    fn parse(content: &str) -> Result<Self::Parsed, Self::ParseError> {
+        // CSV parsing is trivial - just validate it's valid UTF-8 and store it
+        // The real parsing happens in the import step
+        Ok(ParsedCsv {
+            content: content.to_string(),
+        })
+    }
+
+    fn analyze(content: &str, filename: Option<String>) -> Option<Self::Config> {
+        analyze_csv(content, filename)
+    }
+
+    fn import(
+        parsed: &Self::Parsed,
+        config: &Self::Config,
+        mode: super::ImportMode,
+        graph: &mut RailwayGraph,
+        existing_line_count: usize,
+        _existing_line_ids: &[String],
+        handedness: crate::models::TrackHandedness,
+    ) -> Result<super::ImportResult, String> {
+        // Update config based on mode
+        let mut config = config.clone();
+        config.disable_infrastructure = mode == super::ImportMode::UseExisting;
+
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(parsed.content.as_bytes());
+
+        let mut records = reader.records();
+
+        // Skip header row if present
+        if config.has_headers {
+            let _ = records.next();
+        }
+
+        let line_groups = build_line_groups(&config);
+        if line_groups.is_empty() {
+            return Ok(super::ImportResult {
+                lines: Vec::new(),
+                stations_added: 0,
+                edges_added: 0,
+            });
+        }
+
+        let line_ids: Vec<String> = line_groups.iter().map(|g| g.line_name.clone()).collect();
+        let mut lines = Line::create_from_ids(&line_ids, existing_line_count);
+
+        let station_data = collect_station_data(&mut records, &config, &line_groups);
+
+        // Track graph size before import
+        let stations_before = graph.graph.node_count();
+        let edges_before = graph.graph.edge_count();
+
+        // Build routes - propagate errors in UseExisting mode
+        build_routes(&mut lines, graph, &station_data, &line_groups, &config, handedness)?;
+
+        // Calculate what was added
+        let stations_added = graph.graph.node_count().saturating_sub(stations_before);
+        let edges_added = graph.graph.edge_count().saturating_sub(edges_before);
+
+        // If no routes were created, don't return any lines
+        if lines.iter().all(|line| line.forward_route.is_empty()) {
+            return Ok(super::ImportResult {
+                lines: Vec::new(),
+                stations_added,
+                edges_added,
+            });
+        }
+
+        Ok(super::ImportResult {
+            lines,
+            stations_added,
+            edges_added,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::import::{Import, ImportMode};
     use petgraph::visit::EdgeRef;
 
     #[test]
@@ -1536,10 +1549,19 @@ mod tests {
         let csv_content = std::fs::read_to_string("test-data/infra.csv")
             .expect("Failed to read test-data/infra.csv");
 
-        let config = analyze_csv(&csv_content, None).expect("Should parse infra.csv");
+        let config = CsvImport::analyze(&csv_content, None).expect("Should parse infra.csv");
 
         let mut graph = RailwayGraph::new();
-        let lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0, crate::models::TrackHandedness::RightHand);
+        let result = CsvImport::import_from_content(
+            &csv_content,
+            &config,
+            ImportMode::CreateInfrastructure,
+            &mut graph,
+            0,
+            &[],
+            crate::models::TrackHandedness::RightHand,
+        ).expect("Should import successfully");
+        let lines = result.lines;
 
         let all_nodes = graph.get_all_nodes_ordered();
 
@@ -1630,10 +1652,19 @@ mod tests {
         let csv_content = std::fs::read_to_string("test-data/R70.csv")
             .expect("Failed to read test-data/R70.csv");
 
-        let config = analyze_csv(&csv_content, Some("R70".to_string())).expect("Should parse R70.csv");
+        let config = CsvImport::analyze(&csv_content, Some("R70".to_string())).expect("Should parse R70.csv");
 
         let mut graph = RailwayGraph::new();
-        let mut lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, 0, crate::models::TrackHandedness::RightHand);
+        let result = CsvImport::import_from_content(
+            &csv_content,
+            &config,
+            ImportMode::CreateInfrastructure,
+            &mut graph,
+            0,
+            &[],
+            crate::models::TrackHandedness::RightHand,
+        ).expect("Should import successfully");
+        let mut lines = result.lines;
 
         assert!(!lines.is_empty(), "Should have imported at least one line");
 

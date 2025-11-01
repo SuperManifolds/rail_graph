@@ -1,9 +1,10 @@
-use crate::import::jtraingraph::{parse_jtraingraph, import_jtraingraph};
+use crate::import::{Import, ImportMode};
+use crate::import::jtraingraph::{JTrainGraphImport, JTrainGraphConfig};
+use crate::import::csv::{CsvImport, CsvImportConfig};
 use crate::models::{Line, RailwayGraph};
 use crate::components::button::Button;
 use crate::components::csv_column_mapper::CsvColumnMapper;
 use crate::components::window::Window;
-use crate::import::csv::{analyze_csv, parse_csv_with_mapping, parse_csv_with_existing_infrastructure, CsvImportConfig};
 use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, SignalGetUntracked, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback, Show};
 
 fn handle_fpl_import(
@@ -13,7 +14,7 @@ fn handle_fpl_import(
     lines: ReadSignal<Vec<Line>>,
     handedness: crate::models::TrackHandedness,
 ) {
-    let Ok(timetable) = parse_jtraingraph(text) else {
+    let Ok(parsed) = JTrainGraphImport::parse(text) else {
         leptos::logging::error!("Failed to parse JTrainGraph file");
         return;
     };
@@ -23,29 +24,38 @@ fn handle_fpl_import(
     let existing_line_ids: Vec<String> = lines.get().iter().map(|l| l.name.clone()).collect();
 
     // Track results
-    let mut new_lines = None;
-    let mut before_stations = 0;
-    let mut after_stations = 0;
+    let mut import_result = None;
 
     // Update graph and get new lines to add
     set_graph.update(|graph| {
-        before_stations = graph.graph.node_count();
-
-        match import_jtraingraph(&timetable, graph, before_lines_count, &existing_line_ids, handedness) {
-            Ok(lines_to_add) => {
-                after_stations = graph.graph.node_count();
-                new_lines = Some(lines_to_add);
+        let config = JTrainGraphConfig;
+        match JTrainGraphImport::import(
+            &parsed,
+            &config,
+            ImportMode::CreateInfrastructure,
+            graph,
+            before_lines_count,
+            &existing_line_ids,
+            handedness,
+        ) {
+            Ok(result) => {
+                leptos::logging::log!(
+                    "JTrainGraph import successful: {} lines, {} stations added, {} edges added",
+                    result.lines.len(),
+                    result.stations_added,
+                    result.edges_added
+                );
+                import_result = Some(result);
             }
             Err(e) => {
                 leptos::logging::error!("Failed to import JTrainGraph: {}", e);
-                after_stations = before_stations;
             }
         }
     });
 
     // Add new lines if import succeeded
-    if let Some(lines_to_add) = new_lines {
-        set_lines.update(|lines| lines.extend(lines_to_add));
+    if let Some(result) = import_result {
+        set_lines.update(|lines| lines.extend(result.lines));
     }
 }
 
@@ -67,7 +77,7 @@ fn handle_csv_analysis(
         .and_then(|s| s.to_str())
         .map(String::from);
 
-    if let Some(config) = analyze_csv(text, filename_without_ext) {
+    if let Some(config) = CsvImport::analyze(text, filename_without_ext) {
         leptos::logging::log!("CSV analysis successful, {} columns detected", config.columns.len());
         set_csv_config.set(Some(config));
         set_show_mapper.set(true);
@@ -139,49 +149,57 @@ pub fn Importer(
         // Clear any previous import errors
         set_import_error.set(None);
 
-        let mut new_lines = None;
-        let mut error_msg = None;
-
-        // Get existing line count for color offset
+        // Get existing line count and IDs
         let existing_line_count = lines.get().len();
+        let existing_line_ids: Vec<String> = lines.get().iter().map(|l| l.name.clone()).collect();
         let handedness = settings.get().track_handedness;
 
         // Get owned copy of graph, mutate it, then set it back (triggers reactivity)
         let mut current_graph = graph.get();
 
-        if config.disable_infrastructure {
-            // Use pathfinding mode
-            match parse_csv_with_existing_infrastructure(&file_content.get(), &config, &mut current_graph, existing_line_count, handedness) {
-                Ok(lines) => new_lines = Some(lines),
-                Err(e) => error_msg = Some(e),
-            }
+        // Determine import mode from config
+        let mode = if config.disable_infrastructure {
+            ImportMode::UseExisting
         } else {
-            // Use normal mode (creates infrastructure)
-            let lines = parse_csv_with_mapping(&file_content.get(), &config, &mut current_graph, existing_line_count, handedness);
-            new_lines = Some(lines);
-        }
+            ImportMode::CreateInfrastructure
+        };
 
-        // Handle errors
-        if let Some(error) = error_msg {
-            leptos::logging::error!("CSV import failed: {}", error);
-            set_import_error.set(Some(error));
-            return;
-        }
+        // Import using trait-based API
+        match CsvImport::import_from_content(
+            &file_content.get(),
+            &config,
+            mode,
+            &mut current_graph,
+            existing_line_count,
+            &existing_line_ids,
+            handedness,
+        ) {
+            Ok(result) => {
+                leptos::logging::log!(
+                    "CSV import successful: {} lines, {} stations added, {} edges added",
+                    result.lines.len(),
+                    result.stations_added,
+                    result.edges_added
+                );
 
-        // Set modified graph back to signal
-        set_graph.set(current_graph);
+                // Set modified graph back to signal
+                set_graph.set(current_graph);
 
-        // Add new lines to existing lines
-        if let Some(lines) = new_lines {
-            set_lines.update(|existing_lines| {
-                existing_lines.extend(lines);
-            });
-        }
+                // Add new lines to existing lines
+                set_lines.update(|existing_lines| {
+                    existing_lines.extend(result.lines);
+                });
 
-        set_show_mapper.set(false);
-        // Reset file input
-        if let Some(input) = file_input_ref.get() {
-            input.set_value("");
+                set_show_mapper.set(false);
+                // Reset file input
+                if let Some(input) = file_input_ref.get() {
+                    input.set_value("");
+                }
+            }
+            Err(e) => {
+                leptos::logging::error!("CSV import failed: {}", e);
+                set_import_error.set(Some(e));
+            }
         }
     };
 

@@ -1,6 +1,6 @@
 use nimby_graph::train_journey::TrainJourney;
 use nimby_graph::conflict::{detect_line_conflicts, SerializableConflictContext};
-use nimby_graph::import::csv::{analyze_csv, parse_csv_with_mapping};
+use nimby_graph::import::{Import, ImportMode, CsvImport};
 use nimby_graph::models::{RailwayGraph, Stations};
 use std::fs;
 
@@ -18,7 +18,7 @@ fn main() {
     println!("Found {} CSV files", paths.len());
 
     let mut graph = RailwayGraph::new();
-    let mut all_lines = Vec::new();
+    let mut all_lines: Vec<nimby_graph::models::Line> = Vec::new();
 
     for path in &paths {
         let filename = path.file_name().expect("path should have filename");
@@ -26,11 +26,21 @@ fn main() {
         let csv_content = fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {e}", filename.to_string_lossy()));
 
-        let config = analyze_csv(&csv_content, None)
+        let config = CsvImport::analyze(&csv_content, None)
             .unwrap_or_else(|| panic!("Failed to analyze {}", filename.to_string_lossy()));
 
-        let lines = parse_csv_with_mapping(&csv_content, &config, &mut graph, all_lines.len(), nimby_graph::models::TrackHandedness::RightHand);
-        all_lines.extend(lines);
+        let existing_line_ids: Vec<String> = all_lines.iter().map(|l| l.name.clone()).collect();
+        let result = CsvImport::import_from_content(
+            &csv_content,
+            &config,
+            ImportMode::CreateInfrastructure,
+            &mut graph,
+            all_lines.len(),
+            &existing_line_ids,
+            nimby_graph::models::TrackHandedness::RightHand,
+        ).unwrap_or_else(|e| panic!("Failed to import {}: {e}", filename.to_string_lossy()));
+
+        all_lines.extend(result.lines);
     }
 
     println!("\nTotal lines loaded: {}", all_lines.len());
