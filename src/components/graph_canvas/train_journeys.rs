@@ -13,6 +13,7 @@ const MIN_DOT_RADIUS: f64 = 2.0; // Minimum dot radius in pixels
 const TOTAL_HOURS: f64 = 48.0; // Total hours displayed on the graph
 const CONTINUATION_ARROW_LENGTH: f64 = 12.0; // Length of continuation arrow
 const CONTINUATION_ARROW_HEAD_SIZE: f64 = 6.0; // Size of arrow head
+const NON_EDITED_JOURNEY_OPACITY: f64 = 0.5; // Opacity for journeys when line editor is open
 
 /// Update search direction based on position change
 fn update_search_direction(
@@ -202,7 +203,7 @@ fn draw_continuation_indicator(
     ctx.restore();
 }
 
-#[allow(clippy::cast_precision_loss, clippy::too_many_lines, clippy::cast_possible_truncation)]
+#[allow(clippy::cast_precision_loss, clippy::too_many_lines, clippy::cast_possible_truncation, clippy::too_many_arguments)]
 pub fn draw_train_journeys(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -212,6 +213,7 @@ pub fn draw_train_journeys(
     view_edge_path: &[usize],
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
+    edited_line_ids: &std::collections::HashSet<uuid::Uuid>,
 ) {
     // Draw lines for each journey
     for journey in train_journeys {
@@ -227,7 +229,15 @@ pub fn draw_train_journeys(
             nodes,
         );
 
-        ctx.set_stroke_style_str(&journey.color);
+        // Apply dimming to journeys not in edited lines
+        let should_dim = !edited_line_ids.is_empty() && !edited_line_ids.contains(&journey.line_id);
+        let color = if should_dim {
+            super::types::hex_to_rgba(&journey.color, NON_EDITED_JOURNEY_OPACITY)
+        } else {
+            journey.color.clone()
+        };
+
+        ctx.set_stroke_style_str(&color);
         ctx.set_line_width(journey.thickness / zoom_level);
         ctx.begin_path();
 
@@ -365,7 +375,15 @@ pub fn draw_train_journeys(
             nodes,
         );
 
-        ctx.set_fill_style_str(&journey.color);
+        // Apply dimming to journeys not in edited lines
+        let should_dim = !edited_line_ids.is_empty() && !edited_line_ids.contains(&journey.line_id);
+        let color = if should_dim {
+            super::types::hex_to_rgba(&journey.color, NON_EDITED_JOURNEY_OPACITY)
+        } else {
+            journey.color.clone()
+        };
+
+        ctx.set_fill_style_str(&color);
         let dot_radius = (journey.thickness * DOT_RADIUS_MULTIPLIER).max(MIN_DOT_RADIUS);
         ctx.begin_path();
 

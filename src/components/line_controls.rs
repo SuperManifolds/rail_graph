@@ -1,4 +1,4 @@
-use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, create_memo, SignalGet, SignalUpdate, SignalSet, For, Signal, Callback, SignalWith, SignalGetUntracked, event_target_value};
+use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, create_memo, SignalGet, SignalUpdate, SignalSet, For, Signal, Callback, Callable, SignalWith, SignalGetUntracked, event_target_value};
 use crate::models::{Line, LineFolder, RailwayGraph, GraphView, LineSortMode};
 use crate::components::line_editor::LineEditor;
 use crate::components::confirmation_dialog::ConfirmationDialog;
@@ -199,6 +199,8 @@ pub fn LineControls(
     on_create_view: Callback<GraphView>,
     settings: ReadSignal<crate::models::ProjectSettings>,
     set_settings: WriteSignal<crate::models::ProjectSettings>,
+    on_line_editor_opened: Callback<uuid::Uuid>,
+    on_line_editor_closed: Callback<uuid::Uuid>,
 ) -> impl IntoView {
     let (open_editors, set_open_editors) = create_signal(HashSet::<uuid::Uuid>::new());
     let (delete_pending, set_delete_pending) = create_signal(None::<uuid::Uuid>);
@@ -309,6 +311,7 @@ pub fn LineControls(
                                     set_open_editors.update(|editors| {
                                         editors.insert(id);
                                     });
+                                    on_line_editor_opened.call(id);
                                 }
                                 on_delete=move |id: uuid::Uuid| {
                                     set_delete_pending.set(Some(id));
@@ -370,6 +373,7 @@ pub fn LineControls(
                                     set_open_editors.update(|editors| {
                                         editors.remove(&line_id);
                                     });
+                                    on_line_editor_closed.call(line_id);
                                 }
                             }
                         }
@@ -404,7 +408,10 @@ pub fn LineControls(
                         lines_vec.retain(|l| l.id != id);
                     });
                     set_open_editors.update(|editors| {
-                        editors.remove(&id);
+                        if editors.remove(&id) {
+                            // Editor was open, notify parent
+                            on_line_editor_closed.call(id);
+                        }
                     });
                     set_delete_pending.set(None);
                 }
