@@ -90,38 +90,10 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# NAT Gateway for private subnets
-resource "aws_eip" "nat" {
-  count = length(aws_subnet.private)
-
-  domain = "vpc"
-  tags = {
-    Name = "${var.app_name}-nat-eip-${count.index + 1}"
-  }
-}
-
-resource "aws_nat_gateway" "main" {
-  count = length(aws_subnet.private)
-
-  allocation_id = aws_eip.nat[count.index].id
-  subnet_id     = aws_subnet.public[count.index].id
-
-  tags = {
-    Name = "${var.app_name}-nat-${count.index + 1}"
-  }
-
-  depends_on = [aws_internet_gateway.main]
-}
-
 resource "aws_route_table" "private" {
   count = length(aws_subnet.private)
 
   vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.main[count.index].id
-  }
 
   tags = {
     Name = "${var.app_name}-private-rt-${count.index + 1}"
@@ -206,7 +178,7 @@ resource "aws_ecr_repository" "app" {
 # CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${var.app_name}"
-  retention_in_days = 30
+  retention_in_days = 7
 
   tags = {
     Name = "${var.app_name}-logs"
@@ -276,7 +248,7 @@ resource "aws_ecs_cluster" "main" {
 
   setting {
     name  = "containerInsights"
-    value = "enabled"
+    value = "disabled"
   }
 
   tags = {
@@ -289,8 +261,8 @@ resource "aws_ecs_task_definition" "app" {
   family                   = var.app_name
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                     = "2048"
-  memory                  = "4096"
+  cpu                     = "256"
+  memory                  = "512"
   execution_role_arn      = aws_iam_role.ecs_task_execution_role.arn
   task_role_arn           = aws_iam_role.ecs_task_role.arn
 
@@ -429,8 +401,8 @@ resource "aws_ecs_service" "main" {
 
   network_configuration {
     security_groups  = [aws_security_group.ecs_task.id]
-    subnets         = aws_subnet.private[*].id
-    assign_public_ip = false
+    subnets         = aws_subnet.public[*].id
+    assign_public_ip = true
   }
 
   load_balancer {
