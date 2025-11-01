@@ -61,6 +61,7 @@ fn setup_render_effect(
     station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
     view_edge_path: Signal<Vec<usize>>,
     station_label_width: ReadSignal<f64>,
+    edited_line_ids: ReadSignal<std::collections::HashSet<uuid::Uuid>>,
 ) {
     let (render_requested, set_render_requested) = create_signal(false);
     let is_disposed = Rc::new(Cell::new(false));
@@ -95,6 +96,7 @@ fn setup_render_effect(
         let _ = hovered_journey_id.get();
         let _ = spacing_mode.get();
         let _ = station_label_width.get();
+        let _ = edited_line_ids.get();
 
         if !render_requested.get_untracked() {
             set_render_requested.set(true);
@@ -156,7 +158,8 @@ fn setup_render_effect(
                 let current_spacing_mode = spacing_mode.get_untracked();
                 let current_edge_path = view_edge_path.get_untracked();
                 let label_width = station_label_width.get_untracked();
-                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph, &idx_map, current_spacing_mode, &current_edge_path, label_width);
+                let current_edited_line_ids = edited_line_ids.get_untracked();
+                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph, &idx_map, current_spacing_mode, &current_edge_path, label_width, &current_edited_line_ids);
             });
 
             let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
@@ -256,6 +259,7 @@ pub fn GraphCanvas(
     view_edge_path: Signal<Vec<usize>>,
     initial_viewport: crate::models::ViewportState,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
+    edited_line_ids: ReadSignal<std::collections::HashSet<uuid::Uuid>>,
 ) -> impl IntoView {
     // Get user settings from context
     let (user_settings, _) = use_context::<(ReadSignal<UserSettings>, WriteSignal<UserSettings>)>()
@@ -425,7 +429,7 @@ pub fn GraphCanvas(
         canvas_ref, train_journeys, visualization_time, graph, &viewport,
         conflicts_memo, show_conflicts, show_line_blocks, spacing_mode,
         hovered_conflict, hovered_journey_id, display_stations, station_idx_map,
-        view_edge_path, station_label_width
+        view_edge_path, station_label_width, edited_line_ids
     );
 
     let handle_mouse_down = move |ev: MouseEvent| {
@@ -624,6 +628,7 @@ fn render_graph(
     spacing_mode: crate::models::SpacingMode,
     view_edge_path: &[usize],
     station_label_width: f64,
+    edited_line_ids: &std::collections::HashSet<uuid::Uuid>,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = canvas;
     let canvas_width = f64::from(canvas_element.width());
@@ -717,6 +722,7 @@ fn render_graph(
         view_edge_path,
         viewport.zoom_level,
         time_to_fraction,
+        edited_line_ids,
     );
 
     // Draw conflicts if enabled

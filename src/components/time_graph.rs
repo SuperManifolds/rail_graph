@@ -183,6 +183,22 @@ pub fn TimeGraph(
     // Track hovered journey for block visualization
     let (hovered_journey_id, set_hovered_journey_id) = create_signal(None::<uuid::Uuid>);
 
+    // Track which lines currently have editors open (for dimming other journeys)
+    let (edited_line_ids, set_edited_line_ids) = create_signal(std::collections::HashSet::<uuid::Uuid>::new());
+
+    // Callbacks for line editor open/close
+    let on_line_editor_opened = leptos::Callback::new(move |line_id: uuid::Uuid| {
+        set_edited_line_ids.update(|ids| {
+            ids.insert(line_id);
+        });
+    });
+
+    let on_line_editor_closed = leptos::Callback::new(move |line_id: uuid::Uuid| {
+        set_edited_line_ids.update(|ids| {
+            ids.remove(&line_id);
+        });
+    });
+
     // Filter journeys for this view
     let (filtered_journeys, set_filtered_journeys) = create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
 
@@ -358,6 +374,7 @@ pub fn TimeGraph(
                     view_edge_path=view_edge_path
                     initial_viewport={view.as_ref().map_or(crate::models::ViewportState::default(), |v| v.viewport_state.clone())}
                     on_viewport_change=wrapped_viewport_change
+                    edited_line_ids=edited_line_ids
                 />
             </div>
             <div
@@ -385,7 +402,18 @@ pub fn TimeGraph(
                         station_idx_map=station_idx_map
                     />
                 </div>
-                <LineControls lines=lines set_lines=set_lines folders=folders set_folders=set_folders graph=graph on_create_view=on_create_view settings=settings set_settings=set_settings />
+                <LineControls
+                    lines=lines
+                    set_lines=set_lines
+                    folders=folders
+                    set_folders=set_folders
+                    graph=graph
+                    on_create_view=on_create_view
+                    settings=settings
+                    set_settings=set_settings
+                    on_line_editor_opened=on_line_editor_opened
+                    on_line_editor_closed=on_line_editor_closed
+                />
                 <div class="sidebar-footer">
                     <Button
                         class="import-button"
