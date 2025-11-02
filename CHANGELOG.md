@@ -1,3 +1,8 @@
+# v0.1.14 - 2025-11-02
+
+## Bug Fixes
+- Fixed CSV import with Offset column format incorrectly calculating travel times by including wait time from the previous station - travel times now correctly represent actual time in motion between stations by subtracting wait time from the previous station's offset
+
 # v0.1.13 - 2025-11-01
 
 ## Features

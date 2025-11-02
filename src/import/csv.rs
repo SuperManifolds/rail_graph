@@ -1126,7 +1126,7 @@ fn build_routes(
 
     for (line_idx, group) in line_groups.iter().enumerate() {
         let mut route = Vec::new();
-        let mut prev_station: Option<(NodeIndex, Option<Duration>, LineStationData)> = None;
+        let mut prev_station: Option<(NodeIndex, Option<Duration>, LineStationData, Duration)> = None;
 
         // Track cumulative time for TravelTime format
         let mut cumulative_time_tracker = Duration::zero();
@@ -1153,7 +1153,7 @@ fn build_routes(
             // Determine cumulative time: either from time column or accumulated from travel times
             let cumulative_time = calculate_station_cumulative_time(
                 uses_travel_time,
-                prev_station.as_ref().and_then(|(_, t, _)| *t),
+                prev_station.as_ref().and_then(|(_, t, _, _)| *t),
                 line_station_data,
                 &mut cumulative_time_tracker,
             );
@@ -1184,7 +1184,7 @@ fn build_routes(
                 if is_junction {
                     // Look up existing junction by name and connection to previous station
                     prev_station.as_ref()
-                        .and_then(|(prev_idx, _, _)| graph.get_station_name(*prev_idx))
+                        .and_then(|(prev_idx, _, _, _)| graph.get_station_name(*prev_idx))
                         .and_then(|prev_station_name| find_junction_by_connection(graph, &clean_name, prev_station_name))
                         .ok_or_else(|| format!("Junction '{clean_name}' from CSV not found in existing infrastructure"))?
                 } else {
@@ -1199,7 +1199,7 @@ fn build_routes(
 
                 // Check if there's already a junction with this name connected to a station with the same name as prev_station
                 let existing_junction = prev_station.as_ref()
-                    .and_then(|(prev_idx, _, _)| graph.get_station_name(*prev_idx))
+                    .and_then(|(prev_idx, _, _, _)| graph.get_station_name(*prev_idx))
                     .and_then(|prev_station_name| find_junction_by_connection(graph, &clean_name, prev_station_name));
 
                 if let Some(idx) = existing_junction {
@@ -1229,9 +1229,10 @@ fn build_routes(
             }
 
             // If there was a previous station, create infrastructure and potentially route segments
-            let prev_station_data = prev_station.replace((station_idx, cumulative_time, line_station_data.clone()));
+            let wait_time = calculate_wait_time(is_passing_loop, line_station_data, default_wait_time);
+            let prev_station_data = prev_station.replace((station_idx, cumulative_time, line_station_data.clone(), wait_time));
 
-            let Some((prev_idx, prev_time, prev_line_data)) = prev_station_data else {
+            let Some((prev_idx, prev_time, prev_line_data, prev_wait_time)) = prev_station_data else {
                 // This is the first station
                 if cumulative_time.is_some() && first_station_wait_time.is_none() {
                     first_station_wait_time = Some(calculate_wait_time(is_passing_loop, line_station_data, default_wait_time));
@@ -1257,11 +1258,11 @@ fn build_routes(
             };
 
             // Calculate travel time: from previous station's DEPARTURE to current station's ARRIVAL
-            // If previous station has a departure time, use that; otherwise use arrival time
+            // If previous station has a departure time, use that; otherwise add wait time to arrival time
             let prev_departure = if let Some(dep_time) = prev_line_data.departure_time {
                 normalize_time_with_wraparound(dep_time, Some(prev_time))
             } else {
-                prev_time
+                prev_time + prev_wait_time
             };
             let travel_time = cumulative_time - prev_departure;
 
@@ -1346,7 +1347,7 @@ fn build_routes(
                 });
             }
 
-            prev_station = Some((station_idx, Some(cumulative_time), line_station_data.clone()));
+            prev_station = Some((station_idx, Some(cumulative_time), line_station_data.clone(), wait_time));
         }
 
         // Assign forward route
