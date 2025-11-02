@@ -1,4 +1,5 @@
 pub mod csv;
+pub mod geojson;
 pub mod jtraingraph;
 pub mod shared;
 
@@ -6,6 +7,7 @@ use crate::models::{Line, RailwayGraph, TrackHandedness};
 
 // Re-export commonly used items
 pub use csv::{CsvImport, CsvImportConfig, ColumnType, ColumnMapping, ParsedCsv};
+pub use geojson::{GeoJsonImport, GeoJsonConfig, StationInfo};
 pub use jtraingraph::{JTrainGraphImport, JTrainGraphConfig};
 pub use shared::{create_tracks_with_count, ensure_platforms_up_to, get_or_add_platform};
 

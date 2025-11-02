@@ -1,11 +1,33 @@
 use crate::import::{Import, ImportMode};
 use crate::import::jtraingraph::{JTrainGraphImport, JTrainGraphConfig};
 use crate::import::csv::{CsvImport, CsvImportConfig};
+use crate::import::geojson::{GeoJsonImport, GeoJsonConfig};
 use crate::models::{Line, RailwayGraph};
 use crate::components::button::Button;
 use crate::components::csv_column_mapper::CsvColumnMapper;
+use crate::components::geojson_region_selector::{GeoJsonRegionSelector, SelectionBounds, StationData};
 use crate::components::window::Window;
 use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, SignalGetUntracked, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback, Show};
+
+#[cfg(target_arch = "wasm32")]
+use crate::worker_bridge::GeoJsonImporter;
+#[cfg(target_arch = "wasm32")]
+use crate::import::geojson::{GeoJsonImportRequest, GraphUpdate};
+#[cfg(target_arch = "wasm32")]
+use crate::models::{Track, TrackDirection, Stations, Tracks};
+
+struct FileProcessorSignals {
+    set_file_content: WriteSignal<String>,
+    set_graph: WriteSignal<RailwayGraph>,
+    set_lines: WriteSignal<Vec<Line>>,
+    lines: ReadSignal<Vec<Line>>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
+    set_geojson_string: WriteSignal<Option<String>>,
+    set_geojson_stations: WriteSignal<Vec<StationData>>,
+    set_csv_config: WriteSignal<Option<CsvImportConfig>>,
+    set_show_mapper: WriteSignal<bool>,
+    set_import_error: WriteSignal<Option<String>>,
+}
 
 fn handle_fpl_import(
     text: &str,
@@ -59,6 +81,196 @@ fn handle_fpl_import(
     }
 }
 
+fn handle_geojson_analysis(
+    text: &str,
+    set_geojson_string: WriteSignal<Option<String>>,
+    set_geojson_stations: WriteSignal<Vec<StationData>>,
+) {
+    leptos::logging::log!("Parsing GeoJSON for preview...");
+
+    let Ok(parsed) = GeoJsonImport::parse(text) else {
+        leptos::logging::error!("Failed to parse GeoJSON file");
+        return;
+    };
+
+    leptos::logging::log!("GeoJSON parsed successfully");
+
+    // Store raw string (not parsed, to avoid serialization overhead later)
+    set_geojson_string.set(Some(text.to_string()));
+
+    leptos::logging::log!("Extracting stations from GeoJSON...");
+
+    match GeoJsonImport::extract_stations(&parsed) {
+        Ok(stations) => {
+            leptos::logging::log!("GeoJSON contains {} stations", stations.len());
+
+            // Convert to StationData for the selector component
+            let station_data: Vec<StationData> = stations
+                .into_iter()
+                .map(|s| StationData {
+                    name: s.name,
+                    lat: s.lat,
+                    lng: s.lng,
+                })
+                .collect();
+
+            // Update signal with loaded stations
+            set_geojson_stations.set(station_data);
+        }
+        Err(e) => {
+            leptos::logging::error!("Failed to extract stations from GeoJSON: {}", e);
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn handle_geojson_import(
+    geojson_string: String,
+    bounds: SelectionBounds,
+    set_graph: WriteSignal<RailwayGraph>,
+    set_show_geojson_selector: WriteSignal<bool>,
+) {
+    leptos::logging::log!("Creating import worker...");
+
+    // Create config with bounds
+    let config = GeoJsonConfig {
+        create_infrastructure: true,
+        bounds: Some((bounds.min_lat, bounds.min_lng, bounds.max_lat, bounds.max_lng)),
+    };
+
+    // Create request for worker (send raw string, not parsed JSON)
+    let request = GeoJsonImportRequest {
+        geojson_string,
+        config,
+    };
+
+    leptos::logging::log!("Spawning worker...");
+
+    // Create worker with callback to handle response
+    let mut worker = GeoJsonImporter::new(move |response| {
+        leptos::logging::log!("Worker callback received");
+        match response.result {
+            Ok(()) => {
+                leptos::logging::log!(
+                    "GeoJSON import completed: {} stations, {} edges",
+                    response.stations_added,
+                    response.edges_added
+                );
+
+                // Apply graph updates from worker
+                set_graph.update(|graph| {
+                    apply_graph_updates(graph, &response.updates);
+                });
+
+                set_show_geojson_selector.set(false);
+            }
+            Err(e) => {
+                leptos::logging::error!("GeoJSON import failed: {}", e);
+            }
+        }
+    });
+
+    leptos::logging::log!("Sending request to worker...");
+
+    // Send import request to worker
+    worker.import(request);
+
+    leptos::logging::log!("Request sent, keeping worker alive");
+
+    // Keep worker alive until it responds
+    std::mem::forget(worker);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn handle_geojson_import(
+    geojson_string: String,
+    bounds: SelectionBounds,
+    set_graph: WriteSignal<RailwayGraph>,
+    set_show_geojson_selector: WriteSignal<bool>,
+) {
+    // Fallback for non-WASM (tests) - parse directly
+    let Ok(parsed) = GeoJsonImport::parse(&geojson_string) else {
+        leptos::logging::error!("Failed to parse GeoJSON");
+        return;
+    };
+
+    let config = GeoJsonConfig {
+        create_infrastructure: true,
+        bounds: Some((bounds.min_lat, bounds.min_lng, bounds.max_lat, bounds.max_lng)),
+    };
+
+    set_graph.update(|graph| {
+        match GeoJsonImport::import(
+            &parsed,
+            &config,
+            ImportMode::CreateInfrastructure,
+            graph,
+            0,
+            &[],
+            crate::models::TrackHandedness::RightHand,
+        ) {
+            Ok(result) => {
+                leptos::logging::log!(
+                    "GeoJSON import successful: {} stations added, {} edges added",
+                    result.stations_added,
+                    result.edges_added
+                );
+                set_show_geojson_selector.set(false);
+            }
+            Err(e) => {
+                leptos::logging::error!("GeoJSON import failed: {}", e);
+            }
+        }
+    });
+}
+
+/// Apply graph updates received from the worker
+#[cfg(target_arch = "wasm32")]
+fn apply_graph_updates(graph: &mut RailwayGraph, updates: &[GraphUpdate]) {
+    for update in updates {
+        match update {
+            GraphUpdate::AddStation { id, name, position } => {
+                let idx = graph.add_or_get_station(id.clone());
+                if let Some(crate::models::Node::Station(ref mut station)) = graph.graph.node_weight_mut(idx) {
+                    station.name = name.clone();
+                }
+                graph.set_station_position(idx, *position);
+            }
+            GraphUpdate::AddTrack { start_id, end_id, bidirectional } => {
+                let start_idx = graph.add_or_get_station(start_id.clone());
+                let end_idx = graph.add_or_get_station(end_id.clone());
+
+                let direction = if *bidirectional {
+                    TrackDirection::Bidirectional
+                } else {
+                    TrackDirection::Bidirectional // Default to bidirectional for now
+                };
+
+                let track = Track { direction };
+                graph.add_track(start_idx, end_idx, vec![track]);
+            }
+            GraphUpdate::AddParallelTrack { start_id, end_id, bidirectional } => {
+                let start_idx = graph.add_or_get_station(start_id.clone());
+                let end_idx = graph.add_or_get_station(end_id.clone());
+
+                // Find existing edge and add track to it
+                if let Some(edge_idx) = graph.graph.find_edge(start_idx, end_idx) {
+                    if let Some(edge_weight) = graph.graph.edge_weight_mut(edge_idx) {
+                        let direction = if *bidirectional {
+                            TrackDirection::Bidirectional
+                        } else {
+                            TrackDirection::Bidirectional
+                        };
+
+                        let track = Track { direction };
+                        edge_weight.tracks.push(track);
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn handle_csv_analysis(
     text: &str,
     filename: String,
@@ -86,8 +298,64 @@ fn handle_csv_analysis(
     }
 }
 
+async fn process_file(file: web_sys::File, signals: FileProcessorSignals) {
+    let filename = file.name();
+    leptos::logging::log!("Reading file: {filename}");
+
+    let text = match wasm_bindgen_futures::JsFuture::from(file.text()).await {
+        Ok(val) => {
+            if let Some(s) = val.as_string() {
+                s
+            } else {
+                leptos::logging::error!("Failed to convert file content to string");
+                return;
+            }
+        }
+        Err(e) => {
+            leptos::logging::error!("Failed to read file: {:?}", e);
+            return;
+        }
+    };
+
+    signals.set_file_content.set(text.clone());
+
+    // Check file type by extension
+    let extension = std::path::Path::new(&filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_lowercase);
+
+    let file_type = match extension.as_deref() {
+        Some("fpl") => "FPL",
+        Some("geojson" | "json") => "GeoJSON",
+        _ => "CSV",
+    };
+
+    leptos::logging::log!("File type: {file_type}");
+
+    match file_type {
+        "FPL" => {
+            let handedness = signals.settings.get_untracked().track_handedness;
+            handle_fpl_import(&text, signals.set_graph, signals.set_lines, signals.lines, handedness);
+        }
+        "GeoJSON" => {
+            // Parse in background (dialog already shown in handle_file_change)
+            let set_geojson_string = signals.set_geojson_string;
+            let set_geojson_stations = signals.set_geojson_stations;
+
+            spawn_local(async move {
+                handle_geojson_analysis(&text, set_geojson_string, set_geojson_stations);
+            });
+        }
+        _ => {
+            handle_csv_analysis(&text, filename.clone(), signals.set_csv_config, signals.set_show_mapper, signals.set_import_error);
+        }
+    }
+}
+
 #[component]
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn Importer(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
@@ -101,48 +369,50 @@ pub fn Importer(
     let (csv_config, set_csv_config) = create_signal(None::<CsvImportConfig>);
     let (import_error, set_import_error) = create_signal(None::<String>);
 
+    // GeoJSON import state
+    let (show_geojson_selector, set_show_geojson_selector) = create_signal(false);
+    let (geojson_string, set_geojson_string) = create_signal(None::<String>);
+    let (geojson_stations, set_geojson_stations) = create_signal(Vec::<StationData>::new());
+
     let handle_file_change = move |_| {
         let Some(input_elem) = file_input_ref.get() else { return };
         let input: &web_sys::HtmlInputElement = &input_elem;
         let Some(files) = input.files() else { return };
         let Some(file) = files.get(0) else { return };
 
+        // Check file extension to determine type
         let filename = file.name();
-        let file_clone = file.clone();
+        let extension = std::path::Path::new(&filename)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(str::to_lowercase);
 
-        spawn_local(async move {
-            leptos::logging::log!("Reading file: {}", filename);
-            let text = match wasm_bindgen_futures::JsFuture::from(file_clone.text()).await {
-                Ok(val) => {
-                    if let Some(s) = val.as_string() {
-                        s
-                    } else {
-                        leptos::logging::error!("Failed to convert file content to string");
-                        return;
-                    }
-                }
-                Err(e) => {
-                    leptos::logging::error!("Failed to read file: {:?}", e);
-                    return;
-                }
-            };
+        let file_type = match extension.as_deref() {
+            Some("fpl") => "FPL",
+            Some("geojson" | "json") => "GeoJSON",
+            _ => "CSV",
+        };
 
-            set_file_content.set(text.clone());
+        // For GeoJSON, show dialog immediately before reading file
+        if file_type == "GeoJSON" {
+            set_show_geojson_selector.set(true);
+            set_geojson_stations.set(Vec::new());
+        }
 
-            // Check file type by extension
-            let is_fpl = std::path::Path::new(&filename)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("fpl"));
+        let signals = FileProcessorSignals {
+            set_file_content,
+            set_graph,
+            set_lines,
+            lines,
+            settings,
+            set_geojson_string,
+            set_geojson_stations,
+            set_csv_config,
+            set_show_mapper,
+            set_import_error,
+        };
 
-            leptos::logging::log!("File type: {}", if is_fpl { "FPL" } else { "CSV" });
-
-            if is_fpl {
-                let handedness = settings.get_untracked().track_handedness;
-                handle_fpl_import(&text, set_graph, set_lines, lines, handedness);
-            } else {
-                handle_csv_analysis(&text, filename.clone(), set_csv_config, set_show_mapper, set_import_error);
-            }
-        });
+        spawn_local(process_file(file, signals));
     };
 
     let handle_import = move |config: CsvImportConfig| {
@@ -203,10 +473,20 @@ pub fn Importer(
         }
     };
 
+    let handle_geojson_confirm = move |bounds: SelectionBounds| {
+        if let Some(geojson_str) = geojson_string.get() {
+            handle_geojson_import(geojson_str, bounds, set_graph, set_show_geojson_selector);
+        }
+    };
+
+    let handle_geojson_cancel = move |()| {
+        set_show_geojson_selector.set(false);
+    };
+
     view! {
         <input
             type="file"
-            accept=".csv,.fpl"
+            accept=".csv,.fpl,.geojson,.json"
             node_ref=file_input_ref
             on:change=handle_file_change
             style="display: none;"
@@ -253,6 +533,22 @@ pub fn Importer(
                     })
                     on_import=Callback::new(handle_import)
                     import_error=import_error
+                />
+            </Window>
+        </Show>
+
+        <Show when=move || show_geojson_selector.get()>
+            <Window
+                is_open=show_geojson_selector
+                title=Signal::derive(|| "Select Region to Import".to_string())
+                on_close=move || set_show_geojson_selector.set(false)
+                position_key="geojson_selector"
+                max_size=(1200.0, 900.0)
+            >
+                <GeoJsonRegionSelector
+                    stations=geojson_stations
+                    on_import=Callback::new(handle_geojson_confirm)
+                    on_cancel=Callback::new(handle_geojson_cancel)
                 />
             </Window>
         </Show>

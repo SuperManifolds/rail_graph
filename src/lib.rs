@@ -17,6 +17,9 @@ pub mod train_journey;
 pub mod conflict_worker;
 
 #[cfg(target_arch = "wasm32")]
+pub mod geojson_worker;
+
+#[cfg(target_arch = "wasm32")]
 #[path = "worker_bridge.rs"]
 pub mod worker_bridge;
 

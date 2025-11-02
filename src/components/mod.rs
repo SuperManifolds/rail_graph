@@ -24,6 +24,7 @@ pub mod days_of_week_selector;
 pub mod dropdown_menu;
 pub mod duration_input;
 pub mod error_list;
+pub mod geojson_region_selector;
 pub mod graph_canvas;
 pub mod importer;
 pub mod infrastructure_canvas;

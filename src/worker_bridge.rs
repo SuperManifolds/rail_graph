@@ -4,6 +4,8 @@ use crate::conflict_worker::{ConflictWorker, ConflictRequest, ConflictResponse, 
 use crate::conflict::{Conflict, SerializableConflictContext};
 use crate::train_journey::TrainJourney;
 use crate::models::RailwayGraph;
+use crate::geojson_worker::GeoJsonImportWorker;
+use crate::import::geojson::{GeoJsonImportRequest, GeoJsonImportResponse};
 
 pub struct ConflictDetector {
     worker: gloo_worker::WorkerBridge<ConflictWorker>,
@@ -50,4 +52,30 @@ pub fn create_conflict_detector() -> (ConflictDetector, ReadSignal<Vec<Conflict>
     let (conflicts, set_conflicts) = create_signal(Vec::new());
     let detector = ConflictDetector::new(set_conflicts);
     (detector, conflicts)
+}
+
+pub struct GeoJsonImporter {
+    worker: gloo_worker::WorkerBridge<GeoJsonImportWorker>,
+}
+
+impl GeoJsonImporter {
+    pub fn new<F>(on_complete: F) -> Self
+    where
+        F: Fn(GeoJsonImportResponse) + 'static,
+    {
+        let worker = GeoJsonImportWorker::spawner()
+            .encoding::<BincodeCodec>()
+            .callback(move |response: GeoJsonImportResponse| {
+                web_sys::console::log_1(&"GeoJSON import worker completed".into());
+                on_complete(response);
+            })
+            .spawn("geojson_worker.js");
+
+        Self { worker }
+    }
+
+    pub fn import(&mut self, request: GeoJsonImportRequest) {
+        web_sys::console::log_1(&"Sending GeoJSON import request to worker".into());
+        self.worker.send(request);
+    }
 }

@@ -1,0 +1,50 @@
+.geojson-region-selector {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-lg);
+    min-width: 600px;
+
+    .instructions {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        flex: 0 0 auto;
+
+        p {
+            margin: 0;
+            color: var(--color-text-tertiary);
+            font-size: var(--font-size-base);
+        }
+
+        .station-count {
+            color: var(--color-text-secondary);
+            font-weight: 600;
+        }
+    }
+
+    .map-container {
+        flex: 1;
+        min-height: 300px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--color-border-medium);
+        overflow: hidden;
+    }
+
+    .form-buttons {
+        display: flex;
+        gap: var(--spacing-sm);
+        justify-content: flex-end;
+        flex: 0 0 auto;
+        margin-top: var(--spacing-lg);
+
+        button {
+            @include button-default;
+
+            &.primary {
+                @include button-primary;
+            }
+        }
+    }
+}
