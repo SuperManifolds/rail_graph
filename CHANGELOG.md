@@ -1,5 +1,8 @@
 # v0.1.15 - TBD
 
+## Improvements
+- Added informational text to line editor stops list explaining that empty travel time entries apply to all intermediate stops until the next time is specified
+
 ## Bug Fixes
 - Fixed CSV import pathfinding mode incorrectly distributing travel times across intermediate stations - the total travel time from the CSV now correctly applies to the entire path between stations using duration inheritance, allowing intermediate stations to be visited proportionally during the journey
 - Fixed intermittent app crash when keyboard events fire after components are destroyed - keyboard shortcut handlers now safely handle disposed signals instead of panicking
