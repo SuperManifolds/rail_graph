@@ -1,4 +1,4 @@
-# v0.1.15 - TBD
+# v0.1.15 - 2025-11-03
 
 ## Improvements
 - Added informational text to line editor stops list explaining that empty travel time entries apply to all intermediate stops until the next time is specified
