@@ -1,6 +1,7 @@
 # v0.1.15 - TBD
 
 ## Bug Fixes
+- Fixed CSV import pathfinding mode incorrectly distributing travel times across intermediate stations - the total travel time from the CSV now correctly applies to the entire path between stations using duration inheritance, allowing intermediate stations to be visited proportionally during the journey
 - Fixed intermittent app crash when keyboard events fire after components are destroyed - keyboard shortcut handlers now safely handle disposed signals instead of panicking
 
 # v0.1.14 - 2025-11-02

@@ -1033,8 +1033,6 @@ fn create_pathfound_segments(
     handedness: crate::models::TrackHandedness,
 ) -> Vec<RouteSegment> {
     let segment_count = path.len();
-    #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-    let time_per_segment = travel_time / (segment_count as i32);
 
     path.iter().enumerate().map(|(seg_idx, edge_idx)| {
         let track_index = graph.select_track_for_direction(*edge_idx, false);
@@ -1059,12 +1057,20 @@ fn create_pathfound_segments(
             Duration::zero()
         };
 
+        // Only the first segment gets the full travel time
+        // All subsequent segments get None to leverage duration inheritance
+        let segment_duration = if seg_idx == 0 {
+            Some(travel_time)
+        } else {
+            None
+        };
+
         RouteSegment {
             edge_index: edge_idx.index(),
             track_index,
             origin_platform,
             destination_platform: dest_platform,
-            duration: Some(time_per_segment),
+            duration: segment_duration,
             wait_time: segment_wait_time,
         }
     }).collect()
