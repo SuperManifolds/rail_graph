@@ -2,6 +2,7 @@
 
 ## Improvements
 - Added informational text to line editor stops list explaining that empty travel time entries apply to all intermediate stops until the next time is specified
+- Enhanced conflict detection to flag timing uncertainty when trains pass through stations with inherited duration timing - conflicts now display a warning indicating that exact timing is uncertain but must still be treated as real conflicts
 
 ## Bug Fixes
 - Fixed CSV import pathfinding mode incorrectly distributing travel times across intermediate stations - the total travel time from the CSV now correctly applies to the entire path between stations using duration inheritance, allowing intermediate stations to be visited proportionally during the journey
