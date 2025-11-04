@@ -168,6 +168,7 @@ pub fn StopRow(
                 };
 
                 if index < route.len() {
+                    // Regular stop - has an outgoing segment
                     let segment = &route[index];
                     let prev_dest_platform = if index > 0 && index - 1 < route.len() {
                         Some(route[index - 1].destination_platform)
@@ -180,6 +181,22 @@ pub fn StopRow(
                         prev_dest_platform,
                         Some(petgraph::graph::EdgeIndex::new(segment.edge_index)),
                         Some(segment.track_index),
+                        Some(route.len()),
+                    ))
+                } else if is_last && index > 0 && index - 1 < route.len() {
+                    // Last stop - no outgoing segment, use previous segment's destination
+                    let prev_segment = &route[index - 1];
+                    let prev_dest_platform = if index > 1 && index - 2 < route.len() {
+                        Some(route[index - 2].destination_platform)
+                    } else {
+                        None
+                    };
+
+                    Some((
+                        Some(prev_segment.destination_platform),
+                        prev_dest_platform,
+                        None,  // No outgoing edge
+                        None,  // No outgoing track
                         Some(route.len()),
                     ))
                 } else {

@@ -1,3 +1,8 @@
+# v0.1.16 - 2025-11-04
+
+## Bug Fixes
+- Fixed last stop in line editor stops list not displaying platform picker, wait time field, estimated time, or deletion button - the last stop now correctly renders all UI elements
+
 # v0.1.15 - 2025-11-03
 
 ## Improvements
