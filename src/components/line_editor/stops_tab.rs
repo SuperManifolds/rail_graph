@@ -68,6 +68,10 @@ fn RouteStopsList(
     let on_save_for_end = on_save;
 
     view! {
+        <p class="help-text travel-time-info">
+            "When empty, the previous travel time covers all intermediate stops until the next time"
+        </p>
+
         <div class="stops-header">
             <span>"Station"</span>
             <span>"Platform"</span>

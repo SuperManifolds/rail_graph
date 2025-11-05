@@ -1,3 +1,28 @@
+# v0.1.17 - 2025-11-05
+
+## Features
+- Added automatic next-day rollover for departure times - when "Last Departure Before" is set to a time earlier than "First Departure" (e.g., First: 23:00, Last: 02:00), the system now automatically schedules trains into the next day with a "+1" indicator displayed in the time input field
+
+# v0.1.16 - 2025-11-04
+
+## Bug Fixes
+- Fixed last stop in line editor stops list not displaying platform picker, wait time field, estimated time, or deletion button - the last stop now correctly renders all UI elements
+
+# v0.1.15 - 2025-11-03
+
+## Improvements
+- Added informational text to line editor stops list explaining that empty travel time entries apply to all intermediate stops until the next time is specified
+- Enhanced conflict detection to flag timing uncertainty when trains pass through stations with inherited duration timing - conflicts now display a warning indicating that exact timing is uncertain but must still be treated as real conflicts
+
+## Bug Fixes
+- Fixed CSV import pathfinding mode incorrectly distributing travel times across intermediate stations - the total travel time from the CSV now correctly applies to the entire path between stations using duration inheritance, allowing intermediate stations to be visited proportionally during the journey
+- Fixed intermittent app crash when keyboard events fire after components are destroyed - keyboard shortcut handlers now safely handle disposed signals instead of panicking
+
+# v0.1.14 - 2025-11-02
+
+## Bug Fixes
+- Fixed CSV import with Offset column format incorrectly calculating travel times by including wait time from the previous station - travel times now correctly represent actual time in motion between stations by subtracting wait time from the previous station's offset
+
 # v0.1.13 - 2025-11-01
 
 ## Features

@@ -64,6 +64,8 @@ pub struct Conflict {
     pub platform_idx: Option<usize>,
     // Edge index for block/track conflicts (None for platform conflicts)
     pub edge_index: Option<usize>,
+    // Whether at least one train has inherited timing (uncertain exact time)
+    pub timing_uncertain: bool,
 }
 
 impl Conflict {
@@ -71,7 +73,7 @@ impl Conflict {
     /// For `PlatformViolation` conflicts, caller should use `format_platform_message` instead for better performance
     #[must_use]
     pub fn format_message(&self, station1_name: &str, station2_name: &str) -> String {
-        match self.conflict_type {
+        let base_message = match self.conflict_type {
             ConflictType::PlatformViolation => {
                 format!(
                     "{} conflicts with {} at {} Platform ?",
@@ -96,16 +98,28 @@ impl Conflict {
                     self.journey1_id, self.journey2_id, station1_name, station2_name
                 )
             }
+        };
+
+        if self.timing_uncertain {
+            format!("⚠️ {base_message} (timing uncertain - at least one train has no explicit time, but conflict must be assumed)")
+        } else {
+            base_message
         }
     }
 
     /// Format platform violation message with platform name provided (avoids graph lookup)
     #[must_use]
     pub fn format_platform_message(&self, station1_name: &str, platform_name: &str) -> String {
-        format!(
+        let base_message = format!(
             "{} conflicts with {} at {} Platform {}",
             self.journey1_id, self.journey2_id, station1_name, platform_name
-        )
+        );
+
+        if self.timing_uncertain {
+            format!("⚠️ {base_message} (timing uncertain - at least one train has no explicit time, but conflict must be assumed)")
+        } else {
+            base_message
+        }
     }
 
     /// Get a short name for the conflict type
@@ -210,6 +224,7 @@ struct PlatformOccupancy {
     platform_idx: usize,
     time_start: NaiveDateTime,
     time_end: NaiveDateTime,
+    timing_uncertain: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -631,7 +646,7 @@ fn check_segments_for_pair_cached(
 
             check_segment_pair(
                 seg1, seg2, cached1.idx_min, cached1.idx_max, cached1.edge_index,
-                journey1, journey2, ctx, results,
+                journey1, journey2, cached1.segment_idx, cached2.segment_idx, ctx, results,
             );
 
             if results.conflicts.len() >= MAX_CONFLICTS {
@@ -649,6 +664,7 @@ struct CachedSegment {
     idx_max: usize,
     edge_index: usize,
     track_index: usize,
+    segment_idx: usize, // Index in journey.segments array for timing checks
 }
 
 /// Build a list of journey segments with resolved station indices and pre-computed bounds
@@ -683,6 +699,7 @@ fn build_segment_list_with_bounds(journey: &TrainJourney, ctx: &ConflictContext)
                 idx_max: prev_idx.max(station_idx),
                 edge_index,
                 track_index,
+                segment_idx,
             });
             segment_idx += 1;
         }
@@ -690,6 +707,13 @@ fn build_segment_list_with_bounds(journey: &TrainJourney, ctx: &ConflictContext)
     }
 
     segments
+}
+
+/// Check if timing is uncertain for a segment using direct indexing (O(1))
+/// For a segment at index `seg_idx`, the destination station is at `station_times[seg_idx + 1]`
+fn has_inherited_timing_at_segment(journey: &TrainJourney, seg_idx: usize) -> bool {
+    // The destination station of segment[seg_idx] is at station_times[seg_idx + 1]
+    journey.timing_inherited.get(seg_idx + 1).copied().unwrap_or(false)
 }
 
 #[allow(clippy::too_many_arguments, clippy::similar_names, clippy::too_many_lines)]
@@ -701,6 +725,8 @@ fn check_segment_pair(
     edge_index: usize,
     journey1: &TrainJourney,
     journey2: &TrainJourney,
+    seg1_idx: usize,
+    seg2_idx: usize,
     ctx: &ConflictContext,
     results: &mut ConflictResults,
 ) {
@@ -792,6 +818,9 @@ fn check_segment_pair(
                 position = 1.0 - position;
             }
 
+            let timing_uncertain = has_inherited_timing_at_segment(journey1, seg1_idx)
+                || has_inherited_timing_at_segment(journey2, seg2_idx);
+
             results.conflicts.push(Conflict {
                 time: conflict_time,
                 position,
@@ -804,6 +833,7 @@ fn check_segment_pair(
                 segment2_times: Some((segment2.time_start, segment2.time_end)),
                 platform_idx: None,
                 edge_index: Some(edge_index),
+                timing_uncertain,
             });
 
             #[cfg(target_arch = "wasm32")]
@@ -889,6 +919,9 @@ fn check_segment_pair(
     // Store segment timing for all conflict types (BlockViolation, HeadOn, Overtaking).
     // This enables block visualization when hovering over any conflict, showing
     // the time ranges when each train occupied the conflicting track segment.
+    let timing_uncertain = has_inherited_timing_at_segment(journey1, seg1_idx)
+        || has_inherited_timing_at_segment(journey2, seg2_idx);
+
     results.conflicts.push(Conflict {
         time: intersection.time,
         position: intersection.position,
@@ -901,6 +934,7 @@ fn check_segment_pair(
         segment2_times: Some((segment2.time_start, segment2.time_end)),
         platform_idx: None,
         edge_index: Some(edge_index),
+        timing_uncertain,
     });
 
     #[cfg(target_arch = "wasm32")]
@@ -1118,6 +1152,7 @@ fn extract_platform_occupancies(
             platform_idx,
             time_start: *arrival_time - buffer,
             time_end: *departure_time + buffer,
+            timing_uncertain: journey.timing_inherited.get(i).copied().unwrap_or(false),
         });
     }
 
@@ -1152,6 +1187,8 @@ fn check_platform_conflicts_cached(
                     continue;
                 }
 
+                let timing_uncertain = occ1.timing_uncertain || occ2.timing_uncertain;
+
                 results.conflicts.push(Conflict {
                     time: conflict_time,
                     position: 0.0, // Platform conflicts occur at a station, not between stations
@@ -1164,6 +1201,7 @@ fn check_platform_conflicts_cached(
                     segment2_times: Some((occ2.time_start, occ2.time_end)),
                     platform_idx: Some(occ1.platform_idx),
                     edge_index: None, // Platform conflicts don't involve edges
+                    timing_uncertain,
                 });
 
                 if results.conflicts.len() >= MAX_CONFLICTS {
@@ -1200,6 +1238,7 @@ mod tests {
             segment2_times: None,
             platform_idx: None,
             edge_index: Some(0),
+            timing_uncertain: false,
         };
 
         assert_eq!(conflict.type_name(), "Head-on Conflict");
@@ -1223,6 +1262,7 @@ mod tests {
             segment2_times: None,
             platform_idx: None,
             edge_index: Some(0),
+            timing_uncertain: false,
         };
 
         let message = conflict.format_message("Station 1", "Station 2");
@@ -1256,6 +1296,7 @@ mod tests {
             segment2_times: None,
             platform_idx: Some(1),
             edge_index: None,
+            timing_uncertain: false,
         };
 
         let message = conflict.format_message("Central Station", "Central Station");
@@ -1280,6 +1321,7 @@ mod tests {
             segment2_times: None,
             platform_idx: None,
             edge_index: Some(0),
+            timing_uncertain: false,
         };
 
         let message = conflict.format_message("A", "B");
@@ -1326,6 +1368,7 @@ mod tests {
             thickness: TEST_THICKNESS,
             route_start_node: Some(idx1),
             route_end_node: Some(idx2),
+            timing_inherited: vec![false, false], // Test journey with explicit timing
         };
 
         let station_indices = graph.graph.node_indices()

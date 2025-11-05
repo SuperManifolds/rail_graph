@@ -54,6 +54,7 @@ pub struct TrainJourney {
     pub thickness: f64,
     pub route_start_node: Option<petgraph::stable_graph::NodeIndex>, // First node of the complete route
     pub route_end_node: Option<petgraph::stable_graph::NodeIndex>, // Last node of the complete route
+    pub timing_inherited: Vec<bool>, // Whether each station time was calculated via duration inheritance (true) or explicit (false)
 }
 
 impl TrainJourney {
@@ -68,6 +69,7 @@ impl TrainJourney {
         cumulative_time: &mut Duration,
         station_times: &mut Vec<(petgraph::stable_graph::NodeIndex, NaiveDateTime, NaiveDateTime)>,
         segments: &mut Vec<JourneySegment>,
+        timing_inherited: &mut Vec<bool>,
     ) {
         for &seg_idx in segments_without_duration {
             let seg = &route[seg_idx];
@@ -86,6 +88,9 @@ impl TrainJourney {
 
             if let Some(node_idx) = route_nodes[seg_idx + 1] {
                 station_times.push((node_idx, arrival_time, departure_from_station));
+
+                // Segments without duration are fallback/inherited timing
+                timing_inherited.push(true);
 
                 segments.push(JourneySegment {
                     edge_index: seg.edge_index,
@@ -172,6 +177,7 @@ impl TrainJourney {
         cumulative_time: &mut Duration,
         station_times: &mut Vec<(petgraph::stable_graph::NodeIndex, NaiveDateTime, NaiveDateTime)>,
         segments: &mut Vec<JourneySegment>,
+        timing_inherited: &mut Vec<bool>,
     ) {
         let segments_to_cover = segments_since_duration.len();
         let duration_per_segment = if segments_to_cover > 0 {
@@ -180,7 +186,7 @@ impl TrainJourney {
             duration
         };
 
-        for &seg_idx in segments_since_duration {
+        for (idx, &seg_idx) in segments_since_duration.iter().enumerate() {
             let seg = &route[seg_idx];
             *cumulative_time += duration_per_segment;
             let arrival_time = departure_time + *cumulative_time;
@@ -198,6 +204,10 @@ impl TrainJourney {
 
             if let Some(node_idx) = route_nodes[seg_idx + 1] {
                 station_times.push((node_idx, arrival_time, departure_from_station));
+
+                // First segment has explicit timing, subsequent segments have inherited timing
+                let is_inherited = idx > 0;
+                timing_inherited.push(is_inherited);
 
                 segments.push(JourneySegment {
                     edge_index: seg.edge_index,
@@ -245,10 +255,6 @@ impl TrainJourney {
             let day_filter = weekday_to_days_of_week(weekday);
             let current_date = BASE_DATE + Duration::days(day_offset);
 
-            let Some(day_end) = current_date.and_hms_opt(23, 59, 59) else {
-                continue;
-            };
-
             for line in lines {
                 if line.forward_route.is_empty() && line.return_route.is_empty() {
                     continue;
@@ -262,10 +268,10 @@ impl TrainJourney {
                 match line.schedule_mode {
                     ScheduleMode::Auto => {
                         // Generate auto-scheduled forward journeys
-                        Self::generate_forward_journeys(&mut journeys, line, graph, current_date, day_end);
+                        Self::generate_forward_journeys(&mut journeys, line, graph, current_date);
 
                         // Generate auto-scheduled return journeys
-                        Self::generate_return_journeys(&mut journeys, line, graph, current_date, day_end);
+                        Self::generate_return_journeys(&mut journeys, line, graph, current_date);
 
                         // Also generate any manual departures (for special services)
                         Self::generate_manual_journeys(&mut journeys, line, graph, current_date, day_filter);
@@ -359,7 +365,6 @@ impl TrainJourney {
         line: &Line,
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
-        day_end: NaiveDateTime,
     ) {
         if line.forward_route.is_empty() {
             return;
@@ -379,9 +384,13 @@ impl TrainJourney {
         let color = line.color.clone();
         let thickness = line.thickness;
 
-        while departure_time <= day_end && journey_count < MAX_JOURNEYS_PER_LINE {
+        // Detect if last departure should roll over to next day
+        let last_departure_needs_rollover = line.last_departure.time() < line.first_departure.time();
+
+        while journey_count < MAX_JOURNEYS_PER_LINE {
             let mut station_times = Vec::with_capacity(route_nodes.len());
             let mut segments = Vec::with_capacity(line.forward_route.len());
+            let mut timing_inherited = Vec::with_capacity(route_nodes.len());
 
             // Apply first stop wait time to the first station
             let first_wait_time = line.first_stop_wait_time;
@@ -390,6 +399,8 @@ impl TrainJourney {
             // Add first node (station or junction) with wait time
             if let Some(node_idx) = route_nodes[0] {
                 station_times.push((node_idx, departure_time, departure_time + first_wait_time));
+                // First station has explicit timing (from first_departure)
+                timing_inherited.push(false);
             }
 
             // Walk the route, handling duration inheritance
@@ -410,6 +421,7 @@ impl TrainJourney {
                         &mut cumulative_time,
                         &mut station_times,
                         &mut segments,
+                        &mut timing_inherited,
                     );
 
                     i = next_index;
@@ -424,6 +436,7 @@ impl TrainJourney {
                         &mut cumulative_time,
                         &mut station_times,
                         &mut segments,
+                        &mut timing_inherited,
                     );
                     i += 1;
                 }
@@ -457,6 +470,7 @@ impl TrainJourney {
                     thickness,
                     route_start_node,
                     route_end_node,
+                    timing_inherited,
                 });
                 journey_count += 1;
             }
@@ -464,9 +478,13 @@ impl TrainJourney {
             departure_time += line.frequency;
 
             // Check if next departure would be after the last departure time
-            let Some(last_departure_on_date) = time_on_date(line.last_departure, current_date) else {
+            let Some(mut last_departure_on_date) = time_on_date(line.last_departure, current_date) else {
                 break;
             };
+            // If last departure is before first departure, it means next day
+            if last_departure_needs_rollover {
+                last_departure_on_date += chrono::Duration::days(1);
+            }
             if departure_time > last_departure_on_date {
                 break;
             }
@@ -618,9 +636,12 @@ impl TrainJourney {
         // Build station times for this journey segment
         let mut station_times = Vec::new();
         let mut segments = Vec::new();
+        let mut timing_inherited = Vec::new();
 
         // Add first node (station or junction)
         station_times.push((from_idx, departure_time, departure_time));
+        // First station has explicit timing (from departure_time)
+        timing_inherited.push(false);
 
         let mut cumulative_time = Duration::zero();
 
@@ -648,6 +669,7 @@ impl TrainJourney {
                     &mut cumulative_time,
                     &mut station_times,
                     &mut segments,
+                    &mut timing_inherited,
                 );
 
                 i = j;
@@ -661,6 +683,7 @@ impl TrainJourney {
                     &mut cumulative_time,
                     &mut station_times,
                     &mut segments,
+                    &mut timing_inherited,
                 );
                 i += 1;
             }
@@ -680,6 +703,7 @@ impl TrainJourney {
                 thickness: line.thickness,
                 route_start_node,
                 route_end_node,
+                timing_inherited,
             })
         } else {
             None
@@ -691,7 +715,6 @@ impl TrainJourney {
         line: &Line,
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
-        day_end: NaiveDateTime,
     ) {
         if line.return_route.is_empty() {
             return;
@@ -712,9 +735,13 @@ impl TrainJourney {
         let color = line.color.clone();
         let thickness = line.thickness;
 
-        while return_departure_time <= day_end && return_journey_count < MAX_JOURNEYS_PER_LINE {
+        // Detect if last departure should roll over to next day
+        let return_last_departure_needs_rollover = line.return_last_departure.time() < line.return_first_departure.time();
+
+        while return_journey_count < MAX_JOURNEYS_PER_LINE {
             let mut station_times = Vec::with_capacity(route_nodes.len());
             let mut segments = Vec::with_capacity(line.return_route.len());
+            let mut timing_inherited = Vec::with_capacity(route_nodes.len());
 
             // Apply first stop wait time to the first station
             let first_wait_time = line.return_first_stop_wait_time;
@@ -723,6 +750,8 @@ impl TrainJourney {
             // Add first node (station or junction) with wait time
             if let Some(node_idx) = route_nodes[0] {
                 station_times.push((node_idx, return_departure_time, return_departure_time + first_wait_time));
+                // First station has explicit timing (from return_first_departure)
+                timing_inherited.push(false);
             }
 
             // Build duration lookup from forward route if sync is enabled
@@ -752,6 +781,7 @@ impl TrainJourney {
                         &mut cumulative_time,
                         &mut station_times,
                         &mut segments,
+                        &mut timing_inherited,
                     );
 
                     i = next_index;
@@ -765,6 +795,7 @@ impl TrainJourney {
                         &mut cumulative_time,
                         &mut station_times,
                         &mut segments,
+                        &mut timing_inherited,
                     );
                     i += 1;
                 }
@@ -798,6 +829,7 @@ impl TrainJourney {
                     thickness,
                     route_start_node,
                     route_end_node,
+                    timing_inherited,
                 });
                 return_journey_count += 1;
             }
@@ -805,9 +837,13 @@ impl TrainJourney {
             return_departure_time += line.frequency;
 
             // Check if next departure would be after the last departure time
-            let Some(last_departure_on_date) = time_on_date(line.return_last_departure, current_date) else {
+            let Some(mut last_departure_on_date) = time_on_date(line.return_last_departure, current_date) else {
                 break;
             };
+            // If last departure is before first departure, it means next day
+            if return_last_departure_needs_rollover {
+                last_departure_on_date += chrono::Duration::days(1);
+            }
             if return_departure_time > last_departure_on_date {
                 break;
             }

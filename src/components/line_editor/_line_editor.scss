@@ -221,6 +221,24 @@
             width: 7rem;
             flex-shrink: 0;
         }
+
+        .time-input-wrapper {
+            position: relative;
+            display: inline-block;
+
+            .next-day-indicator {
+                position: absolute;
+                right: 0.5rem;
+                top: 50%;
+                transform: translateY(-50%);
+                color: #888;
+                font-size: 0.7rem;
+                font-weight: 600;
+                pointer-events: none;
+                user-select: none;
+                z-index: 1;
+            }
+        }
     }
 
     .manual-departures-section {
@@ -331,7 +349,6 @@
         display: flex;
         align-items: center;
         gap: 0.75rem;
-        margin-bottom: 1rem;
 
         .route-direction-toggle,
         .time-mode-toggle {
@@ -381,6 +398,23 @@
             color: #aaa;
             font-size: 0.8rem;
             border-bottom: 1px solid #333;
+        }
+
+        .travel-time-info {
+            margin: 0.5rem 0.5rem 0.75rem 0.5rem;
+            padding: 0.5rem;
+            font-size: 0.75rem;
+            color: #888;
+            background-color: #1a1a1a;
+            border-radius: 3px;
+            line-height: 1.4;
+
+            &::before {
+                content: "ⓘ ";
+                font-size: 0.9rem;
+                color: #6a9bd8;
+                margin-right: 0.3rem;
+            }
         }
 
         .stop-row {

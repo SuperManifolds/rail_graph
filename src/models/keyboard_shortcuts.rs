@@ -546,7 +546,8 @@ pub fn setup_shortcut_handler<F, S>(
 {
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
         // Don't handle shortcuts when capturing in the shortcuts editor
-        if is_capturing_shortcut.get() {
+        // Use try_get() to safely handle disposed signals
+        if is_capturing_shortcut.try_get().unwrap_or(false) {
             return;
         }
 
@@ -561,7 +562,10 @@ pub fn setup_shortcut_handler<F, S>(
         }
 
         // Find matching action
-        let current_shortcuts = shortcuts.get();
+        // Use try_get() to safely handle disposed signals
+        let Some(current_shortcuts) = shortcuts.try_get() else {
+            return;
+        };
         let action = current_shortcuts.find_action(
             &ev.code(),
             ev.ctrl_key(),
@@ -588,7 +592,8 @@ pub fn setup_single_shortcut_handler<F>(
 {
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
         // Don't handle shortcuts when capturing in the shortcuts editor
-        if is_capturing_shortcut.get() {
+        // Use try_get() to safely handle disposed signals
+        if is_capturing_shortcut.try_get().unwrap_or(false) {
             return;
         }
 
