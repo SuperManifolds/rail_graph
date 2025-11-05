@@ -1,3 +1,8 @@
+# v0.1.17 - 2025-11-05
+
+## Features
+- Added automatic next-day rollover for departure times - when "Last Departure Before" is set to a time earlier than "First Departure" (e.g., First: 23:00, Last: 02:00), the system now automatically schedules trains into the next day with a "+1" indicator displayed in the time input field
+
 # v0.1.16 - 2025-11-04
 
 ## Bug Fixes
