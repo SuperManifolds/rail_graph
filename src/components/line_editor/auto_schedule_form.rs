@@ -145,6 +145,9 @@ pub fn AutoScheduleForm(
                             on_update.call(updated_line);
                         }
                     })
+                    show_next_day_indicator=Signal::derive(move || {
+                        edited_line.get().is_some_and(|l| l.last_departure.time() < l.first_departure.time())
+                    })
                 />
             </div>
 
@@ -167,6 +170,9 @@ pub fn AutoScheduleForm(
                             }
                             on_update.call(updated_line);
                         }
+                    })
+                    show_next_day_indicator=Signal::derive(move || {
+                        edited_line.get().is_some_and(|l| l.return_last_departure.time() < l.return_first_departure.time())
                     })
                 />
             </div>

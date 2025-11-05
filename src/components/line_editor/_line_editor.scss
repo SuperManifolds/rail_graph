@@ -221,6 +221,24 @@
             width: 7rem;
             flex-shrink: 0;
         }
+
+        .time-input-wrapper {
+            position: relative;
+            display: inline-block;
+
+            .next-day-indicator {
+                position: absolute;
+                right: 0.5rem;
+                top: 50%;
+                transform: translateY(-50%);
+                color: #888;
+                font-size: 0.7rem;
+                font-weight: 600;
+                pointer-events: none;
+                user-select: none;
+                z-index: 1;
+            }
+        }
     }
 
     .manual-departures-section {

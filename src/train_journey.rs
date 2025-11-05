@@ -255,10 +255,6 @@ impl TrainJourney {
             let day_filter = weekday_to_days_of_week(weekday);
             let current_date = BASE_DATE + Duration::days(day_offset);
 
-            let Some(day_end) = current_date.and_hms_opt(23, 59, 59) else {
-                continue;
-            };
-
             for line in lines {
                 if line.forward_route.is_empty() && line.return_route.is_empty() {
                     continue;
@@ -272,10 +268,10 @@ impl TrainJourney {
                 match line.schedule_mode {
                     ScheduleMode::Auto => {
                         // Generate auto-scheduled forward journeys
-                        Self::generate_forward_journeys(&mut journeys, line, graph, current_date, day_end);
+                        Self::generate_forward_journeys(&mut journeys, line, graph, current_date);
 
                         // Generate auto-scheduled return journeys
-                        Self::generate_return_journeys(&mut journeys, line, graph, current_date, day_end);
+                        Self::generate_return_journeys(&mut journeys, line, graph, current_date);
 
                         // Also generate any manual departures (for special services)
                         Self::generate_manual_journeys(&mut journeys, line, graph, current_date, day_filter);
@@ -369,7 +365,6 @@ impl TrainJourney {
         line: &Line,
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
-        day_end: NaiveDateTime,
     ) {
         if line.forward_route.is_empty() {
             return;
@@ -389,7 +384,10 @@ impl TrainJourney {
         let color = line.color.clone();
         let thickness = line.thickness;
 
-        while departure_time <= day_end && journey_count < MAX_JOURNEYS_PER_LINE {
+        // Detect if last departure should roll over to next day
+        let last_departure_needs_rollover = line.last_departure.time() < line.first_departure.time();
+
+        while journey_count < MAX_JOURNEYS_PER_LINE {
             let mut station_times = Vec::with_capacity(route_nodes.len());
             let mut segments = Vec::with_capacity(line.forward_route.len());
             let mut timing_inherited = Vec::with_capacity(route_nodes.len());
@@ -480,9 +478,13 @@ impl TrainJourney {
             departure_time += line.frequency;
 
             // Check if next departure would be after the last departure time
-            let Some(last_departure_on_date) = time_on_date(line.last_departure, current_date) else {
+            let Some(mut last_departure_on_date) = time_on_date(line.last_departure, current_date) else {
                 break;
             };
+            // If last departure is before first departure, it means next day
+            if last_departure_needs_rollover {
+                last_departure_on_date += chrono::Duration::days(1);
+            }
             if departure_time > last_departure_on_date {
                 break;
             }
@@ -713,7 +715,6 @@ impl TrainJourney {
         line: &Line,
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
-        day_end: NaiveDateTime,
     ) {
         if line.return_route.is_empty() {
             return;
@@ -734,7 +735,10 @@ impl TrainJourney {
         let color = line.color.clone();
         let thickness = line.thickness;
 
-        while return_departure_time <= day_end && return_journey_count < MAX_JOURNEYS_PER_LINE {
+        // Detect if last departure should roll over to next day
+        let return_last_departure_needs_rollover = line.return_last_departure.time() < line.return_first_departure.time();
+
+        while return_journey_count < MAX_JOURNEYS_PER_LINE {
             let mut station_times = Vec::with_capacity(route_nodes.len());
             let mut segments = Vec::with_capacity(line.return_route.len());
             let mut timing_inherited = Vec::with_capacity(route_nodes.len());
@@ -833,9 +837,13 @@ impl TrainJourney {
             return_departure_time += line.frequency;
 
             // Check if next departure would be after the last departure time
-            let Some(last_departure_on_date) = time_on_date(line.return_last_departure, current_date) else {
+            let Some(mut last_departure_on_date) = time_on_date(line.return_last_departure, current_date) else {
                 break;
             };
+            // If last departure is before first departure, it means next day
+            if return_last_departure_needs_rollover {
+                last_departure_on_date += chrono::Duration::days(1);
+            }
             if return_departure_time > last_departure_on_date {
                 break;
             }
