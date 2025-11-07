@@ -51,6 +51,12 @@ impl KeyboardShortcut {
         Self::new(code.to_string(), false, true, false, true)
     }
 
+    /// Create an empty/unassigned shortcut (used for shortcuts with no default binding)
+    #[must_use]
+    pub fn none() -> Self {
+        Self::new(String::new(), false, false, false, false)
+    }
+
     /// Format the shortcut for display
     #[must_use]
     pub fn format(&self, is_mac: bool, is_windows: bool) -> String {
@@ -232,6 +238,7 @@ pub fn is_input_field_target(ev: &web_sys::KeyboardEvent) -> bool {
 
 /// Get all shortcut definitions
 /// TO ADD A NEW SHORTCUT: Just add one entry to this function!
+#[allow(clippy::too_many_lines)]
 fn get_all_shortcut_definitions() -> Vec<ShortcutEntry> {
     let is_mac = is_mac_platform();
     let primary_shift = if is_mac {
@@ -326,6 +333,55 @@ fn get_all_shortcut_definitions() -> Vec<ShortcutEntry> {
             description: "Create View",
             category: ShortcutCategory::Infrastructure,
             default_shortcut: primary_shift("KeyN"),
+        },
+        // Multi-select
+        ShortcutEntry {
+            id: "multi_select_rotate_cw",
+            description: "Rotate Selected Clockwise",
+            category: ShortcutCategory::Infrastructure,
+            default_shortcut: KeyboardShortcut::key_only("Period"),
+        },
+        ShortcutEntry {
+            id: "multi_select_rotate_ccw",
+            description: "Rotate Selected Counter-Clockwise",
+            category: ShortcutCategory::Infrastructure,
+            default_shortcut: KeyboardShortcut::key_only("Comma"),
+        },
+        ShortcutEntry {
+            id: "multi_select_align",
+            description: "Align Selected Stations",
+            category: ShortcutCategory::Infrastructure,
+            default_shortcut: KeyboardShortcut::key_only("Slash"),
+        },
+        ShortcutEntry {
+            id: "multi_select_delete",
+            description: "Delete Selected Stations",
+            category: ShortcutCategory::Infrastructure,
+            default_shortcut: KeyboardShortcut::key_only("Backspace"),
+        },
+        ShortcutEntry {
+            id: "multi_select_add_platform",
+            description: "Add Platform to Selected",
+            category: ShortcutCategory::Infrastructure,
+            default_shortcut: KeyboardShortcut::none(),
+        },
+        ShortcutEntry {
+            id: "multi_select_remove_platform",
+            description: "Remove Platform from Selected",
+            category: ShortcutCategory::Infrastructure,
+            default_shortcut: KeyboardShortcut::none(),
+        },
+        ShortcutEntry {
+            id: "multi_select_add_track",
+            description: "Add Track Between Selected",
+            category: ShortcutCategory::Infrastructure,
+            default_shortcut: KeyboardShortcut::none(),
+        },
+        ShortcutEntry {
+            id: "multi_select_remove_track",
+            description: "Remove Track Between Selected",
+            category: ShortcutCategory::Infrastructure,
+            default_shortcut: KeyboardShortcut::none(),
         },
         // Project
         ShortcutEntry {

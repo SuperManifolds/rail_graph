@@ -1,6 +1,6 @@
-use leptos::{component, view, IntoView, ReadSignal, WriteSignal, Callback, SignalGet, SignalSet, Callable};
+use leptos::{component, view, IntoView, ReadSignal, WriteSignal, Callback, SignalGet, SignalSet, SignalWith, Callable, use_context};
 use petgraph::stable_graph::NodeIndex;
-use crate::models::{RailwayGraph, Line, Stations, ProjectSettings};
+use crate::models::{RailwayGraph, Line, Stations, ProjectSettings, UserSettings};
 
 pub fn delete_selected_stations(
     selected_stations: ReadSignal<Vec<NodeIndex>>,
@@ -550,6 +550,7 @@ pub fn rotate_selected_stations_counterclockwise(
 #[component]
 #[must_use]
 #[allow(clippy::similar_names)]
+#[allow(clippy::too_many_lines)]
 pub fn MultiSelectToolbar(
     /// Selected stations
     selected_stations: ReadSignal<Vec<NodeIndex>>,
@@ -626,6 +627,25 @@ pub fn MultiSelectToolbar(
         (screen_x, screen_y)
     };
 
+    // Get user settings to format shortcuts
+    let (user_settings, _) = use_context::<(ReadSignal<UserSettings>, WriteSignal<UserSettings>)>()
+        .expect("UserSettings context not found");
+
+    // Helper to format title with shortcut hint
+    let format_title_with_shortcut = move |base_title: String, shortcut_id: &str| -> String {
+        user_settings.with(|settings| {
+            if let Some(Some(shortcut)) = settings.keyboard_shortcuts.shortcuts.get(shortcut_id) {
+                let is_mac = crate::models::is_mac_platform();
+                let is_windows = cfg!(target_os = "windows");
+                let shortcut_text = shortcut.format(is_mac, is_windows);
+                if !shortcut_text.is_empty() {
+                    return format!("{base_title} ({shortcut_text})");
+                }
+            }
+            base_title
+        })
+    };
+
     view! {
         {move || {
             let stations = selected_stations.get();
@@ -646,7 +666,10 @@ pub fn MultiSelectToolbar(
                 >
                     <button
                         class="toolbar-button"
-                        title=format!("Rotate {} station{} counter-clockwise 45°", count, if count == 1 { "" } else { "s" })
+                        title=format_title_with_shortcut(
+                            format!("Rotate {} station{} counter-clockwise 45°", count, if count == 1 { "" } else { "s" }),
+                            "multi_select_rotate_ccw"
+                        )
                         on:click=move |_| {
                             if let Some(callback) = on_rotate_ccw {
                                 callback.call(());
@@ -657,7 +680,10 @@ pub fn MultiSelectToolbar(
                     </button>
                     <button
                         class="toolbar-button"
-                        title=format!("Rotate {} station{} clockwise 45°", count, if count == 1 { "" } else { "s" })
+                        title=format_title_with_shortcut(
+                            format!("Rotate {} station{} clockwise 45°", count, if count == 1 { "" } else { "s" }),
+                            "multi_select_rotate_cw"
+                        )
                         on:click=move |_| {
                             if let Some(callback) = on_rotate_cw {
                                 callback.call(());
@@ -668,7 +694,10 @@ pub fn MultiSelectToolbar(
                     </button>
                     <button
                         class="toolbar-button"
-                        title=format!("Align {} station{} horizontally or vertically", count, if count == 1 { "" } else { "s" })
+                        title=format_title_with_shortcut(
+                            format!("Align {} station{} horizontally or vertically", count, if count == 1 { "" } else { "s" }),
+                            "multi_select_align"
+                        )
                         on:click=move |_| {
                             if let Some(callback) = on_align {
                                 callback.call(());
@@ -686,7 +715,10 @@ pub fn MultiSelectToolbar(
                         </div>
                         <button
                             class="toolbar-button"
-                            title=format!("Add platform to {} station{}", count, if count == 1 { "" } else { "s" })
+                            title=format_title_with_shortcut(
+                                format!("Add platform to {} station{}", count, if count == 1 { "" } else { "s" }),
+                                "multi_select_add_platform"
+                            )
                             on:click=move |_| {
                                 if let Some(callback) = on_add_platform {
                                     callback.call(());
@@ -697,7 +729,10 @@ pub fn MultiSelectToolbar(
                         </button>
                         <button
                             class="toolbar-button"
-                            title=format!("Remove last platform from {} station{}", count, if count == 1 { "" } else { "s" })
+                            title=format_title_with_shortcut(
+                                format!("Remove last platform from {} station{}", count, if count == 1 { "" } else { "s" }),
+                                "multi_select_remove_platform"
+                            )
                             on:click=move |_| {
                                 if let Some(callback) = on_remove_platform {
                                     callback.call(());
@@ -714,7 +749,10 @@ pub fn MultiSelectToolbar(
                         <div class="toolbar-section-icon rail-icon"></div>
                         <button
                             class="toolbar-button"
-                            title=format!("Add track between selected stations")
+                            title=format_title_with_shortcut(
+                                "Add track between selected stations".to_string(),
+                                "multi_select_add_track"
+                            )
                             on:click=move |_| {
                                 if let Some(callback) = on_add_track {
                                     callback.call(());
@@ -725,7 +763,10 @@ pub fn MultiSelectToolbar(
                         </button>
                         <button
                             class="toolbar-button"
-                            title=format!("Remove track between selected stations")
+                            title=format_title_with_shortcut(
+                                "Remove track between selected stations".to_string(),
+                                "multi_select_remove_track"
+                            )
                             on:click=move |_| {
                                 if let Some(callback) = on_remove_track {
                                     callback.call(());
@@ -740,7 +781,10 @@ pub fn MultiSelectToolbar(
 
                     <button
                         class="toolbar-button toolbar-button-danger"
-                        title=format!("Delete {} station{}", count, if count == 1 { "" } else { "s" })
+                        title=format_title_with_shortcut(
+                            format!("Delete {} station{}", count, if count == 1 { "" } else { "s" }),
+                            "multi_select_delete"
+                        )
                         on:click=move |_| {
                             if let Some(callback) = on_delete {
                                 callback.call(());
