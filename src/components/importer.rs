@@ -1,20 +1,25 @@
-use crate::import::{Import, ImportMode};
-use crate::import::jtraingraph::{JTrainGraphImport, JTrainGraphConfig};
-use crate::import::csv::{CsvImport, CsvImportConfig};
-use crate::import::geojson::{GeoJsonImport, GeoJsonConfig};
-use crate::models::{Line, RailwayGraph};
 use crate::components::button::Button;
 use crate::components::csv_column_mapper::CsvColumnMapper;
-use crate::components::geojson_region_selector::{GeoJsonRegionSelector, SelectionBounds, StationData};
+use crate::components::geojson_region_selector::{
+    GeoJsonRegionSelector, SelectionBounds, StationData,
+};
 use crate::components::window::Window;
-use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, SignalGetUntracked, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback, Show};
+use crate::import::csv::{CsvImport, CsvImportConfig};
+use crate::import::geojson::{GeoJsonConfig, GeoJsonImport};
+use crate::import::jtraingraph::{JTrainGraphConfig, JTrainGraphImport};
+use crate::import::{Import, ImportMode};
+use crate::models::{Line, RailwayGraph};
+use leptos::{
+    component, create_node_ref, create_signal, spawn_local, view, web_sys, Callback, IntoView,
+    ReadSignal, Show, Signal, SignalGet, SignalGetUntracked, SignalSet, SignalUpdate, WriteSignal,
+};
 
-#[cfg(target_arch = "wasm32")]
-use crate::worker_bridge::GeoJsonImporter;
 #[cfg(target_arch = "wasm32")]
 use crate::import::geojson::{GeoJsonImportRequest, GraphUpdate};
 #[cfg(target_arch = "wasm32")]
-use crate::models::{Track, TrackDirection, Stations, Tracks};
+use crate::models::{Stations, Track, TrackDirection, Tracks};
+#[cfg(target_arch = "wasm32")]
+use crate::worker_bridge::GeoJsonImporter;
 
 struct FileProcessorSignals {
     set_file_content: WriteSignal<String>,
@@ -130,25 +135,22 @@ fn handle_geojson_import(
     set_graph: WriteSignal<RailwayGraph>,
     set_show_geojson_selector: WriteSignal<bool>,
 ) {
-    leptos::logging::log!("Creating import worker...");
-
-    // Create config with bounds
     let config = GeoJsonConfig {
         create_infrastructure: true,
-        bounds: Some((bounds.min_lat, bounds.min_lng, bounds.max_lat, bounds.max_lng)),
+        bounds: Some((
+            bounds.min_lat,
+            bounds.min_lng,
+            bounds.max_lat,
+            bounds.max_lng,
+        )),
     };
 
-    // Create request for worker (send raw string, not parsed JSON)
     let request = GeoJsonImportRequest {
         geojson_string,
         config,
     };
 
-    leptos::logging::log!("Spawning worker...");
-
-    // Create worker with callback to handle response
     let mut worker = GeoJsonImporter::new(move |response| {
-        leptos::logging::log!("Worker callback received");
         match response.result {
             Ok(()) => {
                 leptos::logging::log!(
@@ -157,9 +159,9 @@ fn handle_geojson_import(
                     response.edges_added
                 );
 
-                // Apply graph updates from worker
-                set_graph.update(|graph| {
-                    apply_graph_updates(graph, &response.updates);
+                use leptos::SignalUpdateUntracked;
+                set_graph.update_untracked(|g| {
+                    apply_graph_updates(g, &response.updates);
                 });
 
                 set_show_geojson_selector.set(false);
@@ -170,12 +172,7 @@ fn handle_geojson_import(
         }
     });
 
-    leptos::logging::log!("Sending request to worker...");
-
-    // Send import request to worker
     worker.import(request);
-
-    leptos::logging::log!("Request sent, keeping worker alive");
 
     // Keep worker alive until it responds
     std::mem::forget(worker);
@@ -196,7 +193,12 @@ fn handle_geojson_import(
 
     let config = GeoJsonConfig {
         create_infrastructure: true,
-        bounds: Some((bounds.min_lat, bounds.min_lng, bounds.max_lat, bounds.max_lng)),
+        bounds: Some((
+            bounds.min_lat,
+            bounds.min_lng,
+            bounds.max_lat,
+            bounds.max_lng,
+        )),
     };
 
     set_graph.update(|graph| {
@@ -227,33 +229,55 @@ fn handle_geojson_import(
 /// Apply graph updates received from the worker
 #[cfg(target_arch = "wasm32")]
 fn apply_graph_updates(graph: &mut RailwayGraph, updates: &[GraphUpdate]) {
+    use std::collections::HashMap;
+
+    // Build station ID -> NodeIndex map first (add all stations)
+    let mut station_map = HashMap::new();
+
+    for update in updates {
+        if let GraphUpdate::AddStation { id, name, position } = update {
+            let idx = graph.add_or_get_station(id.clone());
+            if let Some(crate::models::Node::Station(ref mut station)) =
+                graph.graph.node_weight_mut(idx)
+            {
+                station.name = name.clone();
+            }
+            graph.set_station_position(idx, *position);
+            station_map.insert(id.clone(), idx);
+        }
+    }
+
+    // Now apply track updates using the map (avoid repeated searches)
     for update in updates {
         match update {
-            GraphUpdate::AddStation { id, name, position } => {
-                let idx = graph.add_or_get_station(id.clone());
-                if let Some(crate::models::Node::Station(ref mut station)) = graph.graph.node_weight_mut(idx) {
-                    station.name = name.clone();
-                }
-                graph.set_station_position(idx, *position);
+            GraphUpdate::AddStation { .. } => {
+                // Already handled above
             }
-            GraphUpdate::AddTrack { start_id, end_id, bidirectional } => {
-                let start_idx = graph.add_or_get_station(start_id.clone());
-                let end_idx = graph.add_or_get_station(end_id.clone());
+            GraphUpdate::AddTrack {
+                start_id,
+                end_id,
+                bidirectional,
+            } => {
+                let start_idx = *station_map.get(start_id).expect("Station should exist");
+                let end_idx = *station_map.get(end_id).expect("Station should exist");
 
                 let direction = if *bidirectional {
                     TrackDirection::Bidirectional
                 } else {
-                    TrackDirection::Bidirectional // Default to bidirectional for now
+                    TrackDirection::Bidirectional
                 };
 
                 let track = Track { direction };
                 graph.add_track(start_idx, end_idx, vec![track]);
             }
-            GraphUpdate::AddParallelTrack { start_id, end_id, bidirectional } => {
-                let start_idx = graph.add_or_get_station(start_id.clone());
-                let end_idx = graph.add_or_get_station(end_id.clone());
+            GraphUpdate::AddParallelTrack {
+                start_id,
+                end_id,
+                bidirectional,
+            } => {
+                let start_idx = *station_map.get(start_id).expect("Station should exist");
+                let end_idx = *station_map.get(end_id).expect("Station should exist");
 
-                // Find existing edge and add track to it
                 if let Some(edge_idx) = graph.graph.find_edge(start_idx, end_idx) {
                     if let Some(edge_weight) = graph.graph.edge_weight_mut(edge_idx) {
                         let direction = if *bidirectional {
@@ -290,7 +314,10 @@ fn handle_csv_analysis(
         .map(String::from);
 
     if let Some(config) = CsvImport::analyze(text, filename_without_ext) {
-        leptos::logging::log!("CSV analysis successful, {} columns detected", config.columns.len());
+        leptos::logging::log!(
+            "CSV analysis successful, {} columns detected",
+            config.columns.len()
+        );
         set_csv_config.set(Some(config));
         set_show_mapper.set(true);
     } else {
@@ -336,7 +363,13 @@ async fn process_file(file: web_sys::File, signals: FileProcessorSignals) {
     match file_type {
         "FPL" => {
             let handedness = signals.settings.get_untracked().track_handedness;
-            handle_fpl_import(&text, signals.set_graph, signals.set_lines, signals.lines, handedness);
+            handle_fpl_import(
+                &text,
+                signals.set_graph,
+                signals.set_lines,
+                signals.lines,
+                handedness,
+            );
         }
         "GeoJSON" => {
             // Parse in background (dialog already shown in handle_file_change)
@@ -348,7 +381,13 @@ async fn process_file(file: web_sys::File, signals: FileProcessorSignals) {
             });
         }
         _ => {
-            handle_csv_analysis(&text, filename.clone(), signals.set_csv_config, signals.set_show_mapper, signals.set_import_error);
+            handle_csv_analysis(
+                &text,
+                filename.clone(),
+                signals.set_csv_config,
+                signals.set_show_mapper,
+                signals.set_import_error,
+            );
         }
     }
 }
@@ -375,7 +414,9 @@ pub fn Importer(
     let (geojson_stations, set_geojson_stations) = create_signal(Vec::<StationData>::new());
 
     let handle_file_change = move |_| {
-        let Some(input_elem) = file_input_ref.get() else { return };
+        let Some(input_elem) = file_input_ref.get() else {
+            return;
+        };
         let input: &web_sys::HtmlInputElement = &input_elem;
         let Some(files) = input.files() else { return };
         let Some(file) = files.get(0) else { return };
@@ -475,7 +516,10 @@ pub fn Importer(
 
     let handle_geojson_confirm = move |bounds: SelectionBounds| {
         if let Some(geojson_str) = geojson_string.get() {
-            handle_geojson_import(geojson_str, bounds, set_graph, set_show_geojson_selector);
+            // Spawn import in a local task so dialog stays alive and logs can flush
+            spawn_local(async move {
+                handle_geojson_import(geojson_str, bounds, set_graph, set_show_geojson_selector);
+            });
         }
     };
 

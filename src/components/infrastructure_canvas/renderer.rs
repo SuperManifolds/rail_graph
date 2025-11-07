@@ -46,12 +46,12 @@ pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
         let Some(pos1) = graph.get_station_position(source) else { continue };
         let Some(pos2) = graph.get_station_position(target) else { continue };
 
-        // Calculate avoidance offset
+        // Calculate avoidance offset once
         let offset = track_renderer::calculate_avoidance_offset(graph, pos1, pos2, source, target);
         avoidance_offsets.insert(edge_id, offset);
 
-        // Calculate segments
-        let segments = track_renderer::get_segments_for_edge(graph, source, target, pos1, pos2);
+        // Build segments from the precomputed offset (avoid recalculating)
+        let segments = track_renderer::build_segments_from_offset(pos1, pos2, offset);
         edge_segments.insert(edge_id, segments);
     }
 

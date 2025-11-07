@@ -203,19 +203,15 @@ pub fn calculate_avoidance_offset(
     calculate_avoidance_offset_internal(graph, pos1, pos2, source, target, true)
 }
 
-/// Get segments for a specific edge (used for both rendering and click detection)
+/// Build segments from precomputed avoidance offset (optimized for topology cache building)
 #[must_use]
-pub fn get_segments_for_edge(
-    graph: &RailwayGraph,
-    source: petgraph::graph::NodeIndex,
-    target: petgraph::graph::NodeIndex,
+pub fn build_segments_from_offset(
     pos1: (f64, f64),
     pos2: (f64, f64),
+    avoidance_offset: (f64, f64),
 ) -> Vec<((f64, f64), (f64, f64))> {
     let mut segments = Vec::new();
-
-    // Check if we need to offset to avoid any stations
-    let (avoid_x, avoid_y) = calculate_avoidance_offset(graph, pos1, pos2, source, target);
+    let (avoid_x, avoid_y) = avoidance_offset;
     let needs_avoidance = avoid_x.abs() > AVOIDANCE_OFFSET_THRESHOLD || avoid_y.abs() > AVOIDANCE_OFFSET_THRESHOLD;
 
     if needs_avoidance {
@@ -242,6 +238,20 @@ pub fn get_segments_for_edge(
     }
 
     segments
+}
+
+/// Get segments for a specific edge (used for both rendering and click detection)
+#[must_use]
+pub fn get_segments_for_edge(
+    graph: &RailwayGraph,
+    source: petgraph::graph::NodeIndex,
+    target: petgraph::graph::NodeIndex,
+    pos1: (f64, f64),
+    pos2: (f64, f64),
+) -> Vec<((f64, f64), (f64, f64))> {
+    // Check if we need to offset to avoid any stations
+    let avoidance_offset = calculate_avoidance_offset(graph, pos1, pos2, source, target);
+    build_segments_from_offset(pos1, pos2, avoidance_offset)
 }
 
 /// Get all track segments including intermediate points for avoidance
