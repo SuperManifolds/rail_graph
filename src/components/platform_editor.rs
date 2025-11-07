@@ -1,5 +1,5 @@
 use crate::models::Platform;
-use leptos::{component, view, ReadSignal, WriteSignal, IntoView, SignalUpdate, SignalGet, event_target_value};
+use leptos::{component, view, ReadSignal, WriteSignal, IntoView, SignalUpdate, SignalGet, event_target_value, use_context, create_effect};
 
 #[component]
 #[must_use]
@@ -8,6 +8,15 @@ pub fn PlatformEditor(
     set_platforms: WriteSignal<Vec<Platform>>,
     is_passing_loop: ReadSignal<bool>,
 ) -> impl IntoView {
+    // Trigger window resize when platform count changes
+    if let Some(set_resize_trigger) = use_context::<WriteSignal<u32>>() {
+        create_effect(move |_| {
+            let platform_count = platforms.get().len();
+            set_resize_trigger.update(|n| *n = n.wrapping_add(1));
+            platform_count
+        });
+    }
+
     let handle_add_platform = move |_| {
         set_platforms.update(|p| {
             let next_num = p.len() + 1;
