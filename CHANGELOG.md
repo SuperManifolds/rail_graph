@@ -1,3 +1,9 @@
+# v0.1.19 - 2025-11-08
+
+## Bug Fixes
+- Fixed multi-select dragging not snapping to grid when autolayout is disabled
+- Fixed multi-select dragging feeling jerky or resistant during diagonal movement - stations now move smoothly in grid-aligned increments without drift
+
 # v0.1.18 - 2025-11-07
 
 ## Features
