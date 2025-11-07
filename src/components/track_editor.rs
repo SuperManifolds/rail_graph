@@ -1,5 +1,5 @@
 use crate::models::{Track, TrackDirection};
-use leptos::{component, IntoView, ReadSignal, SignalGet, view};
+use leptos::{component, IntoView, ReadSignal, SignalGet, view, use_context, WriteSignal, create_effect, SignalUpdate};
 
 #[component]
 pub fn TrackEditor(
@@ -10,6 +10,15 @@ pub fn TrackEditor(
     on_remove_track: impl Fn(usize) + 'static + Copy,
     on_change_direction: impl Fn(usize, TrackDirection) + 'static + Copy,
 ) -> impl IntoView {
+    // Trigger window resize when track count changes
+    if let Some(set_resize_trigger) = use_context::<WriteSignal<u32>>() {
+        create_effect(move |_| {
+            let track_count = tracks.get().len();
+            set_resize_trigger.update(|n| *n = n.wrapping_add(1));
+            track_count
+        });
+    }
+
     view! {
         <div class="tracks-visual">
             <div class="station-label station-top">{move || from_station_name.get()}</div>
