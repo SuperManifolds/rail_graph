@@ -145,7 +145,7 @@
     flex-direction: column;
     border: 1px solid var(--color-border-dark);
     border-radius: var(--radius-md);
-    overflow: hidden;
+    overflow-y: auto;
     flex: 1;
     min-height: 0;
 }
