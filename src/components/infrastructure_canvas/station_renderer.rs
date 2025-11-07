@@ -163,6 +163,7 @@ fn draw_station_nodes(
     highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
     viewport_bounds: (f64, f64, f64, f64),
     junctions: &HashSet<NodeIndex>,
+    cached_avoidance: &HashMap<petgraph::stable_graph::EdgeIndex, (f64, f64)>,
 ) -> Vec<(NodeIndex, (f64, f64), f64)> {
     let mut node_positions = Vec::new();
     let (left, top, right, bottom) = viewport_bounds;
@@ -206,7 +207,7 @@ fn draw_station_nodes(
             node_positions.push((idx, pos, radius));
         } else if junctions.contains(&idx) {
             // Draw junction
-            junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges);
+            junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, cached_avoidance);
             // Use larger radius for label overlap to account for junction connection lines
             node_positions.push((idx, pos, JUNCTION_LABEL_RADIUS));
         }
@@ -748,7 +749,7 @@ pub fn draw_stations_with_cache(
 ) {
     let font_size = 14.0 / zoom;
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions);
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets);
 
     // Check if we can use cached label positions
     let use_cache = if let Some((cached_zoom, _)) = &cache.label_cache {
