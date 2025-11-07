@@ -154,7 +154,7 @@ pub fn EditStation(
     // Load current station data when dialog opens
     create_effect(move |_| {
         if let Some(idx) = editing_station.get() {
-            let current_graph = graph.get();
+            let current_graph = graph.get_untracked();
             if let Some(node) = current_graph.graph.node_weight(idx) {
                 if let Some(station) = node.as_station() {
                     set_station_name.set(station.name.clone());
