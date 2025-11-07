@@ -3,6 +3,7 @@ use crate::components::infrastructure_canvas::{auto_layout, renderer, hit_detect
 use crate::components::infrastructure_toolbar::{InfrastructureToolbar, EditMode};
 use crate::components::canvas_viewport;
 use crate::components::canvas_controls_hint::CanvasControlsHint;
+use crate::components::multi_select_toolbar::MultiSelectToolbar;
 use crate::components::graph_canvas::types::ViewportState;
 use crate::components::add_station::AddStation;
 use crate::components::create_view_dialog::CreateViewDialog;
@@ -677,6 +678,7 @@ fn create_handler_callbacks(
     (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn get_canvas_cursor_style(
     dragging_station: ReadSignal<Option<NodeIndex>>,
     edit_mode: ReadSignal<EditMode>,
@@ -685,11 +687,15 @@ fn get_canvas_cursor_style(
     is_over_track: ReadSignal<bool>,
     is_panning: ReadSignal<bool>,
     space_pressed: ReadSignal<bool>,
+    dragging_selection: ReadSignal<bool>,
+    is_over_selection: ReadSignal<bool>,
 ) -> &'static str {
-    if dragging_station.get().is_some() || is_panning.get() {
+    if dragging_station.get().is_some() || dragging_selection.get() || is_panning.get() {
         "cursor: grabbing;"
     } else if space_pressed.get() {
         "cursor: grab;"
+    } else if is_over_selection.get() {
+        "cursor: move;"
     } else {
         match edit_mode.get() {
             EditMode::AddingTrack | EditMode::AddingJunction | EditMode::CreatingView => "cursor: pointer;",
@@ -795,6 +801,9 @@ fn setup_render_effect(
     render_requested: ReadSignal<bool>,
     set_render_requested: WriteSignal<bool>,
     station_dialog_clicked_position: ReadSignal<Option<(f64, f64)>>,
+    selected_stations: ReadSignal<Vec<NodeIndex>>,
+    selection_box_start: ReadSignal<Option<(f64, f64)>>,
+    selection_box_end: ReadSignal<Option<(f64, f64)>>,
 ) {
     create_effect(move |_| {
         // Track all dependencies
@@ -807,6 +816,9 @@ fn setup_render_effect(
         let _ = waypoints.get();
         let _ = preview_path.get();
         let _ = station_dialog_clicked_position.get();
+        let _ = selected_stations.get();
+        let _ = selection_box_start.get();
+        let _ = selection_box_end.get();
 
         // Throttle renders using requestAnimationFrame
         if !render_requested.get_untracked() {
@@ -827,6 +839,12 @@ fn setup_render_effect(
                 let current_preview = preview_path.get_untracked();
                 let zooming = is_zooming.get_untracked();
                 let preview_station_pos = station_dialog_clicked_position.get_untracked();
+                let current_selected_stations = selected_stations.get_untracked();
+                let current_selection_box = if let (Some(start), Some(end)) = (selection_box_start.get_untracked(), selection_box_end.get_untracked()) {
+                    Some((start, end))
+                } else {
+                    None
+                };
 
                 // Update topology cache if needed
                 update_cache_if_needed(topology_cache, &current_graph);
@@ -852,11 +870,11 @@ fn setup_render_effect(
                     return;
                 };
 
-                // Build list of waypoints when in CreatingView mode
+                // Build list of selected stations (from CreatingView mode or multi-select)
                 let selected_stations: Vec<NodeIndex> = if matches!(current_edit_mode, EditMode::CreatingView) {
                     current_waypoints
                 } else {
-                    Vec::new()
+                    current_selected_stations
                 };
 
                 // Get preview path edges if in CreatingView mode
@@ -869,7 +887,7 @@ fn setup_render_effect(
                 // Pass cache to renderer (mutable to update label cache)
                 topology_cache.with_value(|cache| {
                     let mut cache_mut = cache.borrow_mut();
-                    renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming, preview_station_pos);
+                    renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming, preview_station_pos, current_selection_box);
                 });
             });
 
@@ -877,6 +895,89 @@ fn setup_render_effect(
             callback.forget();
         }
     });
+}
+
+/// Toggle station selection - add if not selected, remove if already selected
+fn toggle_station_selection(
+    station_idx: NodeIndex,
+    current_selection: &mut Vec<NodeIndex>,
+) {
+    match current_selection.iter().position(|&idx| idx == station_idx) {
+        Some(pos) => { current_selection.remove(pos); }
+        None => { current_selection.push(station_idx); }
+    }
+}
+
+/// Apply position updates to all selected stations during drag
+fn update_dragged_stations(
+    graph: &mut RailwayGraph,
+    stations: &[NodeIndex],
+    dx: f64,
+    dy: f64,
+    snap_to_grid: bool,
+) {
+    for &station_idx in stations {
+        let Some((old_x, old_y)) = graph.get_station_position(station_idx) else {
+            continue;
+        };
+
+        let new_x = old_x + dx;
+        let new_y = old_y + dy;
+
+        let position = if snap_to_grid {
+            auto_layout::snap_to_grid(new_x, new_y)
+        } else {
+            (new_x, new_y)
+        };
+
+        graph.set_station_position(station_idx, position);
+    }
+}
+
+/// Handle mouse down in multi-select mode
+#[allow(clippy::too_many_arguments)]
+fn handle_multi_select_mouse_down(
+    world_x: f64,
+    world_y: f64,
+    selection_bounds: ReadSignal<Option<(f64, f64, f64, f64)>>,
+    graph: ReadSignal<RailwayGraph>,
+    selected_stations: ReadSignal<Vec<NodeIndex>>,
+    set_selected_stations: WriteSignal<Vec<NodeIndex>>,
+    set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
+    set_dragging_selection: WriteSignal<bool>,
+    set_drag_start_pos: WriteSignal<Option<(f64, f64)>>,
+    set_selection_box_start: WriteSignal<Option<(f64, f64)>>,
+    set_selection_box_end: WriteSignal<Option<(f64, f64)>>,
+) {
+    if let Some((min_x, max_x, min_y, max_y)) = selection_bounds.get() {
+        // We have bounds - check if click is inside
+        let inside = world_x >= min_x && world_x <= max_x && world_y >= min_y && world_y <= max_y;
+        if inside {
+            // Start dragging selection
+            set_dragging_selection.set(true);
+            set_drag_start_pos.set(Some((world_x, world_y)));
+        } else {
+            // Clicked outside - clear and start new selection
+            set_selected_stations.set(Vec::new());
+            set_selection_bounds.set(None);
+            set_selection_box_start.set(Some((world_x, world_y)));
+            set_selection_box_end.set(Some((world_x, world_y)));
+        }
+    } else {
+        // No bounds - check if clicking station or empty space
+        let current_graph = graph.get();
+        if let Some(station_idx) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
+            // Toggle station selection
+            let mut current_selection = selected_stations.get();
+            toggle_station_selection(station_idx, &mut current_selection);
+            set_selected_stations.set(current_selection);
+        } else {
+            // Empty space - start new selection box
+            set_selected_stations.set(Vec::new());
+            set_selection_box_start.set(Some((world_x, world_y)));
+            set_selection_box_end.set(Some((world_x, world_y)));
+        }
+    }
 }
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments, clippy::too_many_lines)]
@@ -910,6 +1011,19 @@ fn create_event_handlers(
     set_station_dialog_clicked_segment: WriteSignal<Option<EdgeIndex>>,
     settings: ReadSignal<crate::models::ProjectSettings>,
     set_show_hint: WriteSignal<bool>,
+    selected_stations: ReadSignal<Vec<NodeIndex>>,
+    set_selected_stations: WriteSignal<Vec<NodeIndex>>,
+    selection_box_start: ReadSignal<Option<(f64, f64)>>,
+    set_selection_box_start: WriteSignal<Option<(f64, f64)>>,
+    selection_box_end: ReadSignal<Option<(f64, f64)>>,
+    set_selection_box_end: WriteSignal<Option<(f64, f64)>>,
+    selection_bounds: ReadSignal<Option<(f64, f64, f64, f64)>>,
+    set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
+    dragging_selection: ReadSignal<bool>,
+    set_dragging_selection: WriteSignal<bool>,
+    drag_start_pos: ReadSignal<Option<(f64, f64)>>,
+    set_drag_start_pos: WriteSignal<Option<(f64, f64)>>,
+    set_is_over_selection: WriteSignal<bool>,
 ) -> (impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(WheelEvent)) {
     let zoom_level = viewport.zoom_level;
     let pan_offset_x = viewport.pan_offset_x;
@@ -965,14 +1079,26 @@ fn create_event_handlers(
                     }
                 }
                 EditMode::None => {
-                    let current_graph = graph.get();
-                    let clicked_station = hit_detection::find_station_at_position(&current_graph, world_x, world_y);
-
-                    // Allow dragging any station when a station is being edited
-                    if clicked_station.is_some() && editing_station.get().is_some() {
-                        set_dragging_station.set(clicked_station);
+                    // Don't start selection box or drag if space is pressed (panning mode)
+                    if space_pressed.get() {
+                        return;
                     }
-                    // Space+move panning is handled in mouse_move, no click needed
+
+                    // If editing a station, only allow single station drag (no multi-select)
+                    if editing_station.get().is_some() {
+                        let current_graph = graph.get();
+                        let clicked_station = hit_detection::find_station_at_position(&current_graph, world_x, world_y);
+                        set_dragging_station.set(clicked_station);
+                        return;
+                    }
+
+                    // Multi-select mode (only when NOT editing a station)
+                    handle_multi_select_mouse_down(
+                        world_x, world_y,
+                        selection_bounds, graph, selected_stations, set_selected_stations,
+                        set_selection_bounds, set_dragging_selection, set_drag_start_pos,
+                        set_selection_box_start, set_selection_box_end
+                    );
                 }
                 _ => {}
             }
@@ -995,6 +1121,37 @@ fn create_event_handlers(
 
             if is_panning.get() {
                 canvas_viewport::handle_pan_move(x, y, &viewport_copy);
+            } else if dragging_selection.get() {
+                // Dragging multiple selected stations
+                let Some(drag_start) = drag_start_pos.get() else {
+                    return;
+                };
+
+                let zoom = zoom_level.get();
+                let pan_x = pan_offset_x.get();
+                let pan_y = pan_offset_y.get();
+                let (world_x, world_y) = screen_to_world(x, y, zoom, pan_x, pan_y);
+
+                let dx = world_x - drag_start.0;
+                let dy = world_y - drag_start.1;
+
+                let mut current_graph = graph.get();
+                let stations = selected_stations.get();
+
+                update_dragged_stations(&mut current_graph, &stations, dx, dy, auto_layout_enabled.get());
+
+                set_graph.set(current_graph.clone());
+                set_drag_start_pos.set(Some((world_x, world_y)));
+
+                // Update selection bounds during drag
+                if let Some((min_x, max_x, min_y, max_y)) = selection_bounds.get() {
+                    set_selection_bounds.set(Some((
+                        min_x + dx,
+                        max_x + dx,
+                        min_y + dy,
+                        max_y + dy,
+                    )));
+                }
             } else if let Some(station_idx) = dragging_station.get() {
                 let zoom = zoom_level.get();
                 let pan_x = pan_offset_x.get();
@@ -1012,7 +1169,43 @@ fn create_event_handlers(
 
                 current_graph.set_station_position(station_idx, position);
                 set_graph.set(current_graph);
+            } else if let Some(start) = selection_box_start.get() {
+                // Update selection box while dragging
+                let zoom = zoom_level.get();
+                let pan_x = pan_offset_x.get();
+                let pan_y = pan_offset_y.get();
+                let (world_x, world_y) = screen_to_world(x, y, zoom, pan_x, pan_y);
+                set_selection_box_end.set(Some((world_x, world_y)));
+
+                // Update selection in real-time while dragging
+                let current_graph = graph.get();
+                let min_x = start.0.min(world_x);
+                let max_x = start.0.max(world_x);
+                let min_y = start.1.min(world_y);
+                let max_y = start.1.max(world_y);
+
+                let new_selection: Vec<NodeIndex> = current_graph.graph.node_indices()
+                    .filter(|&idx| {
+                        current_graph.get_station_position(idx)
+                            .is_some_and(|(x, y)| x >= min_x && x <= max_x && y >= min_y && y <= max_y)
+                    })
+                    .collect();
+
+                set_selected_stations.set(new_selection);
             } else {
+                // Check if hovering over selection bounds
+                let zoom = zoom_level.get();
+                let pan_x = pan_offset_x.get();
+                let pan_y = pan_offset_y.get();
+                let (world_x, world_y) = screen_to_world(x, y, zoom, pan_x, pan_y);
+
+                if let Some((min_x, max_x, min_y, max_y)) = selection_bounds.get() {
+                    let inside = world_x >= min_x && world_x <= max_x && world_y >= min_y && world_y <= max_y;
+                    set_is_over_selection.set(inside);
+                } else {
+                    set_is_over_selection.set(false);
+                }
+
                 let viewport_state = ViewportState {
                     zoom_level: zoom_level.get(),
                     zoom_level_x: 1.0, // Infrastructure view doesn't use horizontal zoom
@@ -1029,6 +1222,26 @@ fn create_event_handlers(
 
     let handle_mouse_up = move |ev: MouseEvent| {
         canvas_viewport::handle_pan_end(&viewport_copy);
+
+        // Clear multi-select drag state
+        if dragging_selection.get() {
+            set_dragging_selection.set(false);
+            set_drag_start_pos.set(None);
+        }
+
+        // Finalize selection box (selection already updated during drag)
+        if let (Some(start), Some(end)) = (selection_box_start.get(), selection_box_end.get()) {
+            // Save the selection bounds for future drag detection
+            let min_x = start.0.min(end.0);
+            let max_x = start.0.max(end.0);
+            let min_y = start.1.min(end.1);
+            let max_y = start.1.max(end.1);
+            set_selection_bounds.set(Some((min_x, max_x, min_y, max_y)));
+
+            // Clear selection box
+            set_selection_box_start.set(None);
+            set_selection_box_end.set(None);
+        }
 
         if let Some(station_idx) = dragging_station.get() {
             if let Some(canvas_elem) = canvas_ref.get() {
@@ -1198,6 +1411,15 @@ pub fn InfrastructureView(
     let (station_dialog_clicked_position, set_station_dialog_clicked_position) = create_signal(None::<(f64, f64)>);
     let (station_dialog_clicked_segment, set_station_dialog_clicked_segment) = create_signal(None::<EdgeIndex>);
 
+    // Multi-select state
+    let (selected_stations, set_selected_stations) = create_signal(Vec::<NodeIndex>::new());
+    let (selection_box_start, set_selection_box_start) = create_signal(None::<(f64, f64)>);
+    let (selection_box_end, set_selection_box_end) = create_signal(None::<(f64, f64)>);
+    let (selection_bounds, set_selection_bounds) = create_signal(None::<(f64, f64, f64, f64)>); // (min_x, max_x, min_y, max_y)
+    let (dragging_selection, set_dragging_selection) = create_signal(false);
+    let (drag_start_pos, set_drag_start_pos) = create_signal(None::<(f64, f64)>);
+    let (is_over_selection, set_is_over_selection) = create_signal(false);
+
     // Performance cache for topology-dependent data
     let topology_cache: StoredValue<RefCell<TopologyCache>> = store_value(RefCell::new(TopologyCache::default()));
 
@@ -1351,7 +1573,7 @@ pub fn InfrastructureView(
     let (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
         create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_delete_bypass_info, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment, settings);
 
-    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position);
+    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position, selected_stations, selection_box_start, selection_box_end);
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_context_menu, handle_wheel) = create_event_handlers(
         canvas_ref, edit_mode, set_edit_mode, selected_station, set_selected_station, view_creation_callbacks.on_add_waypoint.clone(), graph, set_graph,
@@ -1361,7 +1583,14 @@ pub fn InfrastructureView(
         auto_layout_enabled, space_pressed, &viewport, topology_cache, set_is_zooming,
         show_add_station, station_dialog_clicked_position, set_station_dialog_clicked_position, set_station_dialog_clicked_segment,
         settings,
-        set_show_hint
+        set_show_hint,
+        selected_stations, set_selected_stations,
+        selection_box_start, set_selection_box_start,
+        selection_box_end, set_selection_box_end,
+        selection_bounds, set_selection_bounds,
+        dragging_selection, set_dragging_selection,
+        drag_start_pos, set_drag_start_pos,
+        set_is_over_selection
     );
 
     let handle_mouse_leave = move |_: MouseEvent| {
@@ -1392,9 +1621,85 @@ pub fn InfrastructureView(
                     on:dblclick=handle_double_click
                     on:wheel=handle_wheel
                     on:contextmenu=handle_context_menu
-                    style=move || get_canvas_cursor_style(dragging_station, edit_mode, editing_station, is_over_station, is_over_track, is_panning, space_pressed)
+                    style=move || get_canvas_cursor_style(dragging_station, edit_mode, editing_station, is_over_station, is_over_track, is_panning, space_pressed, dragging_selection, is_over_selection)
                 />
                 <CanvasControlsHint visible=show_hint />
+                <MultiSelectToolbar
+                    selected_stations=selected_stations
+                    selection_box_start=selection_box_start
+                    graph=graph
+                    zoom=zoom_level
+                    pan_x=pan_offset_x
+                    pan_y=pan_offset_y
+                    on_rotate_cw=leptos::Callback::new(move |()| {
+                        crate::components::multi_select_toolbar::rotate_selected_stations_clockwise(
+                            selected_stations,
+                            graph,
+                            set_graph,
+                            set_selection_bounds,
+                        );
+                    })
+                    on_rotate_ccw=leptos::Callback::new(move |()| {
+                        crate::components::multi_select_toolbar::rotate_selected_stations_counterclockwise(
+                            selected_stations,
+                            graph,
+                            set_graph,
+                            set_selection_bounds,
+                        );
+                    })
+                    on_align=leptos::Callback::new(move |()| {
+                        crate::components::multi_select_toolbar::align_selected_stations(
+                            selected_stations,
+                            graph,
+                            set_graph,
+                            set_selection_bounds,
+                        );
+                    })
+                    on_add_platform=leptos::Callback::new(move |()| {
+                        crate::components::multi_select_toolbar::add_platform_to_selected(
+                            selected_stations,
+                            graph,
+                            set_graph,
+                        );
+                    })
+                    on_remove_platform=leptos::Callback::new(move |()| {
+                        crate::components::multi_select_toolbar::remove_platform_from_selected(
+                            selected_stations,
+                            graph,
+                            set_graph,
+                        );
+                    })
+                    on_add_track=leptos::Callback::new(move |()| {
+                        crate::components::multi_select_toolbar::add_tracks_between_selected(
+                            selected_stations,
+                            graph,
+                            set_graph,
+                            lines,
+                            set_lines,
+                            settings,
+                        );
+                    })
+                    on_remove_track=leptos::Callback::new(move |()| {
+                        crate::components::multi_select_toolbar::remove_tracks_between_selected(
+                            selected_stations,
+                            graph,
+                            set_graph,
+                            lines,
+                            set_lines,
+                            settings,
+                        );
+                    })
+                    on_delete=leptos::Callback::new(move |()| {
+                        crate::components::multi_select_toolbar::delete_selected_stations(
+                            selected_stations,
+                            graph,
+                            set_graph,
+                            lines,
+                            set_lines,
+                            set_selected_stations,
+                        );
+                    })
+                />
             </div>
 
             <AddStation
