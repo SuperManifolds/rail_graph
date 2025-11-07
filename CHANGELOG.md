@@ -1,7 +1,7 @@
-# v0.1.18 - 2025-11-05
+# v0.1.18 - 2025-11-07
 
 ## Features
-- Platform and track editor windows now automatically resize horizontally when tracks or platforms are added or removed (resolves #98)
+- Platform and track editor windows now automatically resize horizontally when tracks or platforms are added or removed
 - Added canvas controls hint overlay that appears when opening infrastructure or graph views, displaying keyboard shortcuts for pan, zoom, and navigation controls with automatic dismissal on first interaction
 - Added multi-select functionality for stations in infrastructure editor - drag to select multiple stations and use the floating toolbar to rotate (clockwise/counter-clockwise in 45° increments), align, bulk add/remove platforms, bulk add/remove tracks, or delete
 
