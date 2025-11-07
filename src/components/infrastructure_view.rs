@@ -59,9 +59,15 @@ fn handle_mouse_move_hover_detection(
 
     let current_graph = graph.get();
 
-    // Check for label or station
-    let hovered_node = hit_detection::find_label_at_position(&current_graph, world_x, world_y, viewport.zoom_level)
-        .or_else(|| hit_detection::find_station_at_position(&current_graph, world_x, world_y));
+    // Check for label or station (use cached labels if available)
+    let hovered_node = topology_cache.with_value(|cache| {
+        let cache_borrow = cache.borrow();
+        if let Some((_, ref label_cache)) = cache_borrow.label_cache {
+            hit_detection::find_label_at_position_cached(label_cache, world_x, world_y)
+        } else {
+            None
+        }
+    }).or_else(|| hit_detection::find_station_at_position(&current_graph, world_x, world_y));
 
     if hovered_node.is_some() {
         set_is_over_station.set(true);

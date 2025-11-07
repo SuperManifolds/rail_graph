@@ -1,4 +1,4 @@
-use crate::models::RailwayGraph;
+use crate::models::{RailwayGraph, Junctions};
 use super::{track_renderer, station_renderer};
 use web_sys::CanvasRenderingContext2d;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
@@ -16,6 +16,12 @@ pub struct TopologyCache {
     pub edge_segments: HashMap<EdgeIndex, EdgeSegments>,
     /// Cached label positions (zoom level, positions)
     pub label_cache: Option<(f64, LabelPositionCache)>,
+    /// Junction node indices for O(1) lookup
+    pub junctions: HashSet<NodeIndex>,
+    /// Station node indices for O(1) lookup
+    pub stations: HashSet<NodeIndex>,
+    /// Adjacency map: node -> (neighbor, `edge_index`) for branch identification
+    pub adjacency: HashMap<NodeIndex, Vec<(NodeIndex, EdgeIndex)>>,
 }
 
 const CANVAS_BACKGROUND_COLOR: &str = "#0a0a0a";
@@ -36,12 +42,28 @@ pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
     let topology = (graph.graph.node_count(), graph.graph.edge_count());
     let mut avoidance_offsets = HashMap::new();
     let mut edge_segments = HashMap::new();
+    let mut junctions = HashSet::new();
+    let mut stations = HashSet::new();
+    let mut adjacency: HashMap<NodeIndex, Vec<(NodeIndex, EdgeIndex)>> = HashMap::new();
 
-    // Precompute avoidance offsets and segments for all edges
+    // Categorize nodes
+    for idx in graph.graph.node_indices() {
+        if graph.is_junction(idx) {
+            junctions.insert(idx);
+        } else {
+            stations.insert(idx);
+        }
+    }
+
+    // Build adjacency map and precompute edge data
     for edge in graph.graph.edge_references() {
         let edge_id = edge.id();
         let source = edge.source();
         let target = edge.target();
+
+        // Add to adjacency map (bidirectional)
+        adjacency.entry(source).or_default().push((target, edge_id));
+        adjacency.entry(target).or_default().push((source, edge_id));
 
         let Some(pos1) = graph.get_station_position(source) else { continue };
         let Some(pos2) = graph.get_station_position(target) else { continue };
@@ -60,6 +82,9 @@ pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
         avoidance_offsets,
         edge_segments,
         label_cache: None,
+        junctions,
+        stations,
+        adjacency,
     }
 }
 
@@ -142,16 +167,23 @@ pub fn draw_infrastructure(
         return;
     }
 
+    // Calculate visible world bounds for viewport culling
+    let viewport_left = -pan_x / zoom;
+    let viewport_top = -pan_y / zoom;
+    let viewport_right = (width - pan_x) / zoom;
+    let viewport_bottom = (height - pan_y) / zoom;
+    let viewport_bounds = (viewport_left, viewport_top, viewport_right, viewport_bottom);
+
     // Save context and apply transformations
     ctx.save();
     let _ = ctx.translate(pan_x, pan_y);
     let _ = ctx.scale(zoom, zoom);
 
     // Draw tracks first so they're behind nodes (using cached avoidance offsets)
-    track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets);
+    track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds);
 
     // Draw stations and junctions on top (with label cache)
-    station_renderer::draw_stations_with_cache(ctx, graph, zoom, selected_stations, highlighted_edges, cache, is_zooming);
+    station_renderer::draw_stations_with_cache(ctx, graph, zoom, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds);
 
     // Draw preview station if position is set
     if let Some((x, y)) = preview_station_position {
