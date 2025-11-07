@@ -86,6 +86,24 @@ fn would_overlap_other_tracks(
             let Some(other_pos1) = graph.get_station_position(other_source) else { continue };
             let Some(other_pos2) = graph.get_station_position(other_target) else { continue };
 
+            // Quick bounding box check - skip if edges are far apart
+            let margin = MIN_TRACK_DISTANCE + 10.0; // Add margin for offset
+            let min_x = pos1.0.min(pos2.0) - margin;
+            let max_x = pos1.0.max(pos2.0) + margin;
+            let min_y = pos1.1.min(pos2.1) - margin;
+            let max_y = pos1.1.max(pos2.1) + margin;
+
+            let other_min_x = other_pos1.0.min(other_pos2.0);
+            let other_max_x = other_pos1.0.max(other_pos2.0);
+            let other_min_y = other_pos1.1.min(other_pos2.1);
+            let other_max_y = other_pos1.1.max(other_pos2.1);
+
+            // Skip if bounding boxes don't overlap
+            if max_x < other_min_x || min_x > other_max_x ||
+               max_y < other_min_y || min_y > other_max_y {
+                continue;
+            }
+
             // Also check if the other track has avoidance offset
             let other_offset = calculate_avoidance_offset_internal(graph, other_pos1, other_pos2, other_source, other_target, false);
 
