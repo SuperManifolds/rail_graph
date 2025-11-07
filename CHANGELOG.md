@@ -1,3 +1,13 @@
+# v0.1.18 - 2025-11-05
+
+## Features
+- Platform and track editor windows now automatically resize horizontally when tracks or platforms are added or removed (resolves #98)
+
+## Bug Fixes
+- Fixed station editor resetting unsaved field edits when changing other fields - form now only reloads when dialog opens, preserving all unsaved changes until Save is clicked
+- Fixed project list not being scrollable when it overflows vertically
+- Fixed Enter key not working to confirm in confirmation dialogs
+
 # v0.1.17 - 2025-11-05
 
 ## Features
