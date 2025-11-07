@@ -180,7 +180,7 @@ pub fn draw_infrastructure(
     let _ = ctx.scale(zoom, zoom);
 
     // Draw tracks first so they're behind nodes (using cached avoidance offsets)
-    track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds);
+    track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions);
 
     // Draw stations and junctions on top (with label cache)
     station_renderer::draw_stations_with_cache(ctx, graph, zoom, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds);

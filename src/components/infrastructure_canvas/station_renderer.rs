@@ -2,10 +2,9 @@ use crate::models::{RailwayGraph, Stations, Junctions};
 use crate::components::infrastructure_canvas::{track_renderer, junction_renderer};
 use crate::geometry::line_segments_intersect;
 use web_sys::CanvasRenderingContext2d;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
-use petgraph::Direction;
 
 type TrackSegment = ((f64, f64), (f64, f64));
 
@@ -163,6 +162,7 @@ fn draw_station_nodes(
     selected_stations: &[NodeIndex],
     highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
     viewport_bounds: (f64, f64, f64, f64),
+    junctions: &HashSet<NodeIndex>,
 ) -> Vec<(NodeIndex, (f64, f64), f64)> {
     let mut node_positions = Vec::new();
     let (left, top, right, bottom) = viewport_bounds;
@@ -204,7 +204,7 @@ fn draw_station_nodes(
             }
 
             node_positions.push((idx, pos, radius));
-        } else if graph.is_junction(idx) {
+        } else if junctions.contains(&idx) {
             // Draw junction
             junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges);
             // Use larger radius for label overlap to account for junction connection lines
@@ -334,7 +334,7 @@ fn draw_station_label(
     ctx.restore();
 }
 
-fn get_node_positions_and_radii(graph: &RailwayGraph) -> Vec<(NodeIndex, (f64, f64), f64)> {
+fn get_node_positions_and_radii(graph: &RailwayGraph, junctions: &HashSet<NodeIndex>) -> Vec<(NodeIndex, (f64, f64), f64)> {
     let mut node_positions = Vec::new();
 
     for idx in graph.graph.node_indices() {
@@ -348,7 +348,7 @@ fn get_node_positions_and_radii(graph: &RailwayGraph) -> Vec<(NodeIndex, (f64, f
                 NODE_RADIUS
             };
             node_positions.push((idx, pos, radius));
-        } else if graph.is_junction(idx) {
+        } else if junctions.contains(&idx) {
             node_positions.push((idx, pos, JUNCTION_LABEL_RADIUS));
         }
     }
@@ -358,25 +358,18 @@ fn get_node_positions_and_radii(graph: &RailwayGraph) -> Vec<(NodeIndex, (f64, f
 
 fn get_conflicting_label_positions(
     node_idx: NodeIndex,
+    adjacency: &HashMap<NodeIndex, Vec<(NodeIndex, EdgeIndex)>>,
     graph: &RailwayGraph,
     node_pos: (f64, f64),
 ) -> Vec<LabelPosition> {
     let mut conflicting_positions = Vec::new();
 
-    // Get all neighbors - check both outgoing and incoming edges
-    let mut neighbors = Vec::new();
+    // Use cached adjacency instead of graph traversal
+    let Some(neighbors) = adjacency.get(&node_idx) else {
+        return conflicting_positions;
+    };
 
-    // Outgoing edges
-    for edge in graph.graph.edges(node_idx) {
-        neighbors.push(edge.target());
-    }
-
-    // Incoming edges
-    for edge in graph.graph.edges_directed(node_idx, Direction::Incoming) {
-        neighbors.push(edge.source());
-    }
-
-    for neighbor_idx in neighbors {
+    for &(neighbor_idx, _) in neighbors {
         if let Some(neighbor_pos) = graph.get_station_position(neighbor_idx) {
             // Calculate angle from node to neighbor
             let dx = neighbor_pos.0 - node_pos.0;
@@ -556,6 +549,7 @@ fn process_node_group(
     font_size: f64,
     label_positions: &mut HashMap<NodeIndex, (LabelBounds, LabelPosition)>,
     graph: &RailwayGraph,
+    adjacency: &HashMap<NodeIndex, Vec<(NodeIndex, EdgeIndex)>>,
 ) {
     if nodes.is_empty() {
         return;
@@ -565,7 +559,7 @@ fn process_node_group(
     let mut node_conflicts: HashMap<NodeIndex, Vec<LabelPosition>> = HashMap::new();
     for &node_idx in nodes {
         if let Some((_, _, pos)) = node_metadata.get(&node_idx) {
-            node_conflicts.insert(node_idx, get_conflicting_label_positions(node_idx, graph, *pos));
+            node_conflicts.insert(node_idx, get_conflicting_label_positions(node_idx, adjacency, graph, *pos));
         }
     }
 
@@ -641,6 +635,7 @@ fn process_node_group(
             font_size,
             label_positions,
             graph,
+            adjacency,
         );
     } else if !conflicting_nodes.is_empty() {
         // No progress made (all nodes still conflict), just place them with best orientation
@@ -659,7 +654,15 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
     let mut track_segments = track_renderer::get_track_segments(graph);
     track_segments.extend(junction_renderer::get_junction_segments(graph));
 
-    let node_positions = get_node_positions_and_radii(graph);
+    // Build junctions set for this function (not using cache since this is standalone)
+    let mut junctions = HashSet::new();
+    for idx in graph.graph.node_indices() {
+        if graph.is_junction(idx) {
+            junctions.insert(idx);
+        }
+    }
+
+    let node_positions = get_node_positions_and_radii(graph, &junctions);
 
     // Build node metadata (width, offset, position)
     let mut node_metadata: HashMap<NodeIndex, (f64, f64, (f64, f64))> = HashMap::new();
@@ -668,7 +671,7 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
             let name = node.display_name();
             #[allow(clippy::cast_precision_loss)]
             let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
-            let is_junction = graph.is_junction(*idx);
+            let is_junction = junctions.contains(idx);
             let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
             node_metadata.insert(*idx, (text_width, label_offset, *pos));
         }
@@ -702,6 +705,7 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
                 font_size,
                 &mut label_positions,
                 graph,
+                &adjacency,
             );
         }
     }
@@ -721,6 +725,7 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
             font_size,
             &mut label_positions,
             graph,
+            &adjacency,
         );
     }
 
@@ -743,7 +748,7 @@ pub fn draw_stations_with_cache(
 ) {
     let font_size = 14.0 / zoom;
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds);
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions);
 
     // Check if we can use cached label positions
     let use_cache = if let Some((cached_zoom, _)) = &cache.label_cache {
@@ -756,7 +761,7 @@ pub fn draw_stations_with_cache(
     if use_cache {
         // Use cached positions
         if let Some((_, cached_positions)) = &cache.label_cache {
-            draw_cached_labels(ctx, graph, &node_positions, cached_positions, font_size);
+            draw_cached_labels(ctx, graph, &node_positions, cached_positions, font_size, &cache.junctions);
         }
         return;
     }
@@ -800,12 +805,13 @@ pub fn draw_stations_with_cache(
                 font_size,
                 &mut label_positions,
                 graph,
+                &cache.adjacency,
             );
         }
     }
 
     let junction_nodes: Vec<NodeIndex> = node_positions.iter()
-        .filter(|(idx, _, _)| graph.is_junction(*idx))
+        .filter(|(idx, _, _)| cache.junctions.contains(idx))
         .map(|(idx, _, _)| *idx)
         .collect();
 
@@ -818,6 +824,7 @@ pub fn draw_stations_with_cache(
             font_size,
             &mut label_positions,
             graph,
+            &cache.adjacency,
         );
     }
 
@@ -834,7 +841,7 @@ pub fn draw_stations_with_cache(
     for (idx, pos, radius) in &node_positions {
         let Some(node) = graph.graph.node_weight(*idx) else { continue };
         let Some((_, position)) = label_positions.get(idx) else { continue };
-        let is_junction = graph.is_junction(*idx);
+        let is_junction = cache.junctions.contains(idx);
         let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
         draw_station_label(ctx, &node.display_name(), *pos, *position, *radius, label_offset);
     }
@@ -846,6 +853,7 @@ fn draw_cached_labels(
     node_positions: &[(NodeIndex, (f64, f64), f64)],
     cached_positions: &HashMap<NodeIndex, CachedLabelPosition>,
     font_size: f64,
+    junctions: &HashSet<NodeIndex>,
 ) {
     ctx.set_fill_style_str(LABEL_COLOR);
     ctx.set_font(&format!("{font_size}px sans-serif"));
@@ -853,7 +861,7 @@ fn draw_cached_labels(
     for (idx, pos, radius) in node_positions {
         let Some(node) = graph.graph.node_weight(*idx) else { continue };
         if let Some(cached) = cached_positions.get(idx) {
-            let is_junction = graph.is_junction(*idx);
+            let is_junction = junctions.contains(idx);
             let label_offset = if is_junction {
                 JUNCTION_LABEL_OFFSET
             } else {

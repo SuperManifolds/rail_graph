@@ -1,6 +1,6 @@
-use crate::models::{RailwayGraph, Stations, Junctions};
+use crate::models::{RailwayGraph, Stations};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
-use petgraph::stable_graph::EdgeIndex;
+use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use std::collections::{HashSet, HashMap};
 use web_sys::CanvasRenderingContext2d;
 
@@ -270,6 +270,7 @@ pub fn draw_tracks(
     highlighted_edges: &HashSet<petgraph::stable_graph::EdgeIndex>,
     cached_avoidance: &HashMap<EdgeIndex, (f64, f64)>,
     viewport_bounds: (f64, f64, f64, f64),
+    junctions: &HashSet<NodeIndex>,
 ) {
     let (left, top, right, bottom) = viewport_bounds;
     let margin = 200.0; // Buffer to include tracks slightly outside viewport
@@ -302,9 +303,9 @@ pub fn draw_tracks(
         let is_highlighted = highlighted_edges.contains(&edge_id);
         let track_color = if is_highlighted { HIGHLIGHTED_TRACK_COLOR } else { TRACK_COLOR };
 
-        // Check if source or target is a junction
-        let source_is_junction = graph.is_junction(source);
-        let target_is_junction = graph.is_junction(target);
+        // Check if source or target is a junction (use cached set)
+        let source_is_junction = junctions.contains(&source);
+        let target_is_junction = junctions.contains(&target);
 
         // Use cached avoidance offset
         let (avoid_x, avoid_y) = cached_avoidance.get(&edge_id).copied().unwrap_or((0.0, 0.0));
