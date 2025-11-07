@@ -915,23 +915,31 @@ fn update_dragged_stations(
     dx: f64,
     dy: f64,
     snap_to_grid: bool,
-) {
+) -> (f64, f64) {
+    // Snap the delta to grid increments so all stations move together
+    let (offset_x, offset_y) = if snap_to_grid {
+        const GRID_SIZE: f64 = 30.0;
+        (
+            (dx / GRID_SIZE).round() * GRID_SIZE,
+            (dy / GRID_SIZE).round() * GRID_SIZE,
+        )
+    } else {
+        (dx, dy)
+    };
+
     for &station_idx in stations {
         let Some((old_x, old_y)) = graph.get_station_position(station_idx) else {
             continue;
         };
 
-        let new_x = old_x + dx;
-        let new_y = old_y + dy;
+        let new_x = old_x + offset_x;
+        let new_y = old_y + offset_y;
 
-        let position = if snap_to_grid {
-            auto_layout::snap_to_grid(new_x, new_y)
-        } else {
-            (new_x, new_y)
-        };
-
-        graph.set_station_position(station_idx, position);
+        graph.set_station_position(station_idx, (new_x, new_y));
     }
+
+    // Return the actual offset applied
+    (offset_x, offset_y)
 }
 
 /// Handle mouse down in multi-select mode
@@ -1138,18 +1146,20 @@ fn create_event_handlers(
                 let mut current_graph = graph.get();
                 let stations = selected_stations.get();
 
-                update_dragged_stations(&mut current_graph, &stations, dx, dy, auto_layout_enabled.get());
+                // Get the actual snapped offset that was applied
+                let (applied_offset_x, applied_offset_y) = update_dragged_stations(&mut current_graph, &stations, dx, dy, true);
 
                 set_graph.set(current_graph.clone());
-                set_drag_start_pos.set(Some((world_x, world_y)));
+                // Only advance drag_start by the actual amount moved (snapped)
+                set_drag_start_pos.set(Some((drag_start.0 + applied_offset_x, drag_start.1 + applied_offset_y)));
 
-                // Update selection bounds during drag
+                // Update selection bounds with the actual offset applied
                 if let Some((min_x, max_x, min_y, max_y)) = selection_bounds.get() {
                     set_selection_bounds.set(Some((
-                        min_x + dx,
-                        max_x + dx,
-                        min_y + dy,
-                        max_y + dy,
+                        min_x + applied_offset_x,
+                        max_x + applied_offset_x,
+                        min_y + applied_offset_y,
+                        max_y + applied_offset_y,
                     )));
                 }
             } else if let Some(station_idx) = dragging_station.get() {
