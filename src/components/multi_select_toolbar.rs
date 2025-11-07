@@ -296,7 +296,7 @@ pub fn align_selected_stations(
         }
     }
 
-    // Calculate variance to determine layout direction
+    // Get positions in order
     let positions: Vec<(f64, f64)> = ordered.iter()
         .filter_map(|&idx| current_graph.get_station_position(idx))
         .collect();
@@ -305,46 +305,71 @@ pub fn align_selected_stations(
         return;
     }
 
-    let count = positions.len();
-    let mean_x: f64 = positions.iter().map(|(x, _)| x).sum::<f64>() / count as f64;
-    let mean_y: f64 = positions.iter().map(|(_, y)| y).sum::<f64>() / count as f64;
+    if positions.len() < 2 {
+        return;
+    }
 
-    let variance_x: f64 = positions.iter()
-        .map(|(x, _)| (x - mean_x).powi(2))
-        .sum::<f64>() / count as f64;
-    let variance_y: f64 = positions.iter()
-        .map(|(_, y)| (y - mean_y).powi(2))
-        .sum::<f64>() / count as f64;
+    // Calculate the current angle of the line (from first to last station)
+    let first_pos = positions[0];
+    let last_pos = positions[positions.len() - 1];
+    let dx = last_pos.0 - first_pos.0;
+    let dy = last_pos.1 - first_pos.1;
+    let current_angle = dy.atan2(dx);
 
-    let align_vertically = variance_x < variance_y;
+    // Determine if current alignment is close to a 45° increment
+    let angle_deg = current_angle.to_degrees();
+    let normalized_angle = ((angle_deg % 360.0) + 360.0) % 360.0;
 
-    // Calculate bounds and spacing
-    let (min_x, max_x, min_y, max_y) = positions.iter().fold(
-        (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY),
-        |(min_x, max_x, min_y, max_y), &(x, y)| {
-            (min_x.min(x), max_x.max(x), min_y.min(y), max_y.max(y))
-        }
-    );
+    // Check if close to 0°, 45°, 90°, 135°, 180°, 225°, 270°, or 315°
+    let target_angles = [0.0, 45.0, 90.0, 135.0, 180.0, 225.0, 270.0, 315.0];
+    let angle_tolerance = 5.0; // degrees
 
-    // Use ordered.len() for spacing since we iterate over ordered, not positions
-    let station_count = ordered.len();
-    let spacing = if station_count > 1 {
-        if align_vertically {
-            (max_y - min_y) / (station_count - 1) as f64
-        } else {
-            (max_x - min_x) / (station_count - 1) as f64
-        }
+    let aligned_angle = target_angles.iter()
+        .find(|&&target| (normalized_angle - target).abs() < angle_tolerance || (normalized_angle - target - 360.0).abs() < angle_tolerance)
+        .copied();
+
+    let use_angle = aligned_angle.unwrap_or_else(|| {
+        // Not aligned to 45° increment - choose horizontal or vertical based on variance
+        let count = positions.len();
+        let mean_x: f64 = positions.iter().map(|(x, _)| x).sum::<f64>() / count as f64;
+        let mean_y: f64 = positions.iter().map(|(_, y)| y).sum::<f64>() / count as f64;
+
+        let variance_x: f64 = positions.iter()
+            .map(|(x, _)| (x - mean_x).powi(2))
+            .sum::<f64>() / count as f64;
+        let variance_y: f64 = positions.iter()
+            .map(|(_, y)| (y - mean_y).powi(2))
+            .sum::<f64>() / count as f64;
+
+        if variance_x < variance_y { 90.0 } else { 0.0 }
+    });
+
+    // Calculate line direction vector
+    let line_angle_rad = use_angle.to_radians();
+    let dir_x = line_angle_rad.cos();
+    let dir_y = line_angle_rad.sin();
+
+    // Snap the first position to grid
+    let snapped_first = crate::components::infrastructure_canvas::auto_layout::snap_to_grid(first_pos.0, first_pos.1);
+
+    // Calculate required spacing - 4 grid squares apart
+    // For 0°/180° (horizontal) or 90°/270° (vertical): 4 * 30 = 120
+    // For 45° angles: 4 * 30 * sqrt(2) ≈ 169.7
+    let grid_size = 30.0;
+    let grid_squares = 4.0;
+    let spacing = if (use_angle % 90.0).abs() < 0.1 {
+        // Horizontal or vertical
+        grid_size * grid_squares
     } else {
-        0.0
+        // 45° diagonal
+        grid_size * grid_squares * 2.0_f64.sqrt()
     };
 
-    // Position stations in connectivity order
+    // Position stations evenly spaced along the line
     for (i, &station_idx) in ordered.iter().enumerate() {
-        let (new_x, new_y) = if align_vertically {
-            (mean_x, min_y + (i as f64 * spacing))
-        } else {
-            (min_x + (i as f64 * spacing), mean_y)
-        };
+        let distance_along_line = i as f64 * spacing;
+        let new_x = snapped_first.0 + distance_along_line * dir_x;
+        let new_y = snapped_first.1 + distance_along_line * dir_y;
         current_graph.set_station_position(station_idx, (new_x, new_y));
     }
 
