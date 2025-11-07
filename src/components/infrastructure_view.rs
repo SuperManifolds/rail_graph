@@ -1593,6 +1593,87 @@ pub fn InfrastructureView(
         set_is_over_selection
     );
 
+    // Setup keyboard shortcuts for multi-select operations
+    let shortcuts = leptos::create_memo(move |_| user_settings.get().keyboard_shortcuts);
+    crate::models::setup_shortcut_handler(is_capturing_shortcut, shortcuts, move |action_id, _ev| {
+        // Only handle multi-select shortcuts when stations are selected
+        if selected_stations.get().is_empty() {
+            return;
+        }
+
+        match action_id {
+            "multi_select_rotate_cw" => {
+                crate::components::multi_select_toolbar::rotate_selected_stations_clockwise(
+                    selected_stations,
+                    graph,
+                    set_graph,
+                    set_selection_bounds,
+                );
+            }
+            "multi_select_rotate_ccw" => {
+                crate::components::multi_select_toolbar::rotate_selected_stations_counterclockwise(
+                    selected_stations,
+                    graph,
+                    set_graph,
+                    set_selection_bounds,
+                );
+            }
+            "multi_select_align" => {
+                crate::components::multi_select_toolbar::align_selected_stations(
+                    selected_stations,
+                    graph,
+                    set_graph,
+                    set_selection_bounds,
+                );
+            }
+            "multi_select_delete" => {
+                crate::components::multi_select_toolbar::delete_selected_stations(
+                    selected_stations,
+                    graph,
+                    set_graph,
+                    lines,
+                    set_lines,
+                    set_selected_stations,
+                );
+            }
+            "multi_select_add_platform" => {
+                crate::components::multi_select_toolbar::add_platform_to_selected(
+                    selected_stations,
+                    graph,
+                    set_graph,
+                );
+            }
+            "multi_select_remove_platform" => {
+                crate::components::multi_select_toolbar::remove_platform_from_selected(
+                    selected_stations,
+                    graph,
+                    set_graph,
+                );
+            }
+            "multi_select_add_track" => {
+                crate::components::multi_select_toolbar::add_tracks_between_selected(
+                    selected_stations,
+                    graph,
+                    set_graph,
+                    lines,
+                    set_lines,
+                    settings,
+                );
+            }
+            "multi_select_remove_track" => {
+                crate::components::multi_select_toolbar::remove_tracks_between_selected(
+                    selected_stations,
+                    graph,
+                    set_graph,
+                    lines,
+                    set_lines,
+                    settings,
+                );
+            }
+            _ => {}
+        }
+    });
+
     let handle_mouse_leave = move |_: MouseEvent| {
         canvas_viewport::handle_pan_end(&viewport);
         set_dragging_station.set(None);
