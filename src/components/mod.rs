@@ -30,6 +30,7 @@ pub mod importer;
 pub mod infrastructure_canvas;
 pub mod infrastructure_toolbar;
 pub mod infrastructure_view;
+pub mod multi_select_toolbar;
 pub mod keyboard_shortcuts_editor;
 pub mod legend;
 pub mod line_controls;

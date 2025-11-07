@@ -34,6 +34,11 @@ const GRID_SIZE: f64 = 30.0; // Must match auto_layout.rs GRID_SIZE
 const GRID_COLOR: &str = "#141414";
 const GRID_LINE_WIDTH: f64 = 0.5;
 
+const SELECTION_BOX_STROKE: &str = "#4a9eff";
+const SELECTION_BOX_FILL: &str = "rgba(74, 158, 255, 0.1)";
+const SELECTION_BOX_LINE_WIDTH: f64 = 1.5;
+const SELECTION_BOX_DASH_LENGTH: f64 = 5.0;
+
 /// Build topology cache with avoidance offsets and edge segments
 #[must_use]
 pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
@@ -151,6 +156,7 @@ pub fn draw_infrastructure(
     cache: &mut TopologyCache,
     is_zooming: bool,
     preview_station_position: Option<(f64, f64)>,
+    selection_box: Option<((f64, f64), (f64, f64))>,
 ) {
     // Clear canvas
     ctx.set_fill_style_str(CANVAS_BACKGROUND_COLOR);
@@ -203,6 +209,29 @@ pub fn draw_infrastructure(
         ctx.stroke();
         ctx.set_global_alpha(1.0);
         ctx.restore();
+    }
+
+    // Draw selection box if dragging
+    if let Some((start, end)) = selection_box {
+        let min_x = start.0.min(end.0);
+        let max_x = start.0.max(end.0);
+        let min_y = start.1.min(end.1);
+        let max_y = start.1.max(end.1);
+        let width_box = max_x - min_x;
+        let height_box = max_y - min_y;
+
+        ctx.set_stroke_style_str(SELECTION_BOX_STROKE);
+        ctx.set_fill_style_str(SELECTION_BOX_FILL);
+        ctx.set_line_width(SELECTION_BOX_LINE_WIDTH / zoom);
+        let dash_array = js_sys::Array::of2(
+            &wasm_bindgen::JsValue::from(SELECTION_BOX_DASH_LENGTH / zoom),
+            &wasm_bindgen::JsValue::from(SELECTION_BOX_DASH_LENGTH / zoom)
+        );
+        let _ = ctx.set_line_dash(&dash_array);
+        ctx.stroke_rect(min_x, min_y, width_box, height_box);
+        ctx.fill_rect(min_x, min_y, width_box, height_box);
+        // Reset line dash
+        let _ = ctx.set_line_dash(&js_sys::Array::new());
     }
 
     // Restore context

@@ -1,0 +1,91 @@
+.multi-select-toolbar {
+  position: absolute;
+  background: rgba(20, 20, 20, 0.6);
+  border: 1px solid rgba(100, 100, 100, 0.5);
+  border-radius: 8px;
+  padding: 8px;
+  pointer-events: auto;
+  transform: translate(-50%, -110%);
+  z-index: 1000;
+  backdrop-filter: blur(8px);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+
+  .toolbar-divider {
+    width: 1px;
+    height: 32px;
+    background: rgba(100, 100, 100, 0.3);
+    margin: 0 2px;
+  }
+
+  .toolbar-section {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .toolbar-section-icon {
+    color: rgba(150, 150, 150, 0.7);
+    font-size: 24px;
+    margin-right: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    &.rail-icon {
+      background-color: rgba(150, 150, 150, 0.7);
+      mask-image: url('/static/rail-symbol.svg');
+      mask-size: contain;
+      mask-repeat: no-repeat;
+      mask-position: center;
+      -webkit-mask-image: url('/static/rail-symbol.svg');
+      -webkit-mask-size: contain;
+      -webkit-mask-repeat: no-repeat;
+      -webkit-mask-position: center;
+      width: 1em;
+      height: 1em;
+    }
+  }
+
+  .toolbar-button {
+    background: rgba(60, 60, 60, 0.4);
+    border: 1px solid rgba(100, 100, 100, 0.6);
+    border-radius: 4px;
+    color: rgba(230, 230, 230, 0.95);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 8px 10px;
+    transition: all 0.15s ease;
+    min-width: 36px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+
+    &:hover {
+      background: rgba(74, 158, 255, 0.3);
+      border-color: rgba(74, 158, 255, 0.8);
+      color: #fff;
+      backdrop-filter: blur(6px);
+    }
+
+    &:active {
+      background: rgba(74, 158, 255, 0.4);
+      transform: translateY(1px);
+    }
+
+    &-danger {
+      &:hover {
+        background: rgba(255, 100, 100, 0.3);
+        border-color: rgba(255, 100, 100, 0.8);
+        color: #ffaaaa;
+      }
+
+      &:active {
+        background: rgba(255, 100, 100, 0.4);
+      }
+    }
+  }
+}

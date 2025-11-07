@@ -3,6 +3,7 @@
 ## Features
 - Platform and track editor windows now automatically resize horizontally when tracks or platforms are added or removed (resolves #98)
 - Added canvas controls hint overlay that appears when opening infrastructure or graph views, displaying keyboard shortcuts for pan, zoom, and navigation controls with automatic dismissal on first interaction
+- Added multi-select functionality for stations in infrastructure editor - drag to select multiple stations and use the floating toolbar to rotate (clockwise/counter-clockwise in 45° increments), align, bulk add/remove platforms, bulk add/remove tracks, or delete
 
 ## Improvements
 - Significantly improved infrastructure editor performance when panning and zooming with large networks - viewport culling now skips rendering offscreen elements, and internal data structures are cached to reduce redundant calculations
