@@ -382,22 +382,111 @@ fn rotate_stations_by_angle(
     let center_x: f64 = positions.iter().map(|(_, x, _)| x).sum::<f64>() / count as f64;
     let center_y: f64 = positions.iter().map(|(_, _, y)| y).sum::<f64>() / count as f64;
 
-    // Rotate by specified angle around centroid
-    let angle = angle_degrees.to_radians();
-    let cos_angle = angle.cos();
-    let sin_angle = angle.sin();
+    // Check if stations are aligned (collinear within tolerance)
+    let collinearity_threshold: f64 = 0.1;
+    let is_aligned = if positions.len() == 2 {
+        true // Two points are always collinear
+    } else {
+        // Check if all points lie on the same line
+        let (_, x1, y1) = positions[0];
+        let (_, x2, y2) = positions[1];
 
-    for (station_idx, x, y) in positions {
-        let dx = x - center_x;
-        let dy = y - center_y;
+        positions[2..].iter().all(|(_, x, y)| {
+            // Calculate perpendicular distance from point to line
+            let dx = x2 - x1;
+            let dy = y2 - y1;
+            let line_length_sq = dx * dx + dy * dy;
 
-        // Rotation matrix (accounting for canvas Y-axis pointing down):
-        // x' = x*cos(θ) - y*sin(θ)
-        // y' = x*sin(θ) + y*cos(θ)
-        let new_x = center_x + dx * cos_angle - dy * sin_angle;
-        let new_y = center_y + dx * sin_angle + dy * cos_angle;
+            if line_length_sq < 0.001 {
+                return true; // Points are too close
+            }
 
-        graph.set_station_position(station_idx, (new_x, new_y));
+            let distance = ((dy * (x - x1) - dx * (y - y1)).abs()) / line_length_sq.sqrt();
+            distance < collinearity_threshold
+        })
+    };
+
+    if is_aligned {
+        // Stations are aligned - maintain alignment during rotation
+        // Find the two endpoints (farthest apart)
+        let mut max_dist_sq = 0.0;
+        let mut endpoint1_idx = 0;
+        let mut endpoint2_idx = 1;
+
+        for i in 0..positions.len() {
+            for j in (i + 1)..positions.len() {
+                let dx = positions[i].1 - positions[j].1;
+                let dy = positions[i].2 - positions[j].2;
+                let dist_sq = dx * dx + dy * dy;
+                if dist_sq > max_dist_sq {
+                    max_dist_sq = dist_sq;
+                    endpoint1_idx = i;
+                    endpoint2_idx = j;
+                }
+            }
+        }
+
+        let (_idx1, x1, y1) = positions[endpoint1_idx];
+        let (_idx2, x2, y2) = positions[endpoint2_idx];
+
+        // Rotate the two endpoints
+        let angle = angle_degrees.to_radians();
+        let cos_angle = angle.cos();
+        let sin_angle = angle.sin();
+
+        let dx1 = x1 - center_x;
+        let dy1 = y1 - center_y;
+        let endpoint1_rotated_x = center_x + dx1 * cos_angle - dy1 * sin_angle;
+        let endpoint1_rotated_y = center_y + dx1 * sin_angle + dy1 * cos_angle;
+
+        let dx2 = x2 - center_x;
+        let dy2 = y2 - center_y;
+        let endpoint2_rotated_x = center_x + dx2 * cos_angle - dy2 * sin_angle;
+        let endpoint2_rotated_y = center_y + dx2 * sin_angle + dy2 * cos_angle;
+
+        // Snap the rotated endpoints to grid
+        let (snapped_endpoint1_x, snapped_endpoint1_y) = crate::components::infrastructure_canvas::auto_layout::snap_to_grid(
+            endpoint1_rotated_x, endpoint1_rotated_y
+        );
+        let (snapped_endpoint2_x, snapped_endpoint2_y) = crate::components::infrastructure_canvas::auto_layout::snap_to_grid(
+            endpoint2_rotated_x, endpoint2_rotated_y
+        );
+
+        // Calculate each station's position along the original line (0.0 to 1.0)
+        let mut station_positions: Vec<(NodeIndex, f64)> = Vec::new();
+
+        for &(idx, x, y) in &positions {
+            let dx = x - x1;
+            let dy = y - y1;
+            let t = ((dx * (x2 - x1) + dy * (y2 - y1)) / max_dist_sq).clamp(0.0, 1.0);
+            station_positions.push((idx, t));
+        }
+
+        // Position stations along the snapped rotated line
+        for (idx, t) in station_positions {
+            let new_x = snapped_endpoint1_x + t * (snapped_endpoint2_x - snapped_endpoint1_x);
+            let new_y = snapped_endpoint1_y + t * (snapped_endpoint2_y - snapped_endpoint1_y);
+            graph.set_station_position(idx, (new_x, new_y));
+        }
+    } else {
+        // Stations are not aligned - regular rotation without snapping
+        // (snapping would distort the shape)
+        let angle = angle_degrees.to_radians();
+        let cos_angle = angle.cos();
+        let sin_angle = angle.sin();
+
+        for (station_idx, x, y) in positions {
+            let dx = x - center_x;
+            let dy = y - center_y;
+
+            // Rotation matrix (accounting for canvas Y-axis pointing down):
+            // x' = x*cos(θ) - y*sin(θ)
+            // y' = x*sin(θ) + y*cos(θ)
+            let new_x = center_x + dx * cos_angle - dy * sin_angle;
+            let new_y = center_y + dx * sin_angle + dy * cos_angle;
+
+            graph.set_station_position(station_idx, (new_x, new_y));
+        }
     }
 }
 
