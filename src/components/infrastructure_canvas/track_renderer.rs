@@ -269,13 +269,28 @@ pub fn draw_tracks(
     zoom: f64,
     highlighted_edges: &HashSet<petgraph::stable_graph::EdgeIndex>,
     cached_avoidance: &HashMap<EdgeIndex, (f64, f64)>,
+    viewport_bounds: (f64, f64, f64, f64),
 ) {
+    let (left, top, right, bottom) = viewport_bounds;
+    let margin = 200.0; // Buffer to include tracks slightly outside viewport
+
     for edge in graph.graph.edge_references() {
         let edge_id = edge.id();
         let source = edge.source();
         let target = edge.target();
         let Some(pos1) = graph.get_station_position(source) else { continue };
         let Some(pos2) = graph.get_station_position(target) else { continue };
+
+        // Viewport culling: skip tracks completely outside visible area
+        let min_x = pos1.0.min(pos2.0);
+        let max_x = pos1.0.max(pos2.0);
+        let min_y = pos1.1.min(pos2.1);
+        let max_y = pos1.1.max(pos2.1);
+
+        if max_x < left - margin || min_x > right + margin ||
+           max_y < top - margin || min_y > bottom + margin {
+            continue;
+        }
 
         let track_count = edge.weight().tracks.len();
 

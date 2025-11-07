@@ -3,7 +3,7 @@ use crate::components::infrastructure_canvas::{track_renderer, junction_renderer
 use crate::geometry::line_segments_intersect;
 use web_sys::CanvasRenderingContext2d;
 use std::collections::HashMap;
-use petgraph::stable_graph::NodeIndex;
+use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use petgraph::Direction;
 
@@ -37,6 +37,7 @@ pub enum LabelPosition {
 #[derive(Clone, Copy)]
 pub struct CachedLabelPosition {
     pub position: LabelPosition,
+    pub bounds: LabelBounds,
 }
 
 impl LabelPosition {
@@ -99,12 +100,12 @@ impl LabelPosition {
     }
 }
 
-#[derive(Clone)]
-struct LabelBounds {
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
+#[derive(Clone, Copy)]
+pub struct LabelBounds {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 impl LabelBounds {
@@ -161,12 +162,21 @@ fn draw_station_nodes(
     zoom: f64,
     selected_stations: &[NodeIndex],
     highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
+    viewport_bounds: (f64, f64, f64, f64),
 ) -> Vec<(NodeIndex, (f64, f64), f64)> {
     let mut node_positions = Vec::new();
+    let (left, top, right, bottom) = viewport_bounds;
+    let margin = 100.0; // Buffer to include nodes slightly outside viewport
 
     for idx in graph.graph.node_indices() {
         let Some(pos) = graph.get_station_position(idx) else { continue };
         let Some(node) = graph.graph.node_weight(idx) else { continue };
+
+        // Viewport culling: skip nodes completely outside visible area
+        if pos.0 < left - margin || pos.0 > right + margin ||
+           pos.1 < top - margin || pos.1 > bottom + margin {
+            continue;
+        }
 
         if let Some(station) = node.as_station() {
             // Draw stations as circles
@@ -399,15 +409,11 @@ fn get_conflicting_label_positions(
     conflicting_positions
 }
 
-fn identify_branches(graph: &RailwayGraph, node_positions: &[(NodeIndex, (f64, f64), f64)]) -> Vec<Vec<NodeIndex>> {
+fn identify_branches(
+    adjacency: &HashMap<NodeIndex, Vec<(NodeIndex, EdgeIndex)>>,
+    node_positions: &[(NodeIndex, (f64, f64), f64)]
+) -> Vec<Vec<NodeIndex>> {
     use std::collections::HashSet;
-
-    // Build adjacency map and calculate degrees
-    let mut adjacency: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
-    for edge in graph.graph.edge_references() {
-        adjacency.entry(edge.source()).or_insert_with(Vec::new).push(edge.target());
-        adjacency.entry(edge.target()).or_insert_with(Vec::new).push(edge.source());
-    }
 
     let mut visited_edges = HashSet::new();
     let mut branches = Vec::new();
@@ -425,7 +431,7 @@ fn identify_branches(graph: &RailwayGraph, node_positions: &[(NodeIndex, (f64, f
     for &start_node in &junction_or_endpoint_nodes {
         let Some(neighbors) = adjacency.get(&start_node) else { continue };
 
-        for &next_node in neighbors {
+        for &(next_node, _) in neighbors {
             let edge_key = if start_node < next_node {
                 (start_node, next_node)
             } else {
@@ -455,7 +461,7 @@ fn identify_branches(graph: &RailwayGraph, node_positions: &[(NodeIndex, (f64, f
 
                 // Continue along the linear path
                 let Some(neighbors) = adjacency.get(&current) else { break };
-                let next = neighbors.iter().find(|&&n| n != previous);
+                let next = neighbors.iter().map(|(n, _)| n).find(|&&n| n != previous);
 
                 let Some(&next_node) = next else { break };
 
@@ -492,7 +498,7 @@ fn identify_branches(graph: &RailwayGraph, node_positions: &[(NodeIndex, (f64, f
     for (idx, _, _) in node_positions {
         let Some(neighbors) = adjacency.get(idx) else { continue };
 
-        for &neighbor in neighbors {
+        for &(neighbor, _) in neighbors {
             let edge_key = if *idx < neighbor {
                 (*idx, neighbor)
             } else {
@@ -514,7 +520,7 @@ fn identify_branches(graph: &RailwayGraph, node_positions: &[(NodeIndex, (f64, f
                 branch.push(current);
 
                 let Some(neighbors) = adjacency.get(&current) else { break };
-                let next = neighbors.iter().find(|&&n| n != previous);
+                let next = neighbors.iter().map(|(n, _)| n).find(|&&n| n != previous);
 
                 let Some(&next_node) = next else { break };
 
@@ -668,14 +674,15 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
         }
     }
 
-    let mut node_neighbors: HashMap<NodeIndex, Vec<NodeIndex>> = HashMap::new();
+    // Build adjacency map in the new format (with EdgeIndex)
+    let mut adjacency: HashMap<NodeIndex, Vec<(NodeIndex, EdgeIndex)>> = HashMap::new();
     for edge in graph.graph.edge_references() {
-        node_neighbors.entry(edge.source()).or_insert_with(Vec::new).push(edge.target());
-        node_neighbors.entry(edge.target()).or_insert_with(Vec::new).push(edge.source());
+        adjacency.entry(edge.source()).or_default().push((edge.target(), edge.id()));
+        adjacency.entry(edge.target()).or_default().push((edge.source(), edge.id()));
     }
 
-    // Identify branches using BFS
-    let branches = identify_branches(graph, &node_positions);
+    // Identify branches using cached adjacency format
+    let branches = identify_branches(&adjacency, &node_positions);
 
     let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
 
@@ -732,15 +739,16 @@ pub fn draw_stations_with_cache(
     highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
     cache: &mut super::renderer::TopologyCache,
     is_zooming: bool,
+    viewport_bounds: (f64, f64, f64, f64),
 ) {
     let font_size = 14.0 / zoom;
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges);
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds);
 
     // Check if we can use cached label positions
     let use_cache = if let Some((cached_zoom, _)) = &cache.label_cache {
-        // Use cache if zooming and zoom hasn't changed drastically (>20%)
-        is_zooming && (cached_zoom - zoom).abs() / cached_zoom < 0.2
+        // Use cache if zooming and zoom hasn't changed drastically (>50%)
+        is_zooming && (cached_zoom - zoom).abs() / cached_zoom < 0.5
     } else {
         false
     };
@@ -754,29 +762,32 @@ pub fn draw_stations_with_cache(
     }
 
     // Full recomputation - compute optimal label positions
-    let mut track_segments = track_renderer::get_track_segments(graph);
+    // Reuse cached edge segments and add junction segments
+    let mut track_segments: Vec<((f64, f64), (f64, f64))> = cache.edge_segments.values()
+        .flat_map(|segs| segs.iter().copied())
+        .collect();
     track_segments.extend(junction_renderer::get_junction_segments(graph));
 
-    // Build node metadata
+    // Build node metadata using cached junction set
     let mut node_metadata: HashMap<NodeIndex, (f64, f64, (f64, f64))> = HashMap::new();
     for (idx, pos, _) in &node_positions {
         if let Some(node) = graph.graph.node_weight(*idx) {
             let name = node.display_name();
             #[allow(clippy::cast_precision_loss)]
             let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
-            let is_junction = graph.is_junction(*idx);
+            let is_junction = cache.junctions.contains(idx);
             let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
             node_metadata.insert(*idx, (text_width, label_offset, *pos));
         }
     }
 
-    // Compute optimal label positions
-    let branches = identify_branches(graph, &node_positions);
+    // Compute optimal label positions using cached adjacency
+    let branches = identify_branches(&cache.adjacency, &node_positions);
     let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
 
     for branch_nodes in &branches {
         let station_only_nodes: Vec<NodeIndex> = branch_nodes.iter()
-            .filter(|idx| !graph.is_junction(**idx))
+            .filter(|idx| !cache.junctions.contains(idx))
             .copied()
             .collect();
 
@@ -812,7 +823,7 @@ pub fn draw_stations_with_cache(
 
     // Update cache with computed positions
     let cached_positions: HashMap<NodeIndex, CachedLabelPosition> = label_positions.iter()
-        .map(|(idx, (_, position))| (*idx, CachedLabelPosition { position: *position }))
+        .map(|(idx, (bounds, position))| (*idx, CachedLabelPosition { position: *position, bounds: *bounds }))
         .collect();
     cache.label_cache = Some((zoom, cached_positions));
 
@@ -850,87 +861,5 @@ fn draw_cached_labels(
             };
             draw_station_label(ctx, &node.display_name(), *pos, cached.position, *radius, label_offset);
         }
-    }
-}
-
-#[allow(clippy::cast_precision_loss)]
-pub fn draw_stations(
-    ctx: &CanvasRenderingContext2d,
-    graph: &RailwayGraph,
-    zoom: f64,
-    selected_stations: &[NodeIndex],
-    highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
-) {
-    let font_size = 14.0 / zoom;
-    let mut track_segments = track_renderer::get_track_segments(graph);
-    track_segments.extend(junction_renderer::get_junction_segments(graph));
-
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges);
-
-    // Build node metadata (width, offset, position)
-    let mut node_metadata: HashMap<NodeIndex, (f64, f64, (f64, f64))> = HashMap::new();
-    for (idx, pos, _) in &node_positions {
-        if let Some(node) = graph.graph.node_weight(*idx) {
-            let name = node.display_name();
-            #[allow(clippy::cast_precision_loss)]
-            let text_width = name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom;
-            let is_junction = graph.is_junction(*idx);
-            let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
-            node_metadata.insert(*idx, (text_width, label_offset, *pos));
-        }
-    }
-
-    // Identify branches and process each one
-    let branches = identify_branches(graph, &node_positions);
-    let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
-
-    // First pass: process all stations (excluding junctions from branches)
-    for branch_nodes in &branches {
-        let station_only_nodes: Vec<NodeIndex> = branch_nodes.iter()
-            .filter(|idx| !graph.is_junction(**idx))
-            .copied()
-            .collect();
-
-        if !station_only_nodes.is_empty() {
-            process_node_group(
-                &station_only_nodes,
-                &node_metadata,
-                &node_positions,
-                &track_segments,
-                font_size,
-                &mut label_positions,
-                graph,
-            );
-        }
-    }
-
-    // Second pass: process each junction individually to find best position
-    let junction_nodes: Vec<NodeIndex> = node_positions.iter()
-        .filter(|(idx, _, _)| graph.is_junction(*idx))
-        .map(|(idx, _, _)| *idx)
-        .collect();
-
-    for junction_idx in junction_nodes {
-        process_node_group(
-            &[junction_idx],
-            &node_metadata,
-            &node_positions,
-            &track_segments,
-            font_size,
-            &mut label_positions,
-            graph,
-        );
-    }
-
-    // Draw all labels
-    ctx.set_fill_style_str(LABEL_COLOR);
-    ctx.set_font(&format!("{font_size}px sans-serif"));
-
-    for (idx, pos, radius) in &node_positions {
-        let Some(node) = graph.graph.node_weight(*idx) else { continue };
-        let Some((_, position)) = label_positions.get(idx) else { continue };
-        let is_junction = graph.is_junction(*idx);
-        let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
-        draw_station_label(ctx, &node.display_name(), *pos, *position, *radius, label_offset);
     }
 }

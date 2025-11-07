@@ -107,6 +107,30 @@ pub fn find_track_at_position_cached(
 }
 
 #[must_use]
+pub fn find_label_at_position_cached(
+    cached_labels: &std::collections::HashMap<petgraph::stable_graph::NodeIndex, super::station_renderer::CachedLabelPosition>,
+    x: f64,
+    y: f64,
+) -> Option<NodeIndex> {
+    for (idx, cached) in cached_labels {
+        let bounds = &cached.bounds;
+        let expanded_bounds = (
+            bounds.x - LABEL_CLICK_PADDING,
+            bounds.y - LABEL_CLICK_PADDING,
+            bounds.width + LABEL_CLICK_PADDING * 2.0,
+            bounds.height + LABEL_CLICK_PADDING * 2.0,
+        );
+
+        if x >= expanded_bounds.0 && x <= expanded_bounds.0 + expanded_bounds.2 &&
+           y >= expanded_bounds.1 && y <= expanded_bounds.1 + expanded_bounds.3 {
+            return Some(*idx);
+        }
+    }
+
+    None
+}
+
+#[must_use]
 pub fn find_label_at_position(graph: &RailwayGraph, x: f64, y: f64, zoom: f64) -> Option<NodeIndex> {
     use super::station_renderer::compute_label_positions;
 
