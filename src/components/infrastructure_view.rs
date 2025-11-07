@@ -2,6 +2,7 @@ use crate::models::{RailwayGraph, Line, Track, TrackDirection, Stations, Tracks,
 use crate::components::infrastructure_canvas::{auto_layout, renderer, hit_detection};
 use crate::components::infrastructure_toolbar::{InfrastructureToolbar, EditMode};
 use crate::components::canvas_viewport;
+use crate::components::canvas_controls_hint::CanvasControlsHint;
 use crate::components::graph_canvas::types::ViewportState;
 use crate::components::add_station::AddStation;
 use crate::components::create_view_dialog::CreateViewDialog;
@@ -908,6 +909,7 @@ fn create_event_handlers(
     set_station_dialog_clicked_position: WriteSignal<Option<(f64, f64)>>,
     set_station_dialog_clicked_segment: WriteSignal<Option<EdgeIndex>>,
     settings: ReadSignal<crate::models::ProjectSettings>,
+    set_show_hint: WriteSignal<bool>,
 ) -> (impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(MouseEvent), impl Fn(WheelEvent)) {
     let zoom_level = viewport.zoom_level;
     let pan_offset_x = viewport.pan_offset_x;
@@ -987,6 +989,8 @@ fn create_event_handlers(
             // If space is pressed and not yet panning, start panning
             if space_pressed.get() && !is_panning.get() {
                 canvas_viewport::handle_pan_start(x, y, &viewport_copy);
+                // Dismiss hint when starting to pan
+                set_show_hint.set(false);
             }
 
             if is_panning.get() {
@@ -1131,6 +1135,9 @@ fn create_event_handlers(
         // Mark as zooming when wheel event occurs
         set_is_zooming.set(true);
 
+        // Dismiss hint on zoom
+        set_show_hint.set(false);
+
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
             let rect = canvas.get_bounding_client_rect();
@@ -1206,6 +1213,9 @@ pub fn InfrastructureView(
     let (a_pressed, set_a_pressed) = create_signal(false);
     let (s_pressed, set_s_pressed) = create_signal(false);
     let (d_pressed, set_d_pressed) = create_signal(false);
+
+    // Canvas controls hint visibility
+    let (show_hint, set_show_hint) = create_signal(true);
 
     // View creation state - multi-point waypoint approach
     let view_creation = crate::components::view_creation::ViewCreationState::new(edit_mode);
@@ -1285,6 +1295,24 @@ pub fn InfrastructureView(
         pan_offset_x, pan_offset_y,
     );
 
+    // Dismiss hint when any WASD key is pressed
+    create_effect(move |_| {
+        if w_pressed.get() || a_pressed.get() || s_pressed.get() || d_pressed.get() {
+            set_show_hint.set(false);
+        }
+    });
+
+    // Dismiss hint when zoom level changes (from +/- keys)
+    create_effect(move |prev_zoom: Option<f64>| {
+        let current_zoom = zoom_level.get();
+        if let Some(prev) = prev_zoom {
+            if (current_zoom - prev).abs() > f64::EPSILON {
+                set_show_hint.set(false);
+            }
+        }
+        current_zoom
+    });
+
     // Save viewport state when it changes
     if let Some(on_change) = on_viewport_change {
         create_effect(move |_| {
@@ -1332,7 +1360,8 @@ pub fn InfrastructureView(
         dragging_station, set_dragging_station, set_is_over_station, set_is_over_track,
         auto_layout_enabled, space_pressed, &viewport, topology_cache, set_is_zooming,
         show_add_station, station_dialog_clicked_position, set_station_dialog_clicked_position, set_station_dialog_clicked_segment,
-        settings
+        settings,
+        set_show_hint
     );
 
     let handle_mouse_leave = move |_: MouseEvent| {
@@ -1365,6 +1394,7 @@ pub fn InfrastructureView(
                     on:contextmenu=handle_context_menu
                     style=move || get_canvas_cursor_style(dragging_station, edit_mode, editing_station, is_over_station, is_over_track, is_panning, space_pressed)
                 />
+                <CanvasControlsHint visible=show_hint />
             </div>
 
             <AddStation

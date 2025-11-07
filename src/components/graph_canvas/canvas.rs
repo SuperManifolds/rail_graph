@@ -11,6 +11,7 @@ use crate::conflict::Conflict;
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
 use crate::components::station_label_tooltip::StationLabelTooltip;
+use crate::components::canvas_controls_hint::CanvasControlsHint;
 use crate::components::canvas_viewport;
 use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
@@ -285,6 +286,9 @@ pub fn GraphCanvas(
     let (s_pressed, set_s_pressed) = create_signal(false);
     let (d_pressed, set_d_pressed) = create_signal(false);
 
+    // Canvas controls hint visibility
+    let (show_hint, set_show_hint) = create_signal(true);
+
     let viewport = canvas_viewport::create_viewport_signals(true);
 
     // Create a signal for canvas dimensions
@@ -338,6 +342,24 @@ pub fn GraphCanvas(
         set_pan_offset_x, set_pan_offset_y,
         pan_offset_x, pan_offset_y,
     );
+
+    // Dismiss hint when any WASD key is pressed
+    create_effect(move |_| {
+        if w_pressed.get() || a_pressed.get() || s_pressed.get() || d_pressed.get() {
+            set_show_hint.set(false);
+        }
+    });
+
+    // Dismiss hint when zoom level changes (from +/- keys or [ ] keys)
+    create_effect(move |prev_zoom: Option<(f64, f64)>| {
+        let current_zoom = (zoom_level.get(), zoom_level_x.get());
+        if let Some(prev) = prev_zoom {
+            if (current_zoom.0 - prev.0).abs() > f64::EPSILON || (current_zoom.1 - prev.1).abs() > f64::EPSILON {
+                set_show_hint.set(false);
+            }
+        }
+        current_zoom
+    });
 
     // Save viewport changes to the view (debounced)
     let debounce_handle = store_value(None::<leptos::leptos_dom::helpers::TimeoutHandle>);
@@ -469,6 +491,8 @@ pub fn GraphCanvas(
             // If space is pressed and not yet panning, start panning
             if space_pressed.get() && !is_panning.get() {
                 canvas_viewport::handle_pan_start(x, y, &viewport);
+                // Dismiss hint when starting to pan
+                set_show_hint.set(false);
             }
 
             if is_resizing_station_labels.get() {
@@ -520,6 +544,9 @@ pub fn GraphCanvas(
 
     let handle_wheel = move |ev: WheelEvent| {
         ev.prevent_default();
+
+        // Dismiss hint on zoom
+        set_show_hint.set(false);
 
         if let Some(canvas_elem) = canvas_ref.get() {
             let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
@@ -576,6 +603,7 @@ pub fn GraphCanvas(
 
             <ConflictTooltip hovered_conflict=hovered_conflict graph=graph />
             <StationLabelTooltip hovered_station_label=hovered_station_label />
+            <CanvasControlsHint visible=show_hint show_horizontal_scaling=true />
         </div>
     }
 }

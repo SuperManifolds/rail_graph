@@ -2,6 +2,7 @@
 
 pub mod add_station;
 pub mod alpha_disclaimer;
+pub mod canvas_controls_hint;
 pub mod canvas_viewport;
 pub mod changelog_popup;
 pub mod modal_overlay;
