@@ -7,6 +7,7 @@ use crate::components::multi_select_toolbar::MultiSelectToolbar;
 use crate::components::graph_canvas::types::ViewportState;
 use crate::components::add_station::{AddStation, AddStationsBatchCallback};
 use crate::components::add_station_quick::QuickEntryStation;
+use crate::components::confirmation_dialog::ConfirmationDialog;
 use crate::components::create_view_dialog::CreateViewDialog;
 use crate::components::delete_station_confirmation::DeleteStationConfirmation;
 use crate::components::edit_junction::EditJunction;
@@ -1509,6 +1510,7 @@ pub fn InfrastructureView(
     let (delete_affected_lines, set_delete_affected_lines) = create_signal(Vec::<String>::new());
     let (delete_station_name, set_delete_station_name) = create_signal(String::new());
     let (delete_bypass_info, set_delete_bypass_info) = create_signal(None::<(String, String)>);
+    let (show_multi_delete_confirmation, set_show_multi_delete_confirmation) = create_signal(false);
     let (is_over_station, set_is_over_station) = create_signal(false);
     let (is_over_track, set_is_over_track) = create_signal(false);
     let (dragging_station, set_dragging_station) = create_signal(None::<NodeIndex>);
@@ -1731,14 +1733,9 @@ pub fn InfrastructureView(
                 );
             }
             "multi_select_delete" => {
-                crate::components::multi_select_toolbar::delete_selected_stations(
-                    selected_stations,
-                    graph,
-                    set_graph,
-                    lines,
-                    set_lines,
-                    set_selected_stations,
-                );
+                if !selected_stations.get().is_empty() {
+                    set_show_multi_delete_confirmation.set(true);
+                }
             }
             "multi_select_add_platform" => {
                 crate::components::multi_select_toolbar::add_platform_to_selected(
@@ -1875,14 +1872,9 @@ pub fn InfrastructureView(
                         );
                     })
                     on_delete=leptos::Callback::new(move |()| {
-                        crate::components::multi_select_toolbar::delete_selected_stations(
-                            selected_stations,
-                            graph,
-                            set_graph,
-                            lines,
-                            set_lines,
-                            set_selected_stations,
-                        );
+                        if !selected_stations.get().is_empty() {
+                            set_show_multi_delete_confirmation.set(true);
+                        }
                     })
                 />
             </div>
@@ -1953,6 +1945,29 @@ pub fn InfrastructureView(
                 bypass_info=delete_bypass_info
                 on_cancel=Rc::new(move || set_show_delete_confirmation.set(false))
                 on_confirm=confirm_delete_station
+            />
+
+            <ConfirmationDialog
+                is_open=Signal::derive(move || show_multi_delete_confirmation.get())
+                title=Signal::derive(|| "Delete Stations".to_string())
+                message=Signal::derive(move || {
+                    let count = selected_stations.get().len();
+                    format!("Are you sure you want to delete {} selected station{}?", count, if count == 1 { "" } else { "s" })
+                })
+                on_cancel=Rc::new(move || set_show_multi_delete_confirmation.set(false))
+                on_confirm=Rc::new(move || {
+                    crate::components::multi_select_toolbar::delete_selected_stations(
+                        selected_stations,
+                        graph,
+                        set_graph,
+                        lines,
+                        set_lines,
+                        set_selected_stations,
+                    );
+                    set_show_multi_delete_confirmation.set(false);
+                })
+                confirm_text="Delete".to_string()
+                cancel_text="Cancel".to_string()
             />
 
             <CreateViewDialog

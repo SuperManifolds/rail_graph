@@ -2,6 +2,7 @@
 
 ## Features
 - Added quick entry mode to add station dialog for rapid creation of multiple stations along a linear route - enter station names and distances in a list interface with shared platform/track configuration, automatic positioning, and Enter key navigation between fields
+- Added confirmation dialog when deleting multiple selected stations in infrastructure editor
 
 ## Bug Fixes
 - Fixed multi-select dragging not snapping to grid when autolayout is disabled
