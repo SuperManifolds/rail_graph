@@ -1,5 +1,6 @@
 use petgraph::stable_graph::{StableGraph, NodeIndex};
 use petgraph::algo::dijkstra;
+use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use super::node::Node;
@@ -205,7 +206,10 @@ impl RailwayGraph {
         // Try extending path to each unvisited neighbor
         for neighbor in self.graph.neighbors_undirected(current) {
             if !visited.contains(&neighbor) {
-                Self::dfs_longest_path(self, neighbor, visited, current_path, longest_path);
+                // Check if this transition is allowed through junction routing rules
+                if self.is_path_allowed(current_path, current, neighbor) {
+                    Self::dfs_longest_path(self, neighbor, visited, current_path, longest_path);
+                }
             }
         }
 
@@ -235,12 +239,69 @@ impl RailwayGraph {
 
         for neighbor in self.graph.neighbors_undirected(current) {
             if !visited.contains(&neighbor) {
-                Self::dfs_longest_path_excluding(self, neighbor, visited, current_path, longest_path);
+                // Check if this transition is allowed through junction routing rules
+                if self.is_path_allowed(current_path, current, neighbor) {
+                    Self::dfs_longest_path_excluding(self, neighbor, visited, current_path, longest_path);
+                }
             }
         }
 
         current_path.pop();
         visited.remove(&current);
+    }
+
+    /// Check if moving from current to neighbor is allowed by junction routing rules.
+    ///
+    /// If current is a junction, checks if the transition from the incoming edge
+    /// (from previous node in path) to the outgoing edge (to neighbor) is allowed.
+    fn is_path_allowed(
+        &self,
+        current_path: &[NodeIndex],
+        current: NodeIndex,
+        neighbor: NodeIndex,
+    ) -> bool {
+        use crate::models::Junctions;
+
+        // If current is not a junction, allow the transition
+        if !self.is_junction(current) {
+            return true;
+        }
+
+        // If this is the first or second node in the path, allow (no incoming edge to check)
+        if current_path.len() < 2 {
+            return true;
+        }
+
+        // Get the previous node (where we came from)
+        let prev_node = current_path[current_path.len() - 2];
+
+        // Find the incoming edge (prev_node -> current)
+        let incoming_edge = self
+            .graph
+            .edges_connecting(prev_node, current)
+            .next()
+            .or_else(|| self.graph.edges_connecting(current, prev_node).next())
+            .map(|e| e.id());
+
+        // Find the outgoing edge (current -> neighbor)
+        let outgoing_edge = self
+            .graph
+            .edges_connecting(current, neighbor)
+            .next()
+            .or_else(|| self.graph.edges_connecting(neighbor, current).next())
+            .map(|e| e.id());
+
+        // Check junction routing rules
+        match (incoming_edge, outgoing_edge) {
+            (Some(inc), Some(out)) => {
+                if let Some(junction) = self.get_junction(current) {
+                    junction.is_routing_allowed(inc, out)
+                } else {
+                    true
+                }
+            }
+            _ => true, // If we can't find edges, allow by default
+        }
     }
 }
 

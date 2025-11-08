@@ -5,6 +5,9 @@
 - Added confirmation dialog when deleting multiple selected stations in infrastructure editor
 - Added configurable default node distance setting (1-20 grid squares) in project settings that controls spacing for auto-layout, alignment, and rotation operations
 
+## Improvements
+- Auto-layout now respects junction routing rules when determining the main spine path and placing branches - junctions with restricted directions maintain straight-through alignment for bidirectional paths while branches diverge appropriately
+
 ## Bug Fixes
 - Fixed multi-select dragging not snapping to grid when autolayout is disabled
 - Fixed multi-select dragging feeling jerky or resistant during diagonal movement - stations now move smoothly in grid-aligned increments without drift
