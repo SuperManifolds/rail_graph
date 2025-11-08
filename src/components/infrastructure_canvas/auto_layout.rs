@@ -1,4 +1,4 @@
-use crate::models::{RailwayGraph, Stations, ProjectSettings};
+use crate::models::{RailwayGraph, Stations, Junctions, ProjectSettings};
 use crate::geometry::{angle_difference, line_segment_distance};
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
@@ -179,6 +179,7 @@ fn would_overlap_existing_edges(
 }
 
 /// Find best direction and spacing for a branch node
+#[allow(clippy::too_many_arguments)]
 fn find_best_direction_for_branch(
     graph: &RailwayGraph,
     current_pos: (f64, f64),
@@ -188,7 +189,25 @@ fn find_best_direction_for_branch(
     already_used: &[(f64, HashSet<NodeIndex>)],
     incoming_direction: f64,
     base_station_spacing: f64,
+    is_through_path: bool,
 ) -> (f64, f64, i32) {
+    // If this is a through path at a junction, continue straight in the incoming direction
+    if is_through_path {
+        // Try spacing multipliers to avoid collisions
+        for spacing_mult in [1.0, 1.5, 2.0, 2.5, 3.0] {
+            let test_pos = snap_to_grid(
+                current_pos.0 + incoming_direction.cos() * base_station_spacing * spacing_mult,
+                current_pos.1 + incoming_direction.sin() * base_station_spacing * spacing_mult,
+            );
+
+            if !has_node_collision_at(graph, test_pos, neighbor, base_station_spacing) {
+                // Found a valid position continuing straight
+                return (incoming_direction, spacing_mult, 1000);
+            }
+        }
+        // If all straight positions have collisions, fall through to regular algorithm
+    }
+
     let mut best_direction = DIRECTIONS[0];
     let mut best_score = i32::MIN;
     let mut best_spacing = 1.0;
@@ -355,14 +374,26 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
     // Phase 3: Place branches from spine nodes
     let mut queue = std::collections::VecDeque::new();
 
-    // Add all spine nodes to queue with their positions and incoming direction
-    for &node in &spine {
+    // Add all spine nodes to queue with their positions, incoming direction, and incoming edge
+    for (i, &node) in spine.iter().enumerate() {
         if let Some(pos) = graph.get_station_position(node) {
-            queue.push_back((node, pos, spine_direction));
+            // Find the incoming edge (from previous spine node)
+            let incoming_edge = if i > 0 {
+                let prev_node = spine[i - 1];
+                graph
+                    .graph
+                    .edges_connecting(prev_node, node)
+                    .next()
+                    .or_else(|| graph.graph.edges_connecting(node, prev_node).next())
+                    .map(|e| e.id())
+            } else {
+                None
+            };
+            queue.push_back((node, pos, spine_direction, incoming_edge));
         }
     }
 
-    while let Some((current_node, current_pos, incoming_direction)) = queue.pop_front() {
+    while let Some((current_node, current_pos, incoming_direction, incoming_edge)) = queue.pop_front() {
         // Get all unvisited neighbors
         let neighbors: Vec<_> = graph
             .graph
@@ -383,6 +414,27 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
 
             let reachable = get_reachable_nodes(graph, neighbor, Some(current_node));
 
+            // Find the edge from current_node to neighbor
+            let edge_to_neighbor = graph
+                .graph
+                .edges_connecting(current_node, neighbor)
+                .next()
+                .or_else(|| graph.graph.edges_connecting(neighbor, current_node).next())
+                .map(|e| e.id());
+
+            // Check if this neighbor is on a "through path" at a junction
+            // by checking if the incoming edge and outgoing edge form a bidirectional path
+            let is_through_path = match (incoming_edge, edge_to_neighbor) {
+                (Some(inc_edge), Some(out_edge)) if graph.is_junction(current_node) => {
+                    graph.get_junction(current_node).is_some_and(|junction| {
+                        // Check if both directions are allowed (bidirectional through path)
+                        junction.is_routing_allowed(inc_edge, out_edge)
+                            && junction.is_routing_allowed(out_edge, inc_edge)
+                    })
+                }
+                _ => false,
+            };
+
             let (best_direction, best_spacing, _best_score) = find_best_direction_for_branch(
                 graph,
                 current_pos,
@@ -392,6 +444,7 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
                 &already_used,
                 incoming_direction,
                 base_station_spacing,
+                is_through_path,
             );
 
             let neighbor_pos = snap_to_grid(
@@ -404,7 +457,8 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
 
             already_used.push((best_direction, reachable.clone()));
 
-            queue.push_back((neighbor, neighbor_pos, best_direction));
+            // Add to queue with the edge from current to neighbor
+            queue.push_back((neighbor, neighbor_pos, best_direction, edge_to_neighbor));
         }
     }
 
