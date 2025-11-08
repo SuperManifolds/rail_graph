@@ -1,8 +1,13 @@
 # v0.1.19 - 2025-11-08
 
+## Features
+- Added quick entry mode to add station dialog for rapid creation of multiple stations along a linear route - enter station names and distances in a list interface with shared platform/track configuration, automatic positioning, and Enter key navigation between fields
+
 ## Bug Fixes
 - Fixed multi-select dragging not snapping to grid when autolayout is disabled
 - Fixed multi-select dragging feeling jerky or resistant during diagonal movement - stations now move smoothly in grid-aligned increments without drift
+- Fixed multi-select rotation snapping to odd angles (e.g., 22.5°) making it impossible to rotate back to horizontal/vertical alignment - rotations now properly snap to 45° increments (0°, 45°, 90°, 135°, 180°)
+- Fixed multi-select selection area becoming a thin line after rotation, making it difficult to click and drag - selection bounds now include 20px padding on all sides for easier interaction
 
 # v0.1.18 - 2025-11-07
 

@@ -5,7 +5,8 @@ use crate::components::canvas_viewport;
 use crate::components::canvas_controls_hint::CanvasControlsHint;
 use crate::components::multi_select_toolbar::MultiSelectToolbar;
 use crate::components::graph_canvas::types::ViewportState;
-use crate::components::add_station::AddStation;
+use crate::components::add_station::{AddStation, AddStationsBatchCallback};
+use crate::components::add_station_quick::QuickEntryStation;
 use crate::components::create_view_dialog::CreateViewDialog;
 use crate::components::delete_station_confirmation::DeleteStationConfirmation;
 use crate::components::edit_junction::EditJunction;
@@ -402,6 +403,92 @@ fn add_station_handler(
     set_clicked_segment.set(None);
 }
 
+#[allow(clippy::too_many_arguments)]
+fn add_stations_batch_handler(
+    station_entries: Vec<QuickEntryStation>,
+    connect_to: Option<NodeIndex>,
+    platforms: Vec<crate::models::Platform>,
+    tracks: Vec<Track>,
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    _lines: ReadSignal<Vec<Line>>,
+    _set_lines: WriteSignal<Vec<Line>>,
+    set_show_add_station: WriteSignal<bool>,
+    clicked_position: ReadSignal<Option<(f64, f64)>>,
+    _clicked_segment: ReadSignal<Option<EdgeIndex>>,
+    set_clicked_position: WriteSignal<Option<(f64, f64)>>,
+    set_clicked_segment: WriteSignal<Option<EdgeIndex>>,
+    set_selected_stations: WriteSignal<Vec<NodeIndex>>,
+    set_last_added_station: WriteSignal<Option<NodeIndex>>,
+    set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
+) {
+    let mut current_graph = graph.get();
+    let mut added_stations = Vec::new();
+    let mut prev_station_idx: Option<NodeIndex> = connect_to;
+
+    for entry in station_entries {
+        // Create the station
+        let node_idx = current_graph.add_or_get_station(entry.name.clone());
+
+        if let Some(node) = current_graph.graph.node_weight_mut(node_idx) {
+            if let Some(station) = node.as_station_mut() {
+                station.passing_loop = entry.is_passing_loop;
+                station.platforms.clone_from(&platforms);
+            }
+        }
+
+        // Position the station using the same logic as add_station_handler
+        if let Some((x, y)) = clicked_position.get_untracked() {
+            // For first station, use clicked position if available
+            if prev_station_idx == connect_to {
+                current_graph.set_station_position(node_idx, (x, y));
+            } else if let Some(prev_idx) = prev_station_idx {
+                // For subsequent stations, use autolayout offset from previous
+                if let Some(prev_pos) = current_graph.get_station_position(prev_idx) {
+                    current_graph.set_station_position(node_idx, (prev_pos.0 + 80.0, prev_pos.1 + 40.0));
+                }
+            }
+        } else if let Some(prev_idx) = prev_station_idx {
+            // Use autolayout offset from previous station
+            if let Some(prev_pos) = current_graph.get_station_position(prev_idx) {
+                current_graph.set_station_position(node_idx, (prev_pos.0 + 80.0, prev_pos.1 + 40.0));
+            }
+        } else {
+            // First station with no clicked position and no connect_to - use default position
+            current_graph.set_station_position(node_idx, (0.0, 0.0));
+        }
+
+        // Connect to previous station if we have one
+        if let Some(prev_idx) = prev_station_idx {
+            let edge_idx = current_graph.add_track(prev_idx, node_idx, tracks.clone());
+
+            // Set the distance on the edge
+            if let Some(segment) = current_graph.graph.edge_weight_mut(edge_idx) {
+                segment.distance = Some(entry.distance_from_previous);
+            }
+        }
+
+        added_stations.push(node_idx);
+        prev_station_idx = Some(node_idx);
+    }
+
+    set_graph.set(current_graph.clone());
+
+    // Get last station before moving added_stations
+    let last_station = added_stations.last().copied();
+    set_selected_stations.set(added_stations.clone());
+    if let Some(last_station) = last_station {
+        set_last_added_station.set(Some(last_station));
+    }
+
+    // Calculate and set selection bounds for the newly added stations
+    crate::components::multi_select_toolbar::update_selection_bounds(&current_graph, &added_stations, set_selection_bounds);
+
+    set_show_add_station.set(false);
+    set_clicked_position.set(None);
+    set_clicked_segment.set(None);
+}
+
 fn edit_station_handler(
     station_idx: NodeIndex,
     new_name: String,
@@ -632,8 +719,11 @@ fn create_handler_callbacks(
     set_clicked_position: WriteSignal<Option<(f64, f64)>>,
     set_clicked_segment: WriteSignal<Option<EdgeIndex>>,
     settings: ReadSignal<crate::models::ProjectSettings>,
+    set_selected_stations: WriteSignal<Vec<NodeIndex>>,
+    set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
 ) -> (
     Rc<dyn Fn(String, bool, Option<NodeIndex>, Vec<crate::models::Platform>)>,
+    AddStationsBatchCallback,
     Rc<dyn Fn(NodeIndex, String, bool, Vec<crate::models::Platform>)>,
     Rc<dyn Fn(NodeIndex)>,
     Rc<dyn Fn()>,
@@ -645,6 +735,10 @@ fn create_handler_callbacks(
     let handle_add_station = Rc::new(move |name: String, passing_loop: bool, connect_to: Option<NodeIndex>, platforms: Vec<crate::models::Platform>| {
         let handedness = settings.get().track_handedness;
         add_station_handler(name, passing_loop, connect_to, platforms, graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, clicked_position, clicked_segment, set_clicked_position, set_clicked_segment, handedness);
+    });
+
+    let handle_add_stations_batch: AddStationsBatchCallback = Rc::new(move |station_entries: Vec<QuickEntryStation>, connect_to: Option<NodeIndex>, platforms: Vec<crate::models::Platform>, tracks: Vec<Track>| {
+        add_stations_batch_handler(station_entries, connect_to, platforms, tracks, graph, set_graph, lines, set_lines, set_show_add_station, clicked_position, clicked_segment, set_clicked_position, set_clicked_segment, set_selected_stations, set_last_added_station, set_selection_bounds);
     });
 
     let handle_edit_station = Rc::new(move |station_idx: NodeIndex, new_name: String, passing_loop: bool, platforms: Vec<crate::models::Platform>| {
@@ -675,7 +769,7 @@ fn create_handler_callbacks(
         delete_junction_handler(junction_idx, graph, set_graph, lines, set_lines, set_editing_junction);
     });
 
-    (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction)
+    (handle_add_station, handle_add_stations_batch, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1580,8 +1674,8 @@ pub fn InfrastructureView(
         }
     };
 
-    let (handle_add_station, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
-        create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_delete_bypass_info, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment, settings);
+    let (handle_add_station, handle_add_stations_batch, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
+        create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_delete_bypass_info, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment, settings, set_selected_stations, set_selection_bounds);
 
     setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position, selected_stations, selection_box_start, selection_box_end);
 
@@ -1801,9 +1895,11 @@ pub fn InfrastructureView(
                     set_station_dialog_clicked_segment.set(None);
                 })
                 on_add=handle_add_station
+                on_add_batch=handle_add_stations_batch
                 graph=graph
                 last_added_station=last_added_station
                 clicked_segment=station_dialog_clicked_segment
+                settings=settings
             />
 
             <EditStation

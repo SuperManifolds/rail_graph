@@ -1,6 +1,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 pub mod add_station;
+pub mod add_station_quick;
 pub mod alpha_disclaimer;
 pub mod canvas_controls_hint;
 pub mod canvas_viewport;

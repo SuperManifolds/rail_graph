@@ -2,6 +2,8 @@ use leptos::{component, view, IntoView, ReadSignal, WriteSignal, Callback, Signa
 use petgraph::stable_graph::NodeIndex;
 use crate::models::{RailwayGraph, Line, Stations, ProjectSettings, UserSettings};
 
+const SELECTION_PADDING: f64 = 20.0;
+
 pub fn delete_selected_stations(
     selected_stations: ReadSignal<Vec<NodeIndex>>,
     graph: ReadSignal<RailwayGraph>,
@@ -193,7 +195,7 @@ pub fn remove_tracks_between_selected(
 }
 
 /// Recalculate selection bounds based on current station positions
-fn update_selection_bounds(
+pub fn update_selection_bounds(
     graph: &RailwayGraph,
     stations: &[NodeIndex],
     set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
@@ -224,6 +226,12 @@ fn update_selection_bounds(
         min_y = min_y.min(y);
         max_y = max_y.max(y);
     }
+
+    // Add padding to ensure bounds are always clickable, especially for linear selections
+    min_x -= SELECTION_PADDING;
+    max_x += SELECTION_PADDING;
+    min_y -= SELECTION_PADDING;
+    max_y += SELECTION_PADDING;
 
     set_selection_bounds.set(Some((min_x, max_x, min_y, max_y)));
 }
@@ -469,13 +477,24 @@ fn rotate_stations_by_angle(
         let endpoint2_rotated_x = center_x + dx2 * cos_angle - dy2 * sin_angle;
         let endpoint2_rotated_y = center_y + dx2 * sin_angle + dy2 * cos_angle;
 
-        // Snap the rotated endpoints to grid
+        // Snap the first endpoint to grid
         let (snapped_endpoint1_x, snapped_endpoint1_y) = crate::components::infrastructure_canvas::auto_layout::snap_to_grid(
             endpoint1_rotated_x, endpoint1_rotated_y
         );
-        let (snapped_endpoint2_x, snapped_endpoint2_y) = crate::components::infrastructure_canvas::auto_layout::snap_to_grid(
-            endpoint2_rotated_x, endpoint2_rotated_y
-        );
+
+        // Calculate the angle and distance from endpoint1 to endpoint2
+        let dx = endpoint2_rotated_x - endpoint1_rotated_x;
+        let dy = endpoint2_rotated_y - endpoint1_rotated_y;
+        let line_length = (dx * dx + dy * dy).sqrt();
+        let line_angle = dy.atan2(dx);
+
+        // Snap angle to nearest 45° increment (0°, 45°, 90°, 135°, 180°, -45°, -90°, -135°)
+        let angle_increment = std::f64::consts::PI / 4.0; // 45 degrees in radians
+        let snapped_angle = (line_angle / angle_increment).round() * angle_increment;
+
+        // Calculate endpoint2 position at the snapped angle
+        let snapped_endpoint2_x = snapped_endpoint1_x + line_length * snapped_angle.cos();
+        let snapped_endpoint2_y = snapped_endpoint1_y + line_length * snapped_angle.sin();
 
         // Calculate each station's position along the original line (0.0 to 1.0)
         let mut station_positions: Vec<(NodeIndex, f64)> = Vec::new();
@@ -525,10 +544,11 @@ pub fn rotate_selected_stations_clockwise(
     let stations = selected_stations.get();
     let mut current_graph = graph.get();
     rotate_stations_by_angle(&stations, &mut current_graph, 45.0);
-    set_graph.set(current_graph.clone());
 
     // Recalculate bounds after rotation
     update_selection_bounds(&current_graph, &stations, set_selection_bounds);
+
+    set_graph.set(current_graph);
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -541,10 +561,11 @@ pub fn rotate_selected_stations_counterclockwise(
     let stations = selected_stations.get();
     let mut current_graph = graph.get();
     rotate_stations_by_angle(&stations, &mut current_graph, -45.0);
-    set_graph.set(current_graph.clone());
 
     // Recalculate bounds after rotation
     update_selection_bounds(&current_graph, &stations, set_selection_bounds);
+
+    set_graph.set(current_graph);
 }
 
 #[component]
