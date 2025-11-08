@@ -57,6 +57,7 @@ impl Stations for RailwayGraph {
                 position: None,
                 passing_loop: false,
                 platforms: default_platforms(),
+                label_position: None,
             }));
             self.station_name_to_index.insert(name, index);
             index

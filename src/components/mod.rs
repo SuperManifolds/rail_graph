@@ -33,6 +33,7 @@ pub mod infrastructure_toolbar;
 pub mod infrastructure_view;
 pub mod multi_select_toolbar;
 pub mod keyboard_shortcuts_editor;
+pub mod label_position_grid;
 pub mod legend;
 pub mod line_controls;
 pub mod line_editor;

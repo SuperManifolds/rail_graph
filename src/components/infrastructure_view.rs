@@ -315,6 +315,7 @@ fn handle_adding_junction(
         name: None,
         position: None,
         routing_rules: vec![],
+        label_position: None,
     };
     let junction_idx = updated_graph.add_junction(junction);
 
@@ -1878,6 +1879,14 @@ pub fn InfrastructureView(
                         if !selected_stations.get().is_empty() {
                             set_show_multi_delete_confirmation.set(true);
                         }
+                    })
+                    on_set_label_position=leptos::Callback::new(move |pos: Option<crate::components::infrastructure_canvas::station_renderer::LabelPosition>| {
+                        crate::components::multi_select_toolbar::set_label_position_for_selected(
+                            selected_stations,
+                            graph,
+                            set_graph,
+                            pos,
+                        );
                     })
                 />
             </div>

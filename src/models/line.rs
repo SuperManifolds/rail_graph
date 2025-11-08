@@ -1537,6 +1537,7 @@ mod tests {
             name: Some("Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Direct path: A -> B -> C
