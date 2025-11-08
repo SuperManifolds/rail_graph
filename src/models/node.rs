@@ -86,6 +86,7 @@ mod tests {
             position: Some((10.0, 20.0)),
             passing_loop: false,
             platforms: default_platforms(),
+            label_position: None,
         };
         let node = Node::Station(station);
 
@@ -101,6 +102,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: Some((30.0, 40.0)),
             routing_rules: vec![],
+            label_position: None,
         };
         let node = Node::Junction(junction);
 
@@ -116,6 +118,7 @@ mod tests {
             name: None,
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
         let node = Node::Junction(junction);
 
@@ -129,6 +132,7 @@ mod tests {
             position: None,
             passing_loop: false,
             platforms: default_platforms(),
+            label_position: None,
         };
         let mut node = Node::Station(station);
 
@@ -143,6 +147,7 @@ mod tests {
             position: None,
             passing_loop: false,
             platforms: default_platforms(),
+            label_position: None,
         };
         let node = Node::Station(station);
 
@@ -156,6 +161,7 @@ mod tests {
             name: Some("Test".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
         let node = Node::Junction(junction);
 

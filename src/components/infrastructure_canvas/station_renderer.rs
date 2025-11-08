@@ -21,7 +21,7 @@ const SELECTION_RING_COLOR: &str = "#ffaa00";
 const SELECTION_RING_WIDTH: f64 = 3.0;
 const SELECTION_RING_OFFSET: f64 = 4.0;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum LabelPosition {
     Right,
     Left,
@@ -690,10 +690,27 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
 
     let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
 
-    // First pass: process all stations (excluding junctions from branches)
+    // First, handle any nodes with manual label position overrides
+    for (idx, pos, _) in &node_positions {
+        if let Some(node) = graph.graph.node_weight(*idx) {
+            let manual_position = match node {
+                crate::models::Node::Station(station) => station.label_position,
+                crate::models::Node::Junction(junction) => junction.label_position,
+            };
+
+            if let Some(position) = manual_position {
+                if let Some((text_width, label_offset, _)) = node_metadata.get(idx) {
+                    let bounds = calculate_label_bounds(position, *pos, *text_width, font_size, *label_offset);
+                    label_positions.insert(*idx, (bounds, position));
+                }
+            }
+        }
+    }
+
+    // First pass: process all stations (excluding junctions from branches and nodes with manual overrides)
     for branch_nodes in &branches {
         let station_only_nodes: Vec<NodeIndex> = branch_nodes.iter()
-            .filter(|idx| !graph.is_junction(**idx))
+            .filter(|idx| !graph.is_junction(**idx) && !label_positions.contains_key(idx))
             .copied()
             .collect();
 
@@ -711,9 +728,9 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
         }
     }
 
-    // Second pass: process each junction individually to find best position
+    // Second pass: process each junction individually to find best position (skip those with manual overrides)
     let junction_nodes: Vec<NodeIndex> = node_positions.iter()
-        .filter(|(idx, _, _)| graph.is_junction(*idx))
+        .filter(|(idx, _, _)| graph.is_junction(*idx) && !label_positions.contains_key(idx))
         .map(|(idx, _, _)| *idx)
         .collect();
 
@@ -791,9 +808,26 @@ pub fn draw_stations_with_cache(
     let branches = identify_branches(&cache.adjacency, &node_positions);
     let mut label_positions: HashMap<NodeIndex, (LabelBounds, LabelPosition)> = HashMap::new();
 
+    // First, handle any nodes with manual label position overrides
+    for (idx, pos, _) in &node_positions {
+        if let Some(node) = graph.graph.node_weight(*idx) {
+            let manual_position = match node {
+                crate::models::Node::Station(station) => station.label_position,
+                crate::models::Node::Junction(junction) => junction.label_position,
+            };
+
+            if let Some(position) = manual_position {
+                if let Some((text_width, label_offset, _)) = node_metadata.get(idx) {
+                    let bounds = calculate_label_bounds(position, *pos, *text_width, font_size, *label_offset);
+                    label_positions.insert(*idx, (bounds, position));
+                }
+            }
+        }
+    }
+
     for branch_nodes in &branches {
         let station_only_nodes: Vec<NodeIndex> = branch_nodes.iter()
-            .filter(|idx| !cache.junctions.contains(idx))
+            .filter(|idx| !cache.junctions.contains(idx) && !label_positions.contains_key(idx))
             .copied()
             .collect();
 
@@ -812,7 +846,7 @@ pub fn draw_stations_with_cache(
     }
 
     let junction_nodes: Vec<NodeIndex> = node_positions.iter()
-        .filter(|(idx, _, _)| cache.junctions.contains(idx))
+        .filter(|(idx, _, _)| cache.junctions.contains(idx) && !label_positions.contains_key(idx))
         .map(|(idx, _, _)| *idx)
         .collect();
 

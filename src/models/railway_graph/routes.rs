@@ -679,6 +679,7 @@ mod tests {
             name: Some("J".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Create A -> J -> B
@@ -706,6 +707,7 @@ mod tests {
             name: Some("Junction J".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Create A -> J -> B
@@ -737,6 +739,7 @@ mod tests {
             name: Some("Junction J".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Create A -> J -> B
@@ -786,6 +789,7 @@ mod tests {
             name: Some("Junction J".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Create A -> J -> B and A -> J -> C
@@ -839,6 +843,7 @@ mod tests {
             name: Some("Junction J".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Create network: A -> J -> B and also A -> C -> B (alternate route)
@@ -880,6 +885,7 @@ mod tests {
             name: Some("Junction J".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Create network: A -> J -> B and J -> C

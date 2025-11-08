@@ -284,6 +284,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: Some((10.0, 20.0)),
             routing_rules: vec![],
+            label_position: None,
         };
 
         let idx = graph.add_junction(junction);
@@ -298,6 +299,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: Some((10.0, 20.0)),
             routing_rules: vec![],
+            label_position: None,
         };
 
         let idx = graph.add_junction(junction);
@@ -315,6 +317,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
         let j_idx = graph.add_junction(junction);
 
@@ -335,6 +338,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
         let j_idx = graph.add_junction(junction);
 
@@ -365,6 +369,7 @@ mod tests {
             name: Some("Original Name".to_string()),
             position: Some((10.0, 20.0)),
             routing_rules: vec![],
+            label_position: None,
         };
 
         let idx = graph.add_junction(junction);
@@ -386,6 +391,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: Some((50.0, 60.0)),
             routing_rules: vec![],
+            label_position: None,
         };
 
         let idx = graph.add_junction(junction);
@@ -406,6 +412,7 @@ mod tests {
             name: Some("Central Junction".to_string()),
             position: Some((0.0, 0.0)),
             routing_rules: vec![],
+            label_position: None,
         };
         let j_idx = graph.add_junction(junction);
 
@@ -437,6 +444,7 @@ mod tests {
             name: None,
             position: Some((10.0, 20.0)),
             routing_rules: vec![],
+            label_position: None,
         };
 
         let idx = graph.add_junction(junction);
@@ -456,6 +464,7 @@ mod tests {
             name: Some("Junction 1".to_string()),
             position: Some((50.0, 50.0)),
             routing_rules: vec![],
+            label_position: None,
         };
         let j1 = graph.add_junction(junction);
         let s2 = graph.add_or_get_station("Station B".to_string());
@@ -493,6 +502,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
         let s_b = graph.add_or_get_station("B".to_string());
 
@@ -535,6 +545,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
         let j = graph.add_junction(junction.clone());
         let s_b = graph.add_or_get_station("B".to_string());
@@ -585,6 +596,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
         let s_b = graph.add_or_get_station("B".to_string());
         let s_c = graph.add_or_get_station("C".to_string());
@@ -608,6 +620,7 @@ mod tests {
             name: Some("Insufficient Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
 
         graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
@@ -641,6 +654,7 @@ mod tests {
             name: Some("Dead End Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
         let j = graph.add_junction(junction.clone());
         let s_b = graph.add_or_get_station("B".to_string());
@@ -679,6 +693,7 @@ mod tests {
             name: Some("Invalid Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
         let j = graph.add_junction(junction.clone());
 
@@ -714,6 +729,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
         let j = graph.add_junction(junction.clone());
         let s_b = graph.add_or_get_station("B".to_string());
@@ -793,6 +809,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Connect junction to both stations
@@ -825,6 +842,7 @@ mod tests {
             name: Some("Central Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Connect junction to all three stations
@@ -850,6 +868,7 @@ mod tests {
             name: Some("Isolated Junction".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Should not interpolate (no connected nodes)
@@ -873,6 +892,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: Some((25.0, 75.0)),
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Connect junction to stations
@@ -903,6 +923,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: Some((25.0, 75.0)),
             routing_rules: vec![],
+            label_position: None,
         });
 
         // Connect junction to stations

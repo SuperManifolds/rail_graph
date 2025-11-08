@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::components::infrastructure_canvas::station_renderer::LabelPosition;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Platform {
@@ -21,6 +22,8 @@ pub struct StationNode {
     pub passing_loop: bool,
     #[serde(default = "default_platforms")]
     pub platforms: Vec<Platform>,
+    #[serde(default)]
+    pub label_position: Option<LabelPosition>,
 }
 
 #[cfg(test)]
@@ -42,6 +45,7 @@ mod tests {
             position: Some((10.0, 20.0)),
             passing_loop: true,
             platforms: vec![Platform { name: "A".to_string() }],
+            label_position: None,
         };
 
         assert_eq!(station.name, "Test Station");

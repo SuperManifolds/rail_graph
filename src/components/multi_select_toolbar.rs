@@ -1,6 +1,7 @@
-use leptos::{component, view, IntoView, ReadSignal, WriteSignal, Callback, SignalGet, SignalSet, SignalWith, Callable, use_context};
+use leptos::{component, view, IntoView, ReadSignal, WriteSignal, Callback, SignalGet, SignalSet, SignalWith, Callable, use_context, create_signal, Signal};
 use petgraph::stable_graph::NodeIndex;
 use crate::models::{RailwayGraph, Line, Stations, ProjectSettings, UserSettings};
+use crate::components::label_position_grid::LabelPositionGrid;
 
 const SELECTION_PADDING: f64 = 20.0;
 
@@ -569,6 +570,35 @@ pub fn rotate_selected_stations_counterclockwise(
     set_graph.set(current_graph);
 }
 
+pub fn set_label_position_for_selected(
+    selected_nodes: ReadSignal<Vec<NodeIndex>>,
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    label_position: Option<crate::components::infrastructure_canvas::station_renderer::LabelPosition>,
+) {
+    let nodes = selected_nodes.get();
+    if nodes.is_empty() {
+        return;
+    }
+
+    let mut current_graph = graph.get();
+
+    for &node_idx in &nodes {
+        if let Some(node) = current_graph.graph.node_weight_mut(node_idx) {
+            match node {
+                crate::models::Node::Station(station) => {
+                    station.label_position = label_position;
+                }
+                crate::models::Node::Junction(junction) => {
+                    junction.label_position = label_position;
+                }
+            }
+        }
+    }
+
+    set_graph.set(current_graph);
+}
+
 #[component]
 #[must_use]
 #[allow(clippy::similar_names)]
@@ -610,6 +640,9 @@ pub fn MultiSelectToolbar(
     /// Callback for Delete operation
     #[prop(optional)]
     on_delete: Option<Callback<()>>,
+    /// Callback for Set Label Position operation
+    #[prop(optional)]
+    on_set_label_position: Option<Callback<Option<crate::components::infrastructure_canvas::station_renderer::LabelPosition>>>,
 ) -> impl IntoView {
     // Calculate toolbar position based on selected stations centroid
     let toolbar_position = move || {
@@ -666,6 +699,49 @@ pub fn MultiSelectToolbar(
             }
             base_title
         })
+    };
+
+    // State for label position grid
+    let (label_grid_open, set_label_grid_open) = create_signal(false);
+
+    // Calculate current label position state for selected nodes
+    let label_position_state = move || {
+        use crate::components::label_position_grid::LabelPositionState;
+
+        let stations = selected_stations.get();
+        if stations.is_empty() {
+            return LabelPositionState::Auto;
+        }
+
+        let current_graph = graph.get();
+        let mut positions: Vec<Option<crate::components::infrastructure_canvas::station_renderer::LabelPosition>> = Vec::new();
+
+        for &idx in &stations {
+            if let Some(node) = current_graph.graph.node_weight(idx) {
+                let pos = match node {
+                    crate::models::Node::Station(station) => station.label_position,
+                    crate::models::Node::Junction(junction) => junction.label_position,
+                };
+                positions.push(pos);
+            }
+        }
+
+        if positions.is_empty() {
+            return LabelPositionState::Auto;
+        }
+
+        // Check if all positions are the same
+        let first = positions[0];
+        let all_same = positions.iter().all(|&p| p == first);
+
+        if all_same {
+            match first {
+                Some(pos) => LabelPositionState::Single(pos),
+                None => LabelPositionState::Auto,
+            }
+        } else {
+            LabelPositionState::Mixed
+        }
     };
 
     view! {
@@ -728,6 +804,49 @@ pub fn MultiSelectToolbar(
                     >
                         <i class="fa-solid fa-align-center"></i>
                     </button>
+                    <div style="position: relative;">
+                        <button
+                            class="toolbar-button"
+                            title=format_title_with_shortcut(
+                                format!("Set label position for {} node{}", count, if count == 1 { "" } else { "s" }),
+                                "multi_select_label_position"
+                            )
+                            on:click=move |_| {
+                                set_label_grid_open.set(!label_grid_open.get());
+                            }
+                        >
+                            {move || {
+                                use crate::components::label_position_grid::LabelPositionState;
+                                match label_position_state() {
+                                    LabelPositionState::Single(pos) => {
+                                        use crate::components::infrastructure_canvas::station_renderer::LabelPosition;
+                                        match pos {
+                                            LabelPosition::TopLeft => view! { <span>"↖"</span> }.into_view(),
+                                            LabelPosition::Top => view! { <span>"↑"</span> }.into_view(),
+                                            LabelPosition::TopRight => view! { <span>"↗"</span> }.into_view(),
+                                            LabelPosition::Left => view! { <span>"←"</span> }.into_view(),
+                                            LabelPosition::Right => view! { <span>"→"</span> }.into_view(),
+                                            LabelPosition::BottomLeft => view! { <span>"↙"</span> }.into_view(),
+                                            LabelPosition::Bottom => view! { <span>"↓"</span> }.into_view(),
+                                            LabelPosition::BottomRight => view! { <span>"↘"</span> }.into_view(),
+                                        }
+                                    }
+                                    LabelPositionState::Auto => view! { <span>"⊙"</span> }.into_view(),
+                                    LabelPositionState::Mixed => view! { <i class="fa-solid fa-tag"></i> }.into_view(),
+                                }
+                            }}
+                        </button>
+
+                        <LabelPositionGrid
+                            is_open=Signal::derive(move || label_grid_open.get())
+                            on_select=Callback::new(move |pos: Option<crate::components::infrastructure_canvas::station_renderer::LabelPosition>| {
+                                if let Some(callback) = on_set_label_position {
+                                    callback.call(pos);
+                                }
+                            })
+                            current_state=Signal::derive(label_position_state)
+                        />
+                    </div>
 
                     <div class="toolbar-divider"></div>
 

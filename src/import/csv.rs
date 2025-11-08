@@ -1215,6 +1215,7 @@ fn build_routes(
                         name: Some(clean_name),
                         position: None,
                         routing_rules: Vec::new(),
+                        label_position: None,
                     })
                 }
             } else {

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use petgraph::stable_graph::EdgeIndex;
+use crate::components::infrastructure_canvas::station_renderer::LabelPosition;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Junction {
@@ -8,6 +9,8 @@ pub struct Junction {
     pub position: Option<(f64, f64)>,
     #[serde(default)]
     pub routing_rules: Vec<RoutingRule>,
+    #[serde(default)]
+    pub label_position: Option<LabelPosition>,
 }
 
 impl Junction {
@@ -109,6 +112,7 @@ mod tests {
             name: Some("Test Junction".to_string()),
             position: Some((10.0, 20.0)),
             routing_rules: vec![],
+            label_position: None,
         };
 
         assert_eq!(junction.name, Some("Test Junction".to_string()));
@@ -135,6 +139,7 @@ mod tests {
             name: Some("Test".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
 
         // By default, all routings are allowed (except same edge)
@@ -151,6 +156,7 @@ mod tests {
             name: Some("Test".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
 
         // Add a rule forbidding 0->1
@@ -167,6 +173,7 @@ mod tests {
             name: Some("Test".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
 
         junction.set_routing_rule(EdgeIndex::new(0), EdgeIndex::new(1), false);
@@ -195,6 +202,7 @@ mod tests {
                     allowed: false,
                 },
             ],
+            label_position: None,
         };
 
         assert_eq!(junction.routing_rules.len(), 1);
@@ -211,6 +219,7 @@ mod tests {
             name: Some("Test".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
 
         // Forbid 0->1 and 0->2
@@ -237,6 +246,7 @@ mod tests {
             name: Some("Test".to_string()),
             position: None,
             routing_rules: vec![],
+            label_position: None,
         };
 
         // Allow 0->1 but forbid 1->0
