@@ -822,6 +822,7 @@ fn setup_auto_layout_effect(
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     canvas_ref: leptos::NodeRef<leptos::html::Canvas>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) {
     create_effect(move |prev_topology: Option<(usize, usize)>| {
         if !auto_layout_enabled.get() {
@@ -867,7 +868,7 @@ fn setup_auto_layout_effect(
                 let Some(canvas) = canvas_ref.get() else { return current_topology };
                 let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
                 let height = f64::from(canvas_elem.client_height());
-                auto_layout::apply_layout(&mut current_graph, height);
+                auto_layout::apply_layout(&mut current_graph, height, &settings.get());
                 set_graph.set(current_graph);
             } else if has_positioned_nodes {
                 // Topology changed but all nodes positioned - smart adjustment
@@ -1656,7 +1657,7 @@ pub fn InfrastructureView(
         });
     }
 
-    setup_auto_layout_effect(auto_layout_enabled, graph, set_graph, canvas_ref);
+    setup_auto_layout_effect(auto_layout_enabled, graph, set_graph, canvas_ref, settings);
 
     let toggle_auto_layout = move |()| {
         let new_state = !auto_layout_enabled.get();
@@ -1669,7 +1670,7 @@ pub fn InfrastructureView(
             if let Some(canvas) = canvas_ref.get() {
                 let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
                 let height = f64::from(canvas_elem.client_height());
-                auto_layout::apply_layout(&mut current_graph, height);
+                auto_layout::apply_layout(&mut current_graph, height, &settings.get());
             }
 
             set_graph.set(current_graph);
@@ -1730,6 +1731,7 @@ pub fn InfrastructureView(
                     graph,
                     set_graph,
                     set_selection_bounds,
+                    settings,
                 );
             }
             "multi_select_delete" => {
@@ -1835,6 +1837,7 @@ pub fn InfrastructureView(
                             graph,
                             set_graph,
                             set_selection_bounds,
+                            settings,
                         );
                     })
                     on_add_platform=leptos::Callback::new(move |()| {

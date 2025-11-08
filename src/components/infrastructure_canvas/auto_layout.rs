@@ -1,10 +1,9 @@
-use crate::models::{RailwayGraph, Stations};
+use crate::models::{RailwayGraph, Stations, ProjectSettings};
 use crate::geometry::{angle_difference, line_segment_distance};
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::collections::HashSet;
 
-const BASE_STATION_SPACING: f64 = 120.0;
 const GRID_SIZE: f64 = 30.0;
 
 // 8 compass directions (45° increments)
@@ -83,6 +82,7 @@ fn has_node_collision_at(
     graph: &RailwayGraph,
     test_pos: (f64, f64),
     exclude_node: NodeIndex,
+    base_station_spacing: f64,
 ) -> bool {
     for node_idx in graph.graph.node_indices() {
         if node_idx == exclude_node {
@@ -95,7 +95,7 @@ fn has_node_collision_at(
             let dx = test_pos.0 - existing_pos.0;
             let dy = test_pos.1 - existing_pos.1;
             let dist = (dx * dx + dy * dy).sqrt();
-            if dist < BASE_STATION_SPACING * 0.9 {
+            if dist < base_station_spacing * 0.9 {
                 return true;
             }
         }
@@ -187,6 +187,7 @@ fn find_best_direction_for_branch(
     neighbor_reachable: &HashSet<NodeIndex>,
     already_used: &[(f64, HashSet<NodeIndex>)],
     incoming_direction: f64,
+    base_station_spacing: f64,
 ) -> (f64, f64, i32) {
     let mut best_direction = DIRECTIONS[0];
     let mut best_score = i32::MIN;
@@ -203,11 +204,11 @@ fn find_best_direction_for_branch(
     for spacing_mult in [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 10.0] {
         for &direction in &DIRECTIONS {
             let test_pos = snap_to_grid(
-                current_pos.0 + direction.cos() * BASE_STATION_SPACING * spacing_mult,
-                current_pos.1 + direction.sin() * BASE_STATION_SPACING * spacing_mult,
+                current_pos.0 + direction.cos() * base_station_spacing * spacing_mult,
+                current_pos.1 + direction.sin() * base_station_spacing * spacing_mult,
             );
 
-            if has_node_collision_at(graph, test_pos, neighbor) {
+            if has_node_collision_at(graph, test_pos, neighbor, base_station_spacing) {
                 continue;
             }
 
@@ -230,6 +231,7 @@ fn find_best_direction_for_branch(
                 neighbor_reachable,
                 already_used,
                 incoming_direction,
+                base_station_spacing,
             );
 
             if score > best_score {
@@ -259,13 +261,14 @@ fn score_direction_for_branch(
     neighbor_reachable: &HashSet<NodeIndex>,
     already_used: &[(f64, HashSet<NodeIndex>)],
     incoming_direction: f64,
+    base_station_spacing: f64,
 ) -> i32 {
     let mut score = 0;
 
     // Calculate proposed position
     let neighbor_pos = snap_to_grid(
-        current_pos.0 + direction.cos() * BASE_STATION_SPACING * spacing_multiplier,
-        current_pos.1 + direction.sin() * BASE_STATION_SPACING * spacing_multiplier,
+        current_pos.0 + direction.cos() * base_station_spacing * spacing_multiplier,
+        current_pos.1 + direction.sin() * base_station_spacing * spacing_multiplier,
     );
 
     // CRITICAL: Check for geometric overlap with existing edges
@@ -313,7 +316,8 @@ fn score_direction_for_branch(
 }
 
 #[allow(clippy::too_many_lines, clippy::missing_panics_doc, clippy::cast_precision_loss)]
-pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
+pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSettings) {
+    let base_station_spacing = settings.default_node_distance_grid_squares * GRID_SIZE;
     let start_x = 150.0;
     let start_y = height / 2.0;
 
@@ -339,7 +343,7 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
     let spine_direction = -std::f64::consts::FRAC_PI_2; // North (-90°)
 
     for (i, &node) in spine.iter().enumerate() {
-        let offset = i as f64 * BASE_STATION_SPACING;
+        let offset = i as f64 * base_station_spacing;
         let pos = snap_to_grid(
             start_x + spine_direction.cos() * offset,
             start_y + spine_direction.sin() * offset,
@@ -387,11 +391,12 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
                 &reachable,
                 &already_used,
                 incoming_direction,
+                base_station_spacing,
             );
 
             let neighbor_pos = snap_to_grid(
-                current_pos.0 + best_direction.cos() * BASE_STATION_SPACING * best_spacing,
-                current_pos.1 + best_direction.sin() * BASE_STATION_SPACING * best_spacing,
+                current_pos.0 + best_direction.cos() * base_station_spacing * best_spacing,
+                current_pos.1 + best_direction.sin() * base_station_spacing * best_spacing,
             );
 
             graph.set_station_position(neighbor, neighbor_pos);
@@ -422,7 +427,7 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64) {
             let component_spine = graph.find_longest_path_from(node, &visited);
 
             for (i, &comp_node) in component_spine.iter().enumerate() {
-                let offset = i as f64 * BASE_STATION_SPACING;
+                let offset = i as f64 * base_station_spacing;
                 let pos = snap_to_grid(
                     offset_x,
                     start_y + spine_direction.sin() * offset,

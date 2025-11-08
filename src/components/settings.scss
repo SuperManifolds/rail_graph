@@ -29,6 +29,21 @@
         }
     }
 
+    .form-field {
+        @include form-field;
+
+        input[type="number"] {
+            @include input-text;
+        }
+
+        .help-text {
+            margin-top: var(--spacing-xs);
+            font-size: 0.75rem;
+            color: var(--color-text-muted);
+            line-height: 1.4;
+        }
+    }
+
     .radio-group {
         display: flex;
         flex-direction: column;

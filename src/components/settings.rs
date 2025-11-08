@@ -18,6 +18,16 @@ pub fn Settings(
         set_settings(ProjectSettings {
             track_handedness: handedness,
             line_sort_mode: settings.get().line_sort_mode,
+            default_node_distance_grid_squares: settings.get().default_node_distance_grid_squares,
+        });
+    };
+
+    let handle_node_distance_change = move |distance: f64| {
+        let clamped_distance = distance.clamp(1.0, 20.0);
+        set_settings(ProjectSettings {
+            track_handedness: settings.get().track_handedness,
+            line_sort_mode: settings.get().line_sort_mode,
+            default_node_distance_grid_squares: clamped_distance,
         });
     };
 
@@ -87,6 +97,45 @@ pub fn Settings(
                                         </span>
                                     </span>
                                 </label>
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
+                            <h3>"Layout"</h3>
+                            <p class="section-description">
+                                "Configure default spacing for station positioning in infrastructure editor"
+                            </p>
+
+                            <div class="form-field">
+                                <label>
+                                    "Default Node Distance "
+                                    <span class="help-text">
+                                        {move || {
+                                            #[allow(clippy::cast_possible_truncation)]
+                                            let grid_squares = settings.get().default_node_distance_grid_squares.round() as i32;
+                                            format!("(grid squares, {} px)", grid_squares * 30)
+                                        }}
+                                    </span>
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max="20"
+                                    step="1"
+                                    prop:value=move || {
+                                        #[allow(clippy::cast_possible_truncation)]
+                                        let grid_squares = settings.get().default_node_distance_grid_squares.round() as i32;
+                                        grid_squares.to_string()
+                                    }
+                                    on:input=move |ev| {
+                                        if let Ok(val) = leptos::event_target_value(&ev).parse::<f64>() {
+                                            handle_node_distance_change(val);
+                                        }
+                                    }
+                                />
+                                <p class="help-text">
+                                    "Affects auto-layout, alignment, and rotation operations. Range: 1-20. Default: 4 (120 px)."
+                                </p>
                             </div>
                         </div>
 
