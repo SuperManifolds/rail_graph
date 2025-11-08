@@ -26,12 +26,28 @@ pub enum LineSortMode {
     Manual,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectSettings {
     #[serde(default)]
     pub track_handedness: TrackHandedness,
     #[serde(default)]
     pub line_sort_mode: LineSortMode,
+    #[serde(default = "default_node_distance")]
+    pub default_node_distance_grid_squares: f64,
+}
+
+fn default_node_distance() -> f64 {
+    4.0
+}
+
+impl Default for ProjectSettings {
+    fn default() -> Self {
+        Self {
+            track_handedness: TrackHandedness::default(),
+            line_sort_mode: LineSortMode::default(),
+            default_node_distance_grid_squares: default_node_distance(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -242,6 +242,7 @@ pub fn align_selected_stations(
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
+    settings: ReadSignal<crate::models::ProjectSettings>,
 ) {
     use std::collections::HashSet;
 
@@ -360,11 +361,11 @@ pub fn align_selected_stations(
     // Snap the first position to grid
     let snapped_first = crate::components::infrastructure_canvas::auto_layout::snap_to_grid(first_pos.0, first_pos.1);
 
-    // Calculate required spacing - 4 grid squares apart
-    // For 0°/180° (horizontal) or 90°/270° (vertical): 4 * 30 = 120
-    // For 45° angles: 4 * 30 * sqrt(2) ≈ 169.7
+    // Calculate required spacing based on project settings
+    // For 0°/180° (horizontal) or 90°/270° (vertical): grid_squares * 30
+    // For 45° angles: grid_squares * 30 * sqrt(2)
     let grid_size = 30.0;
-    let grid_squares = 4.0;
+    let grid_squares = settings.get().default_node_distance_grid_squares;
     let spacing = if (use_angle % 90.0).abs() < 0.1 {
         // Horizontal or vertical
         grid_size * grid_squares
