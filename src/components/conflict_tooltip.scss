@@ -4,7 +4,7 @@
 .conflict-tooltip {
     @include popover;
     padding: var(--spacing-xs) var(--spacing-sm);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-xxl);
     font-size: var(--font-size-xs);
     white-space: nowrap;
     pointer-events: none;

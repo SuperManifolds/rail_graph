@@ -1,7 +1,7 @@
 .window-dialog {
     position: fixed;
     @include liquid-glass;
-    border-radius: var(--radius-xl);
+    border-radius: var(--radius-xxl);
     display: flex;
     flex-direction: column;
     transition: box-shadow var(--transition-base) var(--transition-ease);
@@ -14,8 +14,8 @@
         cursor: move;
         user-select: none;
         background: var(--color-popover-bg);
-        border-top-left-radius: var(--radius-xl);
-        border-top-right-radius: var(--radius-xl);
+        border-top-left-radius: var(--radius-xxl);
+        border-top-right-radius: var(--radius-xxl);
 
         &.no-border {
             border-bottom: none;
