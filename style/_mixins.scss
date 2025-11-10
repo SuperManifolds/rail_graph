@@ -132,6 +132,16 @@
 
 @mixin input-select {
     @include input-base;
+    cursor: pointer;
+
+    option {
+        background-color: var(--color-bg-tertiary);
+        color: var(--color-text-primary);
+    }
+
+    option[value=""] {
+        color: var(--color-text-muted);
+    }
 }
 
 // ===== Container Mixins =====
