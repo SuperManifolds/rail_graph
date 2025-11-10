@@ -5,6 +5,10 @@
 - Added project setting to ignore platform conflicts for same-direction arrivals - when enabled, trains arriving at the same platform from the same track will not generate conflicts
 - Added light mode support
 
+## Bug Fixes
+- Fixed selected nodes becoming misaligned with the grid when dragging multiple stations together - nodes now properly snap to the grid while maintaining their relative positions during group dragging
+- Fixed nodes becoming misaligned with the grid after rotation - both aligned nodes (straight lines) and non-aligned nodes (arbitrary shapes) now properly maintain grid alignment after rotation operations
+
 # v0.1.19 - 2025-11-08
 
 ## Features
