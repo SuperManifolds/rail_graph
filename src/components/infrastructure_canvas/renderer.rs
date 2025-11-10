@@ -1,4 +1,5 @@
 use crate::models::{RailwayGraph, Junctions};
+use crate::theme::Theme;
 use super::{track_renderer, station_renderer};
 use web_sys::CanvasRenderingContext2d;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
@@ -24,20 +25,52 @@ pub struct TopologyCache {
     pub adjacency: HashMap<NodeIndex, Vec<(NodeIndex, EdgeIndex)>>,
 }
 
-const CANVAS_BACKGROUND_COLOR: &str = "#0a0a0a";
-const EMPTY_MESSAGE_COLOR: &str = "#666";
 const EMPTY_MESSAGE_FONT: &str = "16px sans-serif";
 const EMPTY_MESSAGE_TEXT: &str = "No stations in network";
 const EMPTY_MESSAGE_OFFSET_X: f64 = 80.0;
 
-const GRID_SIZE: f64 = 30.0; // Must match auto_layout.rs GRID_SIZE
-const GRID_COLOR: &str = "#141414";
+const GRID_SIZE: f64 = 30.0;
 const GRID_LINE_WIDTH: f64 = 0.5;
 
-const SELECTION_BOX_STROKE: &str = "#4a9eff";
-const SELECTION_BOX_FILL: &str = "rgba(74, 158, 255, 0.1)";
 const SELECTION_BOX_LINE_WIDTH: f64 = 1.5;
 const SELECTION_BOX_DASH_LENGTH: f64 = 5.0;
+
+struct Palette {
+    background: &'static str,
+    empty_message: &'static str,
+    grid: &'static str,
+    selection_box_stroke: &'static str,
+    selection_box_fill: &'static str,
+    preview_stroke: &'static str,
+    preview_fill: &'static str,
+}
+
+const DARK_PALETTE: Palette = Palette {
+    background: "#0a0a0a",
+    empty_message: "#666",
+    grid: "#141414",
+    selection_box_stroke: "#4a9eff",
+    selection_box_fill: "rgba(74, 158, 255, 0.1)",
+    preview_stroke: "#4a9eff",
+    preview_fill: "#2a2a2a",
+};
+
+const LIGHT_PALETTE: Palette = Palette {
+    background: "#fafafa",
+    empty_message: "#999",
+    grid: "#ebebeb",
+    selection_box_stroke: "#1976d2",
+    selection_box_fill: "rgba(25, 118, 210, 0.08)",
+    preview_stroke: "#1976d2",
+    preview_fill: "#f0f0f0",
+};
+
+fn get_palette(theme: Theme) -> &'static Palette {
+    match theme {
+        Theme::Dark => &DARK_PALETTE,
+        Theme::Light => &LIGHT_PALETTE,
+    }
+}
 
 /// Build topology cache with avoidance offsets and edge segments
 #[must_use]
@@ -101,10 +134,11 @@ fn draw_grid(
     zoom: f64,
     pan_x: f64,
     pan_y: f64,
+    palette: &Palette,
 ) {
     ctx.save();
 
-    ctx.set_stroke_style_str(GRID_COLOR);
+    ctx.set_stroke_style_str(palette.grid);
     ctx.set_line_width(GRID_LINE_WIDTH);
 
     // Calculate visible world bounds
@@ -157,17 +191,20 @@ pub fn draw_infrastructure(
     is_zooming: bool,
     preview_station_position: Option<(f64, f64)>,
     selection_box: Option<((f64, f64), (f64, f64))>,
+    theme: Theme,
 ) {
+    let palette = get_palette(theme);
+
     // Clear canvas
-    ctx.set_fill_style_str(CANVAS_BACKGROUND_COLOR);
+    ctx.set_fill_style_str(palette.background);
     ctx.fill_rect(0.0, 0.0, width, height);
 
     // Draw grid
-    draw_grid(ctx, width, height, zoom, pan_x, pan_y);
+    draw_grid(ctx, width, height, zoom, pan_x, pan_y, palette);
 
     if graph.graph.node_count() == 0 {
         // Show message if no stations
-        ctx.set_fill_style_str(EMPTY_MESSAGE_COLOR);
+        ctx.set_fill_style_str(palette.empty_message);
         ctx.set_font(EMPTY_MESSAGE_FONT);
         let _ = ctx.fill_text(EMPTY_MESSAGE_TEXT, width / 2.0 - EMPTY_MESSAGE_OFFSET_X, height / 2.0);
         return;
@@ -186,22 +223,20 @@ pub fn draw_infrastructure(
     let _ = ctx.scale(zoom, zoom);
 
     // Draw tracks first so they're behind nodes (using cached avoidance offsets)
-    track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions);
+    track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme);
 
     // Draw stations and junctions on top (with label cache)
-    station_renderer::draw_stations_with_cache(ctx, graph, zoom, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds);
+    station_renderer::draw_stations_with_cache(ctx, graph, zoom, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds, theme);
 
     // Draw preview station if position is set
     if let Some((x, y)) = preview_station_position {
         const PREVIEW_NODE_RADIUS: f64 = 8.0;
-        const PREVIEW_STROKE_COLOR: &str = "#4a9eff"; // Same blue as stations
-        const PREVIEW_FILL_COLOR: &str = "#2a2a2a"; // Same as NODE_FILL_COLOR
         const PREVIEW_ALPHA: f64 = 0.5;
 
         ctx.save();
         ctx.set_global_alpha(PREVIEW_ALPHA);
-        ctx.set_fill_style_str(PREVIEW_FILL_COLOR);
-        ctx.set_stroke_style_str(PREVIEW_STROKE_COLOR);
+        ctx.set_fill_style_str(palette.preview_fill);
+        ctx.set_stroke_style_str(palette.preview_stroke);
         ctx.set_line_width(2.0 / zoom);
         ctx.begin_path();
         let _ = ctx.arc(x, y, PREVIEW_NODE_RADIUS, 0.0, 2.0 * std::f64::consts::PI);
@@ -220,8 +255,8 @@ pub fn draw_infrastructure(
         let width_box = max_x - min_x;
         let height_box = max_y - min_y;
 
-        ctx.set_stroke_style_str(SELECTION_BOX_STROKE);
-        ctx.set_fill_style_str(SELECTION_BOX_FILL);
+        ctx.set_stroke_style_str(palette.selection_box_stroke);
+        ctx.set_fill_style_str(palette.selection_box_fill);
         ctx.set_line_width(SELECTION_BOX_LINE_WIDTH / zoom);
         let dash_array = js_sys::Array::of2(
             &wasm_bindgen::JsValue::from(SELECTION_BOX_DASH_LENGTH / zoom),

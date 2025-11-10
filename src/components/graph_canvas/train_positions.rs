@@ -1,16 +1,36 @@
 use web_sys::CanvasRenderingContext2d;
 use chrono::NaiveDateTime;
 use crate::models::Node;
+use crate::theme::Theme;
 use crate::train_journey::TrainJourney;
 use super::types::GraphDimensions;
 use petgraph::stable_graph::NodeIndex;
 
-// Current train position constants
 const CURRENT_TRAIN_RADIUS: f64 = 6.0;
-const CURRENT_TRAIN_OUTLINE_COLOR: &str = "#fff";
 const CURRENT_TRAIN_OUTLINE_WIDTH: f64 = 2.0;
-const CURRENT_TRAIN_LABEL_COLOR: &str = "#fff";
 const CURRENT_TRAIN_LABEL_FONT_SIZE: f64 = 10.0;
+
+struct Palette {
+    train_outline: &'static str,
+    train_label: &'static str,
+}
+
+const DARK_PALETTE: Palette = Palette {
+    train_outline: "#fff",
+    train_label: "#fff",
+};
+
+const LIGHT_PALETTE: Palette = Palette {
+    train_outline: "#000",
+    train_label: "#000",
+};
+
+fn get_palette(theme: Theme) -> &'static Palette {
+    match theme {
+        Theme::Dark => &DARK_PALETTE,
+        Theme::Light => &LIGHT_PALETTE,
+    }
+}
 
 #[allow(clippy::too_many_arguments, clippy::cast_precision_loss)]
 pub fn draw_current_train_positions(
@@ -23,7 +43,10 @@ pub fn draw_current_train_positions(
     visualization_time: NaiveDateTime,
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
+    theme: Theme,
 ) {
+    let palette = get_palette(theme);
+
     for journey in train_journeys {
         // Match journey stations to view positions using edge-based matching
         let station_positions = super::train_journeys::match_journey_stations_to_view_by_edges(
@@ -48,7 +71,7 @@ pub fn draw_current_train_positions(
 
                     // Draw train as a larger dot with an outline
                     ctx.set_fill_style_str(&journey.color);
-                    ctx.set_stroke_style_str(CURRENT_TRAIN_OUTLINE_COLOR);
+                    ctx.set_stroke_style_str(palette.train_outline);
                     ctx.set_line_width(CURRENT_TRAIN_OUTLINE_WIDTH / zoom_level);
                     ctx.begin_path();
                     let _ = ctx.arc(x, y, CURRENT_TRAIN_RADIUS / zoom_level, 0.0, std::f64::consts::PI * 2.0);
@@ -56,7 +79,7 @@ pub fn draw_current_train_positions(
                     ctx.stroke();
 
                     // Draw train number label
-                    ctx.set_fill_style_str(CURRENT_TRAIN_LABEL_COLOR);
+                    ctx.set_fill_style_str(palette.train_label);
                     ctx.set_font(&format!("bold {}px monospace", CURRENT_TRAIN_LABEL_FONT_SIZE / zoom_level));
                     let _ = ctx.fill_text(&journey.train_number, x - 12.0 / zoom_level, y - 10.0 / zoom_level);
                     break;
@@ -93,7 +116,7 @@ pub fn draw_current_train_positions(
 
             // Draw train as a larger dot with an outline
             ctx.set_fill_style_str(&journey.color);
-            ctx.set_stroke_style_str(CURRENT_TRAIN_OUTLINE_COLOR);
+            ctx.set_stroke_style_str(palette.train_outline);
             ctx.set_line_width(CURRENT_TRAIN_OUTLINE_WIDTH / zoom_level);
             ctx.begin_path();
             let _ = ctx.arc(
@@ -107,7 +130,7 @@ pub fn draw_current_train_positions(
             ctx.stroke();
 
             // Draw train number label with zoom-compensated font size
-            ctx.set_fill_style_str(CURRENT_TRAIN_LABEL_COLOR);
+            ctx.set_fill_style_str(palette.train_label);
             ctx.set_font(&format!("bold {}px monospace", CURRENT_TRAIN_LABEL_FONT_SIZE / zoom_level));
             let _ = ctx.fill_text(
                 &journey.train_number,

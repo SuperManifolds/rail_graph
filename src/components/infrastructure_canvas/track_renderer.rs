@@ -1,23 +1,42 @@
 use crate::models::{RailwayGraph, Stations};
+use crate::theme::Theme;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use std::collections::{HashSet, HashMap};
 use web_sys::CanvasRenderingContext2d;
 
-// Track layout constants
 const TRACK_SPACING: f64 = 3.0;
-const STATION_AVOIDANCE_THRESHOLD: f64 = 20.0; // Minimum distance from station
-const STATION_AVOIDANCE_OFFSET: f64 = 25.0; // How far to push track away
-const TRANSITION_LENGTH: f64 = 30.0; // Distance over which to transition to/from offset
-const AVOIDANCE_OFFSET_THRESHOLD: f64 = 0.1; // Minimum offset to trigger avoidance rendering
-const PROJECTION_MIN: f64 = 0.1; // Minimum projection parameter for station checking
-const PROJECTION_MAX: f64 = 0.9; // Maximum projection parameter for station checking
+const STATION_AVOIDANCE_THRESHOLD: f64 = 20.0;
+const STATION_AVOIDANCE_OFFSET: f64 = 25.0;
+const TRANSITION_LENGTH: f64 = 30.0;
+const AVOIDANCE_OFFSET_THRESHOLD: f64 = 0.1;
+const PROJECTION_MIN: f64 = 0.1;
+const PROJECTION_MAX: f64 = 0.9;
 
-// Track rendering constants
 const TRACK_LINE_WIDTH: f64 = 2.0;
-const TRACK_COLOR: &str = "#444";
-const HIGHLIGHTED_TRACK_COLOR: &str = "#4a9eff";
-const JUNCTION_STOP_DISTANCE: f64 = 14.0; // Stop drawing tracks this far from junction center
+const JUNCTION_STOP_DISTANCE: f64 = 14.0;
+
+struct Palette {
+    track: &'static str,
+    highlighted_track: &'static str,
+}
+
+const DARK_PALETTE: Palette = Palette {
+    track: "#444",
+    highlighted_track: "#4a9eff",
+};
+
+const LIGHT_PALETTE: Palette = Palette {
+    track: "#999",
+    highlighted_track: "#1976d2",
+};
+
+fn get_palette(theme: Theme) -> &'static Palette {
+    match theme {
+        Theme::Dark => &DARK_PALETTE,
+        Theme::Light => &LIGHT_PALETTE,
+    }
+}
 
 /// Draw a track segment with optional avoidance transitions
 fn draw_track_segment_with_avoidance(
@@ -289,7 +308,9 @@ pub fn draw_tracks(
     cached_avoidance: &HashMap<EdgeIndex, (f64, f64)>,
     viewport_bounds: (f64, f64, f64, f64),
     junctions: &HashSet<NodeIndex>,
+    theme: Theme,
 ) {
+    let palette = get_palette(theme);
     let (left, top, right, bottom) = viewport_bounds;
     let margin = 200.0; // Buffer to include tracks slightly outside viewport
 
@@ -319,7 +340,7 @@ pub fn draw_tracks(
 
         // Check if this edge is highlighted (part of preview path)
         let is_highlighted = highlighted_edges.contains(&edge_id);
-        let track_color = if is_highlighted { HIGHLIGHTED_TRACK_COLOR } else { TRACK_COLOR };
+        let track_color = if is_highlighted { palette.highlighted_track } else { palette.track };
 
         // Check if source or target is a junction (use cached set)
         let source_is_junction = junctions.contains(&source);

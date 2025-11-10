@@ -1,21 +1,44 @@
 use web_sys::CanvasRenderingContext2d;
 use crate::models::Node;
+use crate::theme::Theme;
 use super::types::GraphDimensions;
 use petgraph::stable_graph::NodeIndex;
 
-// Station label constants
-const STATION_LABEL_COLOR: &str = "#ddd";
-const SINGLE_PLATFORM_LABEL_COLOR: &str = "#888";
-const PASSING_LOOP_LABEL_COLOR: &str = "#777";
 const STATION_LABEL_FONT: &str = "11px monospace";
 const STATION_LABEL_X: f64 = 5.0;
 const STATION_LABEL_Y_OFFSET: f64 = 3.0;
-const LABEL_RIGHT_PADDING: f64 = 5.0; // Space between label and graph area
+const LABEL_RIGHT_PADDING: f64 = 5.0;
 
-// Junction constants
-const JUNCTION_LABEL_COLOR: &str = "#ffb84d";
 const JUNCTION_DIAMOND_SIZE: f64 = 6.0;
 const JUNCTION_LABEL_X_OFFSET: f64 = 12.0;
+
+struct Palette {
+    station: &'static str,
+    single_platform: &'static str,
+    passing_loop: &'static str,
+    junction: &'static str,
+}
+
+const DARK_PALETTE: Palette = Palette {
+    station: "#ddd",
+    single_platform: "#888",
+    passing_loop: "#777",
+    junction: "#ffb84d",
+};
+
+const LIGHT_PALETTE: Palette = Palette {
+    station: "#2a2a2a",
+    single_platform: "#777",
+    passing_loop: "#888",
+    junction: "#cc8800",
+};
+
+fn get_palette(theme: Theme) -> &'static Palette {
+    match theme {
+        Theme::Dark => &DARK_PALETTE,
+        Theme::Light => &LIGHT_PALETTE,
+    }
+}
 
 /// Truncate text with ellipsis if it exceeds the maximum width
 /// Returns the potentially truncated text
@@ -63,9 +86,11 @@ pub fn draw_station_labels(
     station_y_positions: &[f64],
     zoom_level: f64,
     pan_offset_y: f64,
+    theme: Theme,
 ) {
     use super::canvas::TOP_MARGIN as ORIGINAL_TOP_MARGIN;
 
+    let palette = get_palette(theme);
     let station_label_width = dims.left_margin;
     // Draw labels for each node in the stations list (includes both stations and junctions)
 
@@ -81,49 +106,49 @@ pub fn draw_station_labels(
             match station_node {
                 Node::Station(station) => {
                     if station.passing_loop {
-                        draw_passing_loop_label(ctx, &station_node.display_name(), adjusted_y, station_label_width);
+                        draw_passing_loop_label(ctx, &station_node.display_name(), adjusted_y, station_label_width, palette);
                     } else if station.platforms.len() == 1 {
-                        draw_single_platform_label(ctx, &station_node.display_name(), adjusted_y, station_label_width);
+                        draw_single_platform_label(ctx, &station_node.display_name(), adjusted_y, station_label_width, palette);
                     } else {
-                        draw_station_label(ctx, &station_node.display_name(), adjusted_y, station_label_width);
+                        draw_station_label(ctx, &station_node.display_name(), adjusted_y, station_label_width, palette);
                     }
                 }
                 Node::Junction(_) => {
-                    draw_junction_label(ctx, Some(&station_node.display_name()), adjusted_y, station_label_width);
+                    draw_junction_label(ctx, Some(&station_node.display_name()), adjusted_y, station_label_width, palette);
                 }
             }
         }
     }
 }
 
-fn draw_station_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64, station_label_width: f64) {
-    ctx.set_fill_style_str(STATION_LABEL_COLOR);
+fn draw_station_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64, station_label_width: f64, palette: &Palette) {
+    ctx.set_fill_style_str(palette.station);
     ctx.set_font(STATION_LABEL_FONT);
     let max_width = station_label_width - STATION_LABEL_X - LABEL_RIGHT_PADDING;
     let text = truncate_text_with_ellipsis(ctx, station, max_width);
     let _ = ctx.fill_text(&text, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
 }
 
-fn draw_single_platform_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64, station_label_width: f64) {
-    ctx.set_fill_style_str(SINGLE_PLATFORM_LABEL_COLOR);
+fn draw_single_platform_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64, station_label_width: f64, palette: &Palette) {
+    ctx.set_fill_style_str(palette.single_platform);
     ctx.set_font(STATION_LABEL_FONT);
     let max_width = station_label_width - STATION_LABEL_X - LABEL_RIGHT_PADDING;
     let text = truncate_text_with_ellipsis(ctx, station, max_width);
     let _ = ctx.fill_text(&text, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
 }
 
-fn draw_passing_loop_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64, station_label_width: f64) {
-    ctx.set_fill_style_str(PASSING_LOOP_LABEL_COLOR);
+fn draw_passing_loop_label(ctx: &CanvasRenderingContext2d, station: &str, y: f64, station_label_width: f64, palette: &Palette) {
+    ctx.set_fill_style_str(palette.passing_loop);
     ctx.set_font(STATION_LABEL_FONT);
     let max_width = station_label_width - STATION_LABEL_X - LABEL_RIGHT_PADDING;
     let text = truncate_text_with_ellipsis(ctx, station, max_width);
     let _ = ctx.fill_text(&text, STATION_LABEL_X, y + STATION_LABEL_Y_OFFSET);
 }
 
-fn draw_junction_label(ctx: &CanvasRenderingContext2d, junction_name: Option<&str>, y: f64, station_label_width: f64) {
+fn draw_junction_label(ctx: &CanvasRenderingContext2d, junction_name: Option<&str>, y: f64, station_label_width: f64, palette: &Palette) {
     // Draw diamond icon
-    ctx.set_fill_style_str(JUNCTION_LABEL_COLOR);
-    ctx.set_stroke_style_str(JUNCTION_LABEL_COLOR);
+    ctx.set_fill_style_str(palette.junction);
+    ctx.set_stroke_style_str(palette.junction);
     ctx.set_line_width(1.5);
 
     ctx.begin_path();
@@ -137,7 +162,7 @@ fn draw_junction_label(ctx: &CanvasRenderingContext2d, junction_name: Option<&st
 
     // Draw junction name if it has one
     if let Some(name) = junction_name {
-        ctx.set_fill_style_str(JUNCTION_LABEL_COLOR);
+        ctx.set_fill_style_str(palette.junction);
         ctx.set_font(STATION_LABEL_FONT);
         let max_width = station_label_width - (STATION_LABEL_X + JUNCTION_LABEL_X_OFFSET) - LABEL_RIGHT_PADDING;
         let text = truncate_text_with_ellipsis(ctx, name, max_width);

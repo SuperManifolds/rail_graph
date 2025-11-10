@@ -1,11 +1,31 @@
 use web_sys::CanvasRenderingContext2d;
 use crate::models::{StationNode, RailwayGraph, Stations, Node};
+use crate::theme::Theme;
 use super::types::GraphDimensions;
 
-// Junction indicator constants
-const JUNCTION_INDICATOR_COLOR: &str = "rgba(255, 200, 100, 0.1)";
-const JUNCTION_MARKER_COLOR: &str = "rgba(255, 200, 100, 0.3)";
 const GRID_PADDING_HOURS: i32 = 5;
+
+struct Palette {
+    junction_indicator: &'static str,
+    junction_marker: &'static str,
+}
+
+const DARK_PALETTE: Palette = Palette {
+    junction_indicator: "rgba(255, 200, 100, 0.1)",
+    junction_marker: "rgba(255, 200, 100, 0.3)",
+};
+
+const LIGHT_PALETTE: Palette = Palette {
+    junction_indicator: "rgba(204, 136, 0, 0.08)",
+    junction_marker: "rgba(204, 136, 0, 0.25)",
+};
+
+fn get_palette(theme: Theme) -> &'static Palette {
+    match theme {
+        Theme::Dark => &DARK_PALETTE,
+        Theme::Light => &LIGHT_PALETTE,
+    }
+}
 
 #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_lossless)]
 pub fn draw_junction_indicators(
@@ -15,7 +35,9 @@ pub fn draw_junction_indicators(
     graph: &RailwayGraph,
     zoom_level: f64,
     pan_offset_x: f64,
+    theme: Theme,
 ) {
+    let palette = get_palette(theme);
     let all_nodes = graph.get_all_nodes_ordered();
 
     // Calculate visible range in the transformed coordinate system
@@ -52,11 +74,11 @@ pub fn draw_junction_indicators(
     // Draw junction indicators
     for junction_y in junction_positions {
         // Draw a faint background highlight across the entire width
-        ctx.set_fill_style_str(JUNCTION_INDICATOR_COLOR);
+        ctx.set_fill_style_str(palette.junction_indicator);
         ctx.fill_rect(start_x, junction_y - station_height / 4.0, width, station_height / 2.0);
 
         // Draw a small marker on the left side
-        ctx.set_fill_style_str(JUNCTION_MARKER_COLOR);
+        ctx.set_fill_style_str(palette.junction_marker);
         let marker_size = 4.0 / zoom_level;
         ctx.fill_rect(dims.left_margin - marker_size, junction_y - marker_size, marker_size * 2.0, marker_size * 2.0);
     }

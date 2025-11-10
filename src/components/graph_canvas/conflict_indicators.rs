@@ -2,26 +2,47 @@ use super::types::GraphDimensions;
 use crate::models::Node;
 use crate::conflict::Conflict;
 use crate::constants::BASE_MIDNIGHT;
+use crate::theme::Theme;
 use web_sys::{CanvasRenderingContext2d, Path2d};
 
-// Conflict highlight constants
 const CONFLICT_TRIANGLE_SIZE: f64 = 15.0;
 const CONFLICT_TRIANGLE_FILL: &str = "rgba(255, 200, 0, 0.9)";
 const CONFLICT_TRIANGLE_STROKE: &str = "rgba(0, 0, 0, 0.8)";
-const CONFLICT_EXCLAMATION_COLOR: &str = "#000";
-const CONFLICT_LABEL_COLOR: &str = "rgba(255, 255, 255, 0.9)";
 const CONFLICT_LABEL_FONT_SIZE: f64 = 9.0;
 const CONFLICT_LABEL_OFFSET: f64 = 5.0;
-const CONFLICT_WARNING_COLOR: &str = "rgba(255, 0, 0, 0.8)";
 const CONFLICT_WARNING_FONT_SIZE: f64 = 14.0;
 const MAX_CONFLICTS_DISPLAYED: usize = 9999;
 
-// Block visualization constants
-const BLOCK_FILL_OPACITY: &str = "33"; // ~20% opacity in hex
-const BLOCK_STROKE_OPACITY: &str = "99"; // ~60% opacity in hex
+const BLOCK_FILL_OPACITY: &str = "33";
+const BLOCK_STROKE_OPACITY: &str = "99";
 const BLOCK_BORDER_WIDTH: f64 = 1.0;
 
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+struct Palette {
+    exclamation: &'static str,
+    label: &'static str,
+    warning: &'static str,
+}
+
+const DARK_PALETTE: Palette = Palette {
+    exclamation: "#000",
+    label: "rgba(255, 255, 255, 0.9)",
+    warning: "rgba(255, 0, 0, 0.8)",
+};
+
+const LIGHT_PALETTE: Palette = Palette {
+    exclamation: "#000",
+    label: "rgba(0, 0, 0, 0.9)",
+    warning: "rgba(200, 0, 0, 0.8)",
+};
+
+fn get_palette(theme: Theme) -> &'static Palette {
+    match theme {
+        Theme::Dark => &DARK_PALETTE,
+        Theme::Light => &LIGHT_PALETTE,
+    }
+}
+
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::too_many_arguments)]
 pub fn draw_conflict_highlights(
     ctx: &CanvasRenderingContext2d,
     dims: &GraphDimensions,
@@ -31,7 +52,9 @@ pub fn draw_conflict_highlights(
     zoom_level: f64,
     time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
     station_idx_map: &std::collections::HashMap<usize, usize>,
+    theme: Theme,
 ) {
+    let palette = get_palette(theme);
     let size = CONFLICT_TRIANGLE_SIZE / zoom_level;
     let bar_width = 1.5 / zoom_level;
     let bar_height = 6.0 / zoom_level;
@@ -104,7 +127,7 @@ pub fn draw_conflict_highlights(
         }
 
         // Draw exclamation bar
-        ctx.set_fill_style_str(CONFLICT_EXCLAMATION_COLOR);
+        ctx.set_fill_style_str(palette.exclamation);
         ctx.fill_rect(-bar_width / 2.0, -bar_height / 2.0 - 1.0 / zoom_level, bar_width, bar_height);
 
         // Draw exclamation dot using Path2D
@@ -118,7 +141,7 @@ pub fn draw_conflict_highlights(
     // Only draw labels when zoomed in enough (zoom level > 2.0)
     if zoom_level > 2.0 {
         // Set font and color for labels once
-        ctx.set_fill_style_str(CONFLICT_LABEL_COLOR);
+        ctx.set_fill_style_str(palette.label);
         ctx.set_font(&format!(
             "{}px monospace",
             CONFLICT_LABEL_FONT_SIZE / zoom_level
@@ -161,7 +184,7 @@ pub fn draw_conflict_highlights(
 
     // If there are more conflicts than displayed, show a count
     if conflicts.len() > MAX_CONFLICTS_DISPLAYED {
-        ctx.set_fill_style_str(CONFLICT_WARNING_COLOR);
+        ctx.set_fill_style_str(palette.warning);
         ctx.set_font(&format!(
             "bold {}px monospace",
             CONFLICT_WARNING_FONT_SIZE / zoom_level
