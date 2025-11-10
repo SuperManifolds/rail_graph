@@ -122,4 +122,12 @@
     // Tab colors
     --color-tab-header-bg: rgba(20, 20, 20, 0.75);
     --color-tab-active-bg: rgba(255, 255, 255, 0.16);
+
+    // Liquid glass effect
+    --glass-bg: rgba(0, 0, 0, 0.3);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    --glass-blur: blur(8px);
+    --glass-saturate: saturate(120%);
 }

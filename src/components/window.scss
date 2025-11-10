@@ -1,14 +1,11 @@
 .window-dialog {
     position: fixed;
-    background-color: transparent;
-    border: 1px solid var(--color-border-medium);
+    @include liquid-glass;
     border-radius: var(--radius-xl);
-    box-shadow: var(--shadow-lg);
     display: flex;
     flex-direction: column;
     transition: box-shadow var(--transition-base) var(--transition-ease);
     overflow: hidden;
-    backdrop-filter: blur(8px);
 
     .window-header {
         @include flex-between;
@@ -50,7 +47,7 @@
 
         &.transparent {
             background-color: transparent;
-            padding: 0;
+            padding: 0 var(--spacing-xs) var(--spacing-xs);
         }
     }
 
