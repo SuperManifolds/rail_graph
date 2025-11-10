@@ -44,6 +44,24 @@
         }
     }
 
+    .help-text {
+        margin-top: 0.25rem;
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+        line-height: 1.4;
+    }
+
+    .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+
+        input[type="checkbox"] {
+            cursor: pointer;
+        }
+    }
+
     .radio-group {
         display: flex;
         flex-direction: column;

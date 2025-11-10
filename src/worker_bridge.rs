@@ -41,6 +41,7 @@ impl ConflictDetector {
             station_indices,
             settings.station_margin,
             settings.minimum_separation,
+            settings.ignore_same_direction_platform_conflicts,
         );
 
         self.worker.send(ConflictRequest { journeys, context });
