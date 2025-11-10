@@ -3,7 +3,6 @@
 .canvas-controls-hint {
   @include popover;
   bottom: 20px;
-  right: 20px;
   border-radius: var(--radius-xl);
   padding: 14px 18px;
   font-size: var(--font-size-sm);

@@ -1808,7 +1808,7 @@ pub fn InfrastructureView(
                     set_edit_mode=set_edit_mode
                     set_selected_station=set_selected_station
                 />
-                <CanvasControlsHint visible=show_hint />
+                <CanvasControlsHint visible=show_hint right_offset=20.0 />
                 <MultiSelectToolbar
                     selected_stations=selected_stations
                     selection_box_start=selection_box_start
