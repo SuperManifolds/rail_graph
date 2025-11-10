@@ -22,7 +22,7 @@
         @include liquid-glass;
         display: flex;
         flex-direction: column;
-        overflow: hidden;
+        overflow: visible;
         z-index: var(--z-base);
 
         .sidebar-header {
