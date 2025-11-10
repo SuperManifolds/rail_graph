@@ -231,6 +231,29 @@ label {
     }
 }
 
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+
+    > label {
+        font-size: var(--font-size-base);
+        color: var(--color-text-tertiary);
+        font-weight: var(--font-weight-medium);
+    }
+
+    input[type="color"],
+    input[type="text"],
+    input[type="time"],
+    input[type="number"],
+    input[type="email"],
+    input[type="password"],
+    select,
+    textarea {
+        @include input-base;
+    }
+}
+
 // Banner utility classes
 .banner-error {
     @include banner-error;

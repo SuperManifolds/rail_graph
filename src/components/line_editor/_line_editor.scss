@@ -7,27 +7,7 @@
     min-width: 750px;
 
     .form-group {
-        display: flex;
-        flex-direction: column;
-        gap: var(--spacing-sm);
-
-        > label {
-            font-size: var(--font-size-base);
-            color: var(--color-text-tertiary);
-            font-weight: var(--font-weight-medium);
-        }
-
-        input[type="color"],
-        input[type="text"],
-        input[type="time"] {
-            @include input-base;
-
-            &:focus {
-                outline: none;
-                border-color: var(--color-border-light);
-                background-color: var(--color-bg-tertiary);
-            }
-        }
+        @extend .form-group;
 
         input[type="color"] {
             width: 80px;
