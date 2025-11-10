@@ -110,7 +110,7 @@ pub fn ChangelogPopup(
     view! {
         <ModalOverlay is_open=Signal::derive(move || is_open.get())>
             <Window
-                is_open=Signal::derive(|| true)
+                is_open=Signal::derive(move || is_open.get())
                 title=Signal::derive(|| "What's New".to_string())
                 on_close=move || on_close()
             >
