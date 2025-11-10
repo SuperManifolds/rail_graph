@@ -67,7 +67,7 @@
         &::before {
             content: "ⓘ ";
             font-size: var(--font-size-base);
-            color: #6a9bd8;
+            color: var(--color-info-icon);
             margin-right: 0.3rem;
         }
     }
