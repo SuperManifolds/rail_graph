@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use nimby_graph::log;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -16,7 +18,7 @@ fn main() {
 
     // Install event handler
     let install_closure = Closure::wrap(Box::new(move |event: web_sys::ExtendableEvent| {
-        web_sys::console::log_1(&"[SW] Installing service worker...".into());
+        log!("[SW] Installing service worker...");
 
         let promise = wasm_bindgen_futures::future_to_promise(async move {
             install_handler().await?;
@@ -31,7 +33,7 @@ fn main() {
 
     // Activate event handler
     let activate_closure = Closure::wrap(Box::new(move |event: web_sys::ExtendableEvent| {
-        web_sys::console::log_1(&"[SW] Activating service worker...".into());
+        log!("[SW] Activating service worker...");
 
         let promise = wasm_bindgen_futures::future_to_promise(async move {
             activate_handler().await?;
@@ -106,14 +108,14 @@ async fn install_handler() -> Result<JsValue, JsValue> {
         .get("version")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
-    web_sys::console::log_1(&format!("[SW] Loading asset manifest, version: {version}").into());
+    log!("[SW] Loading asset manifest, version: {}", version);
 
     let assets = manifest
         .get("assets")
         .and_then(|a| a.as_array())
         .ok_or_else(|| JsValue::from_str("No assets in manifest"))?;
 
-    web_sys::console::log_1(&format!("[SW] Assets to cache: {}", assets.len()).into());
+    log!("[SW] Assets to cache: {}", assets.len());
 
     // Open cache
     let cache_name = format!("{CACHE_VERSION}-app");
@@ -143,7 +145,7 @@ async fn install_handler() -> Result<JsValue, JsValue> {
         }
     }
 
-    web_sys::console::log_1(&"[SW] Install complete".into());
+    log!("[SW] Install complete");
 
     // Skip waiting
     let _ = js_sys::global()
@@ -169,13 +171,13 @@ async fn activate_handler() -> Result<JsValue, JsValue> {
     for i in 0..cache_names.length() {
         if let Some(name) = cache_names.get(i).as_string() {
             if name.starts_with("railgraph-") && name != cache_name {
-                web_sys::console::log_1(&format!("[SW] Deleting old cache: {name}").into());
+                log!("[SW] Deleting old cache: {}", name);
                 let _ = JsFuture::from(cache_storage.delete(&name)).await;
             }
         }
     }
 
-    web_sys::console::log_1(&"[SW] Activation complete".into());
+    log!("[SW] Activation complete");
 
     // Claim clients
     JsFuture::from(

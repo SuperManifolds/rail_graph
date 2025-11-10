@@ -9,9 +9,11 @@ use crate::components::{
     line_editor::LineEditor,
     settings::Settings
 };
+use crate::conflict::Conflict;
+#[allow(unused_imports)]
+use crate::logging::log;
 use crate::models::{Line, RailwayGraph, GraphView, Stations, Routes};
 use crate::train_journey::TrainJourney;
-use crate::conflict::Conflict;
 use leptos::{component, view, Signal, IntoView, SignalGet, SignalGetUntracked, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, SignalWith, create_effect, Callable};
 use petgraph::visit::EdgeRef;
 use wasm_bindgen::JsCast;
@@ -51,15 +53,12 @@ fn compute_edge_path(
             };
 
             // Log the computed edge path
-            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str(&format!(
-                "View '{}' edge_path: {:?}",
-                graph_view.name, edge_path
-            )));
+            log!("View '{}' edge_path: {:?}", graph_view.name, edge_path);
 
             edge_path
         } else {
             // No view - return empty edge path (full view mode not using edge matching)
-            web_sys::console::log_1(&wasm_bindgen::JsValue::from_str("No view - using full graph"));
+            log!("No view - using full graph");
             Vec::new()
         }
     })

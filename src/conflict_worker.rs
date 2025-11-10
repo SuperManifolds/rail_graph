@@ -1,7 +1,9 @@
+use crate::conflict::{detect_line_conflicts, Conflict, SerializableConflictContext};
+#[allow(unused_imports)]
+use crate::logging::log;
+use crate::train_journey::TrainJourney;
 use gloo_worker::{HandlerId, Worker, WorkerScope, Codec};
 use serde::{Deserialize, Serialize};
-use crate::conflict::{detect_line_conflicts, Conflict, SerializableConflictContext};
-use crate::train_journey::TrainJourney;
 
 #[derive(Serialize, Deserialize)]
 pub struct ConflictRequest {
@@ -21,7 +23,7 @@ impl Codec for BincodeCodec {
         let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
         let bytes = bincode::serialize(&input).expect("Bincode encode failed");
         if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-            web_sys::console::log_1(&format!("Bincode encode took {:.2}ms ({} bytes)", elapsed, bytes.len()).into());
+            log!("Bincode encode took {:.2}ms ({} bytes)", elapsed, bytes.len());
         }
         js_sys::Uint8Array::from(&bytes[..]).into()
     }
@@ -32,7 +34,7 @@ impl Codec for BincodeCodec {
         let bytes = array.to_vec();
         let result = bincode::deserialize(&bytes).expect("Bincode decode failed");
         if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-            web_sys::console::log_1(&format!("Bincode decode took {:.2}ms ({} bytes)", elapsed, bytes.len()).into());
+            log!("Bincode decode took {:.2}ms ({} bytes)", elapsed, bytes.len());
         }
         result
     }
@@ -57,8 +59,8 @@ impl Worker for ConflictWorker {
         let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
         let (conflicts, _) = detect_line_conflicts(&msg.journeys, &msg.context);
         if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-            web_sys::console::log_1(&format!("Worker conflict detection took {:.2}ms ({} conflicts from {} journeys)",
-                elapsed, conflicts.len(), msg.journeys.len()).into());
+            log!("Worker conflict detection took {:.2}ms ({} conflicts from {} journeys)",
+                elapsed, conflicts.len(), msg.journeys.len());
         }
         scope.respond(id, ConflictResponse { conflicts });
     }

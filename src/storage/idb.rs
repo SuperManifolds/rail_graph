@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use crate::logging::log;
 use leptos::wasm_bindgen;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -59,14 +61,14 @@ pub async fn get_db() -> Result<IdbDatabase, String> {
     // Check if we already have a connection
     let existing = DB_INSTANCE.with(|db| db.borrow().clone());
     if let Some(db) = existing {
-        web_sys::console::log_1(&"Using cached database connection".into());
+        log!("Using cached database connection");
         // Check if the database connection is still valid
         let store_names = db.object_store_names();
-        web_sys::console::log_1(&format!("Database has {} stores", store_names.length()).into());
+        log!("Database has {} stores", store_names.length());
         return Ok(db);
     }
 
-    web_sys::console::log_1(&"Opening new database connection".into());
+    log!("Opening new database connection");
 
     // Open a new connection
     let window = web_sys::window().ok_or("No window")?;
