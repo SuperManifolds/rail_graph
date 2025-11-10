@@ -28,7 +28,7 @@
 // Popover rendered via Portal at body level
 .legend-popover {
     @include popover;
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xxl);
     padding: var(--spacing-lg);
     min-width: 300px;
     width: max-content;

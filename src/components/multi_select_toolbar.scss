@@ -6,7 +6,7 @@
 
 .multi-select-toolbar {
   @include popover;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xxl);
   padding: var(--spacing-sm);
   pointer-events: auto;
   transform: translate(-50%, -110%);
