@@ -1,12 +1,14 @@
 .window-dialog {
     position: fixed;
-    background-color: var(--color-bg-secondary);
+    background-color: transparent;
     border: 1px solid var(--color-border-medium);
     border-radius: var(--radius-xl);
     box-shadow: var(--shadow-lg);
     display: flex;
     flex-direction: column;
     transition: box-shadow var(--transition-base) var(--transition-ease);
+    overflow: hidden;
+    backdrop-filter: blur(8px);
 
     .window-header {
         @include flex-between;
@@ -14,6 +16,13 @@
         border-bottom: 1px solid var(--color-border-dark);
         cursor: move;
         user-select: none;
+        background: var(--color-popover-bg);
+        border-top-left-radius: var(--radius-xl);
+        border-top-right-radius: var(--radius-xl);
+
+        &.no-border {
+            border-bottom: none;
+        }
 
         h3 {
             font-size: var(--font-size-md);
@@ -37,6 +46,12 @@
         flex: 1;
         overflow: auto;
         padding: var(--spacing-md) var(--spacing-lg);
+        background-color: var(--color-bg-secondary);
+
+        &.transparent {
+            background-color: transparent;
+            padding: 0;
+        }
     }
 
     .resize-handle {

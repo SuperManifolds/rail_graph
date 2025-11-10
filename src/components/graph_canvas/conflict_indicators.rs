@@ -6,6 +6,9 @@ use web_sys::{CanvasRenderingContext2d, Path2d};
 
 // Conflict highlight constants
 const CONFLICT_TRIANGLE_SIZE: f64 = 15.0;
+const CONFLICT_TRIANGLE_FILL: &str = "rgba(255, 200, 0, 0.9)";
+const CONFLICT_TRIANGLE_STROKE: &str = "rgba(0, 0, 0, 0.8)";
+const CONFLICT_EXCLAMATION_COLOR: &str = "#000";
 const CONFLICT_LABEL_COLOR: &str = "rgba(255, 255, 255, 0.9)";
 const CONFLICT_LABEL_FONT_SIZE: f64 = 9.0;
 const CONFLICT_LABEL_OFFSET: f64 = 5.0;
@@ -94,14 +97,14 @@ pub fn draw_conflict_highlights(
 
         // Draw triangle using Path2D
         if let Some(ref path) = triangle_path {
-            ctx.set_fill_style_str("rgba(255, 200, 0, 0.9)");
-            ctx.set_stroke_style_str("rgba(0, 0, 0, 0.8)");
+            ctx.set_fill_style_str(CONFLICT_TRIANGLE_FILL);
+            ctx.set_stroke_style_str(CONFLICT_TRIANGLE_STROKE);
             ctx.fill_with_path_2d(path);
             ctx.stroke_with_path(path);
         }
 
         // Draw exclamation bar
-        ctx.set_fill_style_str("#000");
+        ctx.set_fill_style_str(CONFLICT_EXCLAMATION_COLOR);
         ctx.fill_rect(-bar_width / 2.0, -bar_height / 2.0 - 1.0 / zoom_level, bar_width, bar_height);
 
         // Draw exclamation dot using Path2D

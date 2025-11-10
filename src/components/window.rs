@@ -83,6 +83,7 @@ pub fn Window(
     children: Children,
     #[prop(default = (1600.0, 1200.0))] max_size: (f64, f64),
     #[prop(optional, into)] position_key: Option<String>,
+    #[prop(default = false)] transparent_content: bool,
 ) -> impl IntoView {
     // Try to load saved position, or use random offset so windows don't stack exactly on top of each other
     // Use store_value to ensure this is only calculated once
@@ -255,12 +256,18 @@ pub fn Window(
                 }
                 on:mousedown=move |_| bring_to_front()
             >
-                <div class="window-header" on:mousedown=handle_mouse_down>
+                <div
+                    class=move || if transparent_content { "window-header no-border" } else { "window-header" }
+                    on:mousedown=handle_mouse_down
+                >
                     <h3>{move || title.get()}</h3>
                     <button class="close-button" on:click=move |_| on_close.with_value(|f| f())>"×"</button>
                 </div>
 
-                <div class="window-content" node_ref=content_ref>
+                <div
+                    class=move || if transparent_content { "window-content transparent" } else { "window-content" }
+                    node_ref=content_ref
+                >
                     {children.with_value(Clone::clone)}
                 </div>
 
