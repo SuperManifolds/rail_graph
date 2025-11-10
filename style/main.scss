@@ -248,9 +248,12 @@ label {
     input[type="number"],
     input[type="email"],
     input[type="password"],
-    select,
     textarea {
         @include input-base;
+    }
+
+    select {
+        @include input-select;
     }
 }
 

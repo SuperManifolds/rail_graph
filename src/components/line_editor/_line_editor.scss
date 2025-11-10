@@ -233,17 +233,6 @@
             .station-input {
                 @include input-select;
                 flex: 1;
-                cursor: pointer;
-
-                &:focus {
-                    border-color: var(--color-border-light);
-                    background-color: var(--color-bg-hover);
-                }
-
-                option {
-                    background-color: var(--color-bg-tertiary);
-                    color: var(--color-text-primary);
-                }
             }
 
             .arrow {
@@ -383,25 +372,11 @@
 
             .platform-select,
             .track-select {
-                background-color: var(--color-bg-tertiary);
-                border: 1px solid var(--color-border-medium);
-                border-radius: var(--radius-sm);
-                color: var(--color-text-primary);
+                @include input-select;
                 padding: 0.3rem 0.4rem;
                 font-size: var(--font-size-xs);
-                cursor: pointer;
                 width: 100%;
-
-                &:focus {
-                    outline: none;
-                    border-color: var(--color-accent);
-                    background-color: var(--color-bg-hover);
-                }
-
-                option {
-                    background-color: var(--color-bg-tertiary);
-                    color: var(--color-text-primary);
-                }
+                border-radius: var(--radius-sm);
             }
 
             .platform-placeholder,
@@ -431,27 +406,10 @@
         margin-bottom: var(--spacing-xs);
 
         .station-select {
+            @include input-select;
             width: 100%;
-            padding: var(--spacing-sm);
             background-color: var(--color-bg-secondary);
             color: var(--color-text-subtle);
-            border: 1px solid var(--color-border-medium);
-            border-radius: var(--radius-md);
-            font-size: var(--font-size-sm);
-            cursor: pointer;
-
-            &:focus {
-                outline: none;
-                border-color: var(--color-accent);
-            }
-
-            option[value=""] {
-                color: var(--color-text-muted);
-            }
-
-            option:not([value=""]) {
-                color: var(--color-text-primary);
-            }
         }
     }
 
@@ -473,27 +431,10 @@
         }
 
         .station-select {
+            @include input-select;
             width: 100%;
-            padding: var(--spacing-sm);
             background-color: var(--color-bg-secondary);
             color: var(--color-text-subtle);
-            border: 1px solid var(--color-border-medium);
-            border-radius: var(--radius-md);
-            font-size: var(--font-size-sm);
-            cursor: pointer;
-
-            &:focus {
-                outline: none;
-                border-color: var(--color-accent);
-            }
-
-            option[value=""] {
-                color: var(--color-text-muted);
-            }
-
-            option:not([value=""]) {
-                color: var(--color-text-primary);
-            }
         }
 
         .cancel-button {
