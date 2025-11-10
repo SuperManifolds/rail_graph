@@ -24,9 +24,9 @@ pub fn ConnectToStation(
             <h3>"Add Connection"</h3>
             <div class="form-field">
                 <label>"Connect to"</label>
-                <div style="display: flex; gap: 8px;">
+                <div class="connect-station-row">
                     <select
-                        style="flex: 1;"
+                        class="connect-station-select"
                         prop:value=move || {
                             connect_to_station.get().and_then(|selected_idx| {
                                 let current_graph = graph.get();
