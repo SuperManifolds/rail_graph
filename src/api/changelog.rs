@@ -19,7 +19,16 @@ pub struct ChangelogRelease {
 /// - The response status is not ok
 /// - The response body cannot be deserialized
 pub async fn fetch_all_releases() -> Result<Vec<ChangelogRelease>, String> {
-    reqwest::get(CHANGELOG_API)
+    // Construct full URL from window location
+    let url = if let Some(window) = web_sys::window() {
+        let location = window.location();
+        let origin = location.origin().map_err(|_| "Failed to get origin".to_string())?;
+        format!("{origin}{CHANGELOG_API}")
+    } else {
+        return Err("No window available".to_string());
+    };
+
+    reqwest::get(&url)
         .await
         .map_err(|e| format!("Request failed: {e}"))?
         .json::<Vec<ChangelogRelease>>()
