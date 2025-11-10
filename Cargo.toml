@@ -6,6 +6,10 @@ name = "nimby_graph"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Enable console logging in release builds (enabled by default in debug builds)
+console_logging = []
+
 [lints.clippy]
 complexity = "warn"
 perf = "warn"

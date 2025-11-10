@@ -1,9 +1,11 @@
+use crate::conflict::{Conflict, SerializableConflictContext};
+use crate::conflict_worker::{ConflictWorker, ConflictRequest, ConflictResponse, BincodeCodec};
+#[allow(unused_imports)]
+use crate::logging::log;
+use crate::models::{RailwayGraph, ProjectSettings};
+use crate::train_journey::TrainJourney;
 use gloo_worker::Spawnable;
 use leptos::{create_signal, ReadSignal, WriteSignal, SignalSet};
-use crate::conflict_worker::{ConflictWorker, ConflictRequest, ConflictResponse, BincodeCodec};
-use crate::conflict::{Conflict, SerializableConflictContext};
-use crate::train_journey::TrainJourney;
-use crate::models::{RailwayGraph, ProjectSettings};
 
 pub struct ConflictDetector {
     worker: gloo_worker::WorkerBridge<ConflictWorker>,
@@ -17,8 +19,8 @@ impl ConflictDetector {
                 let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
                 set_conflicts.set(response.conflicts.clone());
                 if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-                    web_sys::console::log_1(&format!("Set conflicts signal took {:.2}ms ({} conflicts)",
-                        elapsed, response.conflicts.len()).into());
+                    log!("Set conflicts signal took {:.2}ms ({} conflicts)",
+                        elapsed, response.conflicts.len());
                 }
             })
             .spawn("conflict_worker.js");
@@ -27,8 +29,8 @@ impl ConflictDetector {
     }
 
     pub fn detect(&mut self, journeys: Vec<TrainJourney>, graph: RailwayGraph, settings: ProjectSettings) {
-        web_sys::console::log_1(&format!("Sending to worker: {} journeys, {} nodes",
-            journeys.len(), graph.graph.node_count()).into());
+        log!("Sending to worker: {} journeys, {} nodes",
+            journeys.len(), graph.graph.node_count());
         let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
         // Build serializable context from graph
@@ -46,7 +48,7 @@ impl ConflictDetector {
 
         self.worker.send(ConflictRequest { journeys, context });
         if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-            web_sys::console::log_1(&format!("Worker.send() took {:.2}ms", elapsed).into());
+            log!("Worker.send() took {:.2}ms", elapsed);
         }
     }
 }

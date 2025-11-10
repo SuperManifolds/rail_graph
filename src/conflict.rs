@@ -1,4 +1,6 @@
 use crate::constants::{BASE_DATE, BASE_MIDNIGHT};
+#[allow(unused_imports)]
+use crate::logging::log;
 use crate::models::{RailwayGraph, TrackDirection, Junctions};
 use crate::time::time_to_fraction;
 use crate::train_journey::TrainJourney;
@@ -274,8 +276,8 @@ pub fn detect_line_conflicts(
     let total_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
     #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&format!("🔍 detect_line_conflicts START: {} journeys, {} stations",
-        train_journeys.len(), serializable_ctx.station_indices.len()).into());
+    log!("🔍 detect_line_conflicts START: {} journeys, {} stations",
+        train_journeys.len(), serializable_ctx.station_indices.len());
 
     // Reset performance counters
     #[cfg(target_arch = "wasm32")]
@@ -328,7 +330,7 @@ pub fn detect_line_conflicts(
 
     #[cfg(target_arch = "wasm32")]
     if let Some(elapsed) = setup_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        web_sys::console::log_1(&format!("  Setup (context conversion): {:.2}ms", elapsed).into());
+        log!("  Setup (context conversion): {:.2}ms", elapsed);
     }
 
     detect_conflicts_sweep_line(train_journeys, &ctx, &mut results);
@@ -368,8 +370,8 @@ pub fn detect_line_conflicts(
 
     #[cfg(target_arch = "wasm32")]
     if let Some(elapsed) = total_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        web_sys::console::log_1(&format!("✅ detect_line_conflicts COMPLETE: {:.2}ms - Found {} conflicts, {} crossings",
-            elapsed, results.conflicts.len(), results.station_crossings.len()).into());
+        log!("✅ detect_line_conflicts COMPLETE: {:.2}ms - Found {} conflicts, {} crossings",
+            elapsed, results.conflicts.len(), results.station_crossings.len());
     }
 
     (results.conflicts, results.station_crossings)
@@ -386,7 +388,7 @@ fn detect_conflicts_sweep_line(
     // This gives us O(n * m) where m is the average number of overlapping journeys (much smaller than n)
 
     #[cfg(target_arch = "wasm32")]
-    web_sys::console::log_1(&format!("  Using sweep-line algorithm ({} journeys)", train_journeys.len()).into());
+    log!("  Using sweep-line algorithm ({} journeys)", train_journeys.len());
 
     #[cfg(not(target_arch = "wasm32"))]
     let sort_start = std::time::Instant::now();
@@ -419,7 +421,7 @@ fn detect_conflicts_sweep_line(
 
     #[cfg(target_arch = "wasm32")]
     if let Some(elapsed) = sort_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        web_sys::console::log_1(&format!("    Sort time: {:.2}ms", elapsed).into());
+        log!("    Sort time: {:.2}ms", elapsed);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -445,7 +447,7 @@ fn detect_conflicts_sweep_line(
 
     #[cfg(target_arch = "wasm32")]
     if let Some(elapsed) = plat_occ_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        web_sys::console::log_1(&format!("      Platform occupancies: {:.2}ms", elapsed).into());
+        log!("      Platform occupancies: {:.2}ms", elapsed);
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -459,7 +461,7 @@ fn detect_conflicts_sweep_line(
 
     #[cfg(target_arch = "wasm32")]
     if let Some(elapsed) = seg_list_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        web_sys::console::log_1(&format!("      Segment lists: {:.2}ms", elapsed).into());
+        log!("      Segment lists: {:.2}ms", elapsed);
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -470,7 +472,7 @@ fn detect_conflicts_sweep_line(
 
     #[cfg(target_arch = "wasm32")]
     if let Some(elapsed) = cache_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        web_sys::console::log_1(&format!("    Cache build time: {:.2}ms", elapsed).into());
+        log!("    Cache build time: {:.2}ms", elapsed);
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -542,18 +544,18 @@ fn detect_conflicts_sweep_line(
         let loop_iterations = LOOP_ITERATIONS.load(Ordering::Relaxed);
         let time_overlap_checks = TIME_OVERLAP_CHECKS.load(Ordering::Relaxed);
 
-        web_sys::console::log_1(&format!("    Comparison loop time: {:.2}ms", elapsed).into());
-        web_sys::console::log_1(&format!("      Platform checks: {:.2}ms", platform_total_us as f64 / 1000.0).into());
-        web_sys::console::log_1(&format!("      Segment checks: {:.2}ms", segment_total_us as f64 / 1000.0).into());
-        web_sys::console::log_1(&format!("        Loop iterations: {}", loop_iterations).into());
-        web_sys::console::log_1(&format!("        Time overlap checks: {}", time_overlap_checks).into());
-        web_sys::console::log_1(&format!("        Segment pair calls: {}", segment_pair_calls).into());
-        web_sys::console::log_1(&format!("        Segment pair total time: {:.2}ms", segment_pair_total_us as f64 / 1000.0).into());
-        web_sys::console::log_1(&format!("          HashMap lookups: {:.2}ms", segment_map_lookup_us as f64 / 1000.0).into());
-        web_sys::console::log_1(&format!("          Reverse edge checks: {:.2}ms", reverse_edge_time_us as f64 / 1000.0).into());
-        web_sys::console::log_1(&format!("          Single track checks: {:.2}ms", single_track_time_us as f64 / 1000.0).into());
-        web_sys::console::log_1(&format!("          Block violations: {} found, {:.2}ms total", block_violation_count, block_violation_time_us as f64 / 1000.0).into());
-        web_sys::console::log_1(&format!("          Intersections: {} found, {:.2}ms total", intersection_count, intersection_time_us as f64 / 1000.0).into());
+        log!("    Comparison loop time: {:.2}ms", elapsed);
+        log!("      Platform checks: {:.2}ms", platform_total_us as f64 / 1000.0);
+        log!("      Segment checks: {:.2}ms", segment_total_us as f64 / 1000.0);
+        log!("        Loop iterations: {}", loop_iterations);
+        log!("        Time overlap checks: {}", time_overlap_checks);
+        log!("        Segment pair calls: {}", segment_pair_calls);
+        log!("        Segment pair total time: {:.2}ms", segment_pair_total_us as f64 / 1000.0);
+        log!("          HashMap lookups: {:.2}ms", segment_map_lookup_us as f64 / 1000.0);
+        log!("          Reverse edge checks: {:.2}ms", reverse_edge_time_us as f64 / 1000.0);
+        log!("          Single track checks: {:.2}ms", single_track_time_us as f64 / 1000.0);
+        log!("          Block violations: {} found, {:.2}ms total", block_violation_count, block_violation_time_us as f64 / 1000.0);
+        log!("          Intersections: {} found, {:.2}ms total", intersection_count, intersection_time_us as f64 / 1000.0);
     }
 }
 

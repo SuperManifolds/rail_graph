@@ -6,6 +6,8 @@ use crate::components::report_issue_button::ReportIssueButton;
 use crate::components::time_graph::TimeGraph;
 use crate::components::toast::{Toast, ToastNotification};
 use crate::conflict::Conflict;
+#[allow(unused_imports)]
+use crate::logging::log;
 use crate::models::{GraphView, Legend, Project, RailwayGraph, Routes, ViewportState, UndoManager, UndoSnapshot};
 use crate::storage::{IndexedDbStorage, Storage};
 use crate::train_journey::TrainJourney;
@@ -93,7 +95,7 @@ pub fn App() -> impl IntoView {
                     navigator.register("/service_worker.js")
                 ).await {
                     Ok(_) => {
-                        web_sys::console::log_1(&"[PWA] Service worker registered".into());
+                        log!("[PWA] Service worker registered");
                     }
                     Err(e) => {
                         web_sys::console::error_2(
@@ -228,7 +230,7 @@ pub fn App() -> impl IntoView {
             let project = if let Some(id) = project_id {
                 match storage.load_project(&id).await {
                     Ok(p) => {
-                        web_sys::console::log_1(&"Project loaded successfully".into());
+                        log!("Project loaded successfully");
                         Some(p)
                     }
                     Err(e) => {
@@ -237,12 +239,12 @@ pub fn App() -> impl IntoView {
                     }
                 }
             } else {
-                web_sys::console::log_1(&"No previous project found".into());
+                log!("No previous project found");
                 None
             };
 
             let project = project.unwrap_or_else(|| {
-                web_sys::console::log_1(&"Creating empty project".into());
+                log!("Creating empty project");
                 Project::empty()
             });
             let empty_graph = project.graph.clone();
