@@ -88,7 +88,20 @@ pub fn Window(
     // Try to load saved position, or use random offset so windows don't stack exactly on top of each other
     // Use store_value to ensure this is only calculated once
     let initial_position = store_value({
-        if let Some(ref key) = position_key {
+        let viewport_width = web_sys::window()
+            .and_then(|w| w.inner_width().ok())
+            .and_then(|v| v.as_f64())
+            .unwrap_or(1920.0);
+        let viewport_height = web_sys::window()
+            .and_then(|w| w.inner_height().ok())
+            .and_then(|v| v.as_f64())
+            .unwrap_or(1080.0);
+
+        // Max position ensures window is at least partially visible (account for 400px window width)
+        let max_x = (viewport_width - 100.0).max(100.0);
+        let max_y = (viewport_height - 100.0).max(100.0);
+
+        let (raw_x, raw_y) = if let Some(ref key) = position_key {
             if let Some(saved_pos) = get_saved_position(key) {
                 saved_pos
             } else {
@@ -102,7 +115,10 @@ pub fn Window(
             let offset_x = js_sys::Math::random() * 200.0;
             let offset_y = js_sys::Math::random() * 150.0;
             (100.0 + offset_x, 100.0 + offset_y)
-        }
+        };
+
+        // Clamp position to viewport bounds
+        (raw_x.clamp(0.0, max_x), raw_y.clamp(0.0, max_y))
     });
 
     let (position, set_position) = create_signal(initial_position.get_value());
