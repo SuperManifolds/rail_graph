@@ -93,6 +93,17 @@
     }
 }
 
+@mixin button-icon-only {
+    @include button-icon;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-sm);
+
+    &:hover {
+        background-color: var(--color-bg-hover);
+    }
+}
+
 // ===== Input Mixins =====
 
 @mixin input-base {
@@ -188,4 +199,49 @@
     &:active {
         transform: scale(0.95);
     }
+}
+
+// ===== Banner Mixins =====
+
+@mixin banner-base {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-height-normal);
+
+    i {
+        font-size: var(--font-size-lg);
+        flex-shrink: 0;
+    }
+}
+
+@mixin banner-error {
+    @include banner-base;
+    background-color: var(--color-error-bg);
+    border: 1px solid var(--color-error-border);
+    color: var(--color-danger);
+}
+
+@mixin banner-warning {
+    @include banner-base;
+    background-color: var(--color-warning-bg);
+    border: 1px solid var(--color-warning-border);
+    color: var(--color-warning);
+}
+
+@mixin banner-success {
+    @include banner-base;
+    background-color: var(--color-success-bg);
+    border: 1px solid var(--color-success-border);
+    color: var(--color-success);
+}
+
+@mixin banner-info {
+    @include banner-base;
+    background-color: var(--color-info-bg);
+    border: 1px solid var(--color-info-border);
+    color: var(--color-info);
 }

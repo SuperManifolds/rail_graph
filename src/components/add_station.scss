@@ -56,10 +56,8 @@
         }
 
         .help-text {
-            margin: 0 0 var(--spacing-md) 0;
-            font-size: 0.75rem;
-            color: #888;
-            line-height: 1.4;
+            @extend .help-text;
+            margin-bottom: var(--spacing-md);
         }
     }
 
@@ -98,16 +96,16 @@
             }
 
             button {
-                @include button-default;
+                @extend .button-default;
 
                 &.danger {
-                    @include button-danger;
+                    @extend .button-danger;
                 }
             }
         }
 
         > button {
-            @include button-default;
+            @extend .button-default;
             align-self: flex-start;
             margin-top: var(--spacing-xs);
         }
@@ -120,14 +118,14 @@
         margin-top: var(--spacing-lg);
 
         button {
-            @include button-default;
+            @extend .button-default;
 
             &.primary {
-                @include button-primary;
+                @extend .button-primary;
             }
 
             &.danger {
-                @include button-danger;
+                @extend .button-danger;
             }
         }
     }

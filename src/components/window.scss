@@ -23,7 +23,7 @@
         }
 
         .close-button {
-            @include button-icon;
+            @extend .button-icon;
             font-size: var(--font-size-2xl);
             line-height: var(--line-height-tight);
             width: 20px;

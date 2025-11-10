@@ -2,7 +2,7 @@
     position: relative;
 
     .dropdown-menu-toggle {
-        @include button-icon;
+        @extend .button-icon;
         font-size: var(--font-size-base);
     }
 

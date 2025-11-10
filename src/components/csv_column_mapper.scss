@@ -39,20 +39,12 @@
         }
 
         .help-text {
-            margin: 0 0 var(--spacing-md) 0;
-            color: var(--color-text-tertiary);
-            font-size: 0.9em;
+            @extend .help-text;
+            margin-bottom: var(--spacing-md);
         }
 
         .form-row {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-md);
-
-            label {
-                min-width: 150px;
-                color: var(--color-text-secondary);
-            }
+            @extend .form-row;
 
             select {
                 @include input-select;
@@ -163,13 +155,10 @@
     }
 
     .mapper-error {
-        padding: var(--spacing-md);
+        @extend .banner-error;
         margin-top: var(--spacing-md);
-        background-color: rgba(220, 53, 69, 0.1);
         border-left: 4px solid var(--color-danger);
-        border-radius: 4px;
-        color: var(--color-text-primary);
-        line-height: 1.5;
+        border-radius: var(--radius-md);
     }
 
     .mapper-actions {
@@ -180,10 +169,10 @@
         border-top: 1px solid var(--color-border-light);
 
         button {
-            @include button-default;
+            @extend .button-default;
 
             &.primary {
-                @include button-primary;
+                @extend .button-primary;
             }
         }
     }

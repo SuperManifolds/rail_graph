@@ -69,10 +69,10 @@
         padding-top: var(--spacing-md);
 
         button {
-            @include button-default;
+            @extend .button-default;
 
             &.primary {
-                @include button-primary;
+                @extend .button-primary;
             }
         }
     }

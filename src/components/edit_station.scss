@@ -20,10 +20,10 @@
         }
 
         button {
-            @include button-default;
+            @extend .button-default;
 
             &.primary {
-                @include button-primary;
+                @extend .button-primary;
             }
         }
 
@@ -49,9 +49,7 @@
         }
 
         .help-text {
-            margin: 0;
-            font-size: var(--font-size-sm);
-            color: var(--color-text-secondary);
+            @extend .help-text;
         }
 
         .track-default-platform {
@@ -80,14 +78,14 @@
         margin-top: var(--spacing-lg);
 
         button {
-            @include button-default;
+            @extend .button-default;
 
             &.primary {
-                @include button-primary;
+                @extend .button-primary;
             }
 
             &.danger {
-                @include button-danger;
+                @extend .button-danger;
             }
         }
     }

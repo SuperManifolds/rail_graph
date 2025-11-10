@@ -1,7 +1,7 @@
 @import '../../style/mixins';
 
 .report-issue-button {
-    @include button-default;
+    @extend .button-default;
     text-decoration: none;
     padding: var(--spacing-xs) var(--spacing-lg);
 

@@ -205,5 +205,79 @@ label {
     width: 140px;
 }
 
+// Utility classes
+.help-text {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    line-height: 1.4;
+}
+
+.section-header {
+    margin: 0 0 var(--spacing-sm) 0;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-text-primary);
+}
+
+.form-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+
+    label {
+        min-width: 150px;
+        color: var(--color-text-secondary);
+    }
+}
+
+// Banner utility classes
+.banner-error {
+    @include banner-error;
+}
+
+.banner-warning {
+    @include banner-warning;
+}
+
+.banner-success {
+    @include banner-success;
+}
+
+.banner-info {
+    @include banner-info;
+}
+
+// Button utility classes
+.button-default {
+    @include button-default;
+}
+
+.button-primary {
+    @include button-primary;
+}
+
+.button-danger {
+    @include button-danger;
+}
+
+.button-icon {
+    @include button-icon;
+}
+
+.button-icon-only {
+    @include button-icon-only;
+}
+
+.button-icon-close {
+    @include button-icon-only;
+    margin-left: auto;
+    font-size: var(--font-size-xl);
+
+    &:hover {
+        opacity: 0.7;
+    }
+}
+
 // Import all component styles
 @import '../src/components/components';
