@@ -5,10 +5,8 @@
     top: calc(100% + var(--spacing-xs));
     left: 50%;
     transform: translateX(-50%);
-    backdrop-filter: blur(12px);
     border-radius: var(--radius-md);
     padding: var(--spacing-xs);
-    box-shadow: var(--shadow-md);
 
     &.hidden {
         display: none;

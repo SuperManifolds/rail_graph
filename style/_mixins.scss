@@ -260,9 +260,16 @@
 
 @mixin popover {
     position: absolute;
-    background: var(--color-popover-bg);
-    border: 1px solid var(--color-popover-border);
+    @include liquid-glass;
     color: var(--color-popover-text);
-    backdrop-filter: blur(8px);
     z-index: var(--z-dropdown);
+}
+
+// ===== Liquid Glass Mixin =====
+
+@mixin liquid-glass {
+    background-color: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow), var(--glass-inset);
+    backdrop-filter: var(--glass-blur) var(--glass-saturate);
 }
