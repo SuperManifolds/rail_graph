@@ -161,7 +161,7 @@ fn CreateViewDialogContent(
             {move || {
                 if let Some(error) = validation_error.get() {
                     view! {
-                        <div class="error-message" style="color: red; margin: 8px 0;">
+                        <div class="view-error-message">
                             {error}
                         </div>
                     }.into_view()

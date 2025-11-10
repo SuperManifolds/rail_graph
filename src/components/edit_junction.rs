@@ -82,7 +82,7 @@ pub fn EditJunction(
 
                 <div class="form-buttons">
                     <button class="danger" on:click=handle_delete>"Delete"</button>
-                    <div style="flex: 1;"></div>
+                    <div class="flex-spacer"></div>
                     <button on:click=move |_| on_close()>"Cancel"</button>
                     <button class="primary" on:click=handle_save>"Save"</button>
                 </div>

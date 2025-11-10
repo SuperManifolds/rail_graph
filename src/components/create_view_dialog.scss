@@ -1,51 +1,49 @@
 .add-station-form {
+    .view-error-message {
+        color: var(--color-danger);
+        margin: var(--spacing-sm) 0;
+        font-size: var(--font-size-sm);
+    }
+
     .stops-list {
         display: flex;
         flex-direction: column;
-        gap: 0.25rem;
+        gap: var(--spacing-xs);
         max-height: none;  // Allow natural height expansion
         overflow: visible;  // No scrolling within the list
 
         .stops-header {
             display: grid;
             grid-template-columns: 1fr 40px;
-            gap: 0.5rem;
-            padding: 0.25rem 0.5rem;
-            font-weight: 600;
-            color: #aaa;
-            font-size: 0.8rem;
-            border-bottom: 1px solid #333;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-xs) var(--spacing-sm);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text-subtle);
+            font-size: var(--font-size-xs);
+            border-bottom: 1px solid var(--color-border-dark);
         }
 
         .stop-row {
             display: grid;
             grid-template-columns: 1fr 40px;
-            gap: 0.5rem;
+            gap: var(--spacing-sm);
             align-items: center;
-            padding: 0.35rem 0.5rem;
-            background-color: #222;
-            border: 1px solid #444;
-            border-radius: 3px;
+            padding: 0.35rem var(--spacing-sm);
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border-medium);
+            border-radius: var(--radius-sm);
 
             .station-name {
-                color: #fff;
-                font-size: 0.85rem;
+                color: var(--color-text-primary);
+                font-size: var(--font-size-sm);
             }
 
             .delete-stop-button {
-                background: none;
-                border: none;
-                color: #999;
-                cursor: pointer;
-                padding: 0.25rem;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 0.85rem;
-                transition: color 0.2s;
+                @extend .button-icon;
+                font-size: var(--font-size-sm);
 
                 &:hover {
-                    color: #d32f2f;
+                    color: var(--color-danger-dark);
                 }
 
                 &:focus {

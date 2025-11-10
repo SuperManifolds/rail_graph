@@ -445,7 +445,7 @@ fn GroupingControls(
                     />
                     " Don't create new infrastructure"
                 </label>
-                <p class="help-text" style="margin-left: 1.5rem;">
+                <p class="help-text">
                     "Only use existing tracks and stations. Routes will be created by pathfinding between CSV stations."
                 </p>
             </div>

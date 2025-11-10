@@ -248,6 +248,11 @@ label {
     @include banner-info;
 }
 
+// Layout utility classes
+.flex-spacer {
+    flex: 1;
+}
+
 // Button utility classes
 .button-default {
     @include button-default;

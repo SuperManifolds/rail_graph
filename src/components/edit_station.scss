@@ -71,6 +71,15 @@
         }
     }
 
+    .connect-station-row {
+        display: flex;
+        gap: var(--spacing-sm);
+
+        .connect-station-select {
+            flex: 1;
+        }
+    }
+
     .form-buttons {
         display: flex;
         gap: var(--spacing-sm);

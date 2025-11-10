@@ -804,7 +804,7 @@ pub fn MultiSelectToolbar(
                     >
                         <i class="fa-solid fa-align-center"></i>
                     </button>
-                    <div style="position: relative;">
+                    <div class="dropdown-wrapper">
                         <button
                             class="toolbar-button"
                             title=format_title_with_shortcut(
