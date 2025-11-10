@@ -1,3 +1,5 @@
+@import '../../style/mixins';
+
 // Legend component styles
 .legend-container {
     position: relative;
@@ -21,101 +23,98 @@
             border-color: var(--color-border-light);
         }
     }
+}
 
-    .legend-popover {
-        position: fixed;
-        bottom: 4rem;
-        right: var(--spacing-lg);
-        background-color: var(--color-bg-secondary);
-        border: 1px solid var(--color-border-medium);
-        border-radius: var(--radius-lg);
-        padding: var(--spacing-lg);
-        z-index: var(--z-tooltip);
-        box-shadow: var(--shadow-md);
-        min-width: 300px;
-        width: max-content;
+// Popover rendered via Portal at body level
+.legend-popover {
+    @include popover;
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    min-width: 300px;
+    width: max-content;
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
 
-        .legend-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: var(--spacing-lg);
-            padding-bottom: var(--spacing-md);
-            border-bottom: 1px solid var(--color-bg-hover);
+    .legend-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--spacing-lg);
+        padding-bottom: var(--spacing-md);
+        border-bottom: 1px solid var(--color-bg-hover);
 
-            h3 {
-                font-size: var(--font-size-lg);
-                font-weight: var(--font-weight-semibold);
-                color: var(--color-text-primary);
-                margin: 0;
-            }
-
-            .close-button {
-                background: none;
-                border: none;
-                color: var(--color-text-muted);
-                font-size: var(--font-size-xl);
-                cursor: pointer;
-                padding: 0;
-                line-height: 1;
-                width: 24px;
-                height: 24px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-
-                &:hover {
-                    color: var(--color-text-primary);
-                }
-            }
+        h3 {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text-primary);
+            margin: 0;
         }
 
-        .legend-items {
+        .close-button {
+            background: none;
+            border: none;
+            color: var(--color-text-muted);
+            font-size: var(--font-size-xl);
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+            width: 24px;
+            height: 24px;
             display: flex;
-            flex-direction: column;
-            gap: var(--spacing-lg);
+            align-items: center;
+            justify-content: center;
 
-            .legend-item {
-                .legend-label {
-                    display: flex;
-                    align-items: center;
-                    gap: var(--spacing-sm);
+            &:hover {
+                color: var(--color-text-primary);
+            }
+        }
+    }
+
+    .legend-items {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+
+        .legend-item {
+            .legend-label {
+                display: flex;
+                align-items: center;
+                gap: var(--spacing-sm);
+                cursor: pointer;
+                color: var(--color-text-primary);
+                font-size: var(--font-size-base);
+
+                input[type="checkbox"] {
                     cursor: pointer;
-                    color: var(--color-text-primary);
-                    font-size: var(--font-size-base);
-
-                    input[type="checkbox"] {
-                        cursor: pointer;
-                    }
-
-                    .legend-icon {
-                        display: inline-flex;
-                        align-items: center;
-                        justify-content: center;
-                        width: 20px;
-                        height: 20px;
-                        font-size: 14px;
-                    }
-
-                    .station-crossing-icon {
-                        width: 16px;
-                        height: 16px;
-                        border-radius: var(--radius-full);
-                        background-color: var(--color-success-bg);
-                        border: 2px solid var(--color-success);
-                    }
-
-                    .conflict-icon {
-                        color: var(--color-warning-text);
-                    }
                 }
 
-                .legend-description {
-                    margin-top: var(--spacing-xs);
-                    margin-left: 2rem;
-                    font-size: var(--font-size-xs);
-                    color: var(--color-text-muted);
+                .legend-icon {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 20px;
+                    height: 20px;
+                    font-size: 14px;
                 }
+
+                .station-crossing-icon {
+                    width: 16px;
+                    height: 16px;
+                    border-radius: var(--radius-full);
+                    background-color: var(--color-success-bg);
+                    border: 2px solid var(--color-success);
+                }
+
+                .conflict-icon {
+                    color: var(--color-warning-text);
+                }
+            }
+
+            .legend-description {
+                margin-top: var(--spacing-xs);
+                margin-left: 2rem;
+                font-size: var(--font-size-xs);
+                color: var(--color-text-muted);
             }
         }
     }
