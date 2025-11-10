@@ -17,6 +17,7 @@ use crate::constants::BASE_DATE;
 use crate::time::time_to_fraction;
 use super::{station_labels, time_labels, conflict_indicators, train_positions, train_journeys, time_scrubber, graph_content};
 use super::types::{GraphDimensions, ViewportState, ConflictDisplayState, HoverState};
+use crate::theme::{Theme, use_theme};
 
 // Layout constants for the graph canvas
 pub const LEFT_MARGIN: f64 = 120.0;
@@ -63,6 +64,7 @@ fn setup_render_effect(
     view_edge_path: Signal<Vec<usize>>,
     station_label_width: ReadSignal<f64>,
     edited_line_ids: ReadSignal<std::collections::HashSet<uuid::Uuid>>,
+    theme: ReadSignal<Theme>,
 ) {
     let (render_requested, set_render_requested) = create_signal(false);
     let is_disposed = Rc::new(Cell::new(false));
@@ -98,6 +100,7 @@ fn setup_render_effect(
         let _ = spacing_mode.get();
         let _ = station_label_width.get();
         let _ = edited_line_ids.get();
+        let _ = theme.get();
 
         if !render_requested.get_untracked() {
             set_render_requested.set(true);
@@ -160,7 +163,8 @@ fn setup_render_effect(
                 let current_edge_path = view_edge_path.get_untracked();
                 let label_width = station_label_width.get_untracked();
                 let current_edited_line_ids = edited_line_ids.get_untracked();
-                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph, &idx_map, current_spacing_mode, &current_edge_path, label_width, &current_edited_line_ids);
+                let current_theme = theme.get_untracked();
+                render_graph(&canvas, &stations_for_render, &journeys, current, &viewport, &conflict_display, &hover_state, &current_graph, &idx_map, current_spacing_mode, &current_edge_path, label_width, &current_edited_line_ids, current_theme);
             });
 
             let _ = window.request_animation_frame(callback.as_ref().unchecked_ref());
@@ -270,6 +274,9 @@ pub fn GraphCanvas(
     // Get capturing shortcut state from context
     let (is_capturing_shortcut, _) = use_context::<(ReadSignal<bool>, WriteSignal<bool>)>()
         .expect("is_capturing_shortcut context not found");
+
+    // Get theme signal
+    let theme = use_theme();
 
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (is_dragging, set_is_dragging) = create_signal(false);
@@ -452,7 +459,7 @@ pub fn GraphCanvas(
         canvas_ref, train_journeys, visualization_time, graph, &viewport,
         conflicts_memo, show_conflicts, show_line_blocks, spacing_mode,
         hovered_conflict, hovered_journey_id, display_stations, station_idx_map,
-        view_edge_path, station_label_width, edited_line_ids
+        view_edge_path, station_label_width, edited_line_ids, theme
     );
 
     let handle_mouse_down = move |ev: MouseEvent| {
@@ -662,6 +669,7 @@ fn render_graph(
     view_edge_path: &[usize],
     station_label_width: f64,
     edited_line_ids: &std::collections::HashSet<uuid::Uuid>,
+    theme: Theme,
 ) {
     let canvas_element: &web_sys::HtmlCanvasElement = canvas;
     let canvas_width = f64::from(canvas_element.width());
@@ -713,7 +721,7 @@ fn render_graph(
     };
 
     clear_canvas(&ctx, canvas_width, canvas_height);
-    graph_content::draw_background(&ctx, canvas_width, canvas_height);
+    graph_content::draw_background(&ctx, canvas_width, canvas_height, theme);
 
     // Apply zoom and pan transformation for all graph content (including grids)
     ctx.save();
@@ -741,9 +749,9 @@ fn render_graph(
     zoomed_dimensions.hour_width *= viewport.zoom_level_x;
 
     // Draw grid and content in zoomed coordinate system
-    time_labels::draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level, viewport.zoom_level_x, viewport.pan_offset_x);
-    graph_content::draw_station_grid(&ctx, &zoomed_dimensions, stations, &station_y_positions, viewport.zoom_level, viewport.pan_offset_x);
-    graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, &station_y_positions, graph, viewport.zoom_level, viewport.pan_offset_x);
+    time_labels::draw_hour_grid(&ctx, &zoomed_dimensions, viewport.zoom_level, viewport.zoom_level_x, viewport.pan_offset_x, theme);
+    graph_content::draw_station_grid(&ctx, &zoomed_dimensions, stations, &station_y_positions, viewport.zoom_level, viewport.pan_offset_x, theme);
+    graph_content::draw_double_track_indicators(&ctx, &zoomed_dimensions, stations, &station_y_positions, graph, viewport.zoom_level, viewport.pan_offset_x, theme);
 
     // Draw train journeys
     train_journeys::draw_train_journeys(
@@ -778,6 +786,7 @@ fn render_graph(
             viewport.zoom_level,
             time_to_fraction,
             station_idx_map,
+            theme,
         );
 
         // Draw block visualization for hovered conflicts (BlockViolation, HeadOn, Overtaking)
@@ -827,6 +836,7 @@ fn render_graph(
         viewport.zoom_level,
         viewport.zoom_level_x,
         viewport.pan_offset_x,
+        theme,
     );
     station_labels::draw_station_labels(
         &ctx,
@@ -835,6 +845,7 @@ fn render_graph(
         &station_y_positions,
         viewport.zoom_level,
         viewport.pan_offset_y,
+        theme,
     );
 
     // Draw time scrubber on top (adjusted for zoom/pan)
@@ -846,6 +857,7 @@ fn render_graph(
         viewport.zoom_level_x,
         viewport.pan_offset_x,
         time_to_fraction,
+        theme,
     );
 
     // Draw current train positions last so they appear on top of scrubber
@@ -873,6 +885,7 @@ fn render_graph(
         current_time,
         viewport.zoom_level,
         time_to_fraction,
+        theme,
     );
 
     ctx.restore();

@@ -1,37 +1,69 @@
 use super::types::GraphDimensions;
 use web_sys::CanvasRenderingContext2d;
+use crate::theme::Theme;
 
-// Hour grid constants
-const HOUR_GRID_COLOR: &str = "#2a2a2a";
 const HOUR_GRID_PADDING: i32 = 5;
-const TEN_MIN_GRID_COLOR: &str = "#1a1a1a";
-const MINUTE_GRID_COLOR: &str = "#151515";
 
 // Zoom thresholds for showing subdivisions (effective pixels per hour)
 const TEN_MIN_THRESHOLD: f64 = 150.0;
 const MINUTE_THRESHOLD: f64 = 1250.0;
 
 // Hour label constants
-const HOUR_LABEL_COLOR: &str = "#888";
 const HOUR_LABEL_FONT: &str = "12px monospace";
 const HOUR_LABEL_X_OFFSET: f64 = -15.0;
 const HOUR_LABEL_Y_OFFSET_TOP: f64 = -10.0;
 
 // Sub-hour label constants
-const TEN_MIN_LABEL_COLOR: &str = "#666";
 const TEN_MIN_LABEL_FONT: &str = "10px monospace";
 const TEN_MIN_LABEL_X_OFFSET: f64 = -8.0;
-const MINUTE_LABEL_COLOR: &str = "#555";
 const MINUTE_LABEL_FONT: &str = "9px monospace";
 const MINUTE_LABEL_X_OFFSET: f64 = -6.0;
-const MINUTE_LABEL_BOLD_COLOR: &str = "#777";
 const MINUTE_LABEL_BOLD_FONT: &str = "bold 10px monospace";
 
 // Day indicator constants
-const DAY_INDICATOR_COLOR: &str = "#666";
 const DAY_INDICATOR_FONT: &str = "10px monospace";
 const DAY_INDICATOR_X_OFFSET: f64 = -10.0;
 const DAY_INDICATOR_Y_OFFSET: f64 = 5.0;
+
+struct Palette {
+    hour_grid: &'static str,
+    ten_min_grid: &'static str,
+    minute_grid: &'static str,
+    hour_label: &'static str,
+    ten_min_label: &'static str,
+    minute_label: &'static str,
+    minute_label_bold: &'static str,
+    day_indicator: &'static str,
+}
+
+const DARK_PALETTE: Palette = Palette {
+    hour_grid: "#2a2a2a",
+    ten_min_grid: "#1a1a1a",
+    minute_grid: "#151515",
+    hour_label: "#888",
+    ten_min_label: "#666",
+    minute_label: "#555",
+    minute_label_bold: "#777",
+    day_indicator: "#666",
+};
+
+const LIGHT_PALETTE: Palette = Palette {
+    hour_grid: "#d0d0d0",
+    ten_min_grid: "#e5e5e5",
+    minute_grid: "#ececec",
+    hour_label: "#666",
+    ten_min_label: "#999",
+    minute_label: "#aaa",
+    minute_label_bold: "#888",
+    day_indicator: "#999",
+};
+
+fn get_palette(theme: Theme) -> &'static Palette {
+    match theme {
+        Theme::Dark => &DARK_PALETTE,
+        Theme::Light => &LIGHT_PALETTE,
+    }
+}
 
 #[allow(clippy::cast_possible_truncation)]
 pub fn draw_hour_grid(
@@ -40,7 +72,9 @@ pub fn draw_hour_grid(
     zoom_level: f64,
     zoom_level_x: f64,
     pan_offset_x: f64,
+    theme: Theme,
 ) {
+    let palette = get_palette(theme);
     let line_width = 1.0 / zoom_level;
 
     // Calculate visible range in the transformed coordinate system
@@ -53,7 +87,7 @@ pub fn draw_hour_grid(
     let show_minutes = effective_hour_width > MINUTE_THRESHOLD;
 
     // Draw hour lines
-    ctx.set_stroke_style_str(HOUR_GRID_COLOR);
+    ctx.set_stroke_style_str(palette.hour_grid);
     ctx.set_line_width(line_width);
     let start_hour = (x_min / dims.hour_width).floor() as i32 - HOUR_GRID_PADDING;
     let end_hour = (x_max / dims.hour_width).ceil() as i32 + HOUR_GRID_PADDING;
@@ -77,10 +111,10 @@ pub fn draw_hour_grid(
 
                 // Make 10-minute marks bolder
                 if i % 10 == 0 {
-                    ctx.set_stroke_style_str(TEN_MIN_GRID_COLOR);
+                    ctx.set_stroke_style_str(palette.ten_min_grid);
                     ctx.set_line_width(line_width * 0.7);
                 } else {
-                    ctx.set_stroke_style_str(MINUTE_GRID_COLOR);
+                    ctx.set_stroke_style_str(palette.minute_grid);
                     ctx.set_line_width(line_width * 0.5);
                 }
 
@@ -89,7 +123,7 @@ pub fn draw_hour_grid(
         }
     } else if show_ten_min {
         // Draw 10-minute lines (6 per hour)
-        ctx.set_stroke_style_str(TEN_MIN_GRID_COLOR);
+        ctx.set_stroke_style_str(palette.ten_min_grid);
         ctx.set_line_width(line_width * 0.7);
         let ten_min_width = dims.hour_width / 6.0;
         let start_ten_min = (x_min / ten_min_width).floor() as i32 - HOUR_GRID_PADDING * 6;
@@ -119,7 +153,10 @@ pub fn draw_hour_labels(
     zoom_level: f64,
     zoom_level_x: f64,
     pan_offset_x: f64,
+    theme: Theme,
 ) {
+    let palette = get_palette(theme);
+
     // Account for both uniform zoom and horizontal zoom
     let effective_hour_width = dims.hour_width * zoom_level * zoom_level_x;
 
@@ -141,7 +178,7 @@ pub fn draw_hour_labels(
         {
             let day = i / 24;
             let hour_in_day = i % 24;
-            draw_hour_label_with_day(ctx, hour_in_day, day, adjusted_x, dims.top_margin);
+            draw_hour_label_with_day(ctx, hour_in_day, day, adjusted_x, dims.top_margin, palette);
         }
     }
 
@@ -165,7 +202,7 @@ pub fn draw_hour_labels(
                     && adjusted_x <= dims.left_margin + dims.graph_width
                 {
                     let minute = i % 60;
-                    draw_minute_label(ctx, minute, adjusted_x, dims.top_margin);
+                    draw_minute_label(ctx, minute, adjusted_x, dims.top_margin, palette);
                 }
             }
         }
@@ -188,7 +225,7 @@ pub fn draw_hour_labels(
                     && adjusted_x <= dims.left_margin + dims.graph_width
                 {
                     let ten_minutes = (i % 6) * 10;
-                    draw_ten_min_label(ctx, ten_minutes, adjusted_x, dims.top_margin);
+                    draw_ten_min_label(ctx, ten_minutes, adjusted_x, dims.top_margin, palette);
                 }
             }
         }
@@ -201,8 +238,9 @@ fn draw_hour_label_with_day(
     day: i32,
     x: f64,
     top: f64,
+    palette: &Palette,
 ) {
-    ctx.set_fill_style_str(HOUR_LABEL_COLOR);
+    ctx.set_fill_style_str(palette.hour_label);
     ctx.set_font(HOUR_LABEL_FONT);
 
     if day == 0 {
@@ -220,7 +258,7 @@ fn draw_hour_label_with_day(
             top + HOUR_LABEL_Y_OFFSET_TOP,
         );
         ctx.set_font(DAY_INDICATOR_FONT);
-        ctx.set_fill_style_str(DAY_INDICATOR_COLOR);
+        ctx.set_fill_style_str(palette.day_indicator);
         let _ = ctx.fill_text(
             &format!("+{day}"),
             x + DAY_INDICATOR_X_OFFSET,
@@ -229,8 +267,8 @@ fn draw_hour_label_with_day(
     }
 }
 
-fn draw_ten_min_label(ctx: &CanvasRenderingContext2d, ten_minutes: i32, x: f64, top: f64) {
-    ctx.set_fill_style_str(TEN_MIN_LABEL_COLOR);
+fn draw_ten_min_label(ctx: &CanvasRenderingContext2d, ten_minutes: i32, x: f64, top: f64, palette: &Palette) {
+    ctx.set_fill_style_str(palette.ten_min_label);
     ctx.set_font(TEN_MIN_LABEL_FONT);
     let _ = ctx.fill_text(
         &format!(":{ten_minutes:02}"),
@@ -239,10 +277,10 @@ fn draw_ten_min_label(ctx: &CanvasRenderingContext2d, ten_minutes: i32, x: f64, 
     );
 }
 
-fn draw_minute_label(ctx: &CanvasRenderingContext2d, minute: i32, x: f64, top: f64) {
+fn draw_minute_label(ctx: &CanvasRenderingContext2d, minute: i32, x: f64, top: f64, palette: &Palette) {
     // Make 10-minute marks bolder
     if minute % 10 == 0 {
-        ctx.set_fill_style_str(MINUTE_LABEL_BOLD_COLOR);
+        ctx.set_fill_style_str(palette.minute_label_bold);
         ctx.set_font(MINUTE_LABEL_BOLD_FONT);
         let _ = ctx.fill_text(
             &format!(":{minute:02}"),
@@ -250,7 +288,7 @@ fn draw_minute_label(ctx: &CanvasRenderingContext2d, minute: i32, x: f64, top: f
             top + HOUR_LABEL_Y_OFFSET_TOP,
         );
     } else {
-        ctx.set_fill_style_str(MINUTE_LABEL_COLOR);
+        ctx.set_fill_style_str(palette.minute_label);
         ctx.set_font(MINUTE_LABEL_FONT);
         let _ = ctx.fill_text(
             &format!(":{minute:02}"),

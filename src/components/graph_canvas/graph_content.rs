@@ -1,22 +1,43 @@
 use web_sys::CanvasRenderingContext2d;
 use crate::models::{Node, RailwayGraph};
+use crate::theme::Theme;
 use super::types::GraphDimensions;
 use petgraph::visit::EdgeRef;
 use petgraph::stable_graph::NodeIndex;
 
-// Background constants
-const BACKGROUND_COLOR: &str = "#0a0a0a";
-
-// Station grid constants
-const STATION_GRID_COLOR: &str = "#1a1a1a";
-const SINGLE_PLATFORM_GRID_COLOR: &str = "#121212";
 const GRID_PADDING_HOURS: i32 = 5;
 
-// Double track indicator constants
-const DOUBLE_TRACK_BG_COLOR: &str = "rgba(255, 255, 255, 0.03)";
+struct Palette {
+    background: &'static str,
+    station_grid: &'static str,
+    single_platform_grid: &'static str,
+    double_track_bg: &'static str,
+}
 
-pub fn draw_background(ctx: &CanvasRenderingContext2d, width: f64, height: f64) {
-    ctx.set_fill_style_str(BACKGROUND_COLOR);
+const DARK_PALETTE: Palette = Palette {
+    background: "#0a0a0a",
+    station_grid: "#1a1a1a",
+    single_platform_grid: "#121212",
+    double_track_bg: "rgba(255, 255, 255, 0.03)",
+};
+
+const LIGHT_PALETTE: Palette = Palette {
+    background: "#fafafa",
+    station_grid: "#e0e0e0",
+    single_platform_grid: "#ebebeb",
+    double_track_bg: "rgba(0, 0, 0, 0.02)",
+};
+
+fn get_palette(theme: Theme) -> &'static Palette {
+    match theme {
+        Theme::Dark => &DARK_PALETTE,
+        Theme::Light => &LIGHT_PALETTE,
+    }
+}
+
+pub fn draw_background(ctx: &CanvasRenderingContext2d, width: f64, height: f64, theme: Theme) {
+    let palette = get_palette(theme);
+    ctx.set_fill_style_str(palette.background);
     ctx.fill_rect(0.0, 0.0, width, height);
 }
 
@@ -27,8 +48,10 @@ pub fn draw_station_grid(
     station_y_positions: &[f64],
     zoom_level: f64,
     pan_offset_x: f64,
+    theme: Theme,
 ) {
     use super::canvas::TOP_MARGIN;
+    let palette = get_palette(theme);
 
     for (i, (_, station_node)) in stations.iter().enumerate() {
         // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
@@ -36,8 +59,10 @@ pub fn draw_station_grid(
 
         // Use different color for single-platform stations
         let color = match station_node {
-            Node::Station(station) if station.platforms.len() == 1 => SINGLE_PLATFORM_GRID_COLOR,
-            _ => STATION_GRID_COLOR,
+            Node::Station(station) if station.platforms.len() == 1 => {
+                palette.single_platform_grid
+            }
+            _ => palette.station_grid,
         };
 
         draw_horizontal_line(ctx, dims, y, zoom_level, pan_offset_x, color);
@@ -75,8 +100,11 @@ pub fn draw_double_track_indicators(
     graph: &RailwayGraph,
     zoom_level: f64,
     pan_offset_x: f64,
+    theme: Theme,
 ) {
     use super::canvas::TOP_MARGIN;
+    let palette = get_palette(theme);
+
     // Calculate visible range in the transformed coordinate system
     let x_min = -pan_offset_x / zoom_level;
     let x_max = (dims.graph_width - pan_offset_x) / zoom_level;
@@ -113,7 +141,7 @@ pub fn draw_double_track_indicators(
             let height = (station2_y - station1_y).abs();
 
             // Draw lighter background rectangle
-            ctx.set_fill_style_str(DOUBLE_TRACK_BG_COLOR);
+            ctx.set_fill_style_str(palette.double_track_bg);
             ctx.fill_rect(start_x, top_y, width, height);
         }
     }

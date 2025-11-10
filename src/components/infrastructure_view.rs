@@ -5,6 +5,7 @@ use crate::components::canvas_viewport;
 use crate::components::canvas_controls_hint::CanvasControlsHint;
 use crate::components::multi_select_toolbar::MultiSelectToolbar;
 use crate::components::graph_canvas::types::ViewportState;
+use crate::theme::{Theme, use_theme};
 use crate::components::add_station::{AddStation, AddStationsBatchCallback};
 use crate::components::add_station_quick::QuickEntryStation;
 use crate::components::confirmation_dialog::ConfirmationDialog;
@@ -901,6 +902,7 @@ fn setup_render_effect(
     selected_stations: ReadSignal<Vec<NodeIndex>>,
     selection_box_start: ReadSignal<Option<(f64, f64)>>,
     selection_box_end: ReadSignal<Option<(f64, f64)>>,
+    theme: ReadSignal<Theme>,
 ) {
     create_effect(move |_| {
         // Track all dependencies
@@ -916,6 +918,7 @@ fn setup_render_effect(
         let _ = selected_stations.get();
         let _ = selection_box_start.get();
         let _ = selection_box_end.get();
+        let _ = theme.get();
 
         // Throttle renders using requestAnimationFrame
         if !render_requested.get_untracked() {
@@ -937,6 +940,7 @@ fn setup_render_effect(
                 let zooming = is_zooming.get_untracked();
                 let preview_station_pos = station_dialog_clicked_position.get_untracked();
                 let current_selected_stations = selected_stations.get_untracked();
+                let current_theme = theme.get_untracked();
                 let current_selection_box = if let (Some(start), Some(end)) = (selection_box_start.get_untracked(), selection_box_end.get_untracked()) {
                     Some((start, end))
                 } else {
@@ -984,7 +988,7 @@ fn setup_render_effect(
                 // Pass cache to renderer (mutable to update label cache)
                 topology_cache.with_value(|cache| {
                     let mut cache_mut = cache.borrow_mut();
-                    renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming, preview_station_pos, current_selection_box);
+                    renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming, preview_station_pos, current_selection_box, current_theme);
                 });
             });
 
@@ -1498,6 +1502,9 @@ pub fn InfrastructureView(
     let (is_capturing_shortcut, _) = use_context::<(ReadSignal<bool>, WriteSignal<bool>)>()
         .expect("is_capturing_shortcut context not found");
 
+    // Get theme signal
+    let theme = use_theme();
+
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (auto_layout_enabled, set_auto_layout_enabled) = create_signal(true);
     let (edit_mode, set_edit_mode) = create_signal(EditMode::None);
@@ -1681,7 +1688,7 @@ pub fn InfrastructureView(
     let (handle_add_station, handle_add_stations_batch, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
         create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_delete_bypass_info, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment, settings, set_selected_stations, set_selection_bounds);
 
-    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position, selected_stations, selection_box_start, selection_box_end);
+    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position, selected_stations, selection_box_start, selection_box_end, theme);
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_context_menu, handle_wheel) = create_event_handlers(
         canvas_ref, edit_mode, set_edit_mode, selected_station, set_selected_station, view_creation_callbacks.on_add_waypoint.clone(), graph, set_graph,

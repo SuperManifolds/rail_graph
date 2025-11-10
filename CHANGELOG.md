@@ -3,6 +3,7 @@
 ## Features
 - Added configurable train buffer settings in project settings - minimum separation time between trains and station crossing margin for conflict detection are now adjustable per project instead of hardcoded
 - Added project setting to ignore platform conflicts for same-direction arrivals - when enabled, trains arriving at the same platform from the same track will not generate conflicts
+- Added light mode support
 
 # v0.1.19 - 2025-11-08
 

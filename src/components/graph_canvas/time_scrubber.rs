@@ -1,13 +1,33 @@
 use web_sys::CanvasRenderingContext2d;
 use chrono::NaiveDateTime;
+use crate::theme::Theme;
 use super::types::GraphDimensions;
 
-// Time scrubber constants
-const TIME_SCRUBBER_BG_COLOR: &str = "rgba(255, 51, 51, 0.3)";
 const TIME_SCRUBBER_BG_WIDTH: f64 = 8.0;
-const TIME_SCRUBBER_LINE_COLOR: &str = "#FF3333";
 const TIME_SCRUBBER_LINE_WIDTH: f64 = 2.0;
 const TIME_SCRUBBER_HANDLE_SIZE: f64 = 8.0;
+
+struct Palette {
+    scrubber_bg: &'static str,
+    scrubber_line: &'static str,
+}
+
+const DARK_PALETTE: Palette = Palette {
+    scrubber_bg: "rgba(255, 51, 51, 0.3)",
+    scrubber_line: "#FF3333",
+};
+
+const LIGHT_PALETTE: Palette = Palette {
+    scrubber_bg: "rgba(220, 50, 50, 0.2)",
+    scrubber_line: "#CC2222",
+};
+
+fn get_palette(theme: Theme) -> &'static Palette {
+    match theme {
+        Theme::Dark => &DARK_PALETTE,
+        Theme::Light => &LIGHT_PALETTE,
+    }
+}
 
 pub fn draw_time_scrubber(
     ctx: &CanvasRenderingContext2d,
@@ -17,7 +37,9 @@ pub fn draw_time_scrubber(
     zoom_level_x: f64,
     pan_offset_x: f64,
     time_to_fraction: fn(NaiveDateTime) -> f64,
+    theme: Theme,
 ) {
+    let palette = get_palette(theme);
     let time_fraction = time_to_fraction(time);
     let base_x = time_fraction * dims.hour_width;
     let x = dims.left_margin + (base_x * zoom_level * zoom_level_x) + pan_offset_x;
@@ -28,7 +50,7 @@ pub fn draw_time_scrubber(
     }
 
     // Draw semi-transparent background for the line
-    ctx.set_stroke_style_str(TIME_SCRUBBER_BG_COLOR);
+    ctx.set_stroke_style_str(palette.scrubber_bg);
     ctx.set_line_width(TIME_SCRUBBER_BG_WIDTH);
     ctx.begin_path();
     ctx.move_to(x, dims.top_margin);
@@ -36,7 +58,7 @@ pub fn draw_time_scrubber(
     ctx.stroke();
 
     // Draw main line
-    ctx.set_stroke_style_str(TIME_SCRUBBER_LINE_COLOR);
+    ctx.set_stroke_style_str(palette.scrubber_line);
     ctx.set_line_width(TIME_SCRUBBER_LINE_WIDTH);
     ctx.begin_path();
     ctx.move_to(x, dims.top_margin);
@@ -44,7 +66,7 @@ pub fn draw_time_scrubber(
     ctx.stroke();
 
     // Draw draggable handle at top
-    ctx.set_fill_style_str(TIME_SCRUBBER_LINE_COLOR);
+    ctx.set_fill_style_str(palette.scrubber_line);
     ctx.begin_path();
     ctx.move_to(x - TIME_SCRUBBER_HANDLE_SIZE, dims.top_margin - 15.0);
     ctx.line_to(x + TIME_SCRUBBER_HANDLE_SIZE, dims.top_margin - 15.0);
@@ -53,7 +75,7 @@ pub fn draw_time_scrubber(
     ctx.fill();
 
     // Draw time label
-    ctx.set_fill_style_str(TIME_SCRUBBER_LINE_COLOR);
+    ctx.set_fill_style_str(palette.scrubber_line);
     ctx.set_font("bold 12px monospace");
     let _ = ctx.fill_text(
         &time.format("%H:%M").to_string(),

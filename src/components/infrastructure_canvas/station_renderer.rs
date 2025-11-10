@@ -1,4 +1,5 @@
 use crate::models::{RailwayGraph, Stations, Junctions};
+use crate::theme::Theme;
 use crate::components::infrastructure_canvas::{track_renderer, junction_renderer};
 use crate::geometry::line_segments_intersect;
 use web_sys::CanvasRenderingContext2d;
@@ -10,16 +11,42 @@ type TrackSegment = ((f64, f64), (f64, f64));
 
 const NODE_RADIUS: f64 = 8.0;
 const LABEL_OFFSET: f64 = 12.0;
-const JUNCTION_LABEL_OFFSET: f64 = 12.0; // Same as stations
+const JUNCTION_LABEL_OFFSET: f64 = 12.0;
 const CHAR_WIDTH_ESTIMATE: f64 = 7.5;
-const STATION_COLOR: &str = "#4a9eff";
-const PASSING_LOOP_COLOR: &str = "#888";
-const JUNCTION_LABEL_RADIUS: f64 = 22.0; // Match junction connection distance (14.0) + padding for label clearance
-const NODE_FILL_COLOR: &str = "#2a2a2a";
-const LABEL_COLOR: &str = "#fff";
-const SELECTION_RING_COLOR: &str = "#ffaa00";
+const JUNCTION_LABEL_RADIUS: f64 = 22.0;
 const SELECTION_RING_WIDTH: f64 = 3.0;
 const SELECTION_RING_OFFSET: f64 = 4.0;
+
+struct Palette {
+    station: &'static str,
+    passing_loop: &'static str,
+    node_fill: &'static str,
+    label: &'static str,
+    selection_ring: &'static str,
+}
+
+const DARK_PALETTE: Palette = Palette {
+    station: "#4a9eff",
+    passing_loop: "#888",
+    node_fill: "#2a2a2a",
+    label: "#fff",
+    selection_ring: "#ffaa00",
+};
+
+const LIGHT_PALETTE: Palette = Palette {
+    station: "#1976d2",
+    passing_loop: "#666",
+    node_fill: "#f0f0f0",
+    label: "#1a1a1a",
+    selection_ring: "#ff8800",
+};
+
+fn get_palette(theme: Theme) -> &'static Palette {
+    match theme {
+        Theme::Dark => &DARK_PALETTE,
+        Theme::Light => &LIGHT_PALETTE,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum LabelPosition {
@@ -155,6 +182,7 @@ impl LabelBounds {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_station_nodes(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
@@ -164,6 +192,7 @@ fn draw_station_nodes(
     viewport_bounds: (f64, f64, f64, f64),
     junctions: &HashSet<NodeIndex>,
     cached_avoidance: &HashMap<petgraph::stable_graph::EdgeIndex, (f64, f64)>,
+    palette: &Palette,
 ) -> Vec<(NodeIndex, (f64, f64), f64)> {
     let mut node_positions = Vec::new();
     let (left, top, right, bottom) = viewport_bounds;
@@ -182,12 +211,12 @@ fn draw_station_nodes(
         if let Some(station) = node.as_station() {
             // Draw stations as circles
             let (border_color, radius) = if station.passing_loop {
-                (PASSING_LOOP_COLOR, NODE_RADIUS * 0.6)
+                (palette.passing_loop, NODE_RADIUS * 0.6)
             } else {
-                (STATION_COLOR, NODE_RADIUS)
+                (palette.station, NODE_RADIUS)
             };
 
-            ctx.set_fill_style_str(NODE_FILL_COLOR);
+            ctx.set_fill_style_str(palette.node_fill);
             ctx.set_stroke_style_str(border_color);
             ctx.set_line_width(2.0 / zoom);
             ctx.begin_path();
@@ -197,7 +226,7 @@ fn draw_station_nodes(
 
             // Draw selection ring if this station is selected
             if selected_stations.contains(&idx) {
-                ctx.set_stroke_style_str(SELECTION_RING_COLOR);
+                ctx.set_stroke_style_str(palette.selection_ring);
                 ctx.set_line_width(SELECTION_RING_WIDTH / zoom);
                 ctx.begin_path();
                 let _ = ctx.arc(pos.0, pos.1, radius + SELECTION_RING_OFFSET, 0.0, std::f64::consts::PI * 2.0);
@@ -753,7 +782,7 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
 }
 
 /// Draw stations with cached label positions for performance during zoom
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
 pub fn draw_stations_with_cache(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
@@ -763,10 +792,12 @@ pub fn draw_stations_with_cache(
     cache: &mut super::renderer::TopologyCache,
     is_zooming: bool,
     viewport_bounds: (f64, f64, f64, f64),
+    theme: Theme,
 ) {
+    let palette = get_palette(theme);
     let font_size = 14.0 / zoom;
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets);
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets, palette);
 
     // Check if we can use cached label positions
     let use_cache = if let Some((cached_zoom, _)) = &cache.label_cache {
@@ -779,7 +810,7 @@ pub fn draw_stations_with_cache(
     if use_cache {
         // Use cached positions
         if let Some((_, cached_positions)) = &cache.label_cache {
-            draw_cached_labels(ctx, graph, &node_positions, cached_positions, font_size, &cache.junctions);
+            draw_cached_labels(ctx, graph, &node_positions, cached_positions, font_size, &cache.junctions, palette);
         }
         return;
     }
@@ -870,7 +901,7 @@ pub fn draw_stations_with_cache(
     cache.label_cache = Some((zoom, cached_positions));
 
     // Draw labels using computed positions
-    ctx.set_fill_style_str(LABEL_COLOR);
+    ctx.set_fill_style_str(palette.label);
     ctx.set_font(&format!("{font_size}px sans-serif"));
 
     for (idx, pos, radius) in &node_positions {
@@ -889,8 +920,9 @@ fn draw_cached_labels(
     cached_positions: &HashMap<NodeIndex, CachedLabelPosition>,
     font_size: f64,
     junctions: &HashSet<NodeIndex>,
+    palette: &Palette,
 ) {
-    ctx.set_fill_style_str(LABEL_COLOR);
+    ctx.set_fill_style_str(palette.label);
     ctx.set_font(&format!("{font_size}px sans-serif"));
 
     for (idx, pos, radius) in node_positions {

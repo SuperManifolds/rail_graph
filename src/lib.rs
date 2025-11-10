@@ -12,6 +12,7 @@ pub mod time;
 pub mod geometry;
 pub mod conflict;
 pub mod train_journey;
+pub mod theme;
 
 #[cfg(target_arch = "wasm32")]
 pub mod conflict_worker;
