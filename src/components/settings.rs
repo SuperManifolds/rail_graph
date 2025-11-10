@@ -25,6 +25,7 @@ pub fn Settings(
             default_node_distance_grid_squares: current.default_node_distance_grid_squares,
             minimum_separation: current.minimum_separation,
             station_margin: current.station_margin,
+            ignore_same_direction_platform_conflicts: current.ignore_same_direction_platform_conflicts,
         });
     };
 
@@ -37,6 +38,7 @@ pub fn Settings(
             default_node_distance_grid_squares: clamped_distance,
             minimum_separation: current.minimum_separation,
             station_margin: current.station_margin,
+            ignore_same_direction_platform_conflicts: current.ignore_same_direction_platform_conflicts,
         });
     };
 
@@ -48,6 +50,7 @@ pub fn Settings(
             default_node_distance_grid_squares: current.default_node_distance_grid_squares,
             minimum_separation: duration,
             station_margin: current.station_margin,
+            ignore_same_direction_platform_conflicts: current.ignore_same_direction_platform_conflicts,
         });
     };
 
@@ -59,6 +62,19 @@ pub fn Settings(
             default_node_distance_grid_squares: current.default_node_distance_grid_squares,
             minimum_separation: current.minimum_separation,
             station_margin: duration,
+            ignore_same_direction_platform_conflicts: current.ignore_same_direction_platform_conflicts,
+        });
+    };
+
+    let handle_ignore_same_direction_change = move |checked: bool| {
+        let current = settings.get();
+        set_settings(ProjectSettings {
+            track_handedness: current.track_handedness,
+            line_sort_mode: current.line_sort_mode,
+            default_node_distance_grid_squares: current.default_node_distance_grid_squares,
+            minimum_separation: current.minimum_separation,
+            station_margin: current.station_margin,
+            ignore_same_direction_platform_conflicts: checked,
         });
     };
 
@@ -199,6 +215,20 @@ pub fn Settings(
                                 />
                                 <p class="help-text">
                                     "Time margin for determining if track intersections near stations are valid crossings."
+                                </p>
+                            </div>
+
+                            <div>
+                                <label class="checkbox-label">
+                                    <input
+                                        type="checkbox"
+                                        checked=move || settings.get().ignore_same_direction_platform_conflicts
+                                        on:change=move |ev| handle_ignore_same_direction_change(leptos::event_target_checked(&ev))
+                                    />
+                                    <span>"Ignore platform conflicts for same-direction arrivals"</span>
+                                </label>
+                                <p class="help-text">
+                                    "When enabled, trains arriving at the same platform from the same track will not generate conflicts."
                                 </p>
                             </div>
                         </div>

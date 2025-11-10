@@ -26,6 +26,7 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
         station_indices,
         chrono::Duration::seconds(30),
         chrono::Duration::seconds(30),
+        false,
     );
 
     // Benchmark journey generation
@@ -60,6 +61,7 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
                 station_indices,
                 chrono::Duration::seconds(30),
                 chrono::Duration::seconds(30),
+                false,
             );
 
             detect_line_conflicts(

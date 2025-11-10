@@ -39,6 +39,8 @@ pub struct ProjectSettings {
     pub minimum_separation: Duration,
     #[serde(with = "crate::models::line::duration_serde", default = "default_station_margin")]
     pub station_margin: Duration,
+    #[serde(default)]
+    pub ignore_same_direction_platform_conflicts: bool,
 }
 
 fn default_node_distance() -> f64 {
@@ -61,6 +63,7 @@ impl Default for ProjectSettings {
             default_node_distance_grid_squares: default_node_distance(),
             minimum_separation: default_minimum_separation(),
             station_margin: default_station_margin(),
+            ignore_same_direction_platform_conflicts: false,
         }
     }
 }

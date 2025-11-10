@@ -162,6 +162,7 @@ struct ConflictContext<'a> {
     serializable_ctx: &'a SerializableConflictContext,
     station_margin: chrono::Duration,
     minimum_separation: chrono::Duration,
+    ignore_same_direction_platform_conflicts: bool,
 }
 
 /// Serializable context for conflict detection (no references, no complex graph types)
@@ -177,6 +178,7 @@ pub struct SerializableConflictContext {
     pub junctions: std::collections::HashSet<usize>,
     pub station_margin_secs: i64,
     pub minimum_separation_secs: i64,
+    pub ignore_same_direction_platform_conflicts: bool,
 }
 
 impl SerializableConflictContext {
@@ -187,6 +189,7 @@ impl SerializableConflictContext {
         station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize>,
         station_margin: chrono::Duration,
         minimum_separation: chrono::Duration,
+        ignore_same_direction_platform_conflicts: bool,
     ) -> Self {
         use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
@@ -225,6 +228,7 @@ impl SerializableConflictContext {
             junctions,
             station_margin_secs: station_margin.num_seconds(),
             minimum_separation_secs: minimum_separation.num_seconds(),
+            ignore_same_direction_platform_conflicts,
         }
     }
 }
@@ -235,6 +239,7 @@ struct PlatformOccupancy {
     time_start: NaiveDateTime,
     time_end: NaiveDateTime,
     timing_uncertain: bool,
+    arrival_edge_index: Option<usize>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -312,6 +317,7 @@ pub fn detect_line_conflicts(
         serializable_ctx,
         station_margin: chrono::Duration::seconds(serializable_ctx.station_margin_secs),
         minimum_separation: chrono::Duration::seconds(serializable_ctx.minimum_separation_secs),
+        ignore_same_direction_platform_conflicts: serializable_ctx.ignore_same_direction_platform_conflicts,
     };
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -569,7 +575,7 @@ fn check_journey_pair_with_all_cached(
     #[cfg(target_arch = "wasm32")]
     let platform_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
-    check_platform_conflicts_cached(journey1, journey2, results, plat_occ1, plat_occ2);
+    check_platform_conflicts_cached(journey1, journey2, results, plat_occ1, plat_occ2, ctx);
 
     #[cfg(not(target_arch = "wasm32"))]
     timing::add_duration(&timing::PLATFORM_TIME, platform_start.elapsed());
@@ -1147,15 +1153,17 @@ fn extract_platform_occupancies(
         // Determine which platform this journey uses at this station
         // A train can only occupy ONE platform at a time during a stop
         // Priority: use arrival platform (where train stops), or departure platform if no arrival
-        let platform_idx = if i > 0 && i - 1 < journey.segments.len() {
+        let (platform_idx, arrival_edge_index) = if i > 0 && i - 1 < journey.segments.len() {
             // Not the first station: use the destination platform of the previous segment (arrival platform)
-            journey.segments[i - 1].destination_platform
+            // and capture the edge index the train arrived on
+            (journey.segments[i - 1].destination_platform, Some(journey.segments[i - 1].edge_index))
         } else if i < journey.segments.len() {
             // First station: use the origin platform of the current segment (departure platform)
-            journey.segments[i].origin_platform
+            // No arrival edge since this is the origin
+            (journey.segments[i].origin_platform, None)
         } else {
-            // Single station (no segments) - use platform 0
-            0
+            // Single station (no segments) - use platform 0, no arrival edge
+            (0, None)
         };
 
         occupancies.push(PlatformOccupancy {
@@ -1164,6 +1172,7 @@ fn extract_platform_occupancies(
             time_start: *arrival_time - buffer,
             time_end: *departure_time + buffer,
             timing_uncertain: journey.timing_inherited.get(i).copied().unwrap_or(false),
+            arrival_edge_index,
         });
     }
 
@@ -1177,6 +1186,7 @@ fn check_platform_conflicts_cached(
     results: &mut ConflictResults,
     occupancies1: &[PlatformOccupancy],
     occupancies2: &[PlatformOccupancy],
+    ctx: &ConflictContext,
 ) {
     #[cfg(not(target_arch = "wasm32"))]
     let compare_start = std::time::Instant::now();
@@ -1195,6 +1205,12 @@ fn check_platform_conflicts_cached(
 
                 // Skip conflicts that occur before the week start (day -1 Sunday)
                 if conflict_time < BASE_MIDNIGHT {
+                    continue;
+                }
+
+                // If setting is enabled, skip conflicts where trains arrived from the same direction
+                let same_direction = matches!((occ1.arrival_edge_index, occ2.arrival_edge_index), (Some(e1), Some(e2)) if e1 == e2);
+                if ctx.ignore_same_direction_platform_conflicts && same_direction {
                     continue;
                 }
 
@@ -1345,7 +1361,7 @@ mod tests {
         let journeys = vec![];
 
         let station_indices = HashMap::new();
-        let ctx = SerializableConflictContext::from_graph(&graph, station_indices, STATION_MARGIN, PLATFORM_BUFFER);
+        let ctx = SerializableConflictContext::from_graph(&graph, station_indices, STATION_MARGIN, PLATFORM_BUFFER, false);
         let (conflicts, crossings) = detect_line_conflicts(&journeys, &ctx);
 
         assert_eq!(conflicts.len(), 0);
@@ -1386,7 +1402,7 @@ mod tests {
             .enumerate()
             .map(|(idx, node_idx)| (node_idx, idx))
             .collect();
-        let ctx = SerializableConflictContext::from_graph(&graph, station_indices, STATION_MARGIN, PLATFORM_BUFFER);
+        let ctx = SerializableConflictContext::from_graph(&graph, station_indices, STATION_MARGIN, PLATFORM_BUFFER, false);
         let (conflicts, _) = detect_line_conflicts(&[journey], &ctx);
         assert_eq!(conflicts.len(), 0);
     }
@@ -1406,12 +1422,13 @@ mod tests {
             Track { direction: TrackDirection::Backward },
         ]);
 
-        let serializable_ctx = SerializableConflictContext::from_graph(&graph, HashMap::new(), STATION_MARGIN, PLATFORM_BUFFER);
+        let serializable_ctx = SerializableConflictContext::from_graph(&graph, HashMap::new(), STATION_MARGIN, PLATFORM_BUFFER, false);
         let ctx = ConflictContext {
             station_indices: HashMap::new(),
             serializable_ctx: &serializable_ctx,
             station_margin: STATION_MARGIN,
             minimum_separation: PLATFORM_BUFFER,
+            ignore_same_direction_platform_conflicts: false,
         };
 
         assert!(is_single_track_bidirectional(&ctx, edge1.index()));

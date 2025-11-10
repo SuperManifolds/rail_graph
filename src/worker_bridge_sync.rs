@@ -26,6 +26,7 @@ impl ConflictDetector {
             station_indices,
             settings.station_margin,
             settings.minimum_separation,
+            settings.ignore_same_direction_platform_conflicts,
         );
 
         let (conflicts, _) = crate::conflict::detect_line_conflicts(&journeys, &context);

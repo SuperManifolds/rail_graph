@@ -51,6 +51,7 @@ fn main() {
         station_indices,
         chrono::Duration::seconds(30),
         chrono::Duration::seconds(30),
+        false,
     );
 
     // Run conflict detection (timing happens inside the function)
