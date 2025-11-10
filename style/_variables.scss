@@ -37,10 +37,10 @@
     --color-danger-darker: #b71c1c;
 
     --color-warning: #ffc107;
-    --color-warning-bg: rgba(255, 193, 7, 0.1);
+    --color-warning-bg: rgba(255, 193, 7, 0.25);
     --color-warning-border: rgba(255, 193, 7, 0.3);
     --color-warning-border-alt: rgba(255, 200, 0, 0.5);
-    --color-warning-text: #ffdb7a;
+    --color-warning-text: #ff9800;
 
     --color-success: #28a745;
     --color-success-hover: #218838;
@@ -53,6 +53,12 @@
     --color-info: #17a2b8;
     --color-info-bg: rgba(23, 162, 184, 0.1);
     --color-info-border: rgba(23, 162, 184, 0.3);
+    --color-info-icon: #6a9bd8;
+
+    // Sync toggle colors
+    --color-sync-toggle-active-bg: #3a5a7a;
+    --color-sync-toggle-active-border: #4a7aaa;
+    --color-sync-toggle-active-hover: #4a6a8a;
 
     // ===== Spacing =====
     --spacing-xs: 0.25rem;
@@ -131,4 +137,94 @@
     --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.1);
     --glass-blur: blur(8px);
     --glass-saturate: saturate(120%);
+
+    // Key cap colors
+    --color-key-cap-bg: transparent;
+}
+
+// ===== Light Mode =====
+@media (prefers-color-scheme: light) {
+    :root {
+        // Background colors (inverted hierarchy - lightest is primary)
+        --color-bg-primary: #ffffff;
+        --color-bg-secondary: #f5f5f5;
+        --color-bg-tertiary: #e8e8e8;
+        --color-bg-hover: #d5d5d5;
+
+        // Border colors (subtle grays)
+        --color-border-light: #d0d0d0;
+        --color-border-medium: #c0c0c0;
+        --color-border-dark: #b0b0b0;
+        --color-border-darker: #a0a0a0;
+
+        // Text colors (dark on light)
+        --color-text-primary: #1a1a1a;
+        --color-text-secondary: #2a2a2a;
+        --color-text-tertiary: #3a3a3a;
+        --color-text-muted: #666666;
+        --color-text-disabled: #999999;
+        --color-text-subtle: #555555;
+
+        // Accent colors (darker blue for better contrast)
+        --color-accent: #1976d2;
+        --color-accent-hover: #1565c0;
+        --color-accent-active: #0d47a1;
+        --color-accent-muted: #e3f2fd;
+
+        // Semantic colors
+        --color-danger: #d32f2f;
+        --color-danger-hover: #b71c1c;
+        --color-danger-dark: #c62828;
+        --color-danger-darker: #a71c1c;
+
+        --color-warning: #f57c00;
+        --color-warning-bg: rgba(255, 152, 0, 0.25);
+        --color-warning-border: rgba(255, 152, 0, 0.35);
+        --color-warning-border-alt: rgba(245, 124, 0, 0.5);
+        --color-warning-text: #e65100;
+
+        --color-success: #2e7d32;
+        --color-success-hover: #1b5e20;
+        --color-success-bg: rgba(76, 175, 80, 0.15);
+        --color-success-border: rgba(76, 175, 80, 0.4);
+
+        --color-error-bg: rgba(211, 47, 47, 0.1);
+        --color-error-border: rgba(211, 47, 47, 0.3);
+
+        --color-info: #0288d1;
+        --color-info-bg: rgba(2, 136, 209, 0.1);
+        --color-info-border: rgba(2, 136, 209, 0.3);
+        --color-info-icon: #1976d2;
+
+        // Sync toggle colors (darker blues for light mode)
+        --color-sync-toggle-active-bg: #1565c0;
+        --color-sync-toggle-active-border: #1976d2;
+        --color-sync-toggle-active-hover: #0d47a1;
+
+        // Shadows (lighter, more subtle)
+        --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.08);
+        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+        --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.15);
+
+        // Popover/Overlay colors (white-based translucency)
+        --color-popover-bg: rgba(250, 250, 250, 0.65);
+        --color-popover-border: rgba(100, 100, 100, 0.3);
+        --color-popover-text: rgba(26, 26, 26, 0.95);
+        --color-popover-divider: rgba(0, 0, 0, 0.15);
+        --color-modal-overlay-bg: rgba(255, 255, 255, 0.85);
+
+        // Tab colors
+        --color-tab-header-bg: rgba(245, 245, 245, 0.85);
+        --color-tab-active-bg: rgba(25, 118, 210, 0.12);
+
+        // Liquid glass effect (white-based with similar prominence)
+        --glass-bg: rgba(255, 255, 255, 0.3);
+        --glass-border: rgba(255, 255, 255, 0.8);
+        --glass-shadow: 0 8px 32px rgba(31, 38, 135, 0.2);
+        --glass-inset: inset 0 4px 20px rgba(255, 255, 255, 0.3);
+        --glass-saturate: saturate(180%);
+
+        // Key cap colors
+        --color-key-cap-bg: rgba(255, 255, 255, 0.5);
+    }
 }

@@ -25,7 +25,7 @@
 
   .key-cap {
     display: inline-block;
-    background: transparent;
+    background: var(--color-key-cap-bg);
     border: 1px solid var(--color-text-disabled);
     border-radius: var(--radius-sm);
     padding: 1px 6px;

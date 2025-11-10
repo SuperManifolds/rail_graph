@@ -58,17 +58,17 @@
         }
 
         &.active {
-            background-color: #3a5a7a;
-            border-color: #4a7aaa;
+            background-color: var(--color-sync-toggle-active-bg);
+            border-color: var(--color-sync-toggle-active-border);
             color: var(--color-text-primary);
 
             &::before,
             &::after {
-                background-color: #4a7aaa;
+                background-color: var(--color-sync-toggle-active-border);
             }
 
             &:hover {
-                background-color: #4a6a8a;
+                background-color: var(--color-sync-toggle-active-hover);
             }
         }
 
