@@ -494,9 +494,12 @@ fn rotate_stations_by_angle(
         let angle_increment = std::f64::consts::PI / 4.0; // 45 degrees in radians
         let snapped_angle = (line_angle / angle_increment).round() * angle_increment;
 
-        // Calculate endpoint2 position at the snapped angle
-        let snapped_endpoint2_x = snapped_endpoint1_x + line_length * snapped_angle.cos();
-        let snapped_endpoint2_y = snapped_endpoint1_y + line_length * snapped_angle.sin();
+        // Calculate endpoint2 position at the snapped angle, then snap it to grid
+        let rotated_ep2_x = snapped_endpoint1_x + line_length * snapped_angle.cos();
+        let rotated_ep2_y = snapped_endpoint1_y + line_length * snapped_angle.sin();
+        let (snapped_endpoint2_x, snapped_endpoint2_y) = crate::components::infrastructure_canvas::auto_layout::snap_to_grid(
+            rotated_ep2_x, rotated_ep2_y
+        );
 
         // Calculate each station's position along the original line (0.0 to 1.0)
         let mut station_positions: Vec<(NodeIndex, f64)> = Vec::new();
@@ -515,13 +518,14 @@ fn rotate_stations_by_angle(
             graph.set_station_position(idx, (new_x, new_y));
         }
     } else {
-        // Stations are not aligned - regular rotation without snapping
-        // (snapping would distort the shape)
+        // Stations are not aligned - rotate and snap to maintain grid alignment
         let angle = angle_degrees.to_radians();
         let cos_angle = angle.cos();
         let sin_angle = angle.sin();
 
-        for (station_idx, x, y) in positions {
+        // First pass: calculate all rotated positions
+        let mut rotated_positions = Vec::new();
+        for (station_idx, x, y) in &positions {
             let dx = x - center_x;
             let dy = y - center_y;
 
@@ -531,7 +535,22 @@ fn rotate_stations_by_angle(
             let new_x = center_x + dx * cos_angle - dy * sin_angle;
             let new_y = center_y + dx * sin_angle + dy * cos_angle;
 
-            graph.set_station_position(station_idx, (new_x, new_y));
+            rotated_positions.push((*station_idx, new_x, new_y));
+        }
+
+        // Second pass: snap first node to grid and calculate offset
+        if let Some((_first_idx, first_x, first_y)) = rotated_positions.first() {
+            let (snapped_first_x, snapped_first_y) =
+                crate::components::infrastructure_canvas::auto_layout::snap_to_grid(*first_x, *first_y);
+
+            // Calculate the offset from snapping
+            let snap_offset_x = snapped_first_x - first_x;
+            let snap_offset_y = snapped_first_y - first_y;
+
+            // Apply rotation with snap offset to all nodes
+            for (station_idx, x, y) in rotated_positions {
+                graph.set_station_position(station_idx, (x + snap_offset_x, y + snap_offset_y));
+            }
         }
     }
 }
