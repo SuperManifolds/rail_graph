@@ -1,4 +1,4 @@
-use leptos::{wasm_bindgen, component, view, MaybeSignal, Signal, Children, IntoView, store_value, create_signal, create_node_ref, html, provide_context, SignalSet, SignalGet, create_effect, web_sys, SignalGetUntracked, Show};
+use leptos::{wasm_bindgen, component, view, MaybeSignal, Signal, Children, IntoView, store_value, create_signal, create_node_ref, html, provide_context, SignalSet, SignalGet, create_effect, web_sys, SignalGetUntracked, Portal};
 use wasm_bindgen::{prelude::*, JsCast};
 
 // Global window z-index counter
@@ -97,8 +97,12 @@ pub fn Window(
             .and_then(|v| v.as_f64())
             .unwrap_or(1080.0);
 
-        // Max position ensures window is at least partially visible (account for 400px window width)
-        let max_x = (viewport_width - 100.0).max(100.0);
+        // Max position ensures window doesn't overlap with sidebar
+        // Sidebar is 320px wide on right side, typical window is ~400-600px wide
+        // We want the window's RIGHT edge to not extend past the sidebar's LEFT edge
+        let sidebar_width = 320.0;
+        let typical_window_width = 500.0;
+        let max_x = (viewport_width - sidebar_width - typical_window_width).max(100.0);
         let max_y = (viewport_height - 100.0).max(100.0);
 
         let (raw_x, raw_y) = if let Some(ref key) = position_key {
@@ -261,34 +265,42 @@ pub fn Window(
     });
 
     view! {
-        <Show when=move || is_open.get()>
-            <div
-                class="window-dialog"
-                style=move || {
-                    let (x, y) = position.get();
-                    let (width, height) = size.get();
-                    let z = z_index.get();
-                    format!("left: {x}px; top: {y}px; width: {width}px; height: {height}px; z-index: {z};")
-                }
-                on:mousedown=move |_| bring_to_front()
-            >
-                <div
-                    class=move || if transparent_content { "window-header no-border" } else { "window-header" }
-                    on:mousedown=handle_mouse_down
-                >
-                    <h3>{move || title.get()}</h3>
-                    <button class="close-button" on:click=move |_| on_close.with_value(|f| f())>"×"</button>
-                </div>
+        {move || {
+            if is_open.get() {
+                view! {
+                    <Portal>
+                        <div
+                            class="window-dialog"
+                            style=move || {
+                                let (x, y) = position.get();
+                                let (width, height) = size.get();
+                                let z = z_index.get();
+                                format!("left: {x}px; top: {y}px; width: {width}px; height: {height}px; z-index: {z};")
+                            }
+                            on:mousedown=move |_| bring_to_front()
+                        >
+                            <div
+                                class=move || if transparent_content { "window-header no-border" } else { "window-header" }
+                                on:mousedown=handle_mouse_down
+                            >
+                                <h3>{move || title.get()}</h3>
+                                <button class="close-button" on:click=move |_| on_close.with_value(|f| f())>"×"</button>
+                            </div>
 
-                <div
-                    class=move || if transparent_content { "window-content transparent" } else { "window-content" }
-                    node_ref=content_ref
-                >
-                    {children.with_value(Clone::clone)}
-                </div>
+                            <div
+                                class=move || if transparent_content { "window-content transparent" } else { "window-content" }
+                                node_ref=content_ref
+                            >
+                                {children.with_value(Clone::clone)}
+                            </div>
 
-                <div class="resize-handle" on:mousedown=handle_resize_down></div>
-            </div>
-        </Show>
+                            <div class="resize-handle" on:mousedown=handle_resize_down></div>
+                        </div>
+                    </Portal>
+                }.into_view()
+            } else {
+                view! {}.into_view()
+            }
+        }}
     }
 }

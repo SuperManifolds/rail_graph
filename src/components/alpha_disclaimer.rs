@@ -18,7 +18,7 @@ pub fn AlphaDisclaimer() -> impl IntoView {
     view! {
         <ModalOverlay is_open=Signal::derive(move || is_open.get())>
             <Window
-                is_open=Signal::derive(|| true)
+                is_open=Signal::derive(move || is_open.get())
                 title=Signal::derive(|| "Alpha Version Disclaimer".to_string())
                 on_close=move || {}
             >
