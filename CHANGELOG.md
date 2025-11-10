@@ -3,7 +3,10 @@
 ## Features
 - Added configurable train buffer settings in project settings - minimum separation time between trains and station crossing margin for conflict detection are now adjustable per project instead of hardcoded
 - Added project setting to ignore platform conflicts for same-direction arrivals - when enabled, trains arriving at the same platform from the same track will not generate conflicts
-- Added light mode support
+- Added light mode support with automatic detection of system color scheme preference
+
+## Improvements
+- Major UI revamp with modern glass-morphism design - sidebars and toolbars now use semi-transparent overlay panels with backdrop blur effects, softer rounded corners on all UI elements, and improved visual hierarchy throughout the application
 
 ## Bug Fixes
 - Fixed selected nodes becoming misaligned with the grid when dragging multiple stations together - nodes now properly snap to the grid while maintaining their relative positions during group dragging
