@@ -68,6 +68,21 @@ web-sys = { version = "0.3", features = [
     "Url",
     "HtmlAnchorElement",
     "Storage",
+    "ServiceWorkerGlobalScope",
+    "ExtendableEvent",
+    "FetchEvent",
+    "Cache",
+    "CacheStorage",
+    "Request",
+    "RequestInit",
+    "RequestMode",
+    "Response",
+    "ResponseInit",
+    "ResponseType",
+    "ServiceWorkerRegistration",
+    "ServiceWorkerContainer",
+    "Clients",
+    "Headers",
 ] }
 gloo-timers = { version = "0.3", features = ["futures"] }
 gloo-worker = "0.5"

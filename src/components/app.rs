@@ -84,6 +84,28 @@ fn update_view(
 pub fn App() -> impl IntoView {
     provide_meta_context();
 
+    // Register service worker for PWA functionality
+    create_effect(move |_| {
+        if let Some(window) = web_sys::window() {
+            let navigator = window.navigator().service_worker();
+            spawn_local(async move {
+                match wasm_bindgen_futures::JsFuture::from(
+                    navigator.register("/service_worker.js")
+                ).await {
+                    Ok(_) => {
+                        web_sys::console::log_1(&"[PWA] Service worker registered".into());
+                    }
+                    Err(e) => {
+                        web_sys::console::error_2(
+                            &"[PWA] Service worker registration failed:".into(),
+                            &e,
+                        );
+                    }
+                }
+            });
+        }
+    });
+
     let (active_tab, set_active_tab) = create_signal(AppTab::Infrastructure);
 
     // Storage implementation
