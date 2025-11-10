@@ -1,7 +1,7 @@
 use leptos::{WriteSignal, SignalSet};
 use crate::conflict::{Conflict, SerializableConflictContext};
 use crate::train_journey::TrainJourney;
-use crate::models::RailwayGraph;
+use crate::models::{RailwayGraph, ProjectSettings};
 
 /// Synchronous version of `ConflictDetector` for non-wasm32 targets (tests, etc.)
 pub struct ConflictDetector {
@@ -15,13 +15,18 @@ impl ConflictDetector {
     }
 
     #[allow(clippy::needless_pass_by_value)]
-    pub fn detect(&mut self, journeys: Vec<TrainJourney>, graph: RailwayGraph) {
+    pub fn detect(&mut self, journeys: Vec<TrainJourney>, graph: RailwayGraph, settings: ProjectSettings) {
         // Build serializable context from graph
         let station_indices = graph.graph.node_indices()
             .enumerate()
             .map(|(idx, node_idx)| (node_idx, idx))
             .collect();
-        let context = SerializableConflictContext::from_graph(&graph, station_indices);
+        let context = SerializableConflictContext::from_graph(
+            &graph,
+            station_indices,
+            settings.station_margin,
+            settings.minimum_separation,
+        );
 
         let (conflicts, _) = crate::conflict::detect_line_conflicts(&journeys, &context);
         self.set_conflicts.set(conflicts);

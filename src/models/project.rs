@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use super::{Line, LineFolder, RailwayGraph, GraphView, ViewportState};
 use crate::storage::{CURRENT_PROJECT_VERSION, idb};
 use wasm_bindgen::prelude::*;
+use chrono::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectMetadata {
@@ -34,10 +35,22 @@ pub struct ProjectSettings {
     pub line_sort_mode: LineSortMode,
     #[serde(default = "default_node_distance")]
     pub default_node_distance_grid_squares: f64,
+    #[serde(with = "crate::models::line::duration_serde", default = "default_minimum_separation")]
+    pub minimum_separation: Duration,
+    #[serde(with = "crate::models::line::duration_serde", default = "default_station_margin")]
+    pub station_margin: Duration,
 }
 
 fn default_node_distance() -> f64 {
     4.0
+}
+
+fn default_minimum_separation() -> Duration {
+    Duration::seconds(30)
+}
+
+fn default_station_margin() -> Duration {
+    Duration::seconds(30)
 }
 
 impl Default for ProjectSettings {
@@ -46,6 +59,8 @@ impl Default for ProjectSettings {
             track_handedness: TrackHandedness::default(),
             line_sort_mode: LineSortMode::default(),
             default_node_distance_grid_squares: default_node_distance(),
+            minimum_separation: default_minimum_separation(),
+            station_margin: default_station_margin(),
         }
     }
 }

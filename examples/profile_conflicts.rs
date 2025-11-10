@@ -46,7 +46,12 @@ fn main() {
         .enumerate()
         .map(|(idx, node_idx)| (node_idx, idx))
         .collect();
-    let context = SerializableConflictContext::from_graph(&graph, station_indices);
+    let context = SerializableConflictContext::from_graph(
+        &graph,
+        station_indices,
+        chrono::Duration::seconds(30),
+        chrono::Duration::seconds(30),
+    );
 
     // Run conflict detection (timing happens inside the function)
     let (conflicts, crossings) = detect_line_conflicts(&journeys_vec, &context);
