@@ -11,9 +11,12 @@ pub fn ModalOverlay(
     view! {
         {move || if is_open.get() {
             view! {
-                <div class="modal-overlay">
-                    {children.get_value()}
-                </div>
+                <>
+                    <div class="modal-backdrop"></div>
+                    <div class="modal-container">
+                        {children.get_value()}
+                    </div>
+                </>
             }.into_view()
         } else {
             ().into_view()

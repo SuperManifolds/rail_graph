@@ -1,14 +1,24 @@
 // Modal overlay - reusable component
-.modal-overlay {
+.modal-backdrop {
     position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
     height: 100vh;
     background-color: var(--color-modal-overlay-bg);
+    backdrop-filter: blur(4px);
+    z-index: 1999; // Below Window component range (starts at 2000)
+    pointer-events: none;
+}
+
+.modal-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 10000;
-    backdrop-filter: blur(4px);
+    z-index: 1999; // Same as backdrop, windows inside will have higher z-index
 }
