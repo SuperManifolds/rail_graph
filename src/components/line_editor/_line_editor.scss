@@ -1,34 +1,31 @@
+@import '../../../style/mixins';
+
 .line-editor-content {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: var(--spacing-xl);
     min-width: 750px;
 
     .form-group {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        gap: var(--spacing-sm);
 
         > label {
-            font-size: 0.9rem;
-            color: #ccc;
-            font-weight: 500;
+            font-size: var(--font-size-base);
+            color: var(--color-text-tertiary);
+            font-weight: var(--font-weight-medium);
         }
 
         input[type="color"],
         input[type="text"],
         input[type="time"] {
-            background-color: #222;
-            border: 1px solid #444;
-            border-radius: 4px;
-            padding: 0.5rem;
-            color: #fff;
-            font-size: 0.85rem;
+            @include input-base;
 
             &:focus {
                 outline: none;
-                border-color: #555;
-                background-color: #2a2a2a;
+                border-color: var(--color-border-light);
+                background-color: var(--color-bg-tertiary);
             }
         }
 
@@ -62,7 +59,7 @@
         .checkbox-label {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: var(--spacing-sm);
             cursor: pointer;
 
             input[type="checkbox"] {
@@ -71,17 +68,13 @@
         }
 
         .form-help {
-            color: #888;
-            font-size: 0.8rem;
-            margin: 0;
-            padding: 0;
-            line-height: 1.4;
+            @extend .help-text;
         }
 
         .thickness-control {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: var(--spacing-md);
 
             input[type="range"] {
                 flex: 1;
@@ -89,8 +82,8 @@
             }
 
             .thickness-value {
-                font-size: 0.9rem;
-                color: #ccc;
+                font-size: var(--font-size-base);
+                color: var(--color-text-tertiary);
                 min-width: 30px;
                 text-align: right;
             }
@@ -100,40 +93,17 @@
     .line-editor-footer {
         display: flex;
         justify-content: flex-end;
-        gap: 0.75rem;
-        padding: 1.5rem;
-        border-top: 1px solid #333;
+        gap: var(--spacing-md);
+        padding: var(--spacing-xl);
+        border-top: 1px solid var(--color-border-dark);
 
         button {
-            padding: 0.5rem 1.5rem;
-            border-radius: 4px;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            border: 1px solid #444;
-
             &.cancel-button {
-                background-color: #2a2a2a;
-                color: #fff;
-
-                &:hover {
-                    background-color: #333;
-                }
+                @extend .button-default;
             }
 
             &.save-button {
-                background-color: #4a9eff;
-                color: #fff;
-                border-color: #4a9eff;
-
-                &:hover {
-                    background-color: #3a8eef;
-                }
-            }
-
-            &:focus {
-                outline: none;
-                border-color: #555;
+                @extend .button-primary;
             }
         }
     }
@@ -150,14 +120,14 @@
         .sync-toggle {
             position: relative;
             align-self: flex-end;
-            padding: 0.25rem 0.4rem;
-            background-color: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 3px;
-            color: #aaa;
+            padding: var(--spacing-xs) 0.4rem;
+            background-color: var(--color-bg-tertiary);
+            border: 1px solid var(--color-border-medium);
+            border-radius: var(--radius-sm);
+            color: var(--color-text-subtle);
             cursor: pointer;
-            transition: all 0.2s;
-            margin: 0 3.5rem 0.5rem 3.5rem;
+            transition: all var(--transition-base);
+            margin: 0 3.5rem var(--spacing-sm) 3.5rem;
             flex-shrink: 0;
 
             // Left connecting line
@@ -169,8 +139,8 @@
                 transform: translateY(-50%);
                 width: 3.5rem;
                 height: 1px;
-                background-color: #444;
-                transition: background-color 0.2s;
+                background-color: var(--color-border-medium);
+                transition: background-color var(--transition-base);
             }
 
             // Right connecting line
@@ -182,24 +152,24 @@
                 transform: translateY(-50%);
                 width: 3.5rem;
                 height: 1px;
-                background-color: #444;
-                transition: background-color 0.2s;
+                background-color: var(--color-border-medium);
+                transition: background-color var(--transition-base);
             }
 
             &:hover {
-                background-color: #333;
-                border-color: #555;
+                background-color: var(--color-bg-hover);
+                border-color: var(--color-border-light);
 
                 &::before,
                 &::after {
-                    background-color: #555;
+                    background-color: var(--color-border-light);
                 }
             }
 
             &.active {
                 background-color: #3a5a7a;
                 border-color: #4a7aaa;
-                color: #fff;
+                color: var(--color-text-primary);
 
                 &::before,
                 &::after {
@@ -212,7 +182,7 @@
             }
 
             i {
-                font-size: 0.75rem;
+                font-size: var(--font-size-xs);
                 display: block;
             }
         }
@@ -228,12 +198,12 @@
 
             .next-day-indicator {
                 position: absolute;
-                right: 0.5rem;
+                right: var(--spacing-sm);
                 top: 50%;
                 transform: translateY(-50%);
-                color: #888;
+                color: var(--color-text-muted);
                 font-size: 0.7rem;
-                font-weight: 600;
+                font-weight: var(--font-weight-semibold);
                 pointer-events: none;
                 user-select: none;
                 z-index: 1;
@@ -242,37 +212,37 @@
     }
 
     .manual-departures-section {
-        border-top: 1px solid #333;
-        padding-top: 1.5rem;
-        margin-top: 0.5rem;
+        border-top: 1px solid var(--color-border-dark);
+        padding-top: var(--spacing-xl);
+        margin-top: var(--spacing-sm);
     }
 
     .manual-departures-list {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
-        margin-bottom: 0.75rem;
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-md);
 
         .manual-departure-item {
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
-            padding: 0.5rem;
-            background-color: #222;
-            border: 1px solid #444;
-            border-radius: 4px;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-sm);
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border-medium);
+            border-radius: var(--radius-md);
 
             .departure-time-row {
                 display: flex;
                 align-items: center;
-                gap: 0.5rem;
+                gap: var(--spacing-sm);
                 flex-wrap: wrap;
             }
 
             .train-repeat-row {
                 display: flex;
                 align-items: flex-start;
-                gap: 1rem;
+                gap: var(--spacing-lg);
                 flex-wrap: wrap;
 
                 > .form-group {
@@ -281,96 +251,72 @@
             }
 
             .station-input {
-                background-color: #2a2a2a;
-                border: 1px solid #444;
-                border-radius: 4px;
-                padding: 0.4rem;
-                color: #fff;
-                font-size: 0.85rem;
+                @include input-select;
                 flex: 1;
                 cursor: pointer;
 
                 &:focus {
-                    outline: none;
-                    border-color: #555;
-                    background-color: #333;
+                    border-color: var(--color-border-light);
+                    background-color: var(--color-bg-hover);
                 }
 
                 option {
-                    background-color: #2a2a2a;
-                    color: #fff;
+                    background-color: var(--color-bg-tertiary);
+                    color: var(--color-text-primary);
                 }
             }
 
             .arrow {
-                color: #999;
-                font-size: 0.9rem;
+                color: var(--color-text-muted);
+                font-size: var(--font-size-base);
             }
 
             .remove-departure {
-                background: none;
-                border: none;
-                color: #999;
-                font-size: 1.2rem;
-                cursor: pointer;
-                padding: 0;
-                line-height: 1;
-                width: 20px;
-                height: 20px;
-                flex-shrink: 0;
+                @extend .button-icon-only;
 
                 &:hover {
-                    color: #f66;
+                    color: var(--color-danger);
                 }
             }
 
             .days-of-week-selector {
                 flex-basis: 100%;
-                margin-top: 0.25rem;
+                margin-top: var(--spacing-xs);
             }
         }
     }
 
     .add-departure {
-        background-color: #2a2a2a;
-        border: 1px solid #444;
-        border-radius: 4px;
-        color: #fff;
-        padding: 0.5rem 1rem;
-        cursor: pointer;
-        font-size: 0.85rem;
-
-        &:hover {
-            background-color: #333;
-        }
+        @extend .button-default;
+        font-size: var(--font-size-sm);
     }
 
     .stops-controls {
         display: flex;
         align-items: center;
-        gap: 0.75rem;
+        gap: var(--spacing-md);
 
         .route-direction-toggle,
         .time-mode-toggle {
-            background-color: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 4px;
-            color: #4a9eff;
+            background-color: var(--color-bg-tertiary);
+            border: 1px solid var(--color-border-medium);
+            border-radius: var(--radius-md);
+            color: var(--color-accent);
             padding: 0.4rem 0.6rem;
             cursor: pointer;
-            font-size: 0.9rem;
-            font-weight: 600;
+            font-size: var(--font-size-base);
+            font-weight: var(--font-weight-semibold);
             min-width: 40px;
-            transition: all 0.2s;
+            transition: all var(--transition-base);
 
             &:hover {
-                background-color: #333;
-                border-color: #555;
+                background-color: var(--color-bg-hover);
+                border-color: var(--color-border-light);
             }
 
             &:focus {
                 outline: none;
-                border-color: #4a9eff;
+                border-color: var(--color-accent);
             }
         }
 
@@ -379,39 +325,39 @@
         }
 
         .time-mode-label {
-            color: #ccc;
-            font-size: 0.85rem;
+            color: var(--color-text-tertiary);
+            font-size: var(--font-size-sm);
         }
     }
 
     .stops-list {
         display: flex;
         flex-direction: column;
-        gap: 0.25rem;
+        gap: var(--spacing-xs);
 
         .stops-header {
             display: grid;
             grid-template-columns: minmax(150px, 1.5fr) 80px 80px 240px 110px 40px;
-            gap: 0.5rem;
-            padding: 0.25rem 0.5rem;
-            font-weight: 600;
-            color: #aaa;
-            font-size: 0.8rem;
-            border-bottom: 1px solid #333;
+            gap: var(--spacing-sm);
+            padding: var(--spacing-xs) var(--spacing-sm);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text-subtle);
+            font-size: var(--font-size-xs);
+            border-bottom: 1px solid var(--color-border-dark);
         }
 
         .travel-time-info {
-            margin: 0.5rem 0.5rem 0.75rem 0.5rem;
-            padding: 0.5rem;
-            font-size: 0.75rem;
-            color: #888;
-            background-color: #1a1a1a;
-            border-radius: 3px;
+            margin: var(--spacing-sm) var(--spacing-sm) var(--spacing-md) var(--spacing-sm);
+            padding: var(--spacing-sm);
+            font-size: var(--font-size-xs);
+            color: var(--color-text-muted);
+            background-color: var(--color-bg-primary);
+            border-radius: var(--radius-sm);
             line-height: 1.4;
 
             &::before {
                 content: "ⓘ ";
-                font-size: 0.9rem;
+                font-size: var(--font-size-base);
                 color: #6a9bd8;
                 margin-right: 0.3rem;
             }
@@ -420,89 +366,74 @@
         .stop-row {
             display: grid;
             grid-template-columns: minmax(150px, 1.5fr) 80px 80px 240px 110px 40px;
-            gap: 0.5rem;
+            gap: var(--spacing-sm);
             align-items: center;
-            padding: 0.35rem 0.5rem;
-            background-color: #222;
-            border: 1px solid #444;
-            border-radius: 3px;
+            padding: 0.35rem var(--spacing-sm);
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border-medium);
+            border-radius: var(--radius-sm);
 
             .station-name {
-                color: #fff;
-                font-size: 0.85rem;
+                color: var(--color-text-primary);
+                font-size: var(--font-size-sm);
             }
 
             .time-input-with-preview {
                 display: flex;
                 align-items: center;
-                gap: 0.5rem;
+                gap: var(--spacing-sm);
 
                 .cumulative-preview {
-                    color: #888;
-                    font-size: 0.75rem;
+                    color: var(--color-text-muted);
+                    font-size: var(--font-size-xs);
                     font-family: monospace;
                     white-space: nowrap;
                 }
             }
 
             .delete-stop-button {
-                background: none;
-                border: none;
-                color: #999;
-                cursor: pointer;
-                padding: 0.25rem;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 0.85rem;
-                transition: color 0.2s;
+                @extend .button-icon;
+                font-size: var(--font-size-sm);
+                transition: color var(--transition-base);
 
                 &:hover {
-                    color: #d32f2f;
-                }
-
-                &:focus {
-                    outline: none;
-                }
-
-                i {
-                    pointer-events: none;
+                    color: var(--color-danger-dark);
                 }
             }
 
             .platform-select,
             .track-select {
-                background-color: #2a2a2a;
-                border: 1px solid #444;
-                border-radius: 3px;
-                color: #fff;
+                background-color: var(--color-bg-tertiary);
+                border: 1px solid var(--color-border-medium);
+                border-radius: var(--radius-sm);
+                color: var(--color-text-primary);
                 padding: 0.3rem 0.4rem;
-                font-size: 0.8rem;
+                font-size: var(--font-size-xs);
                 cursor: pointer;
                 width: 100%;
 
                 &:focus {
                     outline: none;
-                    border-color: #4a9eff;
-                    background-color: #333;
+                    border-color: var(--color-accent);
+                    background-color: var(--color-bg-hover);
                 }
 
                 option {
-                    background-color: #2a2a2a;
-                    color: #fff;
+                    background-color: var(--color-bg-tertiary);
+                    color: var(--color-text-primary);
                 }
             }
 
             .platform-placeholder,
             .track-placeholder {
-                color: #555;
-                font-size: 0.8rem;
+                color: var(--color-border-light);
+                font-size: var(--font-size-xs);
                 text-align: center;
             }
 
             .track-info {
-                color: #ccc;
-                font-size: 0.8rem;
+                color: var(--color-text-tertiary);
+                font-size: var(--font-size-xs);
                 text-align: center;
             }
         }
@@ -513,106 +444,90 @@
     }
 
     .add-stop-row {
-        padding: 0.5rem;
-        background-color: #1a1a1a;
-        border: 1px dashed #555;
-        border-radius: 3px;
-        margin-bottom: 0.25rem;
+        padding: var(--spacing-sm);
+        background-color: var(--color-bg-primary);
+        border: 1px dashed var(--color-border-light);
+        border-radius: var(--radius-sm);
+        margin-bottom: var(--spacing-xs);
 
         .station-select {
             width: 100%;
-            padding: 0.5rem;
-            background-color: #222;
-            color: #aaa;
-            border: 1px solid #444;
-            border-radius: 4px;
-            font-size: 0.85rem;
+            padding: var(--spacing-sm);
+            background-color: var(--color-bg-secondary);
+            color: var(--color-text-subtle);
+            border: 1px solid var(--color-border-medium);
+            border-radius: var(--radius-md);
+            font-size: var(--font-size-sm);
             cursor: pointer;
 
             &:focus {
                 outline: none;
-                border-color: #4a9eff;
+                border-color: var(--color-accent);
             }
 
             option[value=""] {
-                color: #888;
+                color: var(--color-text-muted);
             }
 
             option:not([value=""]) {
-                color: #fff;
+                color: var(--color-text-primary);
             }
         }
     }
 
     .empty-route-setup {
-        padding: 0.5rem;
-        background-color: #1a1a1a;
-        border: 1px dashed #555;
-        border-radius: 3px;
-        margin-bottom: 0.25rem;
+        padding: var(--spacing-sm);
+        background-color: var(--color-bg-primary);
+        border: 1px dashed var(--color-border-light);
+        border-radius: var(--radius-sm);
+        margin-bottom: var(--spacing-xs);
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        gap: var(--spacing-sm);
 
         .no-stops {
-            color: #888;
-            font-size: 0.85rem;
+            color: var(--color-text-muted);
+            font-size: var(--font-size-sm);
             margin: 0;
             padding: 0;
         }
 
         .station-select {
             width: 100%;
-            padding: 0.5rem;
-            background-color: #222;
-            color: #aaa;
-            border: 1px solid #444;
-            border-radius: 4px;
-            font-size: 0.85rem;
+            padding: var(--spacing-sm);
+            background-color: var(--color-bg-secondary);
+            color: var(--color-text-subtle);
+            border: 1px solid var(--color-border-medium);
+            border-radius: var(--radius-md);
+            font-size: var(--font-size-sm);
             cursor: pointer;
 
             &:focus {
                 outline: none;
-                border-color: #4a9eff;
+                border-color: var(--color-accent);
             }
 
             option[value=""] {
-                color: #888;
+                color: var(--color-text-muted);
             }
 
             option:not([value=""]) {
-                color: #fff;
+                color: var(--color-text-primary);
             }
         }
 
         .cancel-button {
-            padding: 0.4rem 0.75rem;
-            background-color: #2a2a2a;
-            border: 1px solid #444;
-            border-radius: 4px;
-            color: #fff;
-            font-size: 0.85rem;
-            cursor: pointer;
-            transition: all 0.2s;
+            @extend .button-default;
+            font-size: var(--font-size-sm);
             align-self: flex-start;
-
-            &:hover {
-                background-color: #333;
-                border-color: #555;
-            }
-
-            &:focus {
-                outline: none;
-                border-color: #4a9eff;
-            }
         }
     }
 
     .no-stops {
-        color: #888;
-        font-size: 0.85rem;
+        color: var(--color-text-muted);
+        font-size: var(--font-size-sm);
         text-align: center;
-        padding: 1rem;
+        padding: var(--spacing-lg);
         margin: 0;
     }
 }

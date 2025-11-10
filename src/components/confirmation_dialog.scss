@@ -16,12 +16,12 @@
         gap: var(--spacing-md);
 
         .cancel-button {
-            @include button-default;
+            @extend .button-default;
             padding: var(--spacing-sm) var(--spacing-xl);
         }
 
         .confirm-button {
-            @include button-primary;
+            @extend .button-primary;
             padding: var(--spacing-sm) var(--spacing-xl);
 
             &.danger {

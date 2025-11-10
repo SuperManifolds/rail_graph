@@ -14,7 +14,7 @@
 }
 
 .toolbar-button {
-    @include button-default;
+    @extend .button-default;
 
     &.active {
         background-color: var(--color-accent-muted);
