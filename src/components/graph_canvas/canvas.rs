@@ -261,6 +261,7 @@ pub fn GraphCanvas(
     initial_viewport: crate::models::ViewportState,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
     edited_line_ids: ReadSignal<std::collections::HashSet<uuid::Uuid>>,
+    #[prop(optional, into)] sidebar_width: MaybeSignal<f64>,
 ) -> impl IntoView {
     // Get user settings from context
     let (user_settings, _) = use_context::<(ReadSignal<UserSettings>, WriteSignal<UserSettings>)>()
@@ -603,7 +604,11 @@ pub fn GraphCanvas(
 
             <ConflictTooltip hovered_conflict=hovered_conflict graph=graph />
             <StationLabelTooltip hovered_station_label=hovered_station_label />
-            <CanvasControlsHint visible=show_hint show_horizontal_scaling=true />
+            <CanvasControlsHint
+                visible=show_hint
+                show_horizontal_scaling=true
+                right_offset=Signal::derive(move || sidebar_width.get() + 20.0)
+            />
         </div>
     }
 }

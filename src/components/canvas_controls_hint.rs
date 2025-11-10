@@ -22,6 +22,9 @@ pub fn CanvasControlsHint(
     /// Whether to show horizontal scaling hint (for graph view)
     #[prop(optional)]
     show_horizontal_scaling: bool,
+    /// Right offset in pixels (default 20px)
+    #[prop(optional, into)]
+    right_offset: MaybeSignal<f64>,
 ) -> impl IntoView {
     // Get user settings from context to read keyboard shortcuts
     let (user_settings, _) = use_context::<(ReadSignal<UserSettings>, WriteSignal<UserSettings>)>()
@@ -51,7 +54,7 @@ pub fn CanvasControlsHint(
 
     view! {
         <Show when=move || visible.get()>
-            <div class="canvas-controls-hint">
+            <div class="canvas-controls-hint" style=move || format!("right: {}px;", right_offset.get())>
                 <div class="hint-line">
                     "Pan: "
                     {move || {

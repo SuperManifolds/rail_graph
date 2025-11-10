@@ -375,6 +375,7 @@ pub fn TimeGraph(
                     initial_viewport={view.as_ref().map_or(crate::models::ViewportState::default(), |v| v.viewport_state.clone())}
                     on_viewport_change=wrapped_viewport_change
                     edited_line_ids=edited_line_ids
+                    sidebar_width=sidebar_width
                 />
             </div>
             <div
