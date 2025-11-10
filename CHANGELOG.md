@@ -1,3 +1,8 @@
+# v0.1.20 - 2025-11-10
+
+## Features
+- Added configurable train buffer settings in project settings - minimum separation time between trains and station crossing margin for conflict detection are now adjustable per project instead of hardcoded
+
 # v0.1.19 - 2025-11-08
 
 ## Features

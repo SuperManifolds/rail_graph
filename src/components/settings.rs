@@ -3,9 +3,12 @@ use crate::components::window::Window;
 use crate::components::button::Button;
 use crate::components::tab_view::{TabView, TabPanel, Tab};
 use crate::components::keyboard_shortcuts_editor::KeyboardShortcutsEditor;
+use crate::components::duration_input::DurationInput;
 use crate::models::{ProjectSettings, TrackHandedness};
+use chrono::Duration;
 
 #[component]
+#[allow(clippy::too_many_lines)]
 pub fn Settings(
     settings: Signal<ProjectSettings>,
     set_settings: impl Fn(ProjectSettings) + 'static + Copy,
@@ -15,19 +18,47 @@ pub fn Settings(
     let active_tab = create_rw_signal("project".to_string());
 
     let handle_handedness_change = move |handedness: TrackHandedness| {
+        let current = settings.get();
         set_settings(ProjectSettings {
             track_handedness: handedness,
-            line_sort_mode: settings.get().line_sort_mode,
-            default_node_distance_grid_squares: settings.get().default_node_distance_grid_squares,
+            line_sort_mode: current.line_sort_mode,
+            default_node_distance_grid_squares: current.default_node_distance_grid_squares,
+            minimum_separation: current.minimum_separation,
+            station_margin: current.station_margin,
         });
     };
 
     let handle_node_distance_change = move |distance: f64| {
         let clamped_distance = distance.clamp(1.0, 20.0);
+        let current = settings.get();
         set_settings(ProjectSettings {
-            track_handedness: settings.get().track_handedness,
-            line_sort_mode: settings.get().line_sort_mode,
+            track_handedness: current.track_handedness,
+            line_sort_mode: current.line_sort_mode,
             default_node_distance_grid_squares: clamped_distance,
+            minimum_separation: current.minimum_separation,
+            station_margin: current.station_margin,
+        });
+    };
+
+    let handle_minimum_separation_change = move |duration: Duration| {
+        let current = settings.get();
+        set_settings(ProjectSettings {
+            track_handedness: current.track_handedness,
+            line_sort_mode: current.line_sort_mode,
+            default_node_distance_grid_squares: current.default_node_distance_grid_squares,
+            minimum_separation: duration,
+            station_margin: current.station_margin,
+        });
+    };
+
+    let handle_station_margin_change = move |duration: Duration| {
+        let current = settings.get();
+        set_settings(ProjectSettings {
+            track_handedness: current.track_handedness,
+            line_sort_mode: current.line_sort_mode,
+            default_node_distance_grid_squares: current.default_node_distance_grid_squares,
+            minimum_separation: current.minimum_separation,
+            station_margin: duration,
         });
     };
 
@@ -135,6 +166,39 @@ pub fn Settings(
                                 />
                                 <p class="help-text">
                                     "Affects auto-layout, alignment, and rotation operations. Range: 1-20. Default: 4 (120 px)."
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="settings-section">
+                            <h3>"Train Buffers"</h3>
+                            <p class="section-description">
+                                "Configure timing buffers for conflict detection"
+                            </p>
+
+                            <div class="form-field">
+                                <label>
+                                    "Minimum Separation"
+                                </label>
+                                <DurationInput
+                                    duration=Signal::derive(move || settings.get().minimum_separation)
+                                    on_change=handle_minimum_separation_change
+                                />
+                                <p class="help-text">
+                                    "Minimum time separation between trains."
+                                </p>
+                            </div>
+
+                            <div class="form-field">
+                                <label>
+                                    "Station Crossing Margin"
+                                </label>
+                                <DurationInput
+                                    duration=Signal::derive(move || settings.get().station_margin)
+                                    on_change=handle_station_margin_change
+                                />
+                                <p class="help-text">
+                                    "Time margin for determining if track intersections near stations are valid crossings."
                                 </p>
                             </div>
                         </div>

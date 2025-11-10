@@ -3,7 +3,7 @@ use leptos::{create_signal, ReadSignal, WriteSignal, SignalSet};
 use crate::conflict_worker::{ConflictWorker, ConflictRequest, ConflictResponse, BincodeCodec};
 use crate::conflict::{Conflict, SerializableConflictContext};
 use crate::train_journey::TrainJourney;
-use crate::models::RailwayGraph;
+use crate::models::{RailwayGraph, ProjectSettings};
 
 pub struct ConflictDetector {
     worker: gloo_worker::WorkerBridge<ConflictWorker>,
@@ -26,7 +26,7 @@ impl ConflictDetector {
         Self { worker }
     }
 
-    pub fn detect(&mut self, journeys: Vec<TrainJourney>, graph: RailwayGraph) {
+    pub fn detect(&mut self, journeys: Vec<TrainJourney>, graph: RailwayGraph, settings: ProjectSettings) {
         web_sys::console::log_1(&format!("Sending to worker: {} journeys, {} nodes",
             journeys.len(), graph.graph.node_count()).into());
         let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
@@ -36,7 +36,12 @@ impl ConflictDetector {
             .enumerate()
             .map(|(idx, node_idx)| (node_idx, idx))
             .collect();
-        let context = SerializableConflictContext::from_graph(&graph, station_indices);
+        let context = SerializableConflictContext::from_graph(
+            &graph,
+            station_indices,
+            settings.station_margin,
+            settings.minimum_separation,
+        );
 
         self.worker.send(ConflictRequest { journeys, context });
         if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {

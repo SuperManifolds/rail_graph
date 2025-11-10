@@ -21,7 +21,12 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
         .enumerate()
         .map(|(idx, node_idx)| (node_idx, idx))
         .collect();
-    let context = SerializableConflictContext::from_graph(&graph, station_indices);
+    let context = SerializableConflictContext::from_graph(
+        &graph,
+        station_indices,
+        chrono::Duration::seconds(30),
+        chrono::Duration::seconds(30),
+    );
 
     // Benchmark journey generation
     c.bench_function("generate_journeys", |b| {
@@ -50,7 +55,12 @@ fn benchmark_conflict_detection(c: &mut Criterion) {
                 .enumerate()
                 .map(|(idx, node_idx)| (node_idx, idx))
                 .collect();
-            let context = SerializableConflictContext::from_graph(&graph, station_indices);
+            let context = SerializableConflictContext::from_graph(
+                &graph,
+                station_indices,
+                chrono::Duration::seconds(30),
+                chrono::Duration::seconds(30),
+            );
 
             detect_line_conflicts(
                 black_box(&journeys_vec),

@@ -6,7 +6,9 @@ use chrono::NaiveDateTime;
 use std::collections::HashMap;
 
 // Conflict detection constants
+#[cfg(test)]
 const STATION_MARGIN: chrono::Duration = chrono::Duration::seconds(30);
+#[cfg(test)]
 const PLATFORM_BUFFER: chrono::Duration = chrono::Duration::seconds(30);
 const MAX_CONFLICTS: usize = 9999;
 
@@ -159,6 +161,7 @@ struct ConflictContext<'a> {
     station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize>,
     serializable_ctx: &'a SerializableConflictContext,
     station_margin: chrono::Duration,
+    minimum_separation: chrono::Duration,
 }
 
 /// Serializable context for conflict detection (no references, no complex graph types)
@@ -173,12 +176,18 @@ pub struct SerializableConflictContext {
     /// Set of junction node indices (as usize)
     pub junctions: std::collections::HashSet<usize>,
     pub station_margin_secs: i64,
+    pub minimum_separation_secs: i64,
 }
 
 impl SerializableConflictContext {
     /// Build serializable context from a `RailwayGraph`
     #[must_use]
-    pub fn from_graph(graph: &RailwayGraph, station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize>) -> Self {
+    pub fn from_graph(
+        graph: &RailwayGraph,
+        station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize>,
+        station_margin: chrono::Duration,
+        minimum_separation: chrono::Duration,
+    ) -> Self {
         use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
         // Extract edge information and track directions
@@ -214,7 +223,8 @@ impl SerializableConflictContext {
             edge_info,
             track_directions,
             junctions,
-            station_margin_secs: STATION_MARGIN.num_seconds(),
+            station_margin_secs: station_margin.num_seconds(),
+            minimum_separation_secs: minimum_separation.num_seconds(),
         }
     }
 }
@@ -301,6 +311,7 @@ pub fn detect_line_conflicts(
         station_indices,
         serializable_ctx,
         station_margin: chrono::Duration::seconds(serializable_ctx.station_margin_secs),
+        minimum_separation: chrono::Duration::seconds(serializable_ctx.minimum_separation_secs),
     };
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1119,7 +1130,7 @@ fn extract_platform_occupancies(
     ctx: &ConflictContext,
 ) -> Vec<PlatformOccupancy> {
     let mut occupancies = Vec::new();
-    let buffer = PLATFORM_BUFFER;
+    let buffer = ctx.minimum_separation;
 
     for (i, (node_idx, arrival_time, departure_time)) in
         journey.station_times.iter().enumerate()
@@ -1334,7 +1345,7 @@ mod tests {
         let journeys = vec![];
 
         let station_indices = HashMap::new();
-        let ctx = SerializableConflictContext::from_graph(&graph, station_indices);
+        let ctx = SerializableConflictContext::from_graph(&graph, station_indices, STATION_MARGIN, PLATFORM_BUFFER);
         let (conflicts, crossings) = detect_line_conflicts(&journeys, &ctx);
 
         assert_eq!(conflicts.len(), 0);
@@ -1375,7 +1386,7 @@ mod tests {
             .enumerate()
             .map(|(idx, node_idx)| (node_idx, idx))
             .collect();
-        let ctx = SerializableConflictContext::from_graph(&graph, station_indices);
+        let ctx = SerializableConflictContext::from_graph(&graph, station_indices, STATION_MARGIN, PLATFORM_BUFFER);
         let (conflicts, _) = detect_line_conflicts(&[journey], &ctx);
         assert_eq!(conflicts.len(), 0);
     }
@@ -1395,11 +1406,12 @@ mod tests {
             Track { direction: TrackDirection::Backward },
         ]);
 
-        let serializable_ctx = SerializableConflictContext::from_graph(&graph, HashMap::new());
+        let serializable_ctx = SerializableConflictContext::from_graph(&graph, HashMap::new(), STATION_MARGIN, PLATFORM_BUFFER);
         let ctx = ConflictContext {
             station_indices: HashMap::new(),
             serializable_ctx: &serializable_ctx,
             station_margin: STATION_MARGIN,
+            minimum_separation: PLATFORM_BUFFER,
         };
 
         assert!(is_single_track_bidirectional(&ctx, edge1.index()));

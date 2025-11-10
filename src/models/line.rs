@@ -1042,7 +1042,7 @@ impl Line {
     }
 }
 
-mod duration_serde {
+pub mod duration_serde {
     use chrono::Duration;
     use serde::{Deserialize, Deserializer, Serializer};
 

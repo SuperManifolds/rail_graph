@@ -416,9 +416,9 @@ pub fn App() -> impl IntoView {
     // Create debounced conflict detection to avoid excessive recomputation
     let debounced_detect_conflicts = store_value(leptos::leptos_dom::helpers::debounce(
         std::time::Duration::from_millis(300),
-        move |(journeys_vec, current_graph): (Vec<TrainJourney>, RailwayGraph)| {
+        move |(journeys_vec, current_graph, current_settings): (Vec<TrainJourney>, RailwayGraph, crate::models::ProjectSettings)| {
             detector.update_value(|d| {
-                d.detect(journeys_vec, current_graph);
+                d.detect(journeys_vec, current_graph, current_settings);
             });
         },
     ));
@@ -427,9 +427,10 @@ pub fn App() -> impl IntoView {
         let journeys = train_journeys.get();
         let journeys_vec: Vec<_> = journeys.values().cloned().collect();
         let current_graph = graph.get();
+        let current_settings = settings.get();
 
         debounced_detect_conflicts.update_value(|f| {
-            f((journeys_vec, current_graph));
+            f((journeys_vec, current_graph, current_settings));
         });
     });
 
