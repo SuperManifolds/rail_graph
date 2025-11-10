@@ -255,3 +255,14 @@
     border: 1px solid var(--color-info-border);
     color: var(--color-info);
 }
+
+// ===== Popover Mixin =====
+
+@mixin popover {
+    position: absolute;
+    background: var(--color-popover-bg);
+    border: 1px solid var(--color-popover-border);
+    color: var(--color-popover-text);
+    backdrop-filter: blur(8px);
+    z-index: var(--z-dropdown);
+}

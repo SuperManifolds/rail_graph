@@ -1,0 +1,173 @@
+// Schedule tab time fields
+.time-fields-row {
+    display: flex;
+    gap: 0;
+    align-items: flex-end;
+
+    > .form-group {
+        flex: 0 1 auto;
+    }
+
+    .sync-toggle {
+        position: relative;
+        align-self: flex-end;
+        padding: var(--spacing-xs) 0.4rem;
+        background-color: var(--color-bg-tertiary);
+        border: 1px solid var(--color-border-medium);
+        border-radius: var(--radius-sm);
+        color: var(--color-text-subtle);
+        cursor: pointer;
+        transition: all var(--transition-base);
+        margin: 0 3.5rem var(--spacing-sm) 3.5rem;
+        flex-shrink: 0;
+
+        // Left connecting line
+        &::before {
+            content: '';
+            position: absolute;
+            right: 100%;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3.5rem;
+            height: 1px;
+            background-color: var(--color-border-medium);
+            transition: background-color var(--transition-base);
+        }
+
+        // Right connecting line
+        &::after {
+            content: '';
+            position: absolute;
+            left: 100%;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 3.5rem;
+            height: 1px;
+            background-color: var(--color-border-medium);
+            transition: background-color var(--transition-base);
+        }
+
+        &:hover {
+            background-color: var(--color-bg-hover);
+            border-color: var(--color-border-light);
+
+            &::before,
+            &::after {
+                background-color: var(--color-border-light);
+            }
+        }
+
+        &.active {
+            background-color: #3a5a7a;
+            border-color: #4a7aaa;
+            color: var(--color-text-primary);
+
+            &::before,
+            &::after {
+                background-color: #4a7aaa;
+            }
+
+            &:hover {
+                background-color: #4a6a8a;
+            }
+        }
+
+        i {
+            font-size: var(--font-size-xs);
+            display: block;
+        }
+    }
+
+    .sync-toggle-placeholder {
+        width: 7rem;
+        flex-shrink: 0;
+    }
+
+    .time-input-wrapper {
+        position: relative;
+        display: inline-block;
+
+        .next-day-indicator {
+            position: absolute;
+            right: var(--spacing-sm);
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--color-text-muted);
+            font-size: 0.7rem;
+            font-weight: var(--font-weight-semibold);
+            pointer-events: none;
+            user-select: none;
+            z-index: 1;
+        }
+    }
+}
+
+// Manual departures section
+.manual-departures-section {
+    border-top: 1px solid var(--color-border-dark);
+    padding-top: var(--spacing-xl);
+    margin-top: var(--spacing-sm);
+}
+
+.manual-departures-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+
+    .manual-departure-item {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm);
+        background-color: var(--color-bg-secondary);
+        border: 1px solid var(--color-border-medium);
+        border-radius: var(--radius-md);
+
+        .departure-time-row {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            flex-wrap: wrap;
+        }
+
+        .train-repeat-row {
+            display: flex;
+            align-items: flex-start;
+            gap: var(--spacing-lg);
+            flex-wrap: wrap;
+
+            > .form-group {
+                flex: 0 0 auto;
+            }
+        }
+
+        .station-input {
+            @include input-select;
+            flex: 1;
+        }
+
+        .arrow {
+            color: var(--color-text-muted);
+            font-size: var(--font-size-base);
+        }
+
+        .remove-departure {
+            @extend .button-icon-only;
+
+            &:hover {
+                color: var(--color-danger);
+            }
+        }
+
+        .days-of-week-selector {
+            flex-basis: 100%;
+            margin-top: var(--spacing-xs);
+        }
+    }
+}
+
+.add-departure {
+    @extend .button-default;
+    font-size: var(--font-size-sm);
+}

@@ -1,14 +1,14 @@
+@import '../../style/mixins';
+
 // ConflictTooltip component styles
 .conflict-tooltip {
-    position: absolute;
-    background: rgba(0, 0, 0, 0.9);
-    color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
+    @include popover;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-xs);
     white-space: nowrap;
     pointer-events: none;
-    z-index: 1000;
+    z-index: var(--z-tooltip);
 }
 
 .conflict-tooltip-hidden {

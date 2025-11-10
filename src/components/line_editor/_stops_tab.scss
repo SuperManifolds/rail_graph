@@ -1,0 +1,196 @@
+// Stops tab controls
+.stops-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+
+    .route-direction-toggle,
+    .time-mode-toggle {
+        background-color: var(--color-bg-tertiary);
+        border: 1px solid var(--color-border-medium);
+        border-radius: var(--radius-md);
+        color: var(--color-accent);
+        padding: 0.4rem 0.6rem;
+        cursor: pointer;
+        font-size: var(--font-size-base);
+        font-weight: var(--font-weight-semibold);
+        min-width: 40px;
+        transition: all var(--transition-base);
+
+        &:hover {
+            background-color: var(--color-bg-hover);
+            border-color: var(--color-border-light);
+        }
+
+        &:focus {
+            outline: none;
+            border-color: var(--color-accent);
+        }
+    }
+
+    .route-direction-toggle {
+        min-width: 100px;
+    }
+
+    .time-mode-label {
+        color: var(--color-text-tertiary);
+        font-size: var(--font-size-sm);
+    }
+}
+
+// Stops list
+.stops-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+
+    .stops-header {
+        display: grid;
+        grid-template-columns: minmax(150px, 1.5fr) 80px 80px 240px 110px 40px;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        font-weight: var(--font-weight-semibold);
+        color: var(--color-text-subtle);
+        font-size: var(--font-size-xs);
+        border-bottom: 1px solid var(--color-border-dark);
+    }
+
+    .travel-time-info {
+        margin: var(--spacing-sm) var(--spacing-sm) var(--spacing-md) var(--spacing-sm);
+        padding: var(--spacing-sm);
+        font-size: var(--font-size-xs);
+        color: var(--color-text-muted);
+        background-color: var(--color-bg-primary);
+        border-radius: var(--radius-sm);
+        line-height: 1.4;
+
+        &::before {
+            content: "ⓘ ";
+            font-size: var(--font-size-base);
+            color: #6a9bd8;
+            margin-right: 0.3rem;
+        }
+    }
+
+    .stop-row {
+        display: grid;
+        grid-template-columns: minmax(150px, 1.5fr) 80px 80px 240px 110px 40px;
+        gap: var(--spacing-sm);
+        align-items: center;
+        padding: 0.35rem var(--spacing-sm);
+        background-color: var(--color-bg-secondary);
+        border: 1px solid var(--color-border-medium);
+        border-radius: var(--radius-sm);
+
+        .station-name {
+            color: var(--color-text-primary);
+            font-size: var(--font-size-sm);
+        }
+
+        .time-input-with-preview {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+
+            .cumulative-preview {
+                color: var(--color-text-muted);
+                font-size: var(--font-size-xs);
+                font-family: monospace;
+                white-space: nowrap;
+            }
+        }
+
+        .delete-stop-button {
+            @extend .button-icon;
+            font-size: var(--font-size-sm);
+            transition: color var(--transition-base);
+
+            &:hover {
+                color: var(--color-danger-dark);
+            }
+        }
+
+        .platform-select,
+        .track-select {
+            @include input-select;
+            padding: 0.3rem 0.4rem;
+            font-size: var(--font-size-xs);
+            width: 100%;
+            border-radius: var(--radius-sm);
+        }
+
+        .platform-placeholder,
+        .track-placeholder {
+            color: var(--color-border-light);
+            font-size: var(--font-size-xs);
+            text-align: center;
+        }
+
+        .track-info {
+            color: var(--color-text-tertiary);
+            font-size: var(--font-size-xs);
+            text-align: center;
+        }
+    }
+
+    .stop-row.passing-stop {
+        opacity: 0.5;
+    }
+}
+
+// Add stop row
+.add-stop-row {
+    padding: var(--spacing-sm);
+    background-color: var(--color-bg-primary);
+    border: 1px dashed var(--color-border-light);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--spacing-xs);
+
+    .station-select {
+        @include input-select;
+        width: 100%;
+        background-color: var(--color-bg-secondary);
+        color: var(--color-text-subtle);
+    }
+}
+
+// Empty route setup
+.empty-route-setup {
+    padding: var(--spacing-sm);
+    background-color: var(--color-bg-primary);
+    border: 1px dashed var(--color-border-light);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--spacing-xs);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+
+    .no-stops {
+        color: var(--color-text-muted);
+        font-size: var(--font-size-sm);
+        margin: 0;
+        padding: 0;
+    }
+
+    .station-select {
+        @include input-select;
+        width: 100%;
+        background-color: var(--color-bg-secondary);
+        color: var(--color-text-subtle);
+    }
+
+    .cancel-button {
+        @extend .button-default;
+        font-size: var(--font-size-sm);
+        align-self: flex-start;
+    }
+}
+
+// No stops message
+.no-stops {
+    color: var(--color-text-muted);
+    font-size: var(--font-size-sm);
+    text-align: center;
+    padding: var(--spacing-lg);
+    margin: 0;
+}
