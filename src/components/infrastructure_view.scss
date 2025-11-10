@@ -1,3 +1,5 @@
+@import '../../style/mixins';
+
 .infrastructure-view {
     display: flex;
     flex-direction: column;
@@ -6,11 +8,16 @@
 }
 
 .infrastructure-toolbar {
+    position: absolute;
+    top: var(--spacing-md);
+    left: var(--spacing-md);
+    @include liquid-glass;
+    border-radius: var(--radius-lg);
     padding: var(--spacing-md) var(--spacing-lg);
-    border-bottom: 1px solid var(--color-border-dark);
-    background-color: var(--color-bg-secondary);
     display: flex;
     gap: var(--spacing-sm);
+    pointer-events: auto;
+    z-index: 110;
 }
 
 .toolbar-button {
@@ -28,6 +35,7 @@
 }
 
 .infrastructure-canvas-container {
+    position: relative;
     flex: 1;
     display: flex;
     overflow: hidden;

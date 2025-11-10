@@ -1787,14 +1787,6 @@ pub fn InfrastructureView(
 
     view! {
         <div class="infrastructure-view">
-            <InfrastructureToolbar
-                auto_layout_enabled=auto_layout_enabled
-                toggle_auto_layout=toggle_auto_layout
-                set_show_add_station=set_show_add_station
-                edit_mode=edit_mode
-                set_edit_mode=set_edit_mode
-                set_selected_station=set_selected_station
-            />
             <div class="infrastructure-canvas-container">
                 <canvas
                     node_ref=canvas_ref
@@ -1807,6 +1799,14 @@ pub fn InfrastructureView(
                     on:wheel=handle_wheel
                     on:contextmenu=handle_context_menu
                     style=move || get_canvas_cursor_style(dragging_station, edit_mode, editing_station, is_over_station, is_over_track, is_panning, space_pressed, dragging_selection, is_over_selection)
+                />
+                <InfrastructureToolbar
+                    auto_layout_enabled=auto_layout_enabled
+                    toggle_auto_layout=toggle_auto_layout
+                    set_show_add_station=set_show_add_station
+                    edit_mode=edit_mode
+                    set_edit_mode=set_edit_mode
+                    set_selected_station=set_selected_station
                 />
                 <CanvasControlsHint visible=show_hint />
                 <MultiSelectToolbar
