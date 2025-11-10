@@ -95,7 +95,7 @@
             .cumulative-preview {
                 color: var(--color-text-muted);
                 font-size: var(--font-size-xs);
-                font-family: monospace;
+                font-family: var(--font-family-mono);
                 white-space: nowrap;
             }
         }

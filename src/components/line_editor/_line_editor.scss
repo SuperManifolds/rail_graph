@@ -19,7 +19,7 @@
 
         input[type="text"] {
             width: 120px;
-            font-family: monospace;
+            font-family: var(--font-family-mono);
         }
 
         input[type="text"].train-number-format-input {
