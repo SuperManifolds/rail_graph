@@ -110,6 +110,7 @@ pub fn LineEditor(
             title=window_title
             on_close=close_dialog
             max_size=(900.0, 1200.0)
+            transparent_content=true
         >
             <Show when=move || edited_line.get().is_some()>
                 <TabView tabs=tabs.get_value() active_tab=active_tab>
