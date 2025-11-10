@@ -1,17 +1,14 @@
 @import '../../style/mixins';
 
 .label-position-grid {
-    position: absolute;
-    top: calc(100% + 4px);
+    @include popover;
+    top: calc(100% + var(--spacing-xs));
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(20, 20, 20, 0.95);
     backdrop-filter: blur(12px);
-    border: 1px solid var(--color-border-medium);
-    border-radius: 4px;
-    padding: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-    z-index: 1000;
+    border-radius: var(--radius-md);
+    padding: var(--spacing-xs);
+    box-shadow: var(--shadow-md);
 
     &.hidden {
         display: none;
@@ -24,23 +21,23 @@
     gap: 3px;
 
     .position-button {
-        background: rgba(60, 60, 60, 0.4);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 3px;
+        background: var(--color-bg-tertiary);
+        border: 1px solid var(--color-border-medium);
+        border-radius: var(--radius-sm);
         color: var(--color-text-primary);
         cursor: pointer;
-        font-size: 1rem;
+        font-size: var(--font-size-lg);
         width: 24px;
         height: 24px;
         padding: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: all 0.2s;
+        transition: all var(--transition-base);
 
         &:hover {
-            background: rgba(74, 158, 255, 0.3);
-            border-color: rgba(74, 158, 255, 0.8);
+            background: var(--color-accent-muted);
+            border-color: var(--color-accent);
         }
 
         &:active {
@@ -48,21 +45,21 @@
         }
 
         &.active {
-            background: rgba(74, 158, 255, 0.4);
-            border-color: rgba(74, 158, 255, 1);
-            box-shadow: 0 0 4px rgba(74, 158, 255, 0.5);
+            background: var(--color-accent-muted);
+            border-color: var(--color-accent);
+            box-shadow: 0 0 4px var(--color-accent);
         }
 
         &.center {
             &:hover {
-                background: rgba(100, 200, 100, 0.3);
-                border-color: rgba(100, 200, 100, 0.8);
+                background: var(--color-success-bg);
+                border-color: var(--color-success);
             }
 
             &.active {
-                background: rgba(100, 200, 100, 0.4);
-                border-color: rgba(100, 200, 100, 1);
-                box-shadow: 0 0 4px rgba(100, 200, 100, 0.5);
+                background: var(--color-success-bg);
+                border-color: var(--color-success);
+                box-shadow: 0 0 4px var(--color-success);
             }
         }
     }
