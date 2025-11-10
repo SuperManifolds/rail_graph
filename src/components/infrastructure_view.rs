@@ -1017,17 +1017,38 @@ fn update_dragged_stations(
     dy: f64,
     snap_to_grid: bool,
 ) -> (f64, f64) {
-    // Snap the delta to grid increments so all stations move together
+    if stations.is_empty() {
+        return (0.0, 0.0);
+    }
+
+    // Calculate the actual offset by using the first station as a reference
+    // This ensures all stations move together and snap to grid properly
     let (offset_x, offset_y) = if snap_to_grid {
         const GRID_SIZE: f64 = 30.0;
+
+        // Get the reference station's current position
+        let Some((ref_old_x, ref_old_y)) = graph.get_station_position(stations[0]) else {
+            return (0.0, 0.0);
+        };
+
+        // Calculate new position for reference station
+        let ref_new_x = ref_old_x + dx;
+        let ref_new_y = ref_old_y + dy;
+
+        // Snap the new position to grid
+        let ref_snapped_x = (ref_new_x / GRID_SIZE).round() * GRID_SIZE;
+        let ref_snapped_y = (ref_new_y / GRID_SIZE).round() * GRID_SIZE;
+
+        // Calculate the actual offset that was applied after snapping
         (
-            (dx / GRID_SIZE).round() * GRID_SIZE,
-            (dy / GRID_SIZE).round() * GRID_SIZE,
+            ref_snapped_x - ref_old_x,
+            ref_snapped_y - ref_old_y,
         )
     } else {
         (dx, dy)
     };
 
+    // Apply the same offset to all stations
     for &station_idx in stations {
         let Some((old_x, old_y)) = graph.get_station_position(station_idx) else {
             continue;
