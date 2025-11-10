@@ -83,7 +83,7 @@
         }
 
         .sample-values {
-            font-family: monospace;
+            font-family: var(--font-family-mono);
             font-size: 0.85em;
             color: var(--color-text-secondary);
             max-width: 300px;
