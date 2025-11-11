@@ -29,7 +29,7 @@ fn main() {
         .find(|&idx| project.graph.graph[idx].display_name() == "Upper Tyndrum")
         .expect("Upper Tyndrum not found");
 
-    println!("Found Upper Tyndrum at index: {:?}", upper_tyndrum_idx);
+    println!("Found Upper Tyndrum at index: {upper_tyndrum_idx:?}");
     println!();
 
     // Clear all positions to force autolayout

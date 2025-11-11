@@ -51,6 +51,7 @@ fn main() {
 
                 for neighbor in project.graph.graph.neighbors(node_idx) {
                     let neighbor_node = &project.graph.graph[neighbor];
+                    #[allow(clippy::excessive_nesting)]
                     if let Some(neighbor_pos) = neighbor_node.position() {
                         let dx = neighbor_pos.0 - pos.0;
                         let dy = neighbor_pos.1 - pos.1;
@@ -95,6 +96,7 @@ fn main() {
         if degree > 2 {
             if let Some(pos) = project.graph.graph[node_idx].position() {
                 for neighbor in project.graph.graph.neighbors(node_idx) {
+                    #[allow(clippy::excessive_nesting)]
                     if let Some(neighbor_pos) = project.graph.graph[neighbor].position() {
                         let dx = neighbor_pos.0 - pos.0;
                         let dy = neighbor_pos.1 - pos.1;
@@ -113,7 +115,7 @@ fn main() {
         }
     }
 
-    println!("Total branches going EAST (hemisphere): {}", east_count);
-    println!("Total branches going WEST (hemisphere): {}", west_count);
-    println!("Total branches in OTHER directions: {}", other_count);
+    println!("Total branches going EAST (hemisphere): {east_count}");
+    println!("Total branches going WEST (hemisphere): {west_count}");
+    println!("Total branches in OTHER directions: {other_count}");
 }
