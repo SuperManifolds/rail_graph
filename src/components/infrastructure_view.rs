@@ -951,6 +951,8 @@ fn setup_auto_layout_effect(
 #[allow(clippy::too_many_arguments)]
 fn setup_render_effect(
     graph: ReadSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<Line>>,
+    show_lines: ReadSignal<bool>,
     zoom_level: ReadSignal<f64>,
     pan_offset_x: ReadSignal<f64>,
     pan_offset_y: ReadSignal<f64>,
@@ -972,6 +974,8 @@ fn setup_render_effect(
     create_effect(move |_| {
         // Track all dependencies
         let _ = graph.get();
+        let _ = lines.get();
+        let _ = show_lines.get();
         let _ = zoom_level.get();
         let _ = pan_offset_x.get();
         let _ = pan_offset_y.get();
@@ -996,6 +1000,8 @@ fn setup_render_effect(
                 let Some(canvas) = canvas_ref.get_untracked() else { return };
 
                 let current_graph = graph.get_untracked();
+                let current_lines = lines.get_untracked();
+                let current_show_lines = show_lines.get_untracked();
                 let zoom = zoom_level.get_untracked();
                 let pan_x = pan_offset_x.get_untracked();
                 let pan_y = pan_offset_y.get_untracked();
@@ -1053,7 +1059,7 @@ fn setup_render_effect(
                 // Pass cache to renderer (mutable to update label cache)
                 topology_cache.with_value(|cache| {
                     let mut cache_mut = cache.borrow_mut();
-                    renderer::draw_infrastructure(&ctx, &current_graph, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming, preview_station_pos, current_selection_box, current_theme);
+                    renderer::draw_infrastructure(&ctx, &current_graph, &current_lines, current_show_lines, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming, preview_station_pos, current_selection_box, current_theme);
                 });
             });
 
@@ -1608,6 +1614,8 @@ pub fn InfrastructureView(
 
     let canvas_ref = create_node_ref::<leptos::html::Canvas>();
     let (auto_layout_enabled, set_auto_layout_enabled) = create_signal(true);
+    let initial_show_lines = initial_viewport.as_ref().is_some_and(|v| v.show_lines);
+    let (show_lines, set_show_lines) = create_signal(initial_show_lines);
     let (edit_mode, set_edit_mode) = create_signal(EditMode::None);
     let (selected_station, set_selected_station) = create_signal(None::<NodeIndex>);
     let (show_add_station, set_show_add_station) = create_signal(false);
@@ -1761,6 +1769,7 @@ pub fn InfrastructureView(
                 pan_offset_y: pan_offset_y.get(),
                 station_label_width: 120.0, // Infrastructure view uses default width
                 sidebar_width: 320.0, // Infrastructure view uses default width (no sidebar)
+                show_lines: show_lines.get(),
             };
             on_change.call(viewport_state);
         });
@@ -1789,7 +1798,7 @@ pub fn InfrastructureView(
     let (handle_add_station, handle_add_stations_batch, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
         create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_delete_bypass_info, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment, settings, set_selected_stations, set_selection_bounds);
 
-    setup_render_effect(graph, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position, selected_stations, selection_box_start, selection_box_end, theme);
+    setup_render_effect(graph, lines, show_lines, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position, selected_stations, selection_box_start, selection_box_end, theme);
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_context_menu, handle_wheel) = create_event_handlers(
         canvas_ref, edit_mode, set_edit_mode, selected_station, set_selected_station, view_creation_callbacks.on_add_waypoint.clone(), graph, set_graph,
@@ -1911,6 +1920,8 @@ pub fn InfrastructureView(
                 <InfrastructureToolbar
                     auto_layout_enabled=auto_layout_enabled
                     toggle_auto_layout=toggle_auto_layout
+                    show_lines=show_lines
+                    set_show_lines=set_show_lines
                     set_show_add_station=set_show_add_station
                     edit_mode=edit_mode
                     set_edit_mode=set_edit_mode

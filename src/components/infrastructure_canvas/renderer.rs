@@ -1,6 +1,6 @@
-use crate::models::{RailwayGraph, Junctions};
+use crate::models::{Line, RailwayGraph, Junctions};
 use crate::theme::Theme;
-use super::{track_renderer, station_renderer};
+use super::{track_renderer, station_renderer, line_renderer, line_station_renderer};
 use web_sys::CanvasRenderingContext2d;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
@@ -181,6 +181,8 @@ fn draw_grid(
 pub fn draw_infrastructure(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
+    lines: &[Line],
+    show_lines: bool,
     (width, height): (f64, f64),
     zoom: f64,
     pan_x: f64,
@@ -222,11 +224,20 @@ pub fn draw_infrastructure(
     let _ = ctx.translate(pan_x, pan_y);
     let _ = ctx.scale(zoom, zoom);
 
-    // Draw tracks first so they're behind nodes (using cached avoidance offsets)
-    track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme);
+    // Draw tracks or lines based on toggle (behind nodes)
+    if show_lines {
+        // Draw lines instead of tracks (use zoom=1.0 for constant size scaling)
+        line_renderer::draw_lines(ctx, graph, lines, 1.0, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme);
+        // Draw custom station markers for line mode (use zoom=1.0 for constant size scaling)
+        line_station_renderer::draw_line_stations(ctx, graph, lines, 1.0, viewport_bounds, &cache.label_cache, theme);
+    } else {
+        // Draw tracks (using cached avoidance offsets)
+        track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme);
+    }
 
     // Draw stations and junctions on top (with label cache)
-    station_renderer::draw_stations_with_cache(ctx, graph, zoom, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds, theme);
+    // Use zoom=1.0 in line mode for constant size labels
+    station_renderer::draw_stations_with_cache(ctx, graph, if show_lines { 1.0 } else { zoom }, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds, show_lines, theme);
 
     // Draw preview station if position is set
     if let Some((x, y)) = preview_station_position {

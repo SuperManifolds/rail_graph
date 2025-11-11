@@ -192,6 +192,7 @@ fn draw_station_nodes(
     viewport_bounds: (f64, f64, f64, f64),
     junctions: &HashSet<NodeIndex>,
     cached_avoidance: &HashMap<petgraph::stable_graph::EdgeIndex, (f64, f64)>,
+    show_lines: bool,
     palette: &Palette,
 ) -> Vec<(NodeIndex, (f64, f64), f64)> {
     let mut node_positions = Vec::new();
@@ -209,34 +210,38 @@ fn draw_station_nodes(
         }
 
         if let Some(station) = node.as_station() {
-            // Draw stations as circles
             let (border_color, radius) = if station.passing_loop {
                 (palette.passing_loop, NODE_RADIUS * 0.6)
             } else {
                 (palette.station, NODE_RADIUS)
             };
 
-            ctx.set_fill_style_str(palette.node_fill);
-            ctx.set_stroke_style_str(border_color);
-            ctx.set_line_width(2.0 / zoom);
-            ctx.begin_path();
-            let _ = ctx.arc(pos.0, pos.1, radius, 0.0, std::f64::consts::PI * 2.0);
-            ctx.fill();
-            ctx.stroke();
-
-            // Draw selection ring if this station is selected
-            if selected_stations.contains(&idx) {
-                ctx.set_stroke_style_str(palette.selection_ring);
-                ctx.set_line_width(SELECTION_RING_WIDTH / zoom);
+            // Draw stations as circles (but not in line mode - custom markers are drawn separately)
+            if !show_lines {
+                ctx.set_fill_style_str(palette.node_fill);
+                ctx.set_stroke_style_str(border_color);
+                ctx.set_line_width(2.0 / zoom);
                 ctx.begin_path();
-                let _ = ctx.arc(pos.0, pos.1, radius + SELECTION_RING_OFFSET, 0.0, std::f64::consts::PI * 2.0);
+                let _ = ctx.arc(pos.0, pos.1, radius, 0.0, std::f64::consts::PI * 2.0);
+                ctx.fill();
                 ctx.stroke();
+
+                // Draw selection ring if this station is selected
+                if selected_stations.contains(&idx) {
+                    ctx.set_stroke_style_str(palette.selection_ring);
+                    ctx.set_line_width(SELECTION_RING_WIDTH / zoom);
+                    ctx.begin_path();
+                    let _ = ctx.arc(pos.0, pos.1, radius + SELECTION_RING_OFFSET, 0.0, std::f64::consts::PI * 2.0);
+                    ctx.stroke();
+                }
             }
 
             node_positions.push((idx, pos, radius));
         } else if junctions.contains(&idx) {
-            // Draw junction
-            junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, cached_avoidance);
+            // Draw junction (but not in lines mode - lines are drawn separately)
+            if !show_lines {
+                junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, cached_avoidance);
+            }
             // Use larger radius for label overlap to account for junction connection lines
             node_positions.push((idx, pos, JUNCTION_LABEL_RADIUS));
         }
@@ -792,12 +797,13 @@ pub fn draw_stations_with_cache(
     cache: &mut super::renderer::TopologyCache,
     is_zooming: bool,
     viewport_bounds: (f64, f64, f64, f64),
+    show_lines: bool,
     theme: Theme,
 ) {
     let palette = get_palette(theme);
     let font_size = 14.0 / zoom;
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets, palette);
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets, show_lines, palette);
 
     // Check if we can use cached label positions
     let use_cache = if let Some((cached_zoom, _)) = &cache.label_cache {
@@ -810,7 +816,7 @@ pub fn draw_stations_with_cache(
     if use_cache {
         // Use cached positions
         if let Some((_, cached_positions)) = &cache.label_cache {
-            draw_cached_labels(ctx, graph, &node_positions, cached_positions, font_size, &cache.junctions, palette);
+            draw_cached_labels(ctx, graph, &node_positions, cached_positions, font_size, &cache.junctions, show_lines, palette);
         }
         return;
     }
@@ -908,6 +914,12 @@ pub fn draw_stations_with_cache(
         let Some(node) = graph.graph.node_weight(*idx) else { continue };
         let Some((_, position)) = label_positions.get(idx) else { continue };
         let is_junction = cache.junctions.contains(idx);
+
+        // Skip junction labels in line mode
+        if show_lines && is_junction {
+            continue;
+        }
+
         let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
         draw_station_label(ctx, &node.display_name(), *pos, *position, *radius, label_offset);
     }
@@ -920,6 +932,7 @@ fn draw_cached_labels(
     cached_positions: &HashMap<NodeIndex, CachedLabelPosition>,
     font_size: f64,
     junctions: &HashSet<NodeIndex>,
+    show_lines: bool,
     palette: &Palette,
 ) {
     ctx.set_fill_style_str(palette.label);
@@ -929,6 +942,12 @@ fn draw_cached_labels(
         let Some(node) = graph.graph.node_weight(*idx) else { continue };
         if let Some(cached) = cached_positions.get(idx) {
             let is_junction = junctions.contains(idx);
+
+            // Skip junction labels in line mode
+            if show_lines && is_junction {
+                continue;
+            }
+
             let label_offset = if is_junction {
                 JUNCTION_LABEL_OFFSET
             } else {
