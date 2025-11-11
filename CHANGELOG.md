@@ -1,3 +1,11 @@
+# v0.1.21 - 2025-11-11
+
+## Features
+- Added junction creation when clicking track segments in "Add Track" mode - clicking on a track segment (instead of just stations) now creates a junction at the segment midpoint and either selects it as the start point or connects to it as the end point, enabling rapid network expansion without manually switching to junction placement mode
+
+## Improvements
+- Infrastructure autolayout now properly balances branches between East and West sides of the spine - the crowding penalty now tracks branch directions globally across the entire graph instead of just per-parent-node, ensuring branches are distributed evenly on both sides
+
 # v0.1.20 - 2025-11-10
 
 ## Features

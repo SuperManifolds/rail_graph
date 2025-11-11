@@ -31,13 +31,13 @@ fn main() {
 
     println!("Stations ({}):", stations.len());
     for (name, degree) in &stations {
-        println!("  {} (degree {})", name, degree);
+        println!("  {name} (degree {degree})");
     }
     println!();
 
     println!("Junctions ({}):", junctions.len());
     for (name, degree) in &junctions {
-        println!("  {} (degree {})", name, degree);
+        println!("  {name} (degree {degree})");
     }
     println!();
 
@@ -68,6 +68,7 @@ fn main() {
 
                 for neighbor in neighbors {
                     let neighbor_node = &project.graph.graph[neighbor];
+                    #[allow(clippy::excessive_nesting)]
                     if let Some(neighbor_pos) = neighbor_node.position() {
                         let dx = neighbor_pos.0 - pos.0;
                         let dy = neighbor_pos.1 - pos.1;
@@ -77,7 +78,7 @@ fn main() {
                         } else if (direction - 180.0).abs() < 30.0 || (direction + 180.0).abs() < 30.0 {
                             "WEST"
                         } else {
-                            &format!("{:.0}°", direction)
+                            &format!("{direction:.0}°")
                         };
 
                         println!("  -> {} at ({:.1}, {:.1}), direction: {}",

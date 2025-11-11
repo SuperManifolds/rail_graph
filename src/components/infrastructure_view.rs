@@ -50,6 +50,71 @@ fn handle_mouse_down_adding_track(
     set_selected_station.set(None);
 }
 
+fn calculate_segment_midpoint(
+    graph: &RailwayGraph,
+    edge: EdgeIndex,
+) -> Option<(f64, f64)> {
+    let edge_ref = graph.graph.edge_references().find(|e| e.id() == edge)?;
+    let from_node = edge_ref.source();
+    let to_node = edge_ref.target();
+
+    let from_pos = graph.graph[from_node].position()?;
+    let to_pos = graph.graph[to_node].position()?;
+
+    Some(((from_pos.0 + to_pos.0) / 2.0, (from_pos.1 + to_pos.1) / 2.0))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_segment_click_in_track_mode(
+    clicked_edge: EdgeIndex,
+    selected_station: ReadSignal<Option<NodeIndex>>,
+    set_selected_station: WriteSignal<Option<NodeIndex>>,
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    lines: ReadSignal<Vec<Line>>,
+    set_lines: WriteSignal<Vec<Line>>,
+    handedness: crate::models::TrackHandedness,
+) {
+    use crate::models::{Junction, Junctions, Track, TrackDirection};
+
+    let current_graph = graph.get();
+    let mut updated_graph = current_graph.clone();
+    let mut current_lines = lines.get();
+
+    // Calculate midpoint of the segment
+    let Some(midpoint) = calculate_segment_midpoint(&current_graph, clicked_edge) else {
+        return;
+    };
+
+    // Create junction at midpoint
+    let junction = Junction {
+        name: None,
+        position: Some(midpoint),
+        routing_rules: vec![],
+        label_position: None,
+    };
+    let junction_idx = updated_graph.add_junction(junction);
+
+    // Split the segment and insert the junction
+    split_segment_and_insert_node(clicked_edge, junction_idx, &mut updated_graph, &mut current_lines, true, handedness);
+
+    // Handle selection logic
+    if let Some(first_station) = selected_station.get() {
+        // A station was already selected - connect it to the new junction
+        if first_station != junction_idx {
+            updated_graph.add_track(first_station, junction_idx, vec![Track { direction: TrackDirection::Bidirectional }]);
+        }
+        set_selected_station.set(None);
+    } else {
+        // No station selected - select this junction as the start point
+        set_selected_station.set(Some(junction_idx));
+    }
+
+    // Update graph and lines
+    set_graph.set(updated_graph);
+    set_lines.set(current_lines);
+}
+
 fn handle_mouse_move_hover_detection(
     x: f64,
     y: f64,
@@ -1192,10 +1257,25 @@ fn create_event_handlers(
             match current_mode {
                 EditMode::AddingTrack if is_single_click => {
                     let current_graph = graph.get();
-                    let Some(clicked_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) else {
-                        return;
-                    };
-                    handle_mouse_down_adding_track(clicked_station, selected_station, set_selected_station, graph, set_graph);
+
+                    // First try to find a station click
+                    if let Some(clicked_station) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
+                        handle_mouse_down_adding_track(clicked_station, selected_station, set_selected_station, graph, set_graph);
+                    }
+                    // If no station clicked, check for track segment click
+                    else if let Some(clicked_edge) = hit_detection::find_track_at_position(&current_graph, world_x, world_y) {
+                        let handedness = settings.get().track_handedness;
+                        handle_segment_click_in_track_mode(
+                            clicked_edge,
+                            selected_station,
+                            set_selected_station,
+                            graph,
+                            set_graph,
+                            lines,
+                            set_lines,
+                            handedness
+                        );
+                    }
                 }
                 EditMode::AddingJunction if is_single_click => {
                     let handedness = settings.get().track_handedness;
