@@ -28,6 +28,96 @@ struct Section {
     edges: Vec<EdgeIndex>,
 }
 
+/// Assign visual positions to lines within a section based on which lines conflict (share edges).
+/// Lines that never share edges can reuse the same position.
+/// Returns: `edge_index` -> (`line_id` -> `visual_position_index`)
+fn assign_visual_positions_with_reuse(
+    section: &Section,
+    section_ordering: &[&Line],
+    edge_to_lines: &HashMap<EdgeIndex, Vec<&Line>>,
+    graph: &RailwayGraph,
+) -> HashMap<EdgeIndex, HashMap<uuid::Uuid, usize>> {
+    // Build conflict map: which lines share at least one edge OR station
+    let mut conflicts: HashMap<uuid::Uuid, HashSet<uuid::Uuid>> = HashMap::new();
+
+    // Track which lines connect to each station in this section
+    let mut station_to_lines: HashMap<NodeIndex, Vec<uuid::Uuid>> = HashMap::new();
+
+    for edge_idx in &section.edges {
+        let Some(lines_on_edge) = edge_to_lines.get(edge_idx) else { continue };
+
+        // All lines on this edge conflict with each other
+        for line_a in lines_on_edge {
+            for line_b in lines_on_edge {
+                if line_a.id != line_b.id {
+                    conflicts.entry(line_a.id).or_default().insert(line_b.id);
+                }
+            }
+        }
+
+        // Track which lines touch which stations
+        if let Some((source, target)) = graph.graph.edge_endpoints(*edge_idx) {
+            for line in lines_on_edge {
+                station_to_lines.entry(source).or_default().push(line.id);
+                station_to_lines.entry(target).or_default().push(line.id);
+            }
+        }
+    }
+
+    // Add conflicts for lines that share stations
+    for lines_at_station in station_to_lines.values() {
+        for line_a_id in lines_at_station {
+            for line_b_id in lines_at_station {
+                if line_a_id != line_b_id {
+                    conflicts.entry(*line_a_id).or_default().insert(*line_b_id);
+                }
+            }
+        }
+    }
+
+    // Assign positions using greedy graph coloring based on section ordering
+    let mut line_to_position: HashMap<uuid::Uuid, usize> = HashMap::new();
+
+    for line in section_ordering {
+        // Find the lowest position not used by any conflicting line
+        let conflicting_positions: HashSet<usize> = conflicts
+            .get(&line.id)
+            .map(|conflict_ids| {
+                conflict_ids
+                    .iter()
+                    .filter_map(|id| line_to_position.get(id).copied())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Find lowest available position
+        let mut position = 0;
+        while conflicting_positions.contains(&position) {
+            position += 1;
+        }
+
+        line_to_position.insert(line.id, position);
+    }
+
+    // Build result: for each edge, map line IDs to their positions
+    let mut result: HashMap<EdgeIndex, HashMap<uuid::Uuid, usize>> = HashMap::new();
+
+    for edge_idx in &section.edges {
+        let Some(lines_on_edge) = edge_to_lines.get(edge_idx) else { continue };
+
+        let mut edge_positions = HashMap::new();
+        for line in lines_on_edge {
+            if let Some(&position) = line_to_position.get(&line.id) {
+                edge_positions.insert(line.id, position);
+            }
+        }
+
+        result.insert(*edge_idx, edge_positions);
+    }
+
+    result
+}
+
 /// Identify sections: groups of consecutive edges between junctions
 fn identify_sections(graph: &RailwayGraph, junctions: &HashSet<NodeIndex>) -> Vec<Section> {
     use petgraph::visit::EdgeRef;
@@ -248,6 +338,7 @@ fn draw_junction_connections(
     edge_to_lines: &HashMap<EdgeIndex, Vec<&Line>>,
     edge_to_section: &HashMap<EdgeIndex, SectionId>,
     section_orderings: &HashMap<SectionId, Vec<&Line>>,
+    section_visual_positions: &HashMap<SectionId, HashMap<EdgeIndex, HashMap<uuid::Uuid, usize>>>,
     gap_width: f64,
     zoom: f64,
 ) {
@@ -384,32 +475,42 @@ fn draw_junction_connections(
         let exit_total_width: f64 = exit_section_widths.iter().sum::<f64>()
             + (exit_num_gaps as f64) * gap_width;
 
+        // Get visual position maps for entry and exit edges
+        let entry_visual_map = section_visual_positions.get(&entry_section_id)
+            .and_then(|section_map| section_map.get(&connection_key.from_edge));
+        let exit_visual_map = section_visual_positions.get(&exit_section_id)
+            .and_then(|section_map| section_map.get(&connection_key.to_edge));
+
         // Draw each line through the junction from its position on entry edge to its position on exit edge
         for line in connection_lines {
-            // Find line's position in entry section
-            let Some(entry_idx) = entry_section_ordering.iter().position(|l| l.id == line.id) else {
+            // Find line's visual position in entry section
+            let Some(&entry_visual_pos) = entry_visual_map.and_then(|map| map.get(&line.id)) else {
                 continue;
             };
 
-            // Calculate entry offset based on position in entry section
+            // Calculate entry offset based on visual position (NOT compacted)
             let entry_start_offset = -entry_total_width / 2.0;
-            let entry_offset_sum: f64 = entry_section_widths.iter().take(entry_idx)
+            let entry_offset_sum: f64 = entry_section_widths.iter().take(entry_visual_pos)
                 .map(|&width| width + gap_width)
                 .sum();
-            let line_entry_width = entry_section_widths[entry_idx];
+            let line_entry_width = entry_section_widths.get(entry_visual_pos)
+                .copied()
+                .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
             let mut entry_offset = entry_start_offset + entry_offset_sum + line_entry_width / 2.0;
 
-            // Find line's position in exit section
-            let Some(exit_idx) = exit_section_ordering.iter().position(|l| l.id == line.id) else {
+            // Find line's visual position in exit section
+            let Some(&exit_visual_pos) = exit_visual_map.and_then(|map| map.get(&line.id)) else {
                 continue;
             };
 
-            // Calculate exit offset based on position in exit section
+            // Calculate exit offset based on visual position (NOT compacted)
             let exit_start_offset = -exit_total_width / 2.0;
-            let exit_offset_sum: f64 = exit_section_widths.iter().take(exit_idx)
+            let exit_offset_sum: f64 = exit_section_widths.iter().take(exit_visual_pos)
                 .map(|&width| width + gap_width)
                 .sum();
-            let line_exit_width = exit_section_widths[exit_idx];
+            let line_exit_width = exit_section_widths.get(exit_visual_pos)
+                .copied()
+                .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
             let mut exit_offset = exit_start_offset + exit_offset_sum + line_exit_width / 2.0;
 
             // Apply geometric flip if needed (perpendiculars point in opposite directions)
@@ -535,27 +636,10 @@ pub fn draw_lines(
     let sections = identify_sections(graph, junctions);
     let section_lines = get_lines_in_section(&sections, lines);
 
-    // Order lines within each section by similarity and stops
-    let mut section_orderings: HashMap<SectionId, Vec<&Line>> = HashMap::new();
-    for section in &sections {
-        if let Some(lines_in_section) = section_lines.get(&section.id) {
-            let ordered = order_lines_for_section(lines_in_section, &section.edges);
-            section_orderings.insert(section.id, ordered);
-        }
-    }
-
-    // Create mapping from edge to section
-    let mut edge_to_section: HashMap<EdgeIndex, SectionId> = HashMap::new();
-    for section in &sections {
-        for &edge_idx in &section.edges {
-            edge_to_section.insert(edge_idx, section.id);
-        }
-    }
-
     // Gap width for spacing between lines
     let gap_width = (LINE_BASE_WIDTH + 2.0) / zoom;
 
-    // Group lines by edge for rendering
+    // Group lines by edge for rendering (needed for position assignment)
     let mut edge_to_lines: HashMap<EdgeIndex, Vec<&Line>> = HashMap::new();
 
     // Group lines by junction connections for drawing through junctions
@@ -604,6 +688,32 @@ pub fn draw_lines(
                 };
                 junction_connections.entry(key).or_default().push(line);
             }
+        }
+    }
+
+    // Order lines within each section by stopping behavior in shared segments
+    let mut section_orderings: HashMap<SectionId, Vec<&Line>> = HashMap::new();
+    for section in &sections {
+        if let Some(lines_in_section) = section_lines.get(&section.id) {
+            let ordered = order_lines_for_section(lines_in_section, &section.edges);
+            section_orderings.insert(section.id, ordered);
+        }
+    }
+
+    // Assign visual positions with reuse for each section
+    let mut section_visual_positions: HashMap<SectionId, HashMap<EdgeIndex, HashMap<uuid::Uuid, usize>>> = HashMap::new();
+    for section in &sections {
+        if let Some(ordering) = section_orderings.get(&section.id) {
+            let visual_positions = assign_visual_positions_with_reuse(section, ordering, &edge_to_lines, graph);
+            section_visual_positions.insert(section.id, visual_positions);
+        }
+    }
+
+    // Create mapping from edge to section
+    let mut edge_to_section: HashMap<EdgeIndex, SectionId> = HashMap::new();
+    for section in &sections {
+        for &edge_idx in &section.edges {
+            edge_to_section.insert(edge_idx, section.id);
         }
     }
 
@@ -667,26 +777,32 @@ pub fn draw_lines(
         let nx = -dy / len;
         let ny = dx / len;
 
-        // Get section for this edge and its ordered lines
+        // Get section and visual positions for this edge
         let Some(&section_id) = edge_to_section.get(edge_idx) else {
             continue;
         };
         let Some(section_ordering) = section_orderings.get(&section_id) else {
             continue;
         };
+        let Some(edge_visual_positions_map) = section_visual_positions.get(&section_id)
+            .and_then(|section_map| section_map.get(edge_idx)) else {
+            continue;
+        };
 
-        let line_count = edge_lines.len();
+        // Build list of (visual_position, line) tuples for lines on this edge
+        let mut positioned_lines: Vec<(usize, &Line)> = edge_lines.iter()
+            .filter_map(|line| {
+                edge_visual_positions_map.get(&line.id).map(|&pos| (pos, *line))
+            })
+            .collect();
+        positioned_lines.sort_by_key(|(pos, _)| *pos);
+
+        let line_count = positioned_lines.len();
 
         if line_count == 1 {
-            // Single line - position based on section ordering
-            let line = edge_lines[0];
+            let (visual_pos, line) = positioned_lines[0];
 
-            // Find line's position in section ordering
-            let Some(section_idx) = section_ordering.iter().position(|l| l.id == line.id) else {
-                continue;
-            };
-
-            // Calculate widths for all lines in section
+            // Calculate widths for all lines in section ordering (to maintain proper spacing)
             let section_line_widths: Vec<f64> = section_ordering.iter()
                 .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
                 .collect();
@@ -695,12 +811,14 @@ pub fn draw_lines(
             let total_section_width: f64 = section_line_widths.iter().sum::<f64>()
                 + (num_gaps as f64) * gap_width;
 
-            // Calculate offset based on position in section
+            // Calculate offset based on visual position (NOT compacted)
             let start_offset = -total_section_width / 2.0;
-            let offset_sum: f64 = section_line_widths.iter().take(section_idx)
+            let offset_sum: f64 = section_line_widths.iter().take(visual_pos)
                 .map(|&width| width + gap_width)
                 .sum();
-            let line_world_width = section_line_widths[section_idx];
+            let line_world_width = section_line_widths.get(visual_pos)
+                .copied()
+                .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
             let offset = start_offset + offset_sum + line_world_width / 2.0;
 
             let ox = nx * offset;
@@ -730,8 +848,8 @@ pub fn draw_lines(
 
             ctx.stroke();
         } else {
-            // Multiple lines - position them using section ordering
-            // Calculate widths for all lines in section
+            // Multiple lines - position them using visual positions
+            // Calculate widths for all lines in section ordering (to maintain proper spacing with gaps)
             let section_line_widths: Vec<f64> = section_ordering.iter()
                 .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
                 .collect();
@@ -741,17 +859,14 @@ pub fn draw_lines(
                 + (num_gaps as f64) * gap_width;
             let start_offset = -total_section_width / 2.0;
 
-            for line in edge_lines {
-                // Find line's position in section ordering
-                let Some(section_idx) = section_ordering.iter().position(|l| l.id == line.id) else {
-                    continue;
-                };
-
-                // Calculate offset based on position in section
-                let offset_sum: f64 = section_line_widths.iter().take(section_idx)
+            for (visual_pos, line) in &positioned_lines {
+                // Calculate offset based on visual position (NOT compacted - maintains gaps)
+                let offset_sum: f64 = section_line_widths.iter().take(*visual_pos)
                     .map(|&width| width + gap_width)
                     .sum();
-                let line_world_width = section_line_widths[section_idx];
+                let line_world_width = section_line_widths.get(*visual_pos)
+                    .copied()
+                    .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
                 let offset = start_offset + offset_sum + line_world_width / 2.0;
 
                 let ox = nx * offset;
@@ -793,6 +908,7 @@ pub fn draw_lines(
         &edge_to_lines,
         &edge_to_section,
         &section_orderings,
+        &section_visual_positions,
         gap_width,
         zoom,
     );
