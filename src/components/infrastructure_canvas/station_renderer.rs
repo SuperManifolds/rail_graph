@@ -1,6 +1,6 @@
-use crate::models::{RailwayGraph, Stations, Junctions};
+use crate::models::{RailwayGraph, Stations, Junctions, Line};
 use crate::theme::Theme;
-use crate::components::infrastructure_canvas::{track_renderer, junction_renderer};
+use crate::components::infrastructure_canvas::{track_renderer, junction_renderer, line_renderer};
 use crate::geometry::line_segments_intersect;
 use web_sys::CanvasRenderingContext2d;
 use std::collections::{HashMap, HashSet};
@@ -325,6 +325,44 @@ fn count_label_overlaps(
     }
 
     overlaps
+}
+
+/// Adjust station position for label drawing based on line extent in line mode
+fn adjust_position_for_line_extent(
+    pos: (f64, f64),
+    label_position: LabelPosition,
+    extent: Option<(f64, f64, f64)>, // (angle, min_offset, max_offset)
+) -> (f64, f64) {
+    let Some((angle, min_offset, max_offset)) = extent else {
+        return pos;
+    };
+
+    // Calculate perpendicular direction
+    let perp_x = -angle.sin();
+    let perp_y = angle.cos();
+
+    // Determine which offset to use based on label direction
+    let offset = match label_position {
+        LabelPosition::Right | LabelPosition::TopRight | LabelPosition::BottomRight => {
+            // Label on right side - use positive extent
+            if max_offset > 0.0 { max_offset } else { 0.0 }
+        }
+        LabelPosition::Left | LabelPosition::TopLeft | LabelPosition::BottomLeft => {
+            // Label on left side - use negative extent
+            if min_offset < 0.0 { min_offset } else { 0.0 }
+        }
+        LabelPosition::Top => {
+            // For top, use whichever extent is larger in magnitude
+            if max_offset.abs() > min_offset.abs() { max_offset } else { min_offset }
+        }
+        LabelPosition::Bottom => {
+            // For bottom, use whichever extent is larger in magnitude
+            if max_offset.abs() > min_offset.abs() { max_offset } else { min_offset }
+        }
+    };
+
+    // Apply the perpendicular offset
+    (pos.0 + perp_x * offset, pos.1 + perp_y * offset)
 }
 
 fn draw_station_label(
@@ -786,11 +824,193 @@ pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeI
         .collect()
 }
 
+/// Calculate the perpendicular extent of lines at each station for label positioning
+/// Returns a map of `station_idx` -> (angle, `min_offset`, `max_offset`)
+#[allow(clippy::cast_precision_loss)]
+fn calculate_line_extents_at_stations(
+    graph: &RailwayGraph,
+    lines: &[Line],
+    zoom: f64,
+    junctions: &HashSet<NodeIndex>,
+) -> HashMap<NodeIndex, (f64, f64, f64)> {
+    use petgraph::visit::{EdgeRef, IntoEdgeReferences};
+
+    const LINE_BASE_WIDTH: f64 = 3.0;
+
+    // Compute section information (same as line_station_renderer)
+    let sections = line_renderer::identify_sections(graph, junctions);
+    let section_lines = line_renderer::get_lines_in_section(&sections, lines);
+
+    // Build edge_to_lines map
+    let mut edge_to_lines: HashMap<EdgeIndex, Vec<&Line>> = HashMap::new();
+    for line in lines {
+        if !line.visible {
+            continue;
+        }
+        for segment in &line.forward_route {
+            let edge_idx = EdgeIndex::new(segment.edge_index);
+            edge_to_lines.entry(edge_idx).or_default().push(line);
+        }
+    }
+
+    // Compute section orderings and visual positions
+    let mut section_orderings: HashMap<line_renderer::SectionId, Vec<&Line>> = HashMap::new();
+    for section in &sections {
+        if let Some(lines_in_section) = section_lines.get(&section.id) {
+            let ordered = line_renderer::order_lines_for_section(lines_in_section, &section.edges);
+            section_orderings.insert(section.id, ordered);
+        }
+    }
+
+    let mut section_visual_positions: HashMap<
+        line_renderer::SectionId,
+        HashMap<EdgeIndex, HashMap<uuid::Uuid, usize>>,
+    > = HashMap::new();
+    for section in &sections {
+        if let Some(ordering) = section_orderings.get(&section.id) {
+            let visual_positions =
+                line_renderer::assign_visual_positions_with_reuse(section, ordering, &edge_to_lines, graph);
+            section_visual_positions.insert(section.id, visual_positions);
+        }
+    }
+
+    // Build visual_positions_map
+    let mut edge_to_section: HashMap<EdgeIndex, line_renderer::SectionId> = HashMap::new();
+    for section in &sections {
+        for &edge_idx in &section.edges {
+            edge_to_section.insert(edge_idx, section.id);
+        }
+    }
+
+    let mut visual_positions_map: HashMap<EdgeIndex, (Vec<&Line>, HashMap<uuid::Uuid, usize>)> =
+        HashMap::new();
+    for (edge_idx, section_id) in &edge_to_section {
+        if let Some(ordering) = section_orderings.get(section_id) {
+            if let Some(section_vp) = section_visual_positions.get(section_id) {
+                if let Some(edge_vp) = section_vp.get(edge_idx) {
+                    visual_positions_map.insert(*edge_idx, (ordering.clone(), edge_vp.clone()));
+                }
+            }
+        }
+    }
+
+    // Now calculate extents for each station
+    let mut extents: HashMap<NodeIndex, (f64, f64, f64)> = HashMap::new();
+
+    for station_idx in graph.graph.node_indices() {
+        if junctions.contains(&station_idx) {
+            continue; // Skip junctions
+        }
+
+        let Some(station_pos) = graph.get_station_position(station_idx) else { continue };
+
+        // Calculate angle of lines through station
+        let mut angles = Vec::new();
+        for edge in graph.graph.edges(station_idx) {
+            let (source, target) = (edge.source(), edge.target());
+            let other_node = if source == station_idx { target } else { source };
+
+            if let Some(other_pos) = graph.get_station_position(other_node) {
+                let dx = other_pos.0 - station_pos.0;
+                let dy = other_pos.1 - station_pos.1;
+                let angle = dy.atan2(dx);
+                angles.push(angle);
+            }
+        }
+
+        if angles.is_empty() {
+            continue;
+        }
+
+        let avg_angle = angles.iter().sum::<f64>() / angles.len() as f64;
+
+        // Calculate perpendicular direction
+        let perp_x = -avg_angle.sin();
+        let perp_y = avg_angle.cos();
+
+        // Collect line positions and project onto perpendicular
+        let mut perpendicular_offsets: Vec<f64> = Vec::new();
+
+        for edge_ref in graph.graph.edge_references() {
+            let edge_idx = edge_ref.id();
+            let (source, target) = (edge_ref.source(), edge_ref.target());
+
+            if source != station_idx && target != station_idx {
+                continue;
+            }
+
+            let Some((section_ordering, visual_pos_map)) = visual_positions_map.get(&edge_idx) else {
+                continue;
+            };
+
+            let Some(pos1) = graph.get_station_position(source) else {
+                continue;
+            };
+            let Some(pos2) = graph.get_station_position(target) else {
+                continue;
+            };
+
+            let dx = pos2.0 - pos1.0;
+            let dy = pos2.1 - pos1.1;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < 0.1 {
+                continue;
+            }
+
+            let nx = -dy / len;
+            let ny = dx / len;
+
+            let gap_width = (LINE_BASE_WIDTH + 2.0) / zoom;
+            let section_line_widths: Vec<f64> = section_ordering
+                .iter()
+                .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
+                .collect();
+
+            let num_gaps = section_ordering.len().saturating_sub(1);
+            let total_width: f64 = section_line_widths.iter().sum::<f64>() + (num_gaps as f64) * gap_width;
+
+            for line in section_ordering {
+                if let Some(visual_pos) = visual_pos_map.get(&line.id) {
+                    let start_offset = -total_width / 2.0;
+                    let offset_sum: f64 = section_line_widths
+                        .iter()
+                        .take(*visual_pos)
+                        .map(|&width| width + gap_width)
+                        .sum();
+                    let line_width = section_line_widths
+                        .get(*visual_pos)
+                        .copied()
+                        .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
+                    let offset = start_offset + offset_sum + line_width / 2.0;
+
+                    let ox = nx * offset;
+                    let oy = ny * offset;
+
+                    let line_pos = (station_pos.0 + ox, station_pos.1 + oy);
+                    let rel_x = line_pos.0 - station_pos.0;
+                    let rel_y = line_pos.1 - station_pos.1;
+                    let projected = rel_x * perp_x + rel_y * perp_y;
+                    perpendicular_offsets.push(projected);
+                }
+            }
+        }
+
+        if !perpendicular_offsets.is_empty() {
+            let min_offset = perpendicular_offsets.iter().copied().fold(f64::INFINITY, f64::min);
+            let max_offset = perpendicular_offsets.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            extents.insert(station_idx, (avg_angle, min_offset, max_offset));
+        }
+    }
+
+    extents
+}
+
 /// Draw stations with cached label positions for performance during zoom
 #[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
 pub fn draw_stations_with_cache(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
+    lines: &[crate::models::Line],
     zoom: f64,
     selected_stations: &[NodeIndex],
     highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
@@ -805,6 +1025,13 @@ pub fn draw_stations_with_cache(
 
     let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets, show_lines, palette);
 
+    // Calculate line extents in line mode for label positioning
+    let line_extents = if show_lines {
+        calculate_line_extents_at_stations(graph, lines, zoom, &cache.junctions)
+    } else {
+        HashMap::new()
+    };
+
     // Check if we can use cached label positions
     let use_cache = if let Some((cached_zoom, _)) = &cache.label_cache {
         // Use cache if zooming and zoom hasn't changed drastically (>50%)
@@ -816,7 +1043,7 @@ pub fn draw_stations_with_cache(
     if use_cache {
         // Use cached positions
         if let Some((_, cached_positions)) = &cache.label_cache {
-            draw_cached_labels(ctx, graph, &node_positions, cached_positions, font_size, &cache.junctions, show_lines, palette);
+            draw_cached_labels(ctx, graph, &node_positions, cached_positions, font_size, &cache.junctions, show_lines, &line_extents, palette);
         }
         return;
     }
@@ -930,10 +1157,19 @@ pub fn draw_stations_with_cache(
         }
 
         let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
-        draw_station_label(ctx, &node.display_name(), *pos, *position, *radius, label_offset);
+
+        // Adjust position for line extent in line mode
+        let adjusted_pos = if show_lines {
+            adjust_position_for_line_extent(*pos, *position, line_extents.get(idx).copied())
+        } else {
+            *pos
+        };
+
+        draw_station_label(ctx, &node.display_name(), adjusted_pos, *position, *radius, label_offset);
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_cached_labels(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
@@ -942,6 +1178,7 @@ fn draw_cached_labels(
     font_size: f64,
     junctions: &HashSet<NodeIndex>,
     show_lines: bool,
+    line_extents: &HashMap<NodeIndex, (f64, f64, f64)>,
     palette: &Palette,
 ) {
     ctx.set_fill_style_str(palette.label);
@@ -972,6 +1209,14 @@ fn draw_cached_labels(
         } else {
             LABEL_OFFSET
         };
-        draw_station_label(ctx, &node.display_name(), *pos, cached.position, *radius, label_offset);
+
+        // Adjust position for line extent in line mode
+        let adjusted_pos = if show_lines {
+            adjust_position_for_line_extent(*pos, cached.position, line_extents.get(idx).copied())
+        } else {
+            *pos
+        };
+
+        draw_station_label(ctx, &node.display_name(), adjusted_pos, cached.position, *radius, label_offset);
     }
 }
