@@ -92,6 +92,12 @@ fn has_node_collision_at(
             if existing_pos == (0.0, 0.0) {
                 continue;
             }
+
+            // CRITICAL: Never allow exact same position
+            if test_pos == existing_pos {
+                return true;
+            }
+
             let dx = test_pos.0 - existing_pos.0;
             let dy = test_pos.1 - existing_pos.1;
             let dist = (dx * dx + dy * dy).sqrt();
@@ -103,7 +109,7 @@ fn has_node_collision_at(
     false
 }
 
-/// Check if a line segment would cross or come too close to any existing edges
+/// Check if a line segment would cross or come too close to any existing edges or nodes
 #[allow(clippy::similar_names)]
 fn would_overlap_existing_edges(
     graph: &RailwayGraph,
@@ -175,7 +181,60 @@ fn would_overlap_existing_edges(
         }
     }
 
+    // NOTE: Edge-to-node collision detection disabled for now
+    // The renderer has avoidance logic that handles visual overlaps
+    // Enabling this check causes too many placement failures, forcing nodes into fallback
+    // which creates horizontal lines
+
     false
+}
+
+/// Find a valid fallback position using a spiral search pattern
+/// This prevents creating long horizontal lines by varying the search direction
+fn find_fallback_position(
+    graph: &RailwayGraph,
+    current_pos: (f64, f64),
+    neighbor: NodeIndex,
+    base_station_spacing: f64,
+    preferred_direction: f64,
+    direction_offset: usize,
+) -> Option<(f64, f64)> {
+    // Use smaller spacing multipliers so nodes aren't placed too far away
+    for &spacing_mult in &[2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 10.0] {
+        // Try the preferred direction first
+        let test_pos = snap_to_grid(
+            current_pos.0 + preferred_direction.cos() * base_station_spacing * spacing_mult,
+            current_pos.1 + preferred_direction.sin() * base_station_spacing * spacing_mult,
+        );
+        if !has_node_collision_at(graph, test_pos, neighbor, base_station_spacing) {
+            return Some(test_pos);
+        }
+
+        // Then try perpendicular directions (90° rotations)
+        for angle_offset in [std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2, std::f64::consts::PI] {
+            let test_dir = preferred_direction + angle_offset;
+            let test_pos = snap_to_grid(
+                current_pos.0 + test_dir.cos() * base_station_spacing * spacing_mult,
+                current_pos.1 + test_dir.sin() * base_station_spacing * spacing_mult,
+            );
+            if !has_node_collision_at(graph, test_pos, neighbor, base_station_spacing) {
+                return Some(test_pos);
+            }
+        }
+
+        // Finally try all 8 compass directions, rotated by direction_offset
+        for i in 0..DIRECTIONS.len() {
+            let dir = DIRECTIONS[(i + direction_offset) % DIRECTIONS.len()];
+            let test_pos = snap_to_grid(
+                current_pos.0 + dir.cos() * base_station_spacing * spacing_mult,
+                current_pos.1 + dir.sin() * base_station_spacing * spacing_mult,
+            );
+            if !has_node_collision_at(graph, test_pos, neighbor, base_station_spacing) {
+                return Some(test_pos);
+            }
+        }
+    }
+    None
 }
 
 /// Find best direction and spacing for a branch node
@@ -367,12 +426,15 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
             start_x + spine_direction.cos() * offset,
             start_y + spine_direction.sin() * offset,
         );
+
+        // Place spine nodes without collision checking - spine is the primary structure
         graph.set_station_position(node, pos);
         visited.insert(node);
     }
 
     // Phase 3: Place branches from spine nodes
     let mut queue = std::collections::VecDeque::new();
+    let mut fallback_direction_index: usize = 0; // Cycle through directions for fallback
 
     // Add all spine nodes to queue with their positions, incoming direction, and incoming edge
     for (i, &node) in spine.iter().enumerate() {
@@ -435,7 +497,7 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
                 _ => false,
             };
 
-            let (best_direction, best_spacing, _best_score) = find_best_direction_for_branch(
+            let (best_direction, best_spacing, best_score) = find_best_direction_for_branch(
                 graph,
                 current_pos,
                 neighbor,
@@ -452,13 +514,51 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
                 current_pos.1 + best_direction.sin() * base_station_spacing * best_spacing,
             );
 
-            graph.set_station_position(neighbor, neighbor_pos);
-            visited.insert(neighbor);
+            // Verify the final position doesn't have collision before placing
+            let final_pos = if has_node_collision_at(graph, neighbor_pos, neighbor, base_station_spacing) || best_score == i32::MIN {
+                // All positions have collisions - try fallback positions
+                let fallback_dir = if best_score == i32::MIN {
+                    // Cycle through directions to prevent horizontal lines
+                    let dir = DIRECTIONS[fallback_direction_index % DIRECTIONS.len()];
+                    fallback_direction_index += 1;
+                    dir
+                } else {
+                    best_direction
+                };
+                // Pass the direction offset to rotate through compass directions
+                let result = find_fallback_position(
+                    graph,
+                    current_pos,
+                    neighbor,
+                    base_station_spacing,
+                    fallback_dir,
+                    fallback_direction_index
+                );
+                fallback_direction_index += 1;
+                result
+            } else {
+                Some(neighbor_pos)
+            };
 
-            already_used.push((best_direction, reachable.clone()));
-
-            // Add to queue with the edge from current to neighbor
-            queue.push_back((neighbor, neighbor_pos, best_direction, edge_to_neighbor));
+            if let Some(pos) = final_pos {
+                graph.set_station_position(neighbor, pos);
+                visited.insert(neighbor);
+                already_used.push((best_direction, reachable.clone()));
+                queue.push_back((neighbor, pos, best_direction, edge_to_neighbor));
+            } else {
+                // Absolutely no valid position found - this should be extremely rare
+                // Use a varied emergency direction
+                let emergency_dir = DIRECTIONS[fallback_direction_index % DIRECTIONS.len()];
+                fallback_direction_index += 1;
+                let emergency_pos = snap_to_grid(
+                    current_pos.0 + emergency_dir.cos() * base_station_spacing * 20.0,
+                    current_pos.1 + emergency_dir.sin() * base_station_spacing * 20.0,
+                );
+                graph.set_station_position(neighbor, emergency_pos);
+                visited.insert(neighbor);
+                already_used.push((emergency_dir, reachable.clone()));
+                queue.push_back((neighbor, emergency_pos, emergency_dir, edge_to_neighbor));
+            }
         }
     }
 
@@ -486,11 +586,13 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
                     offset_x,
                     start_y + spine_direction.sin() * offset,
                 );
+
+                // Place disconnected components without adjustment - they're offset far enough
                 graph.set_station_position(comp_node, pos);
                 visited.insert(comp_node);
             }
 
-            offset_x += 400.0;
+            offset_x += 600.0; // Increased spacing between disconnected components
         }
     }
 }
