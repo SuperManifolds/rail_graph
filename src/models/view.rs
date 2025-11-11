@@ -38,6 +38,8 @@ pub struct ViewportState {
     pub station_label_width: f64,
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: f64,
+    #[serde(default)]
+    pub show_lines: bool,
 }
 
 fn default_zoom() -> f64 {
@@ -61,6 +63,7 @@ impl Default for ViewportState {
             pan_offset_y: 0.0,
             station_label_width: 120.0,
             sidebar_width: 320.0,
+            show_lines: false,
         }
     }
 }
