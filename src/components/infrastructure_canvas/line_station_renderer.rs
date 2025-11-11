@@ -18,6 +18,13 @@ const PILL_HEIGHT: f64 = 16.0;
 const PILL_BORDER_WIDTH: f64 = 1.0;
 const PILL_PADDING: f64 = 3.0;
 
+// Line name label constants
+const LINE_LABEL_PADDING: f64 = 4.0;
+const LINE_LABEL_HEIGHT: f64 = 18.0;
+const LINE_LABEL_SPACING: f64 = 4.0;
+const LINE_LABEL_MIN_WIDTH: f64 = 40.0;
+const CHAR_WIDTH_ESTIMATE: f64 = 7.5;
+
 struct Palette {
     pill_fill: &'static str,
     pill_border: &'static str,
@@ -71,6 +78,35 @@ fn line_stops_at_station(station_idx: NodeIndex, line: &Line, graph: &RailwayGra
         let edge_idx = EdgeIndex::new(segment.edge_index);
         if let Some((_source, target)) = graph.graph.edge_endpoints(edge_idx) {
             if target == station_idx && !segment.wait_time.is_zero() {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+/// Check if a station is a terminal (start or end) for a given line
+fn is_line_terminal(station_idx: NodeIndex, line: &Line, graph: &RailwayGraph) -> bool {
+    if line.forward_route.is_empty() {
+        return false;
+    }
+
+    // Check if this is the first station (line starts here)
+    if let Some(first_segment) = line.forward_route.first() {
+        let first_edge_idx = EdgeIndex::new(first_segment.edge_index);
+        if let Some((source, _target)) = graph.graph.edge_endpoints(first_edge_idx) {
+            if source == station_idx {
+                return true;
+            }
+        }
+    }
+
+    // Check if this is the last station (line ends here)
+    if let Some(last_segment) = line.forward_route.last() {
+        let last_edge_idx = EdgeIndex::new(last_segment.edge_index);
+        if let Some((_source, target)) = graph.graph.edge_endpoints(last_edge_idx) {
+            if target == station_idx {
                 return true;
             }
         }
@@ -165,6 +201,155 @@ fn draw_single_line_tick(
     ctx.move_to(pos.0, pos.1);
     ctx.line_to(pos.0 + dx, pos.1 + dy);
     ctx.stroke();
+    ctx.restore();
+}
+
+/// Draw a line name label in a colored rectangle for terminal stations
+#[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
+fn draw_line_name_label(
+    ctx: &CanvasRenderingContext2d,
+    line_name: &str,
+    line_color: &str,
+    pos: (f64, f64),
+    label_position: super::station_renderer::LabelPosition,
+    station_name: &str,
+    zoom: f64,
+    label_index: usize, // For stacking multiple labels
+    line_extent: Option<(f64, f64, f64)>, // (angle, min_offset, max_offset) for line mode adjustment
+) {
+    use super::station_renderer::calculate_readable_text_color;
+
+    let font_size = 14.0 / zoom;
+
+    // Measure actual text widths using canvas measureText
+    ctx.set_font(&format!("{font_size}px sans-serif"));
+
+    let line_text_width = ctx
+        .measure_text(line_name)
+        .map_or_else(|_| line_name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom, |m| m.width());
+    let rect_width = (line_text_width + (LINE_LABEL_PADDING * 2.0)).max(LINE_LABEL_MIN_WIDTH);
+    let rect_height = LINE_LABEL_HEIGHT;
+
+    // Use fixed width for stacking to ensure equal spacing between labels
+    let stack_width = LINE_LABEL_MIN_WIDTH;
+
+    // Measure station name width to position line label after it
+    let station_name_width = ctx
+        .measure_text(station_name)
+        .map_or_else(|_| station_name.len() as f64 * CHAR_WIDTH_ESTIMATE / zoom, |m| m.width());
+
+    let station_node_radius = 8.0; // NODE_RADIUS from station_renderer
+    let station_label_offset = 12.0; // LABEL_OFFSET from station_renderer
+
+    // Apply line extent adjustment (same as station labels in line mode)
+    let adjusted_pos = if let Some((angle, min_offset, max_offset)) = line_extent {
+        let perp_x = -angle.sin();
+        let perp_y = angle.cos();
+
+        let extent_offset = match label_position {
+            super::station_renderer::LabelPosition::Right
+            | super::station_renderer::LabelPosition::TopRight
+            | super::station_renderer::LabelPosition::BottomRight => {
+                if max_offset > 0.0 { max_offset } else { 0.0 }
+            }
+            super::station_renderer::LabelPosition::Left
+            | super::station_renderer::LabelPosition::TopLeft
+            | super::station_renderer::LabelPosition::BottomLeft => {
+                if min_offset < 0.0 { min_offset } else { 0.0 }
+            }
+            super::station_renderer::LabelPosition::Top | super::station_renderer::LabelPosition::Bottom => {
+                if max_offset.abs() > min_offset.abs() { max_offset } else { min_offset }
+            }
+        };
+
+        (pos.0 + perp_x * extent_offset, pos.1 + perp_y * extent_offset)
+    } else {
+        pos
+    };
+
+    // Station labels are positioned at (radius + offset) from station center (or adjusted center in line mode)
+    // Text extends from there by station_name_width
+    // Line labels should start after the station name text ends
+    let base_offset = station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
+
+    // Calculate position based on label direction
+    // Labels are positioned after the station name and stack with equal spacing
+    let (label_x, label_y) = match label_position {
+        super::station_renderer::LabelPosition::Right => {
+            // Stack horizontally to the right
+            let offset = base_offset + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
+            (adjusted_pos.0 + offset, adjusted_pos.1 - rect_height / 2.0)
+        }
+        super::station_renderer::LabelPosition::Left => {
+            // Stack horizontally to the left
+            let offset = base_offset + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
+            (adjusted_pos.0 - offset - rect_width, adjusted_pos.1 - rect_height / 2.0)
+        }
+        super::station_renderer::LabelPosition::Top => {
+            // Stack vertically upward
+            let vertical_base = station_node_radius + station_label_offset + font_size + LINE_LABEL_SPACING;
+            let offset = vertical_base + (label_index as f64 * (rect_height + LINE_LABEL_SPACING));
+            (adjusted_pos.0 - rect_width / 2.0, adjusted_pos.1 - offset - rect_height)
+        }
+        super::station_renderer::LabelPosition::Bottom => {
+            // Stack vertically downward
+            let vertical_base = station_node_radius + station_label_offset + font_size + LINE_LABEL_SPACING;
+            let offset = vertical_base + (label_index as f64 * (rect_height + LINE_LABEL_SPACING));
+            (adjusted_pos.0 - rect_width / 2.0, adjusted_pos.1 + offset)
+        }
+        super::station_renderer::LabelPosition::TopRight => {
+            // Stack diagonally to top-right
+            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+            let diagonal_base = base_offset * cos45;
+            let offset = diagonal_base + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
+            (adjusted_pos.0 + offset, adjusted_pos.1 - offset - rect_height)
+        }
+        super::station_renderer::LabelPosition::TopLeft => {
+            // Stack diagonally to top-left
+            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+            let diagonal_base = base_offset * cos45;
+            let offset = diagonal_base + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
+            (adjusted_pos.0 - offset - rect_width, adjusted_pos.1 - offset - rect_height)
+        }
+        super::station_renderer::LabelPosition::BottomRight => {
+            // Stack diagonally to bottom-right
+            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+            let diagonal_base = base_offset * cos45;
+            let offset = diagonal_base + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
+            (adjusted_pos.0 + offset, adjusted_pos.1 + offset)
+        }
+        super::station_renderer::LabelPosition::BottomLeft => {
+            // Stack diagonally to bottom-left
+            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+            let diagonal_base = base_offset * cos45;
+            let offset = diagonal_base + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
+            (adjusted_pos.0 - offset - rect_width, adjusted_pos.1 + offset)
+        }
+    };
+
+    // Draw rectangle background
+    ctx.save();
+    ctx.set_fill_style_str(line_color);
+    ctx.fill_rect(label_x, label_y, rect_width, rect_height);
+
+    // Draw border (slightly darker/lighter than fill)
+    ctx.set_stroke_style_str("#00000040");
+    ctx.set_line_width(1.0 / zoom);
+    ctx.stroke_rect(label_x, label_y, rect_width, rect_height);
+
+    // Draw text centered both horizontally and vertically
+    let text_color = calculate_readable_text_color(line_color);
+    ctx.set_fill_style_str(text_color);
+    ctx.set_font(&format!("{font_size}px sans-serif"));
+    ctx.set_text_align("center");
+    ctx.set_text_baseline("alphabetic");
+
+    let text_x = label_x + rect_width / 2.0;
+    // Position text vertically: use alphabetic baseline and offset by approximate text center
+    // For better visual centering, position at rect center plus ~35% of font size
+    let text_y = label_y + rect_height / 2.0 + font_size * 0.35;
+    let _ = ctx.fill_text(line_name, text_x, text_y);
+
     ctx.restore();
 }
 
@@ -411,7 +596,7 @@ fn calculate_line_offset_at_station(
 }
 
 /// Draw station markers and labels for line mode
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 pub fn draw_line_stations(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
@@ -567,6 +752,56 @@ pub fn draw_line_stations(
 
                 draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom);
             }
+        }
+
+        // Draw line name labels for terminal stations
+        let terminal_lines: Vec<&Line> = all_lines
+            .iter()
+            .filter(|line| is_line_terminal(idx, line, graph))
+            .copied()
+            .collect();
+
+        // Calculate line extent for label positioning (same logic as station_renderer)
+        let line_extent = if all_lines.is_empty() {
+            None
+        } else {
+            // Calculate the angle of lines through this station
+            let angle = calculate_line_angle(idx, graph);
+
+            // Calculate perpendicular direction
+            let perp_x = -angle.sin();
+            let perp_y = angle.cos();
+
+            // Collect perpendicular offsets for all lines
+            let mut perpendicular_offsets = Vec::new();
+            for line in &all_lines {
+                if let Some((ox, oy)) = calculate_line_offset_at_station(idx, line, &visual_positions_map, graph, zoom) {
+                    let projected = ox * perp_x + oy * perp_y;
+                    perpendicular_offsets.push(projected);
+                }
+            }
+
+            if perpendicular_offsets.is_empty() {
+                None
+            } else {
+                let min_offset = perpendicular_offsets.iter().copied().fold(f64::INFINITY, f64::min);
+                let max_offset = perpendicular_offsets.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                Some((angle, min_offset, max_offset))
+            }
+        };
+
+        for (line_idx, line) in terminal_lines.iter().enumerate() {
+            draw_line_name_label(
+                ctx,
+                &line.name,
+                &line.color,
+                pos,
+                label_position,
+                &node.display_name(),
+                zoom,
+                line_idx,
+                line_extent,
+            );
         }
     }
 

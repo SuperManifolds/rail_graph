@@ -48,6 +48,41 @@ fn get_palette(theme: Theme) -> &'static Palette {
     }
 }
 
+/// Calculate readable text color (white or black) based on background color luminance
+#[must_use]
+pub fn calculate_readable_text_color(hex_color: &str) -> &'static str {
+    let trimmed = hex_color.trim_start_matches('#');
+
+    if trimmed.len() == 6 {
+        if let (Ok(r), Ok(g), Ok(b)) = (
+            u8::from_str_radix(&trimmed[0..2], 16),
+            u8::from_str_radix(&trimmed[2..4], 16),
+            u8::from_str_radix(&trimmed[4..6], 16),
+        ) {
+            // Normalize RGB to 0-1 range
+            #[allow(clippy::cast_precision_loss)]
+            let r_norm = f64::from(r) / 255.0;
+            #[allow(clippy::cast_precision_loss)]
+            let g_norm = f64::from(g) / 255.0;
+            #[allow(clippy::cast_precision_loss)]
+            let b_norm = f64::from(b) / 255.0;
+
+            // Calculate relative luminance using sRGB coefficients
+            let luminance = 0.2126 * r_norm + 0.7152 * g_norm + 0.0722 * b_norm;
+
+            // Use white text for dark backgrounds, black text for light backgrounds
+            return if luminance < 0.5 {
+                "#ffffff"
+            } else {
+                "#000000"
+            };
+        }
+    }
+
+    // Fallback: use white text if parsing fails
+    "#ffffff"
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum LabelPosition {
     Right,
