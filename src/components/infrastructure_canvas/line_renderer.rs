@@ -1,6 +1,7 @@
 use crate::models::{Line, RailwayGraph, Stations};
 use crate::theme::Theme;
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
+use petgraph::visit::IntoEdgeReferences;
 use std::collections::{HashMap, HashSet};
 use web_sys::CanvasRenderingContext2d;
 
@@ -8,6 +9,9 @@ const LINE_BASE_WIDTH: f64 = 3.0;
 const AVOIDANCE_OFFSET_THRESHOLD: f64 = 0.1;
 const TRANSITION_LENGTH: f64 = 30.0;
 const JUNCTION_STOP_DISTANCE: f64 = 14.0;
+
+/// Unique identifier for a section (group of edges between junctions)
+type SectionId = usize;
 
 /// Key for identifying a junction connection between two edges
 #[derive(Hash, Eq, PartialEq, Clone, Copy)]
@@ -17,13 +21,234 @@ struct JunctionConnectionKey {
     to_edge: EdgeIndex,
 }
 
+/// Section information: consecutive edges between junctions
+#[derive(Clone)]
+struct Section {
+    id: SectionId,
+    edges: Vec<EdgeIndex>,
+}
+
+/// Identify sections: groups of consecutive edges between junctions
+fn identify_sections(graph: &RailwayGraph, junctions: &HashSet<NodeIndex>) -> Vec<Section> {
+    use petgraph::visit::EdgeRef;
+
+    let mut sections = Vec::new();
+    let mut visited_edges: HashSet<EdgeIndex> = HashSet::new();
+    let mut section_id = 0;
+
+    // For each edge, if not visited, start a new section
+    for edge_ref in graph.graph.edge_references() {
+        let edge_idx = edge_ref.id();
+
+        if visited_edges.contains(&edge_idx) {
+            continue;
+        }
+
+        // Start new section with this edge
+        let mut section_edges = vec![edge_idx];
+        visited_edges.insert(edge_idx);
+
+        // Try to extend section in both directions until hitting junctions
+        let (source, target) = (edge_ref.source(), edge_ref.target());
+
+        // Extend backwards from source (if source is not a junction)
+        if !junctions.contains(&source) {
+            extend_section_from_node(
+                graph,
+                source,
+                edge_idx,
+                junctions,
+                &mut section_edges,
+                &mut visited_edges,
+                false, // backwards
+            );
+        }
+
+        // Extend forwards from target (if target is not a junction)
+        if !junctions.contains(&target) {
+            extend_section_from_node(
+                graph,
+                target,
+                edge_idx,
+                junctions,
+                &mut section_edges,
+                &mut visited_edges,
+                true, // forwards
+            );
+        }
+
+        sections.push(Section {
+            id: section_id,
+            edges: section_edges,
+        });
+        section_id += 1;
+    }
+
+    sections
+}
+
+/// Extend a section from a node in one direction until hitting a junction
+fn extend_section_from_node(
+    graph: &RailwayGraph,
+    start_node: NodeIndex,
+    from_edge: EdgeIndex,
+    junctions: &HashSet<NodeIndex>,
+    section_edges: &mut Vec<EdgeIndex>,
+    visited_edges: &mut HashSet<EdgeIndex>,
+    forwards: bool,
+) {
+    use petgraph::visit::EdgeRef;
+
+    let mut current_node = start_node;
+    let mut previous_edge = from_edge;
+
+    loop {
+        // If current node is a junction, stop
+        if junctions.contains(&current_node) {
+            break;
+        }
+
+        // Find the next edge connected to this node (excluding the edge we came from)
+        let mut next_edge: Option<(EdgeIndex, NodeIndex)> = None;
+
+        for edge_ref in graph.graph.edges(current_node) {
+            let edge_idx = edge_ref.id();
+            if edge_idx == previous_edge || visited_edges.contains(&edge_idx) {
+                continue;
+            }
+
+            let (src, tgt) = (edge_ref.source(), edge_ref.target());
+            let other_node = if src == current_node { tgt } else { src };
+
+            next_edge = Some((edge_idx, other_node));
+            break;
+        }
+
+        // If no next edge, we've reached the end
+        let Some((edge_idx, next_node)) = next_edge else {
+            break;
+        };
+
+        // Add edge to section
+        if forwards {
+            section_edges.push(edge_idx);
+        } else {
+            section_edges.insert(0, edge_idx);
+        }
+        visited_edges.insert(edge_idx);
+
+        // Move to next node
+        previous_edge = edge_idx;
+        current_node = next_node;
+    }
+}
+
+/// Get which lines traverse each section
+fn get_lines_in_section<'a>(
+    sections: &[Section],
+    lines: &'a [Line],
+) -> HashMap<SectionId, Vec<&'a Line>> {
+    let mut section_lines: HashMap<SectionId, Vec<&Line>> = HashMap::new();
+
+    for section in sections {
+        let mut lines_in_section = Vec::new();
+
+        for line in lines {
+            if !line.visible {
+                continue;
+            }
+
+            // Check if line uses any edge in this section
+            let uses_section = section.edges.iter().any(|&edge_idx| {
+                line.forward_route.iter().any(|seg| EdgeIndex::new(seg.edge_index) == edge_idx)
+            });
+
+            if uses_section {
+                lines_in_section.push(line);
+            }
+        }
+
+        section_lines.insert(section.id, lines_in_section);
+    }
+
+    section_lines
+}
+
+/// Compare two lines based on their stopping behavior in shared segments
+/// Returns:
+/// - `Ordering::Less` if `line_a` stops less in shared segments (more express)
+/// - `Ordering::Greater` if `line_a` stops more in shared segments (more local)
+/// - `Ordering::Equal` if they have the same stopping ratio in shared segments
+fn compare_lines_by_shared_stops(line_a: &Line, line_b: &Line) -> std::cmp::Ordering {
+    // Find all edge indices that both lines traverse
+    let edges_a: HashSet<usize> = line_a.forward_route.iter()
+        .map(|seg| seg.edge_index)
+        .collect();
+    let edges_b: HashSet<usize> = line_b.forward_route.iter()
+        .map(|seg| seg.edge_index)
+        .collect();
+
+    let shared_edges: Vec<usize> = edges_a.intersection(&edges_b)
+        .copied()
+        .collect();
+
+    // If no shared segments, compare by total route length (shorter = more express = LEFT)
+    if shared_edges.is_empty() {
+        return line_a.forward_route.len().cmp(&line_b.forward_route.len());
+    }
+
+    // Count how many stops each line makes in shared segments
+    // A stop is indicated by wait_time > 0
+    let shared_segs_a: Vec<_> = line_a.forward_route.iter()
+        .filter(|seg| shared_edges.contains(&seg.edge_index))
+        .collect();
+    let shared_segs_b: Vec<_> = line_b.forward_route.iter()
+        .filter(|seg| shared_edges.contains(&seg.edge_index))
+        .collect();
+
+    let stop_count_a = shared_segs_a.iter()
+        .filter(|seg| !seg.wait_time.is_zero())
+        .count();
+    let stop_count_b = shared_segs_b.iter()
+        .filter(|seg| !seg.wait_time.is_zero())
+        .count();
+
+    // Compare by stop count: fewer stops = more express = should come first (LEFT)
+    // So ascending order of stop count
+    stop_count_a.cmp(&stop_count_b)
+}
+
+/// Order lines within a section by comparing their stopping behavior in shared segments
+/// Returns ordered list of lines where:
+/// - For each pair of lines, the one that stops LESS in their shared segments is positioned LEFT
+/// - Line ID used for tie-breaking when two lines have equal stopping behavior
+fn order_lines_for_section<'a>(
+    section_lines: &[&'a Line],
+    _section_edges: &[EdgeIndex],
+) -> Vec<&'a Line> {
+    let mut ordered_lines = section_lines.to_vec();
+
+    ordered_lines.sort_by(|a, b| {
+        // Primary: compare based on stopping behavior in shared segments
+        // (fewer stops in shared segments = more express = LEFT)
+        compare_lines_by_shared_stops(a, b)
+            // Secondary: line ID for stability
+            .then(a.id.cmp(&b.id))
+    });
+
+    ordered_lines
+}
+
 /// Draw lines through junctions
-#[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
+#[allow(clippy::cast_precision_loss, clippy::too_many_lines, clippy::too_many_arguments)]
 fn draw_junction_connections(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
     junction_connections: &HashMap<JunctionConnectionKey, Vec<&Line>>,
     edge_to_lines: &HashMap<EdgeIndex, Vec<&Line>>,
+    edge_to_section: &HashMap<EdgeIndex, SectionId>,
+    section_orderings: &HashMap<SectionId, Vec<&Line>>,
+    gap_width: f64,
     zoom: f64,
 ) {
     for (connection_key, connection_lines) in junction_connections {
@@ -83,13 +308,11 @@ fn draw_junction_connections(
             continue;
         }
 
-        // Get the line lists for each edge to find actual positions
-        let Some(from_edge_lines) = edge_to_lines.get(&connection_key.from_edge) else {
+        // Verify that both edges exist in the edge_to_lines map
+        if !edge_to_lines.contains_key(&connection_key.from_edge) ||
+           !edge_to_lines.contains_key(&connection_key.to_edge) {
             continue;
-        };
-        let Some(to_edge_lines) = edge_to_lines.get(&connection_key.to_edge) else {
-            continue;
-        };
+        }
 
         // Calculate base stop points without extension
         let entry_base_no_ext = if from_junction_is_target {
@@ -131,67 +354,71 @@ fn draw_junction_connections(
             false
         };
 
-        // Sort edge lines for consistent ordering
-        let mut sorted_from_lines = from_edge_lines.clone();
-        sorted_from_lines.sort_by_key(|line| line.id);
+        // Get section orderings for entry and exit edges
+        let Some(&entry_section_id) = edge_to_section.get(&connection_key.from_edge) else {
+            continue;
+        };
+        let Some(&exit_section_id) = edge_to_section.get(&connection_key.to_edge) else {
+            continue;
+        };
+        let Some(entry_section_ordering) = section_orderings.get(&entry_section_id) else {
+            continue;
+        };
+        let Some(exit_section_ordering) = section_orderings.get(&exit_section_id) else {
+            continue;
+        };
 
-        let mut sorted_to_lines = to_edge_lines.clone();
-        sorted_to_lines.sort_by_key(|line| line.id);
-
-        // If perpendiculars point in opposite directions, reverse both line orders
-        // to account for the geometric flip
-        if flip_exit_offsets {
-            sorted_from_lines.reverse();
-            sorted_to_lines.reverse();
-        }
-
-        // Calculate widths for each edge
-        let from_widths: Vec<f64> = sorted_from_lines.iter()
-            .map(|line| (LINE_BASE_WIDTH + line.thickness) / zoom)
+        // Calculate widths for entry section
+        let entry_section_widths: Vec<f64> = entry_section_ordering.iter()
+            .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
             .collect();
+        let entry_num_gaps = entry_section_ordering.len().saturating_sub(1);
+        let entry_total_width: f64 = entry_section_widths.iter().sum::<f64>()
+            + (entry_num_gaps as f64) * gap_width;
 
-        let to_widths: Vec<f64> = sorted_to_lines.iter()
-            .map(|line| (LINE_BASE_WIDTH + line.thickness) / zoom)
+        // Calculate widths for exit section
+        let exit_section_widths: Vec<f64> = exit_section_ordering.iter()
+            .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
             .collect();
-
-        // Gap should be equal to width of a standard line (BASE + default thickness of 2.0)
-        let gap_width = (LINE_BASE_WIDTH + 2.0) / zoom;
-        let from_num_gaps = from_widths.len().saturating_sub(1);
-        let to_num_gaps = to_widths.len().saturating_sub(1);
-        let from_total_width: f64 = from_widths.iter().sum::<f64>()
-            + (from_num_gaps as f64) * gap_width;
-        let to_total_width: f64 = to_widths.iter().sum::<f64>()
-            + (to_num_gaps as f64) * gap_width;
+        let exit_num_gaps = exit_section_ordering.len().saturating_sub(1);
+        let exit_total_width: f64 = exit_section_widths.iter().sum::<f64>()
+            + (exit_num_gaps as f64) * gap_width;
 
         // Draw each line through the junction from its position on entry edge to its position on exit edge
         for line in connection_lines {
-            // Find position on entry edge
-            let Some(from_idx) = sorted_from_lines.iter().position(|l| l.id == line.id) else {
+            // Find line's position in entry section
+            let Some(entry_idx) = entry_section_ordering.iter().position(|l| l.id == line.id) else {
                 continue;
             };
 
-            let entry_offset = {
-                let start_offset = -from_total_width / 2.0;
-                let mut offset = start_offset;
-                for width in from_widths.iter().take(from_idx) {
-                    offset += width + gap_width;
-                }
-                offset + from_widths[from_idx] / 2.0
-            };
+            // Calculate entry offset based on position in entry section
+            let entry_start_offset = -entry_total_width / 2.0;
+            let entry_offset_sum: f64 = entry_section_widths.iter().take(entry_idx)
+                .map(|&width| width + gap_width)
+                .sum();
+            let line_entry_width = entry_section_widths[entry_idx];
+            let mut entry_offset = entry_start_offset + entry_offset_sum + line_entry_width / 2.0;
 
-            // Find position on exit edge
-            let Some(to_idx) = sorted_to_lines.iter().position(|l| l.id == line.id) else {
+            // Find line's position in exit section
+            let Some(exit_idx) = exit_section_ordering.iter().position(|l| l.id == line.id) else {
                 continue;
             };
 
-            let exit_offset = {
-                let start_offset = -to_total_width / 2.0;
-                let mut offset = start_offset;
-                for width in to_widths.iter().take(to_idx) {
-                    offset += width + gap_width;
-                }
-                offset + to_widths[to_idx] / 2.0
-            };
+            // Calculate exit offset based on position in exit section
+            let exit_start_offset = -exit_total_width / 2.0;
+            let exit_offset_sum: f64 = exit_section_widths.iter().take(exit_idx)
+                .map(|&width| width + gap_width)
+                .sum();
+            let line_exit_width = exit_section_widths[exit_idx];
+            let mut exit_offset = exit_start_offset + exit_offset_sum + line_exit_width / 2.0;
+
+            // Apply geometric flip if needed (perpendiculars point in opposite directions)
+            if flip_exit_offsets {
+                entry_offset = -entry_offset;
+                exit_offset = -exit_offset;
+            }
+
+            let line_world_width = (line_entry_width + line_exit_width) / 2.0; // Average width for junction curve
 
             // Apply perpendicular offsets to base points for line positioning
             let entry_point = (
@@ -204,7 +431,6 @@ fn draw_junction_connections(
                 exit_base_no_ext.1 + exit_perp.1 * exit_offset
             );
 
-            let line_world_width = (LINE_BASE_WIDTH + line.thickness) / zoom;
             ctx.set_line_width(line_world_width);
             ctx.set_stroke_style_str(&line.color);
             ctx.begin_path();
@@ -291,7 +517,7 @@ fn draw_line_segment_with_avoidance(
     }
 }
 
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
 pub fn draw_lines(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
@@ -305,13 +531,37 @@ pub fn draw_lines(
     let (left, top, right, bottom) = viewport_bounds;
     let margin = 200.0; // Buffer to include lines slightly outside viewport
 
-    // Group lines by edge for offset calculation
+    // Identify sections and order lines within each section
+    let sections = identify_sections(graph, junctions);
+    let section_lines = get_lines_in_section(&sections, lines);
+
+    // Order lines within each section by similarity and stops
+    let mut section_orderings: HashMap<SectionId, Vec<&Line>> = HashMap::new();
+    for section in &sections {
+        if let Some(lines_in_section) = section_lines.get(&section.id) {
+            let ordered = order_lines_for_section(lines_in_section, &section.edges);
+            section_orderings.insert(section.id, ordered);
+        }
+    }
+
+    // Create mapping from edge to section
+    let mut edge_to_section: HashMap<EdgeIndex, SectionId> = HashMap::new();
+    for section in &sections {
+        for &edge_idx in &section.edges {
+            edge_to_section.insert(edge_idx, section.id);
+        }
+    }
+
+    // Gap width for spacing between lines
+    let gap_width = (LINE_BASE_WIDTH + 2.0) / zoom;
+
+    // Group lines by edge for rendering
     let mut edge_to_lines: HashMap<EdgeIndex, Vec<&Line>> = HashMap::new();
 
     // Group lines by junction connections for drawing through junctions
     let mut junction_connections: HashMap<JunctionConnectionKey, Vec<&Line>> = HashMap::new();
 
-    // Filter visible lines and build mappings
+    // Build mappings for visible lines
     for line in lines {
         if !line.visible {
             continue;
@@ -417,17 +667,46 @@ pub fn draw_lines(
         let nx = -dy / len;
         let ny = dx / len;
 
-        // Sort lines by ID for consistent ordering
-        let mut sorted_lines = edge_lines.clone();
-        sorted_lines.sort_by_key(|line| line.id);
+        // Get section for this edge and its ordered lines
+        let Some(&section_id) = edge_to_section.get(edge_idx) else {
+            continue;
+        };
+        let Some(section_ordering) = section_orderings.get(&section_id) else {
+            continue;
+        };
 
-        let line_count = sorted_lines.len();
+        let line_count = edge_lines.len();
 
         if line_count == 1 {
-            // Single line - draw in center
-            let line = sorted_lines[0];
-            let line_width = (LINE_BASE_WIDTH + line.thickness) / zoom;
-            ctx.set_line_width(line_width);
+            // Single line - position based on section ordering
+            let line = edge_lines[0];
+
+            // Find line's position in section ordering
+            let Some(section_idx) = section_ordering.iter().position(|l| l.id == line.id) else {
+                continue;
+            };
+
+            // Calculate widths for all lines in section
+            let section_line_widths: Vec<f64> = section_ordering.iter()
+                .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
+                .collect();
+
+            let num_gaps = section_ordering.len().saturating_sub(1);
+            let total_section_width: f64 = section_line_widths.iter().sum::<f64>()
+                + (num_gaps as f64) * gap_width;
+
+            // Calculate offset based on position in section
+            let start_offset = -total_section_width / 2.0;
+            let offset_sum: f64 = section_line_widths.iter().take(section_idx)
+                .map(|&width| width + gap_width)
+                .sum();
+            let line_world_width = section_line_widths[section_idx];
+            let offset = start_offset + offset_sum + line_world_width / 2.0;
+
+            let ox = nx * offset;
+            let oy = ny * offset;
+
+            ctx.set_line_width(line_world_width);
             ctx.set_stroke_style_str(&line.color);
             ctx.begin_path();
 
@@ -441,39 +720,40 @@ pub fn draw_lines(
 
                 draw_line_segment_with_avoidance(
                     ctx, actual_pos1, actual_pos2, segment_length,
-                    (0.0, 0.0), (avoid_x, avoid_y),
+                    (ox, oy), (avoid_x, avoid_y),
                     (start_needs_transition, end_needs_transition)
                 );
             } else {
-                ctx.move_to(actual_pos1.0, actual_pos1.1);
-                ctx.line_to(actual_pos2.0, actual_pos2.1);
+                ctx.move_to(actual_pos1.0 + ox, actual_pos1.1 + oy);
+                ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);
             }
 
             ctx.stroke();
         } else {
-            // Multiple lines - position them adjacent with no gaps
-            // When canvas is scaled and we set line_width = w / zoom,
-            // the actual width in world coordinates is w / zoom (not w).
-            // So we must calculate positions using the zoom-adjusted widths.
-
-            let line_widths_world: Vec<f64> = sorted_lines.iter()
-                .map(|line| (LINE_BASE_WIDTH + line.thickness) / zoom)
+            // Multiple lines - position them using section ordering
+            // Calculate widths for all lines in section
+            let section_line_widths: Vec<f64> = section_ordering.iter()
+                .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
                 .collect();
 
-            // Gap should be equal to width of a standard line (BASE + default thickness of 2.0)
-            let gap_width = (LINE_BASE_WIDTH + 2.0) / zoom;
-            let num_gaps = sorted_lines.len().saturating_sub(1);
-            let total_width: f64 = line_widths_world.iter().sum::<f64>()
+            let num_gaps = section_ordering.len().saturating_sub(1);
+            let total_section_width: f64 = section_line_widths.iter().sum::<f64>()
                 + (num_gaps as f64) * gap_width;
-            let start_offset = -total_width / 2.0;
+            let start_offset = -total_section_width / 2.0;
 
-            let mut current_offset = start_offset;
+            for line in edge_lines {
+                // Find line's position in section ordering
+                let Some(section_idx) = section_ordering.iter().position(|l| l.id == line.id) else {
+                    continue;
+                };
 
-            for (i, line) in sorted_lines.iter().enumerate() {
-                let line_world_width = line_widths_world[i];
+                // Calculate offset based on position in section
+                let offset_sum: f64 = section_line_widths.iter().take(section_idx)
+                    .map(|&width| width + gap_width)
+                    .sum();
+                let line_world_width = section_line_widths[section_idx];
+                let offset = start_offset + offset_sum + line_world_width / 2.0;
 
-                // Position line center at current_offset + half of its width
-                let offset = current_offset + line_world_width / 2.0;
                 let ox = nx * offset;
                 let oy = ny * offset;
 
@@ -481,9 +761,6 @@ pub fn draw_lines(
                 ctx.set_line_width(line_world_width);
                 ctx.set_stroke_style_str(&line.color);
                 ctx.begin_path();
-
-                // Move to next line position (with gap)
-                current_offset += line_world_width + gap_width;
 
                 if needs_avoidance {
                     // Draw segmented path with offset
@@ -509,5 +786,14 @@ pub fn draw_lines(
     }
 
     // Draw junction connections
-    draw_junction_connections(ctx, graph, &junction_connections, &edge_to_lines, zoom);
+    draw_junction_connections(
+        ctx,
+        graph,
+        &junction_connections,
+        &edge_to_lines,
+        &edge_to_section,
+        &section_orderings,
+        gap_width,
+        zoom,
+    );
 }
