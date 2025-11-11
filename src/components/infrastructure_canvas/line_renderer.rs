@@ -11,7 +11,7 @@ const TRANSITION_LENGTH: f64 = 30.0;
 const JUNCTION_STOP_DISTANCE: f64 = 14.0;
 
 /// Unique identifier for a section (group of edges between junctions)
-type SectionId = usize;
+pub type SectionId = usize;
 
 /// Key for identifying a junction connection between two edges
 #[derive(Hash, Eq, PartialEq, Clone, Copy)]
@@ -23,15 +23,16 @@ struct JunctionConnectionKey {
 
 /// Section information: consecutive edges between junctions
 #[derive(Clone)]
-struct Section {
-    id: SectionId,
-    edges: Vec<EdgeIndex>,
+pub struct Section {
+    pub id: SectionId,
+    pub edges: Vec<EdgeIndex>,
 }
 
 /// Assign visual positions to lines within a section based on which lines conflict (share edges).
 /// Lines that never share edges can reuse the same position.
 /// Returns: `edge_index` -> (`line_id` -> `visual_position_index`)
-fn assign_visual_positions_with_reuse(
+#[must_use]
+pub fn assign_visual_positions_with_reuse(
     section: &Section,
     section_ordering: &[&Line],
     edge_to_lines: &HashMap<EdgeIndex, Vec<&Line>>,
@@ -119,7 +120,8 @@ fn assign_visual_positions_with_reuse(
 }
 
 /// Identify sections: groups of consecutive edges between junctions
-fn identify_sections(graph: &RailwayGraph, junctions: &HashSet<NodeIndex>) -> Vec<Section> {
+#[must_use]
+pub fn identify_sections(graph: &RailwayGraph, junctions: &HashSet<NodeIndex>) -> Vec<Section> {
     use petgraph::visit::EdgeRef;
 
     let mut sections = Vec::new();
@@ -234,7 +236,8 @@ fn extend_section_from_node(
 }
 
 /// Get which lines traverse each section
-fn get_lines_in_section<'a>(
+#[must_use]
+pub fn get_lines_in_section<'a>(
     sections: &[Section],
     lines: &'a [Line],
 ) -> HashMap<SectionId, Vec<&'a Line>> {
@@ -312,7 +315,8 @@ fn compare_lines_by_shared_stops(line_a: &Line, line_b: &Line) -> std::cmp::Orde
 /// Returns ordered list of lines where:
 /// - For each pair of lines, the one that stops LESS in their shared segments is positioned LEFT
 /// - Line ID used for tie-breaking when two lines have equal stopping behavior
-fn order_lines_for_section<'a>(
+#[must_use]
+pub fn order_lines_for_section<'a>(
     section_lines: &[&'a Line],
     _section_edges: &[EdgeIndex],
 ) -> Vec<&'a Line> {
