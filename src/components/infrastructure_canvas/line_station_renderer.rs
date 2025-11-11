@@ -267,63 +267,130 @@ fn draw_line_name_label(
         pos
     };
 
-    // Station labels are positioned at (radius + offset) from station center (or adjusted center in line mode)
-    // Text extends from there by station_name_width
-    // Line labels should start after the station name text ends
-    let base_offset = station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
-
     // Calculate position based on label direction
     // Labels are positioned after the station name and stack with equal spacing
     let (label_x, label_y) = match label_position {
         super::station_renderer::LabelPosition::Right => {
-            // Stack horizontally to the right
+            // Station label starts at offset 20.0 and extends rightward by station_name_width
+            // Line labels continue extending rightward
+            let base_offset = station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
             let offset = base_offset + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
             (adjusted_pos.0 + offset, adjusted_pos.1 - rect_height / 2.0)
         }
         super::station_renderer::LabelPosition::Left => {
-            // Stack horizontally to the left
+            // Station label ends at offset -20.0 and extends leftward by station_name_width
+            // Line labels continue extending leftward
+            let base_offset = station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
             let offset = base_offset + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
             (adjusted_pos.0 - offset - rect_width, adjusted_pos.1 - rect_height / 2.0)
         }
         super::station_renderer::LabelPosition::Top => {
-            // Stack vertically upward
-            let vertical_base = station_node_radius + station_label_offset + font_size + LINE_LABEL_SPACING;
-            let offset = vertical_base + (label_index as f64 * (rect_height + LINE_LABEL_SPACING));
-            (adjusted_pos.0 - rect_width / 2.0, adjusted_pos.1 - offset - rect_height)
+            // Station label is drawn at -45° rotation
+            // Text starts at (offset*cos45, -offset*cos45) in rotated space
+            // and extends rightward by station_name_width in rotated space
+            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+            let base_offset = station_node_radius + station_label_offset; // 20.0
+            let angle = -std::f64::consts::PI / 4.0; // -45°
+
+            // Start position in rotated space
+            let x_start_rotated = base_offset * cos45;
+            let y_start_rotated = -base_offset * cos45;
+
+            // Transform start to world space
+            let world_start_x = x_start_rotated * angle.cos() - y_start_rotated * angle.sin();
+            let world_start_y = x_start_rotated * angle.sin() + y_start_rotated * angle.cos();
+
+            // End of station text in world space
+            // (text extends along rotated x-axis direction)
+            let text_end_x = adjusted_pos.0 + world_start_x + station_name_width * angle.cos();
+            let text_end_y = adjusted_pos.1 + world_start_y + station_name_width * angle.sin();
+
+            // Continue extending in the same diagonal direction
+            // Add extra spacing for visual clearance
+            let spacing_with_index = LINE_LABEL_SPACING + 6.0 + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
+            (
+                text_end_x + spacing_with_index * angle.cos(),
+                text_end_y + spacing_with_index * angle.sin() - rect_height / 2.0,
+            )
         }
         super::station_renderer::LabelPosition::Bottom => {
-            // Stack vertically downward
-            let vertical_base = station_node_radius + station_label_offset + font_size + LINE_LABEL_SPACING;
-            let offset = vertical_base + (label_index as f64 * (rect_height + LINE_LABEL_SPACING));
-            (adjusted_pos.0 - rect_width / 2.0, adjusted_pos.1 + offset)
+            // Station label is drawn at +45° rotation
+            // Text starts at (offset*cos45, offset*cos45) in rotated space
+            // and extends rightward by station_name_width in rotated space
+            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+            let base_offset = station_node_radius + station_label_offset; // 20.0
+            let angle = std::f64::consts::PI / 4.0; // +45°
+
+            // Start position in rotated space
+            let x_start_rotated = base_offset * cos45;
+            let y_start_rotated = base_offset * cos45;
+
+            // Transform start to world space
+            let world_start_x = x_start_rotated * angle.cos() - y_start_rotated * angle.sin();
+            let world_start_y = x_start_rotated * angle.sin() + y_start_rotated * angle.cos();
+
+            // End of station text in world space
+            // (text extends along rotated x-axis direction)
+            let text_end_x = adjusted_pos.0 + world_start_x + station_name_width * angle.cos();
+            let text_end_y = adjusted_pos.1 + world_start_y + station_name_width * angle.sin();
+
+            // Continue extending in the same diagonal direction
+            // Add extra spacing for visual clearance
+            let spacing_with_index = LINE_LABEL_SPACING + 6.0 + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
+            (
+                text_end_x + spacing_with_index * angle.cos(),
+                text_end_y + spacing_with_index * angle.sin() - rect_height / 2.0,
+            )
         }
         super::station_renderer::LabelPosition::TopRight => {
-            // Stack diagonally to top-right
+            // Station label is at diagonal position (offset * 0.707, offset * 0.707)
+            // Text extends horizontally rightward by station_name_width
+            // Line labels continue extending diagonally, but account for horizontal text extent
             let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            let diagonal_base = base_offset * cos45;
-            let offset = diagonal_base + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
-            (adjusted_pos.0 + offset, adjusted_pos.1 - offset - rect_height)
+            let diagonal_offset = (station_node_radius + station_label_offset) * cos45;
+            let horizontal_offset = station_name_width + LINE_LABEL_SPACING;
+            let stack_offset = label_index as f64 * (stack_width + LINE_LABEL_SPACING) * cos45;
+            (
+                adjusted_pos.0 + diagonal_offset + horizontal_offset + stack_offset,
+                adjusted_pos.1 - diagonal_offset - LINE_LABEL_SPACING - rect_height - stack_offset,
+            )
         }
         super::station_renderer::LabelPosition::TopLeft => {
-            // Stack diagonally to top-left
+            // Station label is at diagonal position (-offset * 0.707, -offset * 0.707)
+            // Text extends horizontally rightward by station_name_width (but from left position)
+            // Line labels continue extending diagonally to top-left
             let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            let diagonal_base = base_offset * cos45;
-            let offset = diagonal_base + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
-            (adjusted_pos.0 - offset - rect_width, adjusted_pos.1 - offset - rect_height)
+            let diagonal_offset = (station_node_radius + station_label_offset) * cos45;
+            let stack_offset = label_index as f64 * (stack_width + LINE_LABEL_SPACING) * cos45;
+            (
+                adjusted_pos.0 - diagonal_offset - LINE_LABEL_SPACING - rect_width - stack_offset,
+                adjusted_pos.1 - diagonal_offset - LINE_LABEL_SPACING - rect_height - stack_offset,
+            )
         }
         super::station_renderer::LabelPosition::BottomRight => {
-            // Stack diagonally to bottom-right
+            // Station label is at diagonal position (offset * 0.707, offset * 0.707)
+            // Text extends horizontally rightward by station_name_width
+            // Line labels continue extending diagonally to bottom-right
             let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            let diagonal_base = base_offset * cos45;
-            let offset = diagonal_base + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
-            (adjusted_pos.0 + offset, adjusted_pos.1 + offset)
+            let diagonal_offset = (station_node_radius + station_label_offset) * cos45;
+            let horizontal_offset = station_name_width + LINE_LABEL_SPACING;
+            let stack_offset = label_index as f64 * (stack_width + LINE_LABEL_SPACING) * cos45;
+            (
+                adjusted_pos.0 + diagonal_offset + horizontal_offset + stack_offset,
+                adjusted_pos.1 + diagonal_offset + LINE_LABEL_SPACING + stack_offset,
+            )
         }
         super::station_renderer::LabelPosition::BottomLeft => {
-            // Stack diagonally to bottom-left
+            // Station label is at diagonal position (-offset * 0.707, offset * 0.707)
+            // Text extends horizontally rightward by station_name_width (but from left position)
+            // Line labels continue extending diagonally to bottom-left
             let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            let diagonal_base = base_offset * cos45;
-            let offset = diagonal_base + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
-            (adjusted_pos.0 - offset - rect_width, adjusted_pos.1 + offset)
+            let diagonal_offset = (station_node_radius + station_label_offset) * cos45;
+            let stack_offset = label_index as f64 * (stack_width + LINE_LABEL_SPACING) * cos45;
+            (
+                adjusted_pos.0 - diagonal_offset - LINE_LABEL_SPACING - rect_width - stack_offset,
+                adjusted_pos.1 + diagonal_offset + LINE_LABEL_SPACING + stack_offset,
+            )
         }
     };
 
