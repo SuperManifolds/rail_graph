@@ -250,6 +250,17 @@ fn find_best_direction_for_branch(
     base_station_spacing: f64,
     is_through_path: bool,
 ) -> (f64, f64, i32) {
+    let debug_this = graph.graph[neighbor].display_name() == "Upper Tyndrum";
+
+    if debug_this {
+        leptos::logging::log!("find_best_direction_for_branch for {}", graph.graph[neighbor].display_name());
+        leptos::logging::log!("  current_pos: ({:.1}, {:.1})", current_pos.0, current_pos.1);
+        leptos::logging::log!("  already_used: {} branches", already_used.len());
+        for (i, (dir, _)) in already_used.iter().enumerate() {
+            leptos::logging::log!("    branch {}: {:.0}°", i, dir.to_degrees());
+        }
+    }
+
     // If this is a through path at a junction, continue straight in the incoming direction
     if is_through_path {
         // Try spacing multipliers to avoid collisions
@@ -280,6 +291,12 @@ fn find_best_direction_for_branch(
 
     // Try spacing multipliers from 1.0 up to 10.0
     for spacing_mult in [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 10.0] {
+        let mut best_at_this_spacing = i32::MIN;
+
+        if debug_this {
+            leptos::logging::log!("  Trying spacing multiplier: {:.1}", spacing_mult);
+        }
+
         for &direction in &DIRECTIONS {
             let test_pos = snap_to_grid(
                 current_pos.0 + direction.cos() * base_station_spacing * spacing_mult,
@@ -287,6 +304,9 @@ fn find_best_direction_for_branch(
             );
 
             if has_node_collision_at(graph, test_pos, neighbor, base_station_spacing) {
+                if debug_this {
+                    leptos::logging::log!("    {:.0}°: COLLISION", direction.to_degrees());
+                }
                 continue;
             }
 
@@ -295,7 +315,11 @@ fn find_best_direction_for_branch(
                 let angle_to_target = angle_difference(direction, target_dir);
 
                 // If we're moving away from target (> 90°), reject this direction
+                #[allow(clippy::excessive_nesting)]
                 if angle_to_target > std::f64::consts::FRAC_PI_2 {
+                    if debug_this {
+                        leptos::logging::log!("    {:.0}°: AWAY FROM TARGET", direction.to_degrees());
+                    }
                     continue;
                 }
             }
@@ -312,16 +336,28 @@ fn find_best_direction_for_branch(
                 base_station_spacing,
             );
 
+            if debug_this {
+                leptos::logging::log!("    {:.0}°: score={}", direction.to_degrees(), score);
+            }
+
             if score > best_score {
                 best_score = score;
                 best_direction = direction;
                 best_spacing = spacing_mult;
-
-                // If we found a valid direction, use it
-                if score > i32::MIN {
-                    return (best_direction, best_spacing, best_score);
-                }
             }
+
+            if score > best_at_this_spacing {
+                best_at_this_spacing = score;
+            }
+        }
+
+        // If we found any valid direction at this spacing level, return the best one
+        if best_at_this_spacing > i32::MIN {
+            if debug_this {
+                leptos::logging::log!("  Found valid direction at spacing {:.1}: {:.0}° (score={})",
+                    spacing_mult, best_direction.to_degrees(), best_score);
+            }
+            return (best_direction, best_spacing, best_score);
         }
     }
 
@@ -342,6 +378,9 @@ fn score_direction_for_branch(
     base_station_spacing: f64,
 ) -> i32 {
     let mut score = 0;
+
+    // DEBUG: Log scoring details
+    let debug = false; // Set to true to enable debug logging
 
     // Calculate proposed position
     let neighbor_pos = snap_to_grid(
@@ -371,24 +410,63 @@ fn score_direction_for_branch(
         score += ((std::f64::consts::PI - angle_to_target) * 2000.0) as i32;
     }
 
+    // Count branches in similar direction to apply crowding penalty
+    let mut branches_in_hemisphere = 0;
+
     // For each already-used direction
     for (used_dir, used_reachable) in already_used {
         let angle_diff = angle_difference(direction, *used_dir);
         let region_diff = region_difference(neighbor_reachable, used_reachable);
 
+        if debug {
+            leptos::logging::log!("    existing branch: dir={:.0}°, angle_diff={:.0}°, region_diff={:.2}",
+                used_dir.to_degrees(), angle_diff.to_degrees(), region_diff);
+        }
+
+        // Count how many branches are in same hemisphere (within 90°)
+        if angle_diff < std::f64::consts::FRAC_PI_2 {
+            branches_in_hemisphere += 1;
+        }
+
+        // If regions are SIMILAR and directions are SIMILAR = strongly encourage this
+        // Branches that reconnect should be on the same side
+        if region_diff < 0.3 && angle_diff < std::f64::consts::FRAC_PI_4 {
+            let bonus = ((1.0 - region_diff) * 3000.0) as i32;
+            if debug {
+                leptos::logging::log!("      SIMILAR regions + SIMILAR direction: +{}", bonus);
+            }
+            score += bonus;
+        }
+
         // If regions are DIFFERENT but directions are SIMILAR = bad
         if region_diff > 0.5 && angle_diff < std::f64::consts::FRAC_PI_2 {
-            score -= ((1.0 - region_diff) * 5000.0) as i32;
+            let penalty = ((1.0 - region_diff) * 5000.0) as i32;
+            if debug {
+                leptos::logging::log!("      DIFFERENT regions + SIMILAR direction: -{}", penalty);
+            }
+            score -= penalty;
         }
 
-        // If regions are SIMILAR and directions are SIMILAR = ok
-        if region_diff < 0.3 && angle_diff < std::f64::consts::FRAC_PI_4 {
-            score += 200;
+        // Prefer larger angular separation for DIFFERENT regions
+        // But reduce this bonus for similar regions
+        if region_diff > 0.3 {
+            let bonus = (angle_diff * 500.0) as i32;
+            if debug {
+                leptos::logging::log!("      DIFFERENT regions angular sep: +{}", bonus);
+            }
+            score += bonus;
         }
-
-        // Prefer larger angular separation
-        score += (angle_diff * 500.0) as i32;
     }
+
+    // Apply crowding penalty: penalize directions with many existing branches
+    // This naturally balances branches across sides
+    let crowding_penalty = branches_in_hemisphere * 400;
+    if debug {
+        leptos::logging::log!("    branches_in_hemisphere={}, crowding_penalty=-{}",
+            branches_in_hemisphere, crowding_penalty);
+        leptos::logging::log!("    final score={}", score - crowding_penalty);
+    }
+    score -= crowding_penalty;
 
     score
 }
@@ -436,6 +514,10 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
     let mut queue = std::collections::VecDeque::new();
     let mut fallback_direction_index: usize = 0; // Cycle through directions for fallback
 
+    // Track ALL branch directions globally (not just per-parent-node)
+    // This enables the crowding penalty to balance branches across the entire graph
+    let mut global_branches: Vec<(f64, HashSet<NodeIndex>)> = Vec::new();
+
     // Add all spine nodes to queue with their positions, incoming direction, and incoming edge
     for (i, &node) in spine.iter().enumerate() {
         if let Some(pos) = graph.get_station_position(node) {
@@ -467,8 +549,8 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
             continue;
         }
 
-        // Track which directions we've assigned from this node
-        let mut already_used: Vec<(f64, HashSet<NodeIndex>)> = Vec::new();
+        // Track which directions we've assigned from this specific node
+        let mut local_branches: Vec<(f64, HashSet<NodeIndex>)> = Vec::new();
 
         for &neighbor in &neighbors {
             // Check if neighbor has any edges to already-placed nodes (besides current)
@@ -503,11 +585,25 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
                 neighbor,
                 target_pos,
                 &reachable,
-                &already_used,
+                &global_branches,  // Use global branches, not local
                 incoming_direction,
                 base_station_spacing,
                 is_through_path,
             );
+
+            // DEBUG: Log when placing specific nodes
+            if graph.graph[neighbor].display_name() == "Upper Tyndrum" {
+                leptos::logging::log!("Placing {} from {} at ({:.1}, {:.1})",
+                    graph.graph[neighbor].display_name(),
+                    graph.graph[current_node].display_name(),
+                    current_pos.0, current_pos.1);
+                leptos::logging::log!("  Best direction: {:.0}°, spacing: {:.1}, score: {}",
+                    best_direction.to_degrees(), best_spacing, best_score);
+                leptos::logging::log!("  Global branches: {} total", global_branches.len());
+                for (dir, _) in &global_branches {
+                    leptos::logging::log!("    - {:.0}°", dir.to_degrees());
+                }
+            }
 
             let neighbor_pos = snap_to_grid(
                 current_pos.0 + best_direction.cos() * base_station_spacing * best_spacing,
@@ -543,7 +639,9 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
             if let Some(pos) = final_pos {
                 graph.set_station_position(neighbor, pos);
                 visited.insert(neighbor);
-                already_used.push((best_direction, reachable.clone()));
+                // Track both locally (for this parent) and globally (for crowding penalty)
+                local_branches.push((best_direction, reachable.clone()));
+                global_branches.push((best_direction, reachable.clone()));
                 queue.push_back((neighbor, pos, best_direction, edge_to_neighbor));
             } else {
                 // Absolutely no valid position found - this should be extremely rare
@@ -556,7 +654,8 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
                 );
                 graph.set_station_position(neighbor, emergency_pos);
                 visited.insert(neighbor);
-                already_used.push((emergency_dir, reachable.clone()));
+                local_branches.push((emergency_dir, reachable.clone()));
+                global_branches.push((emergency_dir, reachable.clone()));
                 queue.push_back((neighbor, emergency_pos, emergency_dir, edge_to_neighbor));
             }
         }
