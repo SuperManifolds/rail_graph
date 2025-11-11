@@ -237,7 +237,7 @@ pub fn draw_infrastructure(
 
     // Draw stations and junctions on top (with label cache)
     // Use zoom=1.0 in line mode for constant size labels
-    station_renderer::draw_stations_with_cache(ctx, graph, if show_lines { 1.0 } else { zoom }, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds, show_lines, theme);
+    station_renderer::draw_stations_with_cache(ctx, graph, lines, if show_lines { 1.0 } else { zoom }, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds, show_lines, theme);
 
     // Draw preview station if position is set
     if let Some((x, y)) = preview_station_position {
