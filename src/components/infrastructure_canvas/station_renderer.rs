@@ -920,6 +920,15 @@ pub fn draw_stations_with_cache(
             continue;
         }
 
+        // Skip passing loop labels in line mode
+        if show_lines {
+            if let Some(station) = node.as_station() {
+                if station.passing_loop {
+                    continue;
+                }
+            }
+        }
+
         let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
         draw_station_label(ctx, &node.display_name(), *pos, *position, *radius, label_offset);
     }
@@ -940,20 +949,29 @@ fn draw_cached_labels(
 
     for (idx, pos, radius) in node_positions {
         let Some(node) = graph.graph.node_weight(*idx) else { continue };
-        if let Some(cached) = cached_positions.get(idx) {
-            let is_junction = junctions.contains(idx);
+        let Some(cached) = cached_positions.get(idx) else { continue };
 
-            // Skip junction labels in line mode
-            if show_lines && is_junction {
-                continue;
-            }
+        let is_junction = junctions.contains(idx);
 
-            let label_offset = if is_junction {
-                JUNCTION_LABEL_OFFSET
-            } else {
-                LABEL_OFFSET
-            };
-            draw_station_label(ctx, &node.display_name(), *pos, cached.position, *radius, label_offset);
+        // Skip junction labels in line mode
+        if show_lines && is_junction {
+            continue;
         }
+
+        // Skip passing loop labels in line mode
+        if show_lines {
+            if let Some(station) = node.as_station() {
+                if station.passing_loop {
+                    continue;
+                }
+            }
+        }
+
+        let label_offset = if is_junction {
+            JUNCTION_LABEL_OFFSET
+        } else {
+            LABEL_OFFSET
+        };
+        draw_station_label(ctx, &node.display_name(), *pos, cached.position, *radius, label_offset);
     }
 }
