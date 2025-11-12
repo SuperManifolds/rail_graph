@@ -380,7 +380,7 @@ impl TrainJourney {
 
         let mut journey_count = 0;
         let line_id = line.id;
-        let line_name = line.name.clone();
+        let line_name = line.code.clone();
         let color = line.color.clone();
         let thickness = line.thickness;
 
@@ -731,7 +731,7 @@ impl TrainJourney {
 
         let mut return_journey_count = 0;
         let line_id = line.id;
-        let line_name = line.name.clone();
+        let line_name = line.code.clone();
         let color = line.color.clone();
         let thickness = line.thickness;
 
@@ -920,6 +920,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         }
     }
 
@@ -1263,6 +1264,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
@@ -1390,6 +1392,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         // Apply sync to create return route
@@ -1578,6 +1581,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         line.apply_route_sync_if_enabled();

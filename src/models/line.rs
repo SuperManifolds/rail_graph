@@ -131,6 +131,8 @@ pub struct Line {
     pub sync_departure_offsets: bool,
     #[serde(default)]
     pub folder_id: Option<uuid::Uuid>,
+    #[serde(default)]
+    pub code: String,
 }
 
 fn default_visible() -> bool {
@@ -200,6 +202,7 @@ impl Line {
                     sort_index: None,
                     sync_departure_offsets: false,
                     folder_id: None,
+                    code: String::new(),
                 }
             })
             .collect()
@@ -1222,6 +1225,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         assert!(line.uses_edge(1));
@@ -1256,6 +1260,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         assert!(line.uses_any_edge(&[1, 5, 6]));
@@ -1293,6 +1298,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
@@ -1341,6 +1347,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         // Remove edge 1 but no bypass mapping
@@ -1397,6 +1404,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         line.fix_track_indices_after_change(edge.index(), 2, &graph);
@@ -1494,6 +1502,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         // Create a minimal test graph for platform assignment
@@ -1575,6 +1584,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         // Delete the direct edge B -> C
@@ -1625,6 +1635,7 @@ mod tests {
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         // Delete the edge
