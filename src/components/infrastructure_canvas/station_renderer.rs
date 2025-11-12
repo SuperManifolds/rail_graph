@@ -228,6 +228,8 @@ fn draw_station_nodes(
     viewport_bounds: (f64, f64, f64, f64),
     junctions: &HashSet<NodeIndex>,
     cached_avoidance: &HashMap<petgraph::stable_graph::EdgeIndex, (f64, f64)>,
+    orphaned_tracks: &HashMap<(petgraph::stable_graph::EdgeIndex, NodeIndex), HashSet<usize>>,
+    crossover_intersections: &HashMap<(petgraph::stable_graph::EdgeIndex, NodeIndex, usize), (f64, f64)>,
     show_lines: bool,
     palette: &Palette,
 ) -> Vec<(NodeIndex, (f64, f64), f64)> {
@@ -276,7 +278,7 @@ fn draw_station_nodes(
         } else if junctions.contains(&idx) {
             // Draw junction (but not in lines mode - lines are drawn separately)
             if !show_lines {
-                junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, cached_avoidance);
+                junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, cached_avoidance, orphaned_tracks, crossover_intersections);
             }
             // Use larger radius for label overlap to account for junction connection lines
             node_positions.push((idx, pos, JUNCTION_LABEL_RADIUS));
@@ -1060,7 +1062,7 @@ pub fn draw_stations_with_cache(
     let palette = get_palette(theme);
     let font_size = 14.0 / zoom;
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets, show_lines, palette);
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets, &cache.orphaned_tracks, &cache.crossover_intersections, show_lines, palette);
 
     // Calculate line extents in line mode for label positioning
     let line_extents = if show_lines {
