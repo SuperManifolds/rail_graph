@@ -45,6 +45,14 @@ pub trait Stations {
 
     /// Get all station names in order
     fn get_all_station_names(&self) -> Vec<String>;
+
+    /// Find adjacent non-passing-loop stations for a passing loop
+    /// Returns (`previous_station`, `next_station`) or None if not found
+    fn find_adjacent_stations_for_passing_loop(&self, passing_loop_idx: NodeIndex) -> Option<(NodeIndex, NodeIndex)>;
+
+    /// Calculate interpolated position for a passing loop
+    /// Returns midpoint between adjacent non-passing-loop stations
+    fn calculate_passing_loop_position(&self, passing_loop_idx: NodeIndex) -> Option<(f64, f64)>;
 }
 
 impl Stations for RailwayGraph {
@@ -71,7 +79,18 @@ impl Stations for RailwayGraph {
     }
 
     fn get_station_position(&self, index: NodeIndex) -> Option<(f64, f64)> {
-        self.graph.node_weight(index).and_then(Node::position)
+        let node = self.graph.node_weight(index)?;
+
+        // Check if this is a passing loop
+        if let Some(station) = node.as_station() {
+            if station.passing_loop {
+                // Calculate interpolated position for passing loop
+                return self.calculate_passing_loop_position(index);
+            }
+        }
+
+        // Regular station or junction - return stored position
+        node.position()
     }
 
     fn get_station_name(&self, index: NodeIndex) -> Option<&str> {
@@ -283,6 +302,149 @@ impl Stations for RailwayGraph {
             .into_iter()
             .map(|(_, s)| s.name)
             .collect()
+    }
+
+    fn find_adjacent_stations_for_passing_loop(&self, passing_loop_idx: NodeIndex) -> Option<(NodeIndex, NodeIndex)> {
+        use petgraph::Direction;
+        use std::collections::HashSet;
+
+        // Helper to traverse in one direction until finding a non-passing-loop station
+        fn find_adjacent_in_direction(
+            graph: &RailwayGraph,
+            start_idx: NodeIndex,
+            direction: Direction,
+            visited: &mut HashSet<NodeIndex>,
+        ) -> Option<NodeIndex> {
+            let mut current = start_idx;
+
+            loop {
+                visited.insert(current);
+
+                // Get neighbors in the specified direction
+                let neighbors: Vec<NodeIndex> = match direction {
+                    Direction::Outgoing => graph.graph.edges(current).map(|e| e.target()).collect(),
+                    Direction::Incoming => graph.graph.edges_directed(current, Direction::Incoming).map(|e| e.source()).collect(),
+                };
+
+                // Find the first unvisited neighbor
+                let next = neighbors.into_iter().find(|&n| !visited.contains(&n))?;
+
+                // Check if this neighbor is a non-passing-loop station
+                let node = graph.graph.node_weight(next)?;
+
+                // Check if it's a station
+                let Some(station) = node.as_station() else {
+                    // It's a junction - can't use it for interpolation
+                    return None;
+                };
+
+                // Check if it's not a passing loop
+                if !station.passing_loop {
+                    return Some(next);
+                }
+
+                current = next;
+            }
+        }
+
+        let mut visited = HashSet::new();
+
+        // Find previous non-passing-loop station (incoming direction)
+        let prev = find_adjacent_in_direction(self, passing_loop_idx, Direction::Incoming, &mut visited);
+
+        // Reset visited for forward search
+        visited.clear();
+
+        // Find next non-passing-loop station (outgoing direction)
+        let next = find_adjacent_in_direction(self, passing_loop_idx, Direction::Outgoing, &mut visited);
+
+        // Return both if found
+        match (prev, next) {
+            (Some(p), Some(n)) => Some((p, n)),
+            _ => None,
+        }
+    }
+
+    fn calculate_passing_loop_position(&self, passing_loop_idx: NodeIndex) -> Option<(f64, f64)> {
+        use petgraph::Direction;
+
+        // Find adjacent non-passing-loop stations
+        let (prev_idx, next_idx) = self.find_adjacent_stations_for_passing_loop(passing_loop_idx)?;
+
+        // Get their positions (using stored positions to avoid infinite recursion)
+        let prev_pos = self.graph.node_weight(prev_idx).and_then(Node::position)?;
+        let next_pos = self.graph.node_weight(next_idx).and_then(Node::position)?;
+
+        // Count how many passing loops are in sequence between prev and next
+        // and determine this passing loop's index in that sequence
+        let mut passing_loops_in_sequence = Vec::new();
+        let mut current = prev_idx;
+        let mut found_self = false;
+
+        // Traverse from prev to next, collecting all passing loops
+        loop {
+            // Get next node in the direction of next_idx
+            let neighbors: Vec<NodeIndex> = self.graph.edges(current)
+                .map(|e| e.target())
+                .chain(self.graph.edges_directed(current, Direction::Incoming).map(|e| e.source()))
+                .collect();
+
+            // Find the neighbor that's on the path to next_idx
+            let next_node = neighbors.into_iter().find(|&n| {
+                n != current && (n == next_idx || {
+                    // Check if this node is between current and next_idx
+                    let is_passing = self.graph.node_weight(n)
+                        .and_then(|node| node.as_station())
+                        .is_some_and(|s| s.passing_loop);
+                    is_passing && !passing_loops_in_sequence.contains(&n)
+                })
+            })?;
+
+            if next_node == next_idx {
+                break;
+            }
+
+            // Check if it's a passing loop
+            let Some(node) = self.graph.node_weight(next_node) else {
+                current = next_node;
+                continue;
+            };
+
+            let Some(station) = node.as_station() else {
+                current = next_node;
+                continue;
+            };
+
+            if station.passing_loop {
+                passing_loops_in_sequence.push(next_node);
+                if next_node == passing_loop_idx {
+                    found_self = true;
+                }
+            }
+
+            current = next_node;
+        }
+
+        if !found_self {
+            // Fallback: just use midpoint if we couldn't determine position in sequence
+            return Some((
+                (prev_pos.0 + next_pos.0) / 2.0,
+                (prev_pos.1 + next_pos.1) / 2.0,
+            ));
+        }
+
+        // Find this passing loop's index in the sequence
+        let position_index = passing_loops_in_sequence.iter().position(|&idx| idx == passing_loop_idx)?;
+        let total_count = passing_loops_in_sequence.len();
+
+        // Distribute evenly: position at (index + 1) / (total_count + 1)
+        #[allow(clippy::cast_precision_loss)]
+        let fraction = (position_index + 1) as f64 / (total_count + 1) as f64;
+
+        Some((
+            prev_pos.0 + (next_pos.0 - prev_pos.0) * fraction,
+            prev_pos.1 + (next_pos.1 - prev_pos.1) * fraction,
+        ))
     }
 }
 

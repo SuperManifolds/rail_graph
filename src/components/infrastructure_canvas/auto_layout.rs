@@ -481,9 +481,17 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
         return; // Empty graph
     }
 
-    // Clear all positions
+    // Clear all positions (skip passing loops - they will be auto-positioned)
     let all_nodes: Vec<_> = graph.graph.node_indices().collect();
     for node_idx in all_nodes {
+        // Skip passing loops - they will be automatically positioned between adjacent stations
+        if let Some(node) = graph.graph.node_weight(node_idx) {
+            if let Some(station) = node.as_station() {
+                if station.passing_loop {
+                    continue;
+                }
+            }
+        }
         graph.set_station_position(node_idx, (0.0, 0.0));
     }
 
@@ -498,15 +506,26 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
     let mut visited = HashSet::new();
     let spine_direction = -std::f64::consts::FRAC_PI_2; // North (-90°)
 
-    for (i, &node) in spine.iter().enumerate() {
-        let offset = i as f64 * base_station_spacing;
-        let pos = snap_to_grid(
-            start_x + spine_direction.cos() * offset,
-            start_y + spine_direction.sin() * offset,
-        );
+    let mut non_passing_loop_count = 0;
+    for &node in &spine {
+        // Check if this is a passing loop
+        let is_passing_loop = graph.graph.node_weight(node)
+            .and_then(|n| n.as_station())
+            .is_some_and(|s| s.passing_loop);
 
-        // Place spine nodes without collision checking - spine is the primary structure
-        graph.set_station_position(node, pos);
+        if !is_passing_loop {
+            // Only count and position non-passing-loop stations
+            // Passing loops will be automatically positioned between their neighbors
+            let offset = f64::from(non_passing_loop_count) * base_station_spacing;
+            let pos = snap_to_grid(
+                start_x + spine_direction.cos() * offset,
+                start_y + spine_direction.sin() * offset,
+            );
+
+            // Place spine nodes without collision checking - spine is the primary structure
+            graph.set_station_position(node, pos);
+            non_passing_loop_count += 1;
+        }
         visited.insert(node);
     }
 
@@ -636,7 +655,18 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
                 Some(neighbor_pos)
             };
 
-            if let Some(pos) = final_pos {
+            // Check if neighbor is a passing loop - skip positioning if so
+            let is_passing_loop = graph.graph.node_weight(neighbor)
+                .and_then(|n| n.as_station())
+                .is_some_and(|s| s.passing_loop);
+
+            if is_passing_loop {
+                // Passing loop - mark as visited but don't position it
+                visited.insert(neighbor);
+                // Still add to queue so we can process its children
+                // Use parent position as placeholder for queue processing
+                queue.push_back((neighbor, current_pos, incoming_direction, edge_to_neighbor));
+            } else if let Some(pos) = final_pos {
                 graph.set_station_position(neighbor, pos);
                 visited.insert(neighbor);
                 // Track both locally (for this parent) and globally (for crowding penalty)
@@ -679,15 +709,24 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
             // Find longest path in this disconnected component
             let component_spine = graph.find_longest_path_from(node, &visited);
 
-            for (i, &comp_node) in component_spine.iter().enumerate() {
-                let offset = i as f64 * base_station_spacing;
-                let pos = snap_to_grid(
-                    offset_x,
-                    start_y + spine_direction.sin() * offset,
-                );
+            let mut comp_non_passing_count = 0;
+            for &comp_node in &component_spine {
+                // Check if this is a passing loop
+                let is_passing_loop = graph.graph.node_weight(comp_node)
+                    .and_then(|n| n.as_station())
+                    .is_some_and(|s| s.passing_loop);
 
-                // Place disconnected components without adjustment - they're offset far enough
-                graph.set_station_position(comp_node, pos);
+                if !is_passing_loop {
+                    let offset = f64::from(comp_non_passing_count) * base_station_spacing;
+                    let pos = snap_to_grid(
+                        offset_x,
+                        start_y + spine_direction.sin() * offset,
+                    );
+
+                    // Place disconnected components without adjustment - they're offset far enough
+                    graph.set_station_position(comp_node, pos);
+                    comp_non_passing_count += 1;
+                }
                 visited.insert(comp_node);
             }
 
