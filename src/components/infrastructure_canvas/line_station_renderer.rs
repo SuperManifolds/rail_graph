@@ -205,6 +205,51 @@ fn draw_single_line_tick(
     ctx.restore();
 }
 
+/// Draw perpendicular ticks forming a T-shape for terminus stations
+/// Draws two ticks perpendicular to the line direction, capping off the line
+fn draw_perpendicular_ticks(
+    ctx: &CanvasRenderingContext2d,
+    pos: (f64, f64),
+    line_color: &str,
+    station_idx: NodeIndex,
+    graph: &RailwayGraph,
+    zoom: f64,
+) {
+    let tick_length = TICK_LENGTH;
+
+    // Calculate the angle of the line through this station
+    let line_angle = calculate_line_angle(station_idx, graph);
+
+    // Calculate perpendicular direction (90 degrees from line angle)
+    let perp_angle_1 = line_angle + std::f64::consts::FRAC_PI_2;
+    let perp_angle_2 = line_angle - std::f64::consts::FRAC_PI_2;
+
+    ctx.save();
+    ctx.set_stroke_style_str(line_color);
+    ctx.set_line_width(TICK_WIDTH / zoom);
+    ctx.set_line_cap("butt");
+
+    // Draw first perpendicular tick
+    ctx.begin_path();
+    ctx.move_to(pos.0, pos.1);
+    ctx.line_to(
+        pos.0 + tick_length * perp_angle_1.cos(),
+        pos.1 + tick_length * perp_angle_1.sin(),
+    );
+    ctx.stroke();
+
+    // Draw second perpendicular tick (opposite side)
+    ctx.begin_path();
+    ctx.move_to(pos.0, pos.1);
+    ctx.line_to(
+        pos.0 + tick_length * perp_angle_2.cos(),
+        pos.1 + tick_length * perp_angle_2.sin(),
+    );
+    ctx.stroke();
+
+    ctx.restore();
+}
+
 /// Draw a line name label in a colored rectangle for terminal stations
 #[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
 fn draw_line_name_label(
@@ -807,18 +852,40 @@ pub fn draw_line_stations(
                 palette,
             );
         } else {
-            // Draw individual ticks for each stopping line at their actual line positions
-            for line in &stopping_lines {
-                // Calculate where this line is actually drawn using section visual positions
-                let offset =
-                    calculate_line_offset_at_station(idx, line, &visual_positions_map, graph, zoom);
-                let tick_pos = if let Some((ox, oy)) = offset {
-                    (pos.0 + ox, pos.1 + oy)
-                } else {
-                    pos // Fallback to center if calculation fails
-                };
+            // Check if this is a single-line terminus station
+            let is_single_line_terminus = stopping_lines.len() == 1
+                && stopping_lines
+                    .first()
+                    .is_some_and(|line| is_line_terminal(idx, line, graph));
 
-                draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom);
+            if is_single_line_terminus {
+                // Draw perpendicular T-shape ticks for terminus stations with one line
+                if let Some(line) = stopping_lines.first() {
+                    let offset = calculate_line_offset_at_station(
+                        idx,
+                        line,
+                        &visual_positions_map,
+                        graph,
+                        zoom,
+                    );
+                    let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
+
+                    draw_perpendicular_ticks(ctx, tick_pos, &line.color, idx, graph, zoom);
+                }
+            } else {
+                // Draw individual ticks for each stopping line at their actual line positions
+                for line in &stopping_lines {
+                    let offset = calculate_line_offset_at_station(
+                        idx,
+                        line,
+                        &visual_positions_map,
+                        graph,
+                        zoom,
+                    );
+                    let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
+
+                    draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom);
+                }
             }
         }
 
