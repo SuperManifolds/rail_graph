@@ -480,7 +480,7 @@ pub fn get_crossover_intersection_points(
         let total_width = (num_tracks - 1) as f64 * TRACK_SPACING;
         let start_offset = -total_width / 2.0;
         let crossover_length = total_width;
-        let crossover_gap = TRACK_SPACING;
+        let crossover_gap = 0.0;
 
         let crossover_end_base = (
             base.0 + away_from_junction_dir.0 * crossover_gap,
@@ -685,8 +685,8 @@ fn draw_crossover_switches(
     // For 45° angle, crossover length equals perpendicular distance between outermost tracks
     let crossover_length = total_width;
 
-    // Position the crossover BEFORE the junction (gap between crossover end and junction edge)
-    let crossover_gap = TRACK_SPACING;
+    // Position the crossover right at the junction edge
+    let crossover_gap = 0.0;
 
     ctx.set_stroke_style_str(TRACK_COLOR);
     ctx.set_line_width(TRACK_LINE_WIDTH / zoom);
@@ -699,7 +699,7 @@ fn draw_crossover_switches(
     #[allow(clippy::cast_precision_loss)]
     let offset_last = start_offset + ((num_tracks - 1) as f64 * TRACK_SPACING);
 
-    // Calculate the base point for crossover end (before the junction edge)
+    // Calculate the base point for crossover end (at the junction edge)
     let crossover_end_base = (
         base.0 + away_from_junction_dir.0 * crossover_gap,
         base.1 + away_from_junction_dir.1 * crossover_gap,

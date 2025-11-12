@@ -877,7 +877,10 @@ fn get_canvas_cursor_style(
 fn update_cache_if_needed(topology_cache: StoredValue<RefCell<TopologyCache>>, current_graph: &RailwayGraph) {
     topology_cache.with_value(|cache| {
         let mut cache = cache.borrow_mut();
-        let current_topology = (current_graph.graph.node_count(), current_graph.graph.edge_count());
+        let total_track_count: usize = current_graph.graph.edge_references()
+            .map(|e| e.weight().tracks.len())
+            .sum();
+        let current_topology = (current_graph.graph.node_count(), current_graph.graph.edge_count(), total_track_count);
         if cache.topology != current_topology {
             *cache = renderer::build_topology_cache(current_graph);
         }
