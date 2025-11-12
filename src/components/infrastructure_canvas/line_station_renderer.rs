@@ -117,7 +117,8 @@ fn is_line_terminal(station_idx: NodeIndex, line: &Line, graph: &RailwayGraph) -
 }
 
 /// Get all visible lines that pass through a given station (stopping or not)
-fn get_lines_through_station<'a>(
+#[must_use]
+pub fn get_lines_through_station<'a>(
     station_idx: NodeIndex,
     lines: &'a [Line],
     graph: &RailwayGraph,
