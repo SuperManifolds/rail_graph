@@ -414,6 +414,7 @@ fn line_intersection(
 /// # Panics
 /// Panics if `non_orphaned` is empty when calling `min()` or `max()`, but this is prevented by checking `is_empty()` first
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn get_crossover_intersection_points(
     graph: &RailwayGraph,
     orphaned_tracks: &HashMap<(EdgeIndex, NodeIndex), HashSet<usize>>,
@@ -433,6 +434,44 @@ pub fn get_crossover_intersection_points(
 
         if num_tracks < 2 {
             continue; // No crossover for single track
+        }
+
+        // Check if this edge has only one allowed connection with 1:1 track mapping
+        // If so, skip crossover calculation since no track switching is needed
+        let Some(junction) = graph.get_junction(*junction_idx) else { continue };
+
+        // Collect all connected edges at this junction
+        let mut all_edges_at_junction: Vec<EdgeIndex> = Vec::new();
+        for edge in graph.graph.edges_directed(*junction_idx, Direction::Incoming) {
+            all_edges_at_junction.push(edge.id());
+        }
+        for edge in graph.graph.edges(*junction_idx) {
+            all_edges_at_junction.push(edge.id());
+        }
+
+        let allowed_connections: Vec<_> = all_edges_at_junction.iter()
+            .filter(|other_edge| {
+                **other_edge != *edge_idx &&
+                (junction.is_routing_allowed(*edge_idx, **other_edge) ||
+                 junction.is_routing_allowed(**other_edge, *edge_idx))
+            })
+            .collect();
+
+        let should_skip_crossover = if allowed_connections.len() == 1 {
+            let other_edge_idx = allowed_connections[0];
+            if let Some(other_edge_ref) = graph.graph.edge_references().find(|e| e.id() == *other_edge_idx) {
+                let other_tracks = &other_edge_ref.weight().tracks;
+                // Skip if both edges have the same number of tracks (1:1 mapping)
+                num_tracks == other_tracks.len()
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        if should_skip_crossover {
+            continue;
         }
 
         let Some(junction_pos) = graph.get_station_position(*junction_idx) else { continue };
@@ -914,19 +953,44 @@ pub fn draw_junction(
         let tracks = &edge_ref.weight().tracks;
 
         if tracks.len() >= 2 {
-            draw_crossover_switches(
-                ctx,
-                *edge_idx,
-                tracks.len(),
-                pos,
-                idx,
-                *edge_pos,
-                zoom,
-                graph,
-                cached_avoidance,
-                orphaned_tracks,
-                crossover_intersections,
-            );
+            // Check if this edge has only one allowed connection with 1:1 track mapping
+            // If so, skip the crossover since no track switching is needed
+            let allowed_connections: Vec<_> = all_edges.iter()
+                .filter(|(other_edge, _)| {
+                    *other_edge != *edge_idx &&
+                    (j.is_routing_allowed(*edge_idx, *other_edge) ||
+                     j.is_routing_allowed(*other_edge, *edge_idx))
+                })
+                .collect();
+
+            let should_skip_crossover = if allowed_connections.len() == 1 {
+                let (other_edge_idx, _) = allowed_connections[0];
+                if let Some(other_edge_ref) = graph.graph.edge_references().find(|e| e.id() == *other_edge_idx) {
+                    let other_tracks = &other_edge_ref.weight().tracks;
+                    // Skip if both edges have the same number of tracks (1:1 mapping)
+                    tracks.len() == other_tracks.len()
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if !should_skip_crossover {
+                draw_crossover_switches(
+                    ctx,
+                    *edge_idx,
+                    tracks.len(),
+                    pos,
+                    idx,
+                    *edge_pos,
+                    zoom,
+                    graph,
+                    cached_avoidance,
+                    orphaned_tracks,
+                    crossover_intersections,
+                );
+            }
         }
     }
 
