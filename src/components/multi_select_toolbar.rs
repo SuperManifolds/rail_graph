@@ -375,12 +375,21 @@ pub fn align_selected_stations(
         grid_size * grid_squares * 2.0_f64.sqrt()
     };
 
-    // Position stations evenly spaced along the line
-    for (i, &station_idx) in ordered.iter().enumerate() {
-        let distance_along_line = i as f64 * spacing;
-        let new_x = snapped_first.0 + distance_along_line * dir_x;
-        let new_y = snapped_first.1 + distance_along_line * dir_y;
-        current_graph.set_station_position(station_idx, (new_x, new_y));
+    // Position stations evenly spaced along the line (skip passing loops - they auto-position)
+    let mut non_passing_count = 0;
+    for &station_idx in &ordered {
+        // Check if this is a passing loop
+        let is_passing_loop = current_graph.graph.node_weight(station_idx)
+            .and_then(|n| n.as_station())
+            .is_some_and(|s| s.passing_loop);
+
+        if !is_passing_loop {
+            let distance_along_line = f64::from(non_passing_count) * spacing;
+            let new_x = snapped_first.0 + distance_along_line * dir_x;
+            let new_y = snapped_first.1 + distance_along_line * dir_y;
+            current_graph.set_station_position(station_idx, (new_x, new_y));
+            non_passing_count += 1;
+        }
     }
 
     set_graph.set(current_graph.clone());
