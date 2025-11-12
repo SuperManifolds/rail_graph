@@ -12,7 +12,7 @@ type LabelPositionCache = HashMap<NodeIndex, station_renderer::CachedLabelPositi
 /// Topology-dependent cached data (exported for use by `infrastructure_view`)
 #[derive(Clone, Default)]
 pub struct TopologyCache {
-    pub topology: (usize, usize),
+    pub topology: (usize, usize, usize),
     pub avoidance_offsets: HashMap<EdgeIndex, (f64, f64)>,
     pub edge_segments: HashMap<EdgeIndex, EdgeSegments>,
     /// Cached label positions (zoom level, positions)
@@ -81,7 +81,12 @@ fn get_palette(theme: Theme) -> &'static Palette {
 pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
     use crate::models::Stations;
 
-    let topology = (graph.graph.node_count(), graph.graph.edge_count());
+    // Calculate total track count across all edges for cache invalidation
+    let total_track_count: usize = graph.graph.edge_references()
+        .map(|e| e.weight().tracks.len())
+        .sum();
+
+    let topology = (graph.graph.node_count(), graph.graph.edge_count(), total_track_count);
     let mut avoidance_offsets = HashMap::new();
     let mut edge_segments = HashMap::new();
     let mut junctions = HashSet::new();
