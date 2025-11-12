@@ -3,6 +3,7 @@ use crate::theme::Theme;
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::IntoEdgeReferences;
 use std::collections::{HashMap, HashSet};
+use indexmap::IndexMap;
 use web_sys::CanvasRenderingContext2d;
 
 const LINE_BASE_WIDTH: f64 = 3.0;
@@ -35,7 +36,7 @@ pub struct Section {
 pub fn assign_visual_positions_with_reuse(
     section: &Section,
     section_ordering: &[&Line],
-    edge_to_lines: &HashMap<EdgeIndex, Vec<&Line>>,
+    edge_to_lines: &IndexMap<EdgeIndex, Vec<&Line>>,
     graph: &RailwayGraph,
 ) -> HashMap<EdgeIndex, HashMap<uuid::Uuid, usize>> {
     // Build conflict map: which lines share at least one edge OR station
@@ -267,6 +268,38 @@ pub fn get_lines_in_section<'a>(
     section_lines
 }
 
+/// Get lines in each section, using pre-sorted line references
+#[must_use]
+pub fn get_lines_in_section_sorted<'a>(
+    sections: &[Section],
+    sorted_lines: &[&'a Line],
+) -> HashMap<SectionId, Vec<&'a Line>> {
+    let mut section_lines: HashMap<SectionId, Vec<&Line>> = HashMap::new();
+
+    for section in sections {
+        let mut lines_in_section = Vec::new();
+
+        for &line in sorted_lines {
+            if !line.visible {
+                continue;
+            }
+
+            // Check if line uses any edge in this section
+            let uses_section = section.edges.iter().any(|&edge_idx| {
+                line.forward_route.iter().any(|seg| EdgeIndex::new(seg.edge_index) == edge_idx)
+            });
+
+            if uses_section {
+                lines_in_section.push(line);
+            }
+        }
+
+        section_lines.insert(section.id, lines_in_section);
+    }
+
+    section_lines
+}
+
 /// Compare two lines based on their stopping behavior in shared segments
 /// Returns:
 /// - `Ordering::Less` if `line_a` stops less in shared segments (more express)
@@ -338,8 +371,8 @@ pub fn order_lines_for_section<'a>(
 fn draw_junction_connections(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
-    junction_connections: &HashMap<JunctionConnectionKey, Vec<&Line>>,
-    edge_to_lines: &HashMap<EdgeIndex, Vec<&Line>>,
+    junction_connections: &IndexMap<JunctionConnectionKey, Vec<&Line>>,
+    edge_to_lines: &IndexMap<EdgeIndex, Vec<&Line>>,
     edge_to_section: &HashMap<EdgeIndex, SectionId>,
     section_orderings: &HashMap<SectionId, Vec<&Line>>,
     section_visual_positions: &HashMap<SectionId, HashMap<EdgeIndex, HashMap<uuid::Uuid, usize>>>,
@@ -485,8 +518,20 @@ fn draw_junction_connections(
         let exit_visual_map = section_visual_positions.get(&exit_section_id)
             .and_then(|section_map| section_map.get(&connection_key.to_edge));
 
+        // Sort connection lines by (sort_index, id) for consistent z-order
+        let mut sorted_connection_lines = connection_lines.clone();
+        sorted_connection_lines.sort_by(|a, b| {
+            match (a.sort_index, b.sort_index) {
+                (Some(a_idx), Some(b_idx)) => a_idx.partial_cmp(&b_idx).unwrap_or(std::cmp::Ordering::Equal),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+            .then_with(|| a.id.cmp(&b.id))
+        });
+
         // Draw each line through the junction from its position on entry edge to its position on exit edge
-        for line in connection_lines {
+        for line in &sorted_connection_lines {
             // Find line's visual position in entry section
             let Some(&entry_visual_pos) = entry_visual_map.and_then(|map| map.get(&line.id)) else {
                 continue;
@@ -636,21 +681,35 @@ pub fn draw_lines(
     let (left, top, right, bottom) = viewport_bounds;
     let margin = 200.0; // Buffer to include lines slightly outside viewport
 
+    // Sort lines for consistent z-order to prevent z-fighting at junctions
+    let mut sorted_lines: Vec<&Line> = lines.iter().collect();
+    sorted_lines.sort_by(|a, b| {
+        // First sort by sort_index (None values go to end)
+        match (a.sort_index, b.sort_index) {
+            (Some(a_idx), Some(b_idx)) => a_idx.partial_cmp(&b_idx).unwrap_or(std::cmp::Ordering::Equal),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        }
+        // Then sort by ID as tiebreaker
+        .then_with(|| a.id.cmp(&b.id))
+    });
+
     // Identify sections and order lines within each section
     let sections = identify_sections(graph, junctions);
-    let section_lines = get_lines_in_section(&sections, lines);
+    let section_lines = get_lines_in_section_sorted(&sections, &sorted_lines);
 
     // Gap width for spacing between lines
     let gap_width = (LINE_BASE_WIDTH + 2.0) / zoom;
 
     // Group lines by edge for rendering (needed for position assignment)
-    let mut edge_to_lines: HashMap<EdgeIndex, Vec<&Line>> = HashMap::new();
+    let mut edge_to_lines: IndexMap<EdgeIndex, Vec<&Line>> = IndexMap::new();
 
     // Group lines by junction connections for drawing through junctions
-    let mut junction_connections: HashMap<JunctionConnectionKey, Vec<&Line>> = HashMap::new();
+    let mut junction_connections: IndexMap<JunctionConnectionKey, Vec<&Line>> = IndexMap::new();
 
     // Build mappings for visible lines
-    for line in lines {
+    for line in &sorted_lines {
         if !line.visible {
             continue;
         }
@@ -799,7 +858,17 @@ pub fn draw_lines(
                 edge_visual_positions_map.get(&line.id).map(|&pos| (pos, *line))
             })
             .collect();
-        positioned_lines.sort_by_key(|(pos, _)| *pos);
+        // Sort by (sort_index, id) for z-order, not by visual_position
+        // Visual position determines lateral offset, not drawing order
+        positioned_lines.sort_by(|(_, a), (_, b)| {
+            match (a.sort_index, b.sort_index) {
+                (Some(a_idx), Some(b_idx)) => a_idx.partial_cmp(&b_idx).unwrap_or(std::cmp::Ordering::Equal),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            }
+            .then_with(|| a.id.cmp(&b.id))
+        });
 
         let line_count = positioned_lines.len();
 

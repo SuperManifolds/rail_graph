@@ -3,6 +3,7 @@ use crate::models::{Junctions, Line, RailwayGraph, Stations};
 use crate::theme::Theme;
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use std::collections::{HashMap, HashSet};
+use indexmap::IndexMap;
 use web_sys::CanvasRenderingContext2d;
 
 // Import section-related logic from line_renderer
@@ -689,7 +690,7 @@ pub fn draw_line_stations(
     let section_lines = get_lines_in_section(&sections, lines);
 
     // Build edge_to_lines map
-    let mut edge_to_lines: HashMap<EdgeIndex, Vec<&Line>> = HashMap::new();
+    let mut edge_to_lines: IndexMap<EdgeIndex, Vec<&Line>> = IndexMap::new();
     for line in lines {
         if !line.visible {
             continue;

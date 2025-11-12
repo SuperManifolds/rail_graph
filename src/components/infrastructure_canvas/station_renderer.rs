@@ -4,6 +4,7 @@ use crate::components::infrastructure_canvas::{track_renderer, junction_renderer
 use crate::geometry::line_segments_intersect;
 use web_sys::CanvasRenderingContext2d;
 use std::collections::{HashMap, HashSet};
+use indexmap::IndexMap;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
@@ -877,7 +878,7 @@ fn calculate_line_extents_at_stations(
     let section_lines = line_renderer::get_lines_in_section(&sections, lines);
 
     // Build edge_to_lines map
-    let mut edge_to_lines: HashMap<EdgeIndex, Vec<&Line>> = HashMap::new();
+    let mut edge_to_lines: IndexMap<EdgeIndex, Vec<&Line>> = IndexMap::new();
     for line in lines {
         if !line.visible {
             continue;
