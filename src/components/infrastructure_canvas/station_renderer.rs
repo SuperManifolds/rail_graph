@@ -1196,6 +1196,11 @@ pub fn draw_stations_with_cache(
         let is_passing_loop = node.as_station().is_some_and(|s| s.passing_loop);
         let label_scale = if is_passing_loop { 0.7 } else { 1.0 };
 
+        // Skip passing loop labels in line view mode
+        if show_lines && is_passing_loop {
+            continue;
+        }
+
         // Skip stations with no lines going through them in line mode
         if show_lines {
             let lines_through = line_station_renderer::get_lines_through_station(*idx, lines, graph);
@@ -1258,6 +1263,11 @@ fn draw_cached_labels(
         // Check if this is a passing loop for scaled rendering
         let is_passing_loop = node.as_station().is_some_and(|s| s.passing_loop);
         let label_scale = if is_passing_loop { 0.7 } else { 1.0 };
+
+        // Skip passing loop labels in line view mode
+        if show_lines && is_passing_loop {
+            continue;
+        }
 
         // Skip stations with no lines going through them in line mode
         if show_lines {
