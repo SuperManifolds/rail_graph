@@ -64,6 +64,28 @@ fn calculate_segment_midpoint(
     Some(((from_pos.0 + to_pos.0) / 2.0, (from_pos.1 + to_pos.1) / 2.0))
 }
 
+/// Find all edges between any pair of selected nodes
+fn find_edges_between_nodes(
+    graph: &RailwayGraph,
+    nodes: &[NodeIndex],
+) -> HashSet<EdgeIndex> {
+    let mut edges = HashSet::new();
+
+    for (i, &node1) in nodes.iter().enumerate() {
+        for &node2 in nodes.iter().skip(i + 1) {
+            // Check both directions for edges
+            if let Some(edge) = graph.graph.find_edge(node1, node2) {
+                edges.insert(edge);
+            }
+            if let Some(edge) = graph.graph.find_edge(node2, node1) {
+                edges.insert(edge);
+            }
+        }
+    }
+
+    edges
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_segment_click_in_track_mode(
     clicked_edge: EdgeIndex,
@@ -1052,9 +1074,12 @@ fn setup_render_effect(
                     current_selected_stations
                 };
 
-                // Get preview path edges if in CreatingView mode
+                // Get preview path edges if in CreatingView mode, or edges between selected stations
                 let highlighted_edges: HashSet<EdgeIndex> = if matches!(current_edit_mode, EditMode::CreatingView) {
                     current_preview.unwrap_or_default().into_iter().collect()
+                } else if !selected_stations.is_empty() {
+                    // Highlight edges between selected nodes
+                    find_edges_between_nodes(&current_graph, &selected_stations)
                 } else {
                     HashSet::new()
                 };
