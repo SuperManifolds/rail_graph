@@ -622,6 +622,14 @@ fn draw_single_junction_connection(
         }
 
         stroke_with_border(ctx, &line.color, line_world_width, theme);
+
+        // Draw filled circle at entry point to cover rendering gap
+        // (Exit point cap is drawn by the outgoing edge segment to maintain proper ordering)
+        let cap_radius = line_world_width / 2.0;
+        ctx.begin_path();
+        let _ = ctx.arc(entry_point.0, entry_point.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+        ctx.set_fill_style_str(&line.color);
+        ctx.fill();
     }
 }
 
@@ -1187,6 +1195,20 @@ pub fn draw_lines(
             }
 
             stroke_with_border(ctx, &line.color, line_world_width, theme);
+
+            // Draw caps at junction/station endpoints to cover rendering gaps
+            let cap_radius = line_world_width / 2.0;
+            // Draw cap at source (whether junction or station)
+            ctx.begin_path();
+            let _ = ctx.arc(actual_pos1.0, actual_pos1.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+            ctx.set_fill_style_str(&line.color);
+            ctx.fill();
+
+            // Draw cap at target (whether junction or station)
+            ctx.begin_path();
+            let _ = ctx.arc(actual_pos2.0, actual_pos2.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+            ctx.set_fill_style_str(&line.color);
+            ctx.fill();
         } else {
             // Multiple lines - position them using visual positions
             // Calculate widths for all lines in section ordering (to maintain proper spacing with gaps)
@@ -1236,6 +1258,20 @@ pub fn draw_lines(
                 }
 
                 stroke_with_border(ctx, &line.color, line_world_width, theme);
+
+                // Draw caps at junction/station endpoints to cover rendering gaps
+                let cap_radius = line_world_width / 2.0;
+                // Draw cap at source (whether junction or station)
+                ctx.begin_path();
+                let _ = ctx.arc(actual_pos1.0 + ox, actual_pos1.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+                ctx.set_fill_style_str(&line.color);
+                ctx.fill();
+
+                // Draw cap at target (whether junction or station)
+                ctx.begin_path();
+                let _ = ctx.arc(actual_pos2.0 + ox, actual_pos2.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+                ctx.set_fill_style_str(&line.color);
+                ctx.fill();
             }
         }
 
