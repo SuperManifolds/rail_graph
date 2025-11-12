@@ -53,25 +53,6 @@ fn get_palette(theme: Theme) -> &'static Palette {
     }
 }
 
-/// Lighten a hex color by blending with white
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn lighten_color(hex_color: &str, amount: f64) -> String {
-    // Remove '#' if present
-    let hex = hex_color.trim_start_matches('#');
-
-    // Parse RGB components
-    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(255);
-    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(255);
-    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(255);
-
-    // Blend with white (lighter)
-    let r_light = (f64::from(r) + (255.0 - f64::from(r)) * amount).round() as u8;
-    let g_light = (f64::from(g) + (255.0 - f64::from(g)) * amount).round() as u8;
-    let b_light = (f64::from(b) + (255.0 - f64::from(b)) * amount).round() as u8;
-
-    format!("#{r_light:02x}{g_light:02x}{b_light:02x}")
-}
-
 /// Check if a line stops at a given station (has `wait_time` > 0, or is first/last station)
 fn line_stops_at_station(station_idx: NodeIndex, line: &Line, graph: &RailwayGraph) -> bool {
     if line.forward_route.is_empty() {
@@ -194,14 +175,15 @@ fn draw_single_line_tick(
     zoom: f64,
     is_selected: bool,
     scale: f64,
+    palette: &Palette,
 ) {
     let tick_length = TICK_LENGTH * scale;
 
-    // Use lighter color if selected
+    // Use selection orange if selected
     let color = if is_selected {
-        lighten_color(line_color, 0.7)
+        palette.selection_ring
     } else {
-        line_color.to_string()
+        line_color
     };
 
     // Calculate tick direction based on label position
@@ -229,7 +211,7 @@ fn draw_single_line_tick(
     };
 
     ctx.save();
-    ctx.set_stroke_style_str(&color);
+    ctx.set_stroke_style_str(color);
     ctx.set_line_width((TICK_WIDTH * scale) / zoom);
     ctx.set_line_cap("butt");
     ctx.begin_path();
@@ -241,6 +223,7 @@ fn draw_single_line_tick(
 
 /// Draw perpendicular ticks forming a T-shape for terminus stations
 /// Draws two ticks perpendicular to the line direction, capping off the line
+#[allow(clippy::too_many_arguments)]
 fn draw_perpendicular_ticks(
     ctx: &CanvasRenderingContext2d,
     pos: (f64, f64),
@@ -250,14 +233,15 @@ fn draw_perpendicular_ticks(
     zoom: f64,
     is_selected: bool,
     scale: f64,
+    palette: &Palette,
 ) {
     let tick_length = TICK_LENGTH * scale;
 
-    // Use lighter color if selected
+    // Use selection orange if selected
     let color = if is_selected {
-        lighten_color(line_color, 0.7)
+        palette.selection_ring
     } else {
-        line_color.to_string()
+        line_color
     };
 
     // Calculate the angle of the line through this station
@@ -268,7 +252,7 @@ fn draw_perpendicular_ticks(
     let perp_angle_2 = line_angle - std::f64::consts::FRAC_PI_2;
 
     ctx.save();
-    ctx.set_stroke_style_str(&color);
+    ctx.set_stroke_style_str(color);
     ctx.set_line_width((TICK_WIDTH * scale) / zoom);
     ctx.set_line_cap("butt");
 
@@ -956,7 +940,7 @@ pub fn draw_line_stations(
                     );
                     let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
 
-                    draw_perpendicular_ticks(ctx, tick_pos, &line.color, idx, graph, zoom, is_selected, marker_scale);
+                    draw_perpendicular_ticks(ctx, tick_pos, &line.color, idx, graph, zoom, is_selected, marker_scale, palette);
                 }
             } else {
                 // Draw individual ticks for each stopping line at their actual line positions
@@ -970,7 +954,7 @@ pub fn draw_line_stations(
                     );
                     let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
 
-                    draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom, is_selected, marker_scale);
+                    draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom, is_selected, marker_scale, palette);
                 }
             }
         }
