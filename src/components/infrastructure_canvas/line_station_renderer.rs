@@ -18,6 +18,8 @@ const TICK_WIDTH: f64 = 5.0;
 const PILL_HEIGHT: f64 = 16.0;
 const PILL_BORDER_WIDTH: f64 = 1.0;
 const PILL_PADDING: f64 = 3.0;
+const SELECTION_RING_WIDTH: f64 = 3.0;
+const SELECTION_RING_OFFSET: f64 = 4.0;
 
 // Line name label constants
 const LINE_LABEL_PADDING: f64 = 4.0;
@@ -29,16 +31,19 @@ const CHAR_WIDTH_ESTIMATE: f64 = 7.5;
 struct Palette {
     pill_fill: &'static str,
     pill_border: &'static str,
+    selection_ring: &'static str,
 }
 
 const DARK_PALETTE: Palette = Palette {
     pill_fill: "#ffffff",
     pill_border: "#000000",
+    selection_ring: "#ffaa00",
 };
 
 const LIGHT_PALETTE: Palette = Palette {
     pill_fill: "#ffffff",
     pill_border: "#000000",
+    selection_ring: "#ff8800",
 };
 
 fn get_palette(theme: Theme) -> &'static Palette {
@@ -46,6 +51,25 @@ fn get_palette(theme: Theme) -> &'static Palette {
         Theme::Dark => &DARK_PALETTE,
         Theme::Light => &LIGHT_PALETTE,
     }
+}
+
+/// Lighten a hex color by blending with white
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn lighten_color(hex_color: &str, amount: f64) -> String {
+    // Remove '#' if present
+    let hex = hex_color.trim_start_matches('#');
+
+    // Parse RGB components
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(255);
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(255);
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(255);
+
+    // Blend with white (lighter)
+    let r_light = (f64::from(r) + (255.0 - f64::from(r)) * amount).round() as u8;
+    let g_light = (f64::from(g) + (255.0 - f64::from(g)) * amount).round() as u8;
+    let b_light = (f64::from(b) + (255.0 - f64::from(b)) * amount).round() as u8;
+
+    format!("#{r_light:02x}{g_light:02x}{b_light:02x}")
 }
 
 /// Check if a line stops at a given station (has `wait_time` > 0, or is first/last station)
@@ -168,8 +192,16 @@ fn draw_single_line_tick(
     line_color: &str,
     label_position: LabelPosition,
     zoom: f64,
+    is_selected: bool,
 ) {
     let tick_length = TICK_LENGTH;
+
+    // Use lighter color if selected
+    let color = if is_selected {
+        lighten_color(line_color, 0.7)
+    } else {
+        line_color.to_string()
+    };
 
     // Calculate tick direction based on label position
     let (dx, dy) = match label_position {
@@ -196,7 +228,7 @@ fn draw_single_line_tick(
     };
 
     ctx.save();
-    ctx.set_stroke_style_str(line_color);
+    ctx.set_stroke_style_str(&color);
     ctx.set_line_width(TICK_WIDTH / zoom);
     ctx.set_line_cap("butt");
     ctx.begin_path();
@@ -215,8 +247,16 @@ fn draw_perpendicular_ticks(
     station_idx: NodeIndex,
     graph: &RailwayGraph,
     zoom: f64,
+    is_selected: bool,
 ) {
     let tick_length = TICK_LENGTH;
+
+    // Use lighter color if selected
+    let color = if is_selected {
+        lighten_color(line_color, 0.7)
+    } else {
+        line_color.to_string()
+    };
 
     // Calculate the angle of the line through this station
     let line_angle = calculate_line_angle(station_idx, graph);
@@ -226,7 +266,7 @@ fn draw_perpendicular_ticks(
     let perp_angle_2 = line_angle - std::f64::consts::FRAC_PI_2;
 
     ctx.save();
-    ctx.set_stroke_style_str(line_color);
+    ctx.set_stroke_style_str(&color);
     ctx.set_line_width(TICK_WIDTH / zoom);
     ctx.set_line_cap("butt");
 
@@ -503,7 +543,7 @@ fn calculate_line_angle(station_idx: NodeIndex, graph: &RailwayGraph) -> f64 {
 }
 
 /// Draw a pill marker covering multiple lines at a station
-#[allow(clippy::cast_precision_loss)]
+#[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
 fn draw_multi_line_pill(
     ctx: &CanvasRenderingContext2d,
     pos: (f64, f64),
@@ -513,6 +553,7 @@ fn draw_multi_line_pill(
     graph: &RailwayGraph,
     zoom: f64,
     palette: &Palette,
+    is_selected: bool,
 ) {
     // Calculate rotation based on line direction through station
     let angle = calculate_line_angle(station_idx, graph);
@@ -572,6 +613,41 @@ fn draw_multi_line_pill(
     // Apply center offset to align pill with where lines are actually drawn
     // Offset is in the y-direction (perpendicular to line after rotation)
     let _ = ctx.translate(0.0, pill_center_offset);
+
+    // Draw selection ring if selected
+    if is_selected {
+        let half_width = pill_width / 2.0;
+        let half_height = pill_span / 2.0;
+        let ring_radius = half_width;
+        let ring_offset = SELECTION_RING_OFFSET;
+
+        ctx.set_stroke_style_str(palette.selection_ring);
+        ctx.set_line_width(SELECTION_RING_WIDTH / zoom);
+
+        // Draw rounded rectangle outline for selection ring
+        ctx.begin_path();
+        ctx.move_to(-half_width - ring_offset, -half_height + ring_radius - ring_offset);
+        ctx.line_to(-half_width - ring_offset, half_height - ring_radius + ring_offset);
+        let _ = ctx.arc_with_anticlockwise(
+            0.0,
+            half_height - ring_radius + ring_offset,
+            ring_radius + ring_offset,
+            std::f64::consts::PI,
+            0.0,
+            true,
+        );
+        ctx.line_to(half_width + ring_offset, -half_height + ring_radius - ring_offset);
+        let _ = ctx.arc_with_anticlockwise(
+            0.0,
+            -half_height + ring_radius - ring_offset,
+            ring_radius + ring_offset,
+            0.0,
+            -std::f64::consts::PI,
+            true,
+        );
+        ctx.close_path();
+        ctx.stroke();
+    }
 
     // Draw pill background
     ctx.set_fill_style_str(palette.pill_fill);
@@ -718,6 +794,7 @@ pub fn draw_line_stations(
     zoom: f64,
     viewport_bounds: (f64, f64, f64, f64),
     label_cache: &Option<(f64, HashMap<NodeIndex, CachedLabelPosition>)>,
+    selected_stations: &[NodeIndex],
     theme: Theme,
 ) {
     let palette = get_palette(theme);
@@ -840,6 +917,7 @@ pub fn draw_line_stations(
         // - If ALL lines stop and there are 2+ lines: draw interchange pill
         // - Otherwise: draw individual ticks for each stopping line
         let is_interchange = stopping_lines.len() == all_lines.len() && stopping_lines.len() >= 2;
+        let is_selected = selected_stations.contains(&idx);
 
         if is_interchange {
             draw_multi_line_pill(
@@ -851,6 +929,7 @@ pub fn draw_line_stations(
                 graph,
                 zoom,
                 palette,
+                is_selected,
             );
         } else {
             // Check if this is a single-line terminus station
@@ -871,7 +950,7 @@ pub fn draw_line_stations(
                     );
                     let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
 
-                    draw_perpendicular_ticks(ctx, tick_pos, &line.color, idx, graph, zoom);
+                    draw_perpendicular_ticks(ctx, tick_pos, &line.color, idx, graph, zoom, is_selected);
                 }
             } else {
                 // Draw individual ticks for each stopping line at their actual line positions
@@ -885,7 +964,7 @@ pub fn draw_line_stations(
                     );
                     let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
 
-                    draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom);
+                    draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom, is_selected);
                 }
             }
         }
