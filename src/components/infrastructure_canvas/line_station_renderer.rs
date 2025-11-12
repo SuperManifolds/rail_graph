@@ -193,8 +193,9 @@ fn draw_single_line_tick(
     label_position: LabelPosition,
     zoom: f64,
     is_selected: bool,
+    scale: f64,
 ) {
-    let tick_length = TICK_LENGTH;
+    let tick_length = TICK_LENGTH * scale;
 
     // Use lighter color if selected
     let color = if is_selected {
@@ -229,7 +230,7 @@ fn draw_single_line_tick(
 
     ctx.save();
     ctx.set_stroke_style_str(&color);
-    ctx.set_line_width(TICK_WIDTH / zoom);
+    ctx.set_line_width((TICK_WIDTH * scale) / zoom);
     ctx.set_line_cap("butt");
     ctx.begin_path();
     ctx.move_to(pos.0, pos.1);
@@ -248,8 +249,9 @@ fn draw_perpendicular_ticks(
     graph: &RailwayGraph,
     zoom: f64,
     is_selected: bool,
+    scale: f64,
 ) {
-    let tick_length = TICK_LENGTH;
+    let tick_length = TICK_LENGTH * scale;
 
     // Use lighter color if selected
     let color = if is_selected {
@@ -267,7 +269,7 @@ fn draw_perpendicular_ticks(
 
     ctx.save();
     ctx.set_stroke_style_str(&color);
-    ctx.set_line_width(TICK_WIDTH / zoom);
+    ctx.set_line_width((TICK_WIDTH * scale) / zoom);
     ctx.set_line_cap("butt");
 
     // Draw first perpendicular tick
@@ -919,6 +921,10 @@ pub fn draw_line_stations(
         let is_interchange = stopping_lines.len() == all_lines.len() && stopping_lines.len() >= 2;
         let is_selected = selected_stations.contains(&idx);
 
+        // Check if this is a passing loop for scaled rendering
+        let is_passing_loop = node.as_station().is_some_and(|s| s.passing_loop);
+        let marker_scale = if is_passing_loop { 0.5 } else { 1.0 };
+
         if is_interchange {
             draw_multi_line_pill(
                 ctx,
@@ -950,7 +956,7 @@ pub fn draw_line_stations(
                     );
                     let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
 
-                    draw_perpendicular_ticks(ctx, tick_pos, &line.color, idx, graph, zoom, is_selected);
+                    draw_perpendicular_ticks(ctx, tick_pos, &line.color, idx, graph, zoom, is_selected, marker_scale);
                 }
             } else {
                 // Draw individual ticks for each stopping line at their actual line positions
@@ -964,7 +970,7 @@ pub fn draw_line_stations(
                     );
                     let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
 
-                    draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom, is_selected);
+                    draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom, is_selected, marker_scale);
                 }
             }
         }

@@ -247,7 +247,7 @@ fn draw_station_nodes(
 
         if let Some(station) = node.as_station() {
             let (border_color, radius) = if station.passing_loop {
-                (palette.passing_loop, NODE_RADIUS * 0.6)
+                (palette.passing_loop, NODE_RADIUS * 0.3)
             } else {
                 (palette.station, NODE_RADIUS)
             };
@@ -408,12 +408,13 @@ fn draw_station_label(
     position: LabelPosition,
     radius: f64,
     offset: f64,
+    scale: f64,
 ) {
     ctx.save();
     ctx.set_text_align(position.text_align());
     ctx.set_text_baseline(LabelPosition::text_baseline());
 
-    let total_offset = radius + offset;
+    let total_offset = (radius + offset) * scale;
 
     if position.is_diagonal() {
         let _ = ctx.translate(pos.0, pos.1);
@@ -452,7 +453,7 @@ fn get_node_positions_and_radii(graph: &RailwayGraph, junctions: &HashSet<NodeIn
 
         if let Some(station) = node.as_station() {
             let radius = if station.passing_loop {
-                NODE_RADIUS * 0.6
+                NODE_RADIUS * 0.3
             } else {
                 NODE_RADIUS
             };
@@ -1189,14 +1190,9 @@ pub fn draw_stations_with_cache(
             continue;
         }
 
-        // Skip passing loop labels in line mode
-        if show_lines {
-            if let Some(station) = node.as_station() {
-                if station.passing_loop {
-                    continue;
-                }
-            }
-        }
+        // Check if this is a passing loop for scaled rendering
+        let is_passing_loop = node.as_station().is_some_and(|s| s.passing_loop);
+        let label_scale = if is_passing_loop { 0.7 } else { 1.0 };
 
         // Skip stations with no lines going through them in line mode
         if show_lines {
@@ -1215,7 +1211,18 @@ pub fn draw_stations_with_cache(
             *pos
         };
 
-        draw_station_label(ctx, &node.display_name(), adjusted_pos, *position, *radius, label_offset);
+        // Save and restore context for scaled text
+        if label_scale == 1.0 {
+            draw_station_label(ctx, &node.display_name(), adjusted_pos, *position, *radius, label_offset, label_scale);
+        } else {
+            ctx.save();
+            let scaled_font_size = font_size * label_scale;
+            // Use muted color for passing loops
+            ctx.set_fill_style_str(palette.passing_loop);
+            ctx.set_font(&format!("{scaled_font_size}px sans-serif"));
+            draw_station_label(ctx, &node.display_name(), adjusted_pos, *position, *radius, label_offset, label_scale);
+            ctx.restore();
+        }
     }
 }
 
@@ -1246,14 +1253,9 @@ fn draw_cached_labels(
             continue;
         }
 
-        // Skip passing loop labels in line mode
-        if show_lines {
-            if let Some(station) = node.as_station() {
-                if station.passing_loop {
-                    continue;
-                }
-            }
-        }
+        // Check if this is a passing loop for scaled rendering
+        let is_passing_loop = node.as_station().is_some_and(|s| s.passing_loop);
+        let label_scale = if is_passing_loop { 0.7 } else { 1.0 };
 
         // Skip stations with no lines going through them in line mode
         if show_lines {
@@ -1276,6 +1278,17 @@ fn draw_cached_labels(
             *pos
         };
 
-        draw_station_label(ctx, &node.display_name(), adjusted_pos, cached.position, *radius, label_offset);
+        // Save and restore context for scaled text
+        if label_scale == 1.0 {
+            draw_station_label(ctx, &node.display_name(), adjusted_pos, cached.position, *radius, label_offset, label_scale);
+        } else {
+            ctx.save();
+            let scaled_font_size = font_size * label_scale;
+            // Use muted color for passing loops
+            ctx.set_fill_style_str(palette.passing_loop);
+            ctx.set_font(&format!("{scaled_font_size}px sans-serif"));
+            draw_station_label(ctx, &node.display_name(), adjusted_pos, cached.position, *radius, label_offset, label_scale);
+            ctx.restore();
+        }
     }
 }
