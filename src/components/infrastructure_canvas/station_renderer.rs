@@ -1185,8 +1185,8 @@ pub fn draw_stations_with_cache(
         let Some((_, position)) = label_positions.get(idx) else { continue };
         let is_junction = cache.junctions.contains(idx);
 
-        // Skip junction labels in line mode
-        if show_lines && is_junction {
+        // Skip junction labels
+        if is_junction {
             continue;
         }
 
@@ -1248,8 +1248,8 @@ fn draw_cached_labels(
 
         let is_junction = junctions.contains(idx);
 
-        // Skip junction labels in line mode
-        if show_lines && is_junction {
+        // Skip junction labels
+        if is_junction {
             continue;
         }
 
