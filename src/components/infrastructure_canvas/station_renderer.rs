@@ -1069,9 +1069,15 @@ pub fn draw_stations_with_cache(
     };
 
     // Check if we can use cached label positions
-    let use_cache = if let Some((cached_zoom, _)) = &cache.label_cache {
+    let use_cache = if let Some((cached_zoom, cached_positions)) = &cache.label_cache {
         // Use cache if zooming and zoom hasn't changed drastically (>50%)
-        is_zooming && (cached_zoom - zoom).abs() / cached_zoom < 0.5
+        if is_zooming && (cached_zoom - zoom).abs() / cached_zoom < 0.5 {
+            // Only use cache if all visible nodes have cached positions
+            // (viewport may have expanded, revealing new nodes)
+            node_positions.iter().all(|(idx, _, _)| cached_positions.contains_key(idx))
+        } else {
+            false
+        }
     } else {
         false
     };
