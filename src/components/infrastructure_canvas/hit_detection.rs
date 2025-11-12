@@ -7,6 +7,7 @@ use std::collections::HashMap;
 type TrackSegments = Vec<((f64, f64), (f64, f64))>;
 
 const STATION_CLICK_THRESHOLD: f64 = 15.0;
+const PASSING_LOOP_CLICK_THRESHOLD: f64 = 6.0;
 const TRACK_CLICK_THRESHOLD: f64 = 8.0;
 const LABEL_CLICK_PADDING: f64 = 4.0;
 
@@ -18,7 +19,12 @@ pub fn find_station_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<
             let dy = pos.1 - y;
             let dist = (dx * dx + dy * dy).sqrt();
 
-            if dist <= STATION_CLICK_THRESHOLD {
+            // Use smaller threshold for passing loops
+            let node = graph.graph.node_weight(idx);
+            let is_passing_loop = node.and_then(|n| n.as_station()).is_some_and(|s| s.passing_loop);
+            let threshold = if is_passing_loop { PASSING_LOOP_CLICK_THRESHOLD } else { STATION_CLICK_THRESHOLD };
+
+            if dist <= threshold {
                 return Some(idx);
             }
         }
