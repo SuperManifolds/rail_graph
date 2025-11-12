@@ -278,7 +278,7 @@ fn draw_station_nodes(
         } else if junctions.contains(&idx) {
             // Draw junction (but not in lines mode - lines are drawn separately)
             if !show_lines {
-                junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, cached_avoidance, orphaned_tracks, crossover_intersections);
+                junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, cached_avoidance, orphaned_tracks, crossover_intersections, selected_stations);
             }
             // Use larger radius for label overlap to account for junction connection lines
             node_positions.push((idx, pos, JUNCTION_LABEL_RADIUS));
