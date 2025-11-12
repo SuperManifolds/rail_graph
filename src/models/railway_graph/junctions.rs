@@ -18,9 +18,13 @@ pub trait Junctions {
     /// Check if a node is a junction
     fn is_junction(&self, index: NodeIndex) -> bool;
 
+    /// Find connections through a junction for bypass creation
+    /// Returns Vec of (`from_node`, `to_node`, tracks, `combined_distance`) for junctions with exactly 2 connections
+    fn find_connections_through_junction(&self, junction_idx: NodeIndex) -> Vec<(NodeIndex, NodeIndex, Vec<crate::models::track::Track>, Option<f64>)>;
+
     /// Delete a junction (removes the node and all connected edges)
-    /// Returns the list of removed edge indices
-    fn delete_junction(&mut self, index: NodeIndex) -> Vec<usize>;
+    /// Returns the list of removed edge indices and bypass mapping for line re-routing
+    fn delete_junction(&mut self, index: NodeIndex) -> (Vec<usize>, std::collections::HashMap<(usize, usize), usize>);
 
     /// Validate that a route respects junction routing rules
     ///
@@ -60,59 +64,113 @@ impl Junctions for RailwayGraph {
         self.graph.node_weight(index).is_some_and(Node::is_junction)
     }
 
-    fn delete_junction(&mut self, index: NodeIndex) -> Vec<usize> {
+    fn find_connections_through_junction(&self, junction_idx: NodeIndex) -> Vec<(NodeIndex, NodeIndex, Vec<crate::models::track::Track>, Option<f64>)> {
         use petgraph::visit::EdgeRef;
         use petgraph::Direction;
 
-        // Get all connected edges with their node information
-        let mut edges: Vec<(usize, NodeIndex, NodeIndex, Vec<crate::models::Track>)> = Vec::new();
+        let mut connections = Vec::new();
 
-        // Outgoing edges from the junction
-        for e in self.graph.edges(index) {
-            edges.push((e.id().index(), e.source(), e.target(), e.weight().tracks.clone()));
+        // Get all edges connected to this junction
+        let mut all_edges: Vec<(NodeIndex, NodeIndex, Vec<crate::models::track::Track>, Option<f64>)> = Vec::new();
+
+        // Incoming edges (source -> junction)
+        for e in self.graph.edges_directed(junction_idx, Direction::Incoming) {
+            all_edges.push((e.source(), junction_idx, e.weight().tracks.clone(), e.weight().distance));
         }
 
-        // Incoming edges to the junction
-        for e in self.graph.edges_directed(index, Direction::Incoming) {
-            edges.push((e.id().index(), e.source(), e.target(), e.weight().tracks.clone()));
+        // Outgoing edges (junction -> target)
+        for e in self.graph.edges(junction_idx) {
+            all_edges.push((junction_idx, e.target(), e.weight().tracks.clone(), e.weight().distance));
         }
 
-        let removed_edge_indices: Vec<usize> = edges.iter().map(|(idx, _, _, _)| *idx).collect();
+        // Only create bypass for exactly 2 connections
+        if all_edges.len() == 2 {
+            let (from1, to1, tracks1, distance1) = &all_edges[0];
+            let (from2, to2, tracks2, distance2) = &all_edges[1];
 
-        // If this is a "through" junction with exactly 2 connections, restore the direct edge
-        if edges.len() == 2 {
-            // Collect the two endpoints (nodes that are NOT the junction)
-            let mut connected_nodes = Vec::new();
-            for (_, from, to, _) in &edges {
-                if *from != index {
-                    connected_nodes.push(*from);
-                }
-                if *to != index {
-                    connected_nodes.push(*to);
-                }
-            }
+            // Find the two endpoints (nodes that are NOT the junction)
+            let endpoint1 = if *from1 == junction_idx { *to1 } else { *from1 };
+            let endpoint2 = if *from2 == junction_idx { *to2 } else { *from2 };
 
-            // We should have exactly 2 endpoints
-            if connected_nodes.len() == 2 {
-                let node1 = connected_nodes[0];
-                let node2 = connected_nodes[1];
-                let tracks = edges[0].3.clone();
-
-                // Remove the junction node (this also removes all connected edges)
-                self.graph.remove_node(index);
-
-                // Create a new direct edge between the two endpoints
-                self.add_track(node1, node2, tracks);
+            // Choose track configuration with more tracks
+            let tracks = if tracks1.len() >= tracks2.len() {
+                tracks1.clone()
             } else {
-                // Safety fallback: just remove the junction
-                self.graph.remove_node(index);
+                tracks2.clone()
+            };
+
+            // Combine distances if both are present
+            let combined_distance = match (distance1, distance2) {
+                (Some(d1), Some(d2)) => Some(d1 + d2),
+                (Some(d), None) | (None, Some(d)) => Some(*d),
+                (None, None) => None,
+            };
+
+            connections.push((endpoint1, endpoint2, tracks, combined_distance));
+        }
+        // For junctions with more or fewer than 2 connections, don't create any bypass
+
+        connections
+    }
+
+    fn delete_junction(&mut self, index: NodeIndex) -> (Vec<usize>, std::collections::HashMap<(usize, usize), usize>) {
+        use petgraph::visit::EdgeRef;
+        use petgraph::Direction;
+        use super::tracks::Tracks;
+
+        // Find connections through this junction to create bypass edges
+        let connections = self.find_connections_through_junction(index);
+
+        // Create bypass edges and track the mapping
+        let mut bypass_mapping = std::collections::HashMap::new();
+
+        for (endpoint1, endpoint2, tracks, combined_distance) in connections {
+            // Find the two edges connected to the junction
+            let mut edge_indices = Vec::new();
+
+            // Check incoming edges for matches
+            for e in self.graph.edges_directed(index, Direction::Incoming) {
+                if e.source() == endpoint1 || e.source() == endpoint2 {
+                    edge_indices.push(e.id().index());
+                }
             }
-        } else {
-            // For junctions with != 2 connections, just remove it
-            self.graph.remove_node(index);
+
+            // Check outgoing edges for matches
+            for e in self.graph.edges(index) {
+                if e.target() == endpoint1 || e.target() == endpoint2 {
+                    edge_indices.push(e.id().index());
+                }
+            }
+
+            // We should have exactly 2 edge indices
+            if edge_indices.len() == 2 {
+                let edge1 = edge_indices[0];
+                let edge2 = edge_indices[1];
+
+                let new_edge = self.add_track(endpoint1, endpoint2, tracks);
+
+                // Set the combined distance on the bypass edge
+                if let (Some(distance), Some(edge_weight)) = (combined_distance, self.graph.edge_weight_mut(new_edge)) {
+                    edge_weight.distance = Some(distance);
+                }
+
+                bypass_mapping.insert((edge1, edge2), new_edge.index());
+            }
         }
 
-        removed_edge_indices
+        // Get edges that will be removed
+        let removed_edges: Vec<usize> = self.graph.edges(index)
+            .map(|e| e.id().index())
+            .chain(
+                self.graph.edges_directed(index, Direction::Incoming)
+                    .map(|e| e.id().index())
+            )
+            .collect();
+
+        // Remove the junction node (this also removes all connected edges)
+        self.graph.remove_node(index);
+
+        (removed_edges, bypass_mapping)
     }
 
     fn validate_route_through_junctions(&self, route: &[crate::models::RouteSegment]) -> Result<(), String> {
@@ -349,13 +407,14 @@ mod tests {
         assert_eq!(graph.graph.node_count(), 3);
         assert_eq!(graph.graph.edge_count(), 2);
 
-        let removed_edges = graph.delete_junction(j_idx);
+        let (removed_edges, bypass_mapping) = graph.delete_junction(j_idx);
 
         // With StableGraph, junction with 2 connections is a "through" junction
         // Deleting it restores the direct edge between the two endpoints
         assert_eq!(graph.graph.node_count(), 2); // Only 2 valid nodes remain
         assert_eq!(graph.graph.edge_count(), 1); // 1 edge remains (the restored direct edge)
         assert_eq!(removed_edges.len(), 2);
+        assert_eq!(bypass_mapping.len(), 1); // One bypass mapping created
 
         // Verify a direct edge exists between s1 and s2 (in either direction)
         let has_edge = graph.graph.find_edge(s1, s2).is_some() || graph.graph.find_edge(s2, s1).is_some();
@@ -431,8 +490,9 @@ mod tests {
         assert_eq!(graph.graph.edge_count(), 4);
 
         // Delete junction should remove all 4 edges
-        let removed_edges = graph.delete_junction(j_idx);
+        let (removed_edges, bypass_mapping) = graph.delete_junction(j_idx);
         assert_eq!(removed_edges.len(), 4);
+        assert_eq!(bypass_mapping.len(), 0); // No bypass for junctions with 4 connections
         assert_eq!(graph.graph.node_count(), 4);
         assert_eq!(graph.graph.edge_count(), 0);
     }
