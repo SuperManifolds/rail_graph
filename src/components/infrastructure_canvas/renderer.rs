@@ -229,7 +229,7 @@ pub fn draw_infrastructure(
         // Draw lines instead of tracks (use zoom=1.0 for constant size scaling)
         line_renderer::draw_lines(ctx, graph, lines, 1.0, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme);
         // Draw custom station markers for line mode (use zoom=1.0 for constant size scaling)
-        line_station_renderer::draw_line_stations(ctx, graph, lines, 1.0, viewport_bounds, &cache.label_cache, theme);
+        line_station_renderer::draw_line_stations(ctx, graph, lines, 1.0, viewport_bounds, &cache.label_cache, selected_stations, theme);
     } else {
         // Draw tracks (using cached avoidance offsets)
         track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme);
