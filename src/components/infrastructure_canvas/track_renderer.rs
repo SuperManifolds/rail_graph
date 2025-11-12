@@ -23,12 +23,12 @@ struct Palette {
 
 const DARK_PALETTE: Palette = Palette {
     track: "#444",
-    highlighted_track: "#4a9eff",
+    highlighted_track: "#ffaa00",
 };
 
 const LIGHT_PALETTE: Palette = Palette {
     track: "#999",
-    highlighted_track: "#1976d2",
+    highlighted_track: "#ff8800",
 };
 
 fn get_palette(theme: Theme) -> &'static Palette {
