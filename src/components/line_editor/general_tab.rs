@@ -36,6 +36,26 @@ pub fn GeneralTab(
                 </div>
 
                 <div class="form-group">
+                    <label>"Code"</label>
+                    <input
+                        type="text"
+                        class="line-code-input"
+                        value=move || edited_line.get().map(|l| l.code.clone()).unwrap_or_default()
+                        on:change={
+                            let on_save = on_save.get_value();
+                            move |ev| {
+                                let code = event_target_value(&ev);
+                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                    updated_line.code = code;
+                                    set_edited_line.set(Some(updated_line.clone()));
+                                    on_save(updated_line);
+                                }
+                            }
+                        }
+                    />
+                </div>
+
+                <div class="form-group">
                     <label>"Color"</label>
                     <input
                         type="color"

@@ -696,6 +696,7 @@ pub fn import_jtraingraph(
             sort_index: None,
             sync_departure_offsets: false,
             folder_id: None,
+            code: String::new(),
         };
 
         new_lines.push(line);

@@ -998,7 +998,7 @@ pub fn draw_line_stations(
         for (line_idx, line) in terminal_lines.iter().enumerate() {
             draw_line_name_label(
                 ctx,
-                &line.name,
+                &line.code,
                 &line.color,
                 pos,
                 label_position,
