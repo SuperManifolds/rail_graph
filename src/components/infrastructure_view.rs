@@ -773,13 +773,10 @@ fn delete_junction_handler(
     let mut current_graph = graph.get();
     let mut current_lines = lines.get();
 
-    let removed_edges = current_graph.delete_junction(junction_idx);
+    let (removed_edges, bypass_mapping) = current_graph.delete_junction(junction_idx);
 
     for line in &mut current_lines {
-        for edge_index in &removed_edges {
-            line.forward_route.retain(|segment| segment.edge_index != *edge_index);
-            line.return_route.retain(|segment| segment.edge_index != *edge_index);
-        }
+        line.update_route_after_deletion(&removed_edges, &bypass_mapping);
     }
 
     set_graph.set(current_graph);
