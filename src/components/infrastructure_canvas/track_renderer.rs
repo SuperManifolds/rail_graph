@@ -299,7 +299,64 @@ pub fn get_track_segments(graph: &RailwayGraph) -> Vec<((f64, f64), (f64, f64))>
     segments
 }
 
-#[allow(clippy::cast_precision_loss)]
+/// Calculate track endpoints considering crossover intersections for orphaned tracks
+/// Returns (endpoint1, endpoint2, `use_offset1`, `use_offset2`)
+#[allow(clippy::too_many_arguments)]
+fn calculate_track_endpoints_for_edge(
+    track_idx: usize,
+    pos1: (f64, f64),
+    pos2: (f64, f64),
+    dx: f64,
+    dy: f64,
+    len: f64,
+    junction_distance: f64,
+    source_is_junction: bool,
+    target_is_junction: bool,
+    source: NodeIndex,
+    target: NodeIndex,
+    edge_id: EdgeIndex,
+    orphaned_tracks: &HashMap<(EdgeIndex, NodeIndex), HashSet<usize>>,
+    crossover_intersections: &HashMap<(EdgeIndex, NodeIndex, usize), (f64, f64)>,
+) -> ((f64, f64), (f64, f64), bool, bool) {
+    let mut actual_pos1 = pos1;
+    let mut actual_pos2 = pos2;
+    let mut use_offset1 = true;
+    let mut use_offset2 = true;
+
+    // Check if this track is orphaned at source junction
+    if source_is_junction {
+        let is_orphaned = orphaned_tracks
+            .get(&(edge_id, source))
+            .is_some_and(|set| set.contains(&track_idx));
+
+        if is_orphaned && crossover_intersections.contains_key(&(edge_id, source, track_idx)) {
+            actual_pos1 = crossover_intersections[&(edge_id, source, track_idx)];
+            use_offset1 = false;
+        } else if len > junction_distance {
+            let t = junction_distance / len;
+            actual_pos1 = (pos1.0 + dx * t, pos1.1 + dy * t);
+        }
+    }
+
+    // Check if this track is orphaned at target junction
+    if target_is_junction {
+        let is_orphaned = orphaned_tracks
+            .get(&(edge_id, target))
+            .is_some_and(|set| set.contains(&track_idx));
+
+        if is_orphaned && crossover_intersections.contains_key(&(edge_id, target, track_idx)) {
+            actual_pos2 = crossover_intersections[&(edge_id, target, track_idx)];
+            use_offset2 = false;
+        } else if len > junction_distance {
+            let t = junction_distance / len;
+            actual_pos2 = (pos2.0 - dx * t, pos2.1 - dy * t);
+        }
+    }
+
+    (actual_pos1, actual_pos2, use_offset1, use_offset2)
+}
+
+#[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
 pub fn draw_tracks(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
@@ -309,6 +366,8 @@ pub fn draw_tracks(
     viewport_bounds: (f64, f64, f64, f64),
     junctions: &HashSet<NodeIndex>,
     theme: Theme,
+    orphaned_tracks: &HashMap<(EdgeIndex, NodeIndex), HashSet<usize>>,
+    crossover_intersections: &HashMap<(EdgeIndex, NodeIndex, usize), (f64, f64)>,
 ) {
     let palette = get_palette(theme);
     let (left, top, right, bottom) = viewport_bounds;
@@ -350,13 +409,13 @@ pub fn draw_tracks(
         let (avoid_x, avoid_y) = cached_avoidance.get(&edge_id).copied().unwrap_or((0.0, 0.0));
         let needs_avoidance = avoid_x.abs() > AVOIDANCE_OFFSET_THRESHOLD || avoid_y.abs() > AVOIDANCE_OFFSET_THRESHOLD;
 
-        // Calculate actual start and end points, stopping before junctions
-        let mut actual_pos1 = pos1;
-        let mut actual_pos2 = pos2;
-
         let dx = pos2.0 - pos1.0;
         let dy = pos2.1 - pos1.1;
         let len = (dx * dx + dy * dy).sqrt();
+
+        // Calculate perpendicular offset for parallel tracks
+        let nx = -dy / len;
+        let ny = dx / len;
 
         // When there's avoidance offset, use half junction distance to match junction renderer
         let junction_distance = if needs_avoidance {
@@ -365,26 +424,16 @@ pub fn draw_tracks(
             JUNCTION_STOP_DISTANCE
         };
 
-        if source_is_junction && len > junction_distance {
-            // Move start point away from junction
-            let t = junction_distance / len;
-            actual_pos1 = (pos1.0 + dx * t, pos1.1 + dy * t);
-        }
-
-        if target_is_junction && len > junction_distance {
-            // Move end point away from junction
-            let t = junction_distance / len;
-            actual_pos2 = (pos2.0 - dx * t, pos2.1 - dy * t);
-        }
-
-        // Calculate perpendicular offset for parallel tracks
-        let nx = -dy / len;
-        let ny = dx / len;
-
         ctx.set_line_width(TRACK_LINE_WIDTH / zoom);
 
         if track_count == 1 {
             // Single track - draw in center (with avoidance if needed)
+            let (actual_pos1, actual_pos2, _, _) = calculate_track_endpoints_for_edge(
+                0, pos1, pos2, dx, dy, len, junction_distance,
+                source_is_junction, target_is_junction, source, target, edge_id,
+                orphaned_tracks, crossover_intersections,
+            );
+
             ctx.set_stroke_style_str(track_color);
             ctx.begin_path();
 
@@ -412,10 +461,18 @@ pub fn draw_tracks(
             let total_width = (track_count - 1) as f64 * TRACK_SPACING;
             let start_offset = -total_width / 2.0;
 
+            #[allow(clippy::excessive_nesting)]
             for (i, _track) in edge.weight().tracks.iter().enumerate() {
                 let offset = start_offset + (i as f64 * TRACK_SPACING);
                 let ox = nx * offset;
                 let oy = ny * offset;
+
+                // Calculate endpoints for this specific track (may differ if orphaned)
+                let (actual_pos1, actual_pos2, use_offset1, use_offset2) = calculate_track_endpoints_for_edge(
+                    i, pos1, pos2, dx, dy, len, junction_distance,
+                    source_is_junction, target_is_junction, source, target, edge_id,
+                    orphaned_tracks, crossover_intersections,
+                );
 
                 ctx.set_stroke_style_str(track_color);
                 ctx.begin_path();
@@ -434,8 +491,12 @@ pub fn draw_tracks(
                         (start_needs_transition, end_needs_transition)
                     );
                 } else {
-                    ctx.move_to(actual_pos1.0 + ox, actual_pos1.1 + oy);
-                    ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);
+                    // Apply offset only if not already in the endpoint coordinates
+                    let offset1 = if use_offset1 { (ox, oy) } else { (0.0, 0.0) };
+                    let offset2 = if use_offset2 { (ox, oy) } else { (0.0, 0.0) };
+
+                    ctx.move_to(actual_pos1.0 + offset1.0, actual_pos1.1 + offset1.1);
+                    ctx.line_to(actual_pos2.0 + offset2.0, actual_pos2.1 + offset2.1);
                 }
 
                 ctx.stroke();

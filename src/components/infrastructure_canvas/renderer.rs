@@ -1,6 +1,6 @@
 use crate::models::{Line, RailwayGraph, Junctions};
 use crate::theme::Theme;
-use super::{track_renderer, station_renderer, line_renderer, line_station_renderer};
+use super::{track_renderer, station_renderer, line_renderer, line_station_renderer, junction_renderer};
 use web_sys::CanvasRenderingContext2d;
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
@@ -23,6 +23,10 @@ pub struct TopologyCache {
     pub stations: HashSet<NodeIndex>,
     /// Adjacency map: node -> (neighbor, `edge_index`) for branch identification
     pub adjacency: HashMap<NodeIndex, Vec<(NodeIndex, EdgeIndex)>>,
+    /// Orphaned tracks: (edge, junction) -> set of track indices without connections
+    pub orphaned_tracks: HashMap<(EdgeIndex, NodeIndex), HashSet<usize>>,
+    /// Crossover intersection points: (edge, junction, `track_idx`) -> intersection point
+    pub crossover_intersections: HashMap<(EdgeIndex, NodeIndex, usize), (f64, f64)>,
 }
 
 const EMPTY_MESSAGE_FONT: &str = "16px sans-serif";
@@ -115,6 +119,16 @@ pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
         edge_segments.insert(edge_id, segments);
     }
 
+    // Calculate orphaned tracks (tracks without junction connections)
+    let orphaned_tracks = junction_renderer::get_orphaned_tracks_map(graph);
+
+    // Calculate crossover intersection points for orphaned tracks
+    let crossover_intersections = junction_renderer::get_crossover_intersection_points(
+        graph,
+        &orphaned_tracks,
+        &avoidance_offsets,
+    );
+
     TopologyCache {
         topology,
         avoidance_offsets,
@@ -123,6 +137,8 @@ pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
         junctions,
         stations,
         adjacency,
+        orphaned_tracks,
+        crossover_intersections,
     }
 }
 
@@ -232,7 +248,7 @@ pub fn draw_infrastructure(
         line_station_renderer::draw_line_stations(ctx, graph, lines, 1.0, viewport_bounds, &cache.label_cache, selected_stations, theme);
     } else {
         // Draw tracks (using cached avoidance offsets)
-        track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme);
+        track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, &cache.orphaned_tracks, &cache.crossover_intersections);
     }
 
     // Draw stations and junctions on top (with label cache)
