@@ -1,6 +1,6 @@
 use crate::models::{RailwayGraph, Stations, Junctions, Line};
 use crate::theme::Theme;
-use crate::components::infrastructure_canvas::{track_renderer, junction_renderer, line_renderer};
+use crate::components::infrastructure_canvas::{track_renderer, junction_renderer, line_renderer, line_station_renderer};
 use crate::geometry::line_segments_intersect;
 use web_sys::CanvasRenderingContext2d;
 use std::collections::{HashMap, HashSet};
@@ -1079,7 +1079,7 @@ pub fn draw_stations_with_cache(
     if use_cache {
         // Use cached positions
         if let Some((_, cached_positions)) = &cache.label_cache {
-            draw_cached_labels(ctx, graph, &node_positions, cached_positions, font_size, &cache.junctions, show_lines, &line_extents, palette);
+            draw_cached_labels(ctx, graph, lines, &node_positions, cached_positions, font_size, &cache.junctions, show_lines, &line_extents, palette);
         }
         return;
     }
@@ -1192,6 +1192,14 @@ pub fn draw_stations_with_cache(
             }
         }
 
+        // Skip stations with no lines going through them in line mode
+        if show_lines {
+            let lines_through = line_station_renderer::get_lines_through_station(*idx, lines, graph);
+            if lines_through.is_empty() {
+                continue;
+            }
+        }
+
         let label_offset = if is_junction { JUNCTION_LABEL_OFFSET } else { LABEL_OFFSET };
 
         // Adjust position for line extent in line mode
@@ -1209,6 +1217,7 @@ pub fn draw_stations_with_cache(
 fn draw_cached_labels(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
+    lines: &[Line],
     node_positions: &[(NodeIndex, (f64, f64), f64)],
     cached_positions: &HashMap<NodeIndex, CachedLabelPosition>,
     font_size: f64,
@@ -1237,6 +1246,14 @@ fn draw_cached_labels(
                 if station.passing_loop {
                     continue;
                 }
+            }
+        }
+
+        // Skip stations with no lines going through them in line mode
+        if show_lines {
+            let lines_through = line_station_renderer::get_lines_through_station(*idx, lines, graph);
+            if lines_through.is_empty() {
+                continue;
             }
         }
 
