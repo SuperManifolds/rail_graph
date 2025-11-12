@@ -8,8 +8,10 @@ use std::collections::{HashSet, HashMap};
 const JUNCTION_TRACK_DISTANCE: f64 = 14.0; // Match JUNCTION_STOP_DISTANCE from track_renderer
 const TRACK_SPACING: f64 = 3.0; // Match track_renderer
 const TRACK_COLOR: &str = "#444";
-const HIGHLIGHTED_TRACK_COLOR: &str = "#4a9eff";
+const HIGHLIGHTED_TRACK_COLOR: &str = "#ffaa00";
 const TRACK_LINE_WIDTH: f64 = 2.0;
+const SELECTION_RING_WIDTH: f64 = 3.0;
+const SELECTION_RING_OFFSET: f64 = 4.0;
 
 /// Get all junction connection line segments for label overlap detection
 #[must_use]
@@ -913,6 +915,7 @@ pub fn draw_junction(
     cached_avoidance: &HashMap<EdgeIndex, (f64, f64)>,
     orphaned_tracks: &HashMap<(EdgeIndex, NodeIndex), HashSet<usize>>,
     crossover_intersections: &HashMap<(EdgeIndex, NodeIndex, usize), (f64, f64)>,
+    selected_stations: &[NodeIndex],
 ) {
     // Collect all connected edges - we need ALL edges connected to the junction
     // because an edge can have tracks going in either direction
@@ -1143,5 +1146,14 @@ pub fn draw_junction(
                 );
             }
         }
+    }
+
+    // Draw selection ring if this junction is selected
+    if selected_stations.contains(&idx) {
+        ctx.set_stroke_style_str(HIGHLIGHTED_TRACK_COLOR);
+        ctx.set_line_width(SELECTION_RING_WIDTH / zoom);
+        ctx.begin_path();
+        let _ = ctx.arc(pos.0, pos.1, JUNCTION_TRACK_DISTANCE + SELECTION_RING_OFFSET, 0.0, std::f64::consts::PI * 2.0);
+        ctx.stroke();
     }
 }
