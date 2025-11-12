@@ -7,6 +7,7 @@ use indexmap::IndexMap;
 use web_sys::CanvasRenderingContext2d;
 
 const LINE_BASE_WIDTH: f64 = 3.0;
+const LINE_BORDER_WIDTH: f64 = 1.0;
 const AVOIDANCE_OFFSET_THRESHOLD: f64 = 0.1;
 const TRANSITION_LENGTH: f64 = 30.0;
 const JUNCTION_STOP_DISTANCE: f64 = 14.0;
@@ -27,6 +28,27 @@ struct JunctionConnectionKey {
 pub struct Section {
     pub id: SectionId,
     pub edges: Vec<EdgeIndex>,
+}
+
+/// Get the background color for the current theme
+fn get_background_color(theme: Theme) -> &'static str {
+    match theme {
+        Theme::Dark => "#0a0a0a",
+        Theme::Light => "#fafafa",
+    }
+}
+
+/// Stroke a line with a background-colored border to prevent color blending
+fn stroke_with_border(ctx: &CanvasRenderingContext2d, line_color: &str, line_width: f64, theme: Theme) {
+    // Draw border: wider stroke in background color
+    ctx.set_stroke_style_str(get_background_color(theme));
+    ctx.set_line_width(line_width + (2.0 * LINE_BORDER_WIDTH));
+    ctx.stroke();
+
+    // Draw actual line on top
+    ctx.set_stroke_style_str(line_color);
+    ctx.set_line_width(line_width);
+    ctx.stroke();
 }
 
 /// Assign visual positions to lines within a section based on which lines conflict (share edges).
@@ -366,8 +388,242 @@ pub fn order_lines_for_section<'a>(
     ordered_lines
 }
 
-/// Draw lines through junctions
+/// Draw a single junction connection (helper for maintaining z-order)
 #[allow(clippy::cast_precision_loss, clippy::too_many_lines, clippy::too_many_arguments)]
+fn draw_single_junction_connection(
+    ctx: &CanvasRenderingContext2d,
+    graph: &RailwayGraph,
+    connection_key: &JunctionConnectionKey,
+    connection_lines: &[&Line],
+    edge_to_section: &HashMap<EdgeIndex, SectionId>,
+    section_orderings: &HashMap<SectionId, Vec<&Line>>,
+    section_visual_positions: &HashMap<SectionId, HashMap<EdgeIndex, HashMap<uuid::Uuid, usize>>>,
+    gap_width: f64,
+    zoom: f64,
+    theme: Theme,
+) {
+    let Some(junction_pos) = graph.get_station_position(connection_key.junction) else {
+        return;
+    };
+
+    // Get the endpoints of both edges
+    let Some((from_src, from_tgt)) = graph.graph.edge_endpoints(connection_key.from_edge) else {
+        return;
+    };
+    let Some((to_src, to_tgt)) = graph.graph.edge_endpoints(connection_key.to_edge) else {
+        return;
+    };
+
+    // Determine the node positions for entry and exit edges
+    let from_junction_is_target = from_tgt == connection_key.junction;
+    let to_junction_is_source = to_src == connection_key.junction;
+
+    let from_node_pos = if from_junction_is_target {
+        graph.get_station_position(from_src)
+    } else {
+        graph.get_station_position(from_tgt)
+    };
+
+    let to_node_pos = if to_junction_is_source {
+        graph.get_station_position(to_tgt)
+    } else {
+        graph.get_station_position(to_src)
+    };
+
+    let (Some(from_pos), Some(to_pos)) = (from_node_pos, to_node_pos) else {
+        return;
+    };
+
+    // Calculate edge directions
+    let entry_delta = if from_junction_is_target {
+        (junction_pos.0 - from_pos.0, junction_pos.1 - from_pos.1)
+    } else {
+        (from_pos.0 - junction_pos.0, from_pos.1 - junction_pos.1)
+    };
+    let entry_distance = (entry_delta.0 * entry_delta.0 + entry_delta.1 * entry_delta.1).sqrt();
+
+    let exit_delta = if to_junction_is_source {
+        (to_pos.0 - junction_pos.0, to_pos.1 - junction_pos.1)
+    } else {
+        (junction_pos.0 - to_pos.0, junction_pos.1 - to_pos.1)
+    };
+    let exit_distance = (exit_delta.0 * exit_delta.0 + exit_delta.1 * exit_delta.1).sqrt();
+
+    if entry_distance < 0.1 || exit_distance < 0.1 {
+        return;
+    }
+
+    // Calculate base stop points
+    let entry_base_no_ext = if from_junction_is_target {
+        (
+            junction_pos.0 - (entry_delta.0 / entry_distance) * JUNCTION_STOP_DISTANCE,
+            junction_pos.1 - (entry_delta.1 / entry_distance) * JUNCTION_STOP_DISTANCE,
+        )
+    } else {
+        (
+            junction_pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_STOP_DISTANCE,
+            junction_pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_STOP_DISTANCE,
+        )
+    };
+
+    let exit_base_no_ext = if to_junction_is_source {
+        (
+            junction_pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_STOP_DISTANCE,
+            junction_pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_STOP_DISTANCE,
+        )
+    } else {
+        (
+            junction_pos.0 - (exit_delta.0 / exit_distance) * JUNCTION_STOP_DISTANCE,
+            junction_pos.1 - (exit_delta.1 / exit_distance) * JUNCTION_STOP_DISTANCE,
+        )
+    };
+
+    // Calculate perpendicular vectors
+    let entry_perp = (-entry_delta.1 / entry_distance, entry_delta.0 / entry_distance);
+    let mut exit_perp = (-exit_delta.1 / exit_distance, exit_delta.0 / exit_distance);
+
+    let dot_product = entry_perp.0 * exit_perp.0 + entry_perp.1 * exit_perp.1;
+    let flip_exit_offsets = if dot_product < 0.0 {
+        exit_perp = (-exit_perp.0, -exit_perp.1);
+        true
+    } else {
+        false
+    };
+
+    // Get section orderings
+    let Some(&entry_section_id) = edge_to_section.get(&connection_key.from_edge) else {
+        return;
+    };
+    let Some(&exit_section_id) = edge_to_section.get(&connection_key.to_edge) else {
+        return;
+    };
+    let Some(entry_section_ordering) = section_orderings.get(&entry_section_id) else {
+        return;
+    };
+    let Some(exit_section_ordering) = section_orderings.get(&exit_section_id) else {
+        return;
+    };
+
+    // Calculate widths
+    let entry_section_widths: Vec<f64> = entry_section_ordering.iter()
+        .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
+        .collect();
+    let entry_num_gaps = entry_section_ordering.len().saturating_sub(1);
+    let entry_total_width: f64 = entry_section_widths.iter().sum::<f64>()
+        + (entry_num_gaps as f64) * gap_width;
+
+    let exit_section_widths: Vec<f64> = exit_section_ordering.iter()
+        .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
+        .collect();
+    let exit_num_gaps = exit_section_ordering.len().saturating_sub(1);
+    let exit_total_width: f64 = exit_section_widths.iter().sum::<f64>()
+        + (exit_num_gaps as f64) * gap_width;
+
+    // Get visual position maps
+    let entry_visual_map = section_visual_positions.get(&entry_section_id)
+        .and_then(|section_map| section_map.get(&connection_key.from_edge));
+    let exit_visual_map = section_visual_positions.get(&exit_section_id)
+        .and_then(|section_map| section_map.get(&connection_key.to_edge));
+
+    // Sort connection lines by z-order
+    let mut sorted_connection_lines = connection_lines.to_vec();
+    sorted_connection_lines.sort_by(|a, b| {
+        match (a.sort_index, b.sort_index) {
+            (Some(a_idx), Some(b_idx)) => a_idx.partial_cmp(&b_idx).unwrap_or(std::cmp::Ordering::Equal),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        }
+        .then_with(|| a.id.cmp(&b.id))
+    });
+
+    // Draw each line through the junction
+    for line in &sorted_connection_lines {
+        let Some(&entry_visual_pos) = entry_visual_map.and_then(|map| map.get(&line.id)) else {
+            continue;
+        };
+
+        let entry_start_offset = -entry_total_width / 2.0;
+        let entry_offset_sum: f64 = entry_section_widths.iter().take(entry_visual_pos)
+            .map(|&width| width + gap_width)
+            .sum();
+        let line_entry_width = entry_section_widths.get(entry_visual_pos)
+            .copied()
+            .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
+        let mut entry_offset = entry_start_offset + entry_offset_sum + line_entry_width / 2.0;
+
+        let Some(&exit_visual_pos) = exit_visual_map.and_then(|map| map.get(&line.id)) else {
+            continue;
+        };
+
+        let exit_start_offset = -exit_total_width / 2.0;
+        let exit_offset_sum: f64 = exit_section_widths.iter().take(exit_visual_pos)
+            .map(|&width| width + gap_width)
+            .sum();
+        let line_exit_width = exit_section_widths.get(exit_visual_pos)
+            .copied()
+            .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
+        let mut exit_offset = exit_start_offset + exit_offset_sum + line_exit_width / 2.0;
+
+        if flip_exit_offsets {
+            entry_offset = -entry_offset;
+            exit_offset = -exit_offset;
+        }
+
+        let line_world_width = (line_entry_width + line_exit_width) / 2.0;
+
+        let entry_point = (
+            entry_base_no_ext.0 + entry_perp.0 * entry_offset,
+            entry_base_no_ext.1 + entry_perp.1 * entry_offset
+        );
+
+        let exit_point = (
+            exit_base_no_ext.0 + exit_perp.0 * exit_offset,
+            exit_base_no_ext.1 + exit_perp.1 * exit_offset
+        );
+
+        ctx.set_line_width(line_world_width);
+        ctx.set_stroke_style_str(&line.color);
+        ctx.begin_path();
+        ctx.move_to(entry_point.0, entry_point.1);
+
+        let entry_dir = (entry_delta.0 / entry_distance, entry_delta.1 / entry_distance);
+        let exit_dir_back = (-exit_delta.0 / exit_distance, -exit_delta.1 / exit_distance);
+        let det = entry_dir.0 * exit_dir_back.1 - entry_dir.1 * exit_dir_back.0;
+
+        if det.abs() > 0.01 {
+            let dx = exit_point.0 - entry_point.0;
+            let dy = exit_point.1 - entry_point.1;
+            let t = (dx * exit_dir_back.1 - dy * exit_dir_back.0) / det;
+
+            if t > 0.0 {
+                let control_point = (
+                    entry_point.0 + t * entry_dir.0,
+                    entry_point.1 + t * entry_dir.1
+                );
+                ctx.quadratic_curve_to(control_point.0, control_point.1, exit_point.0, exit_point.1);
+            } else {
+                ctx.line_to(exit_point.0, exit_point.1);
+            }
+        } else {
+            let control_dist = 15.0;
+            let cp1 = (
+                entry_point.0 + entry_dir.0 * control_dist,
+                entry_point.1 + entry_dir.1 * control_dist
+            );
+            let cp2 = (
+                exit_point.0 + exit_dir_back.0 * control_dist,
+                exit_point.1 + exit_dir_back.1 * control_dist
+            );
+            ctx.bezier_curve_to(cp1.0, cp1.1, cp2.0, cp2.1, exit_point.0, exit_point.1);
+        }
+
+        stroke_with_border(ctx, &line.color, line_world_width, theme);
+    }
+}
+
+/// Draw lines through junctions (OLD - replaced by `draw_single_junction_connection`)
+#[allow(clippy::cast_precision_loss, clippy::too_many_lines, clippy::too_many_arguments, dead_code)]
 fn draw_junction_connections(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
@@ -378,6 +634,7 @@ fn draw_junction_connections(
     section_visual_positions: &HashMap<SectionId, HashMap<EdgeIndex, HashMap<uuid::Uuid, usize>>>,
     gap_width: f64,
     zoom: f64,
+    theme: Theme,
 ) {
     for (connection_key, connection_lines) in junction_connections {
         let Some(junction_pos) = graph.get_station_position(connection_key.junction) else {
@@ -627,7 +884,7 @@ fn draw_junction_connections(
                 ctx.bezier_curve_to(cp1.0, cp1.1, cp2.0, cp2.1, exit_point.0, exit_point.1);
             }
 
-            ctx.stroke();
+            stroke_with_border(ctx, &line.color, line_world_width, theme);
         }
     }
 }
@@ -676,7 +933,7 @@ pub fn draw_lines(
     cached_avoidance: &HashMap<EdgeIndex, (f64, f64)>,
     viewport_bounds: (f64, f64, f64, f64),
     junctions: &HashSet<NodeIndex>,
-    _theme: Theme,
+    theme: Theme,
 ) {
     let (left, top, right, bottom) = viewport_bounds;
     let margin = 200.0; // Buffer to include lines slightly outside viewport
@@ -780,6 +1037,9 @@ pub fn draw_lines(
         }
     }
 
+    // Track which junction connections have been drawn to avoid duplicates
+    let mut drawn_junctions: HashSet<JunctionConnectionKey> = HashSet::new();
+
     // Draw each edge's lines
     for (edge_idx, edge_lines) in &edge_to_lines {
         // Get edge endpoints
@@ -818,10 +1078,11 @@ pub fn draw_lines(
         let len = (dx * dx + dy * dy).sqrt();
 
         // When there's avoidance offset, use half junction distance to match junction renderer
+        // Subtract 2.0 to create slight overlap with junction curves, eliminating gaps
         let junction_distance = if needs_avoidance {
-            JUNCTION_STOP_DISTANCE * 0.5
+            JUNCTION_STOP_DISTANCE * 0.5 - 2.0
         } else {
-            JUNCTION_STOP_DISTANCE
+            JUNCTION_STOP_DISTANCE - 2.0
         };
 
         if source_is_junction && len > junction_distance {
@@ -919,7 +1180,7 @@ pub fn draw_lines(
                 ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);
             }
 
-            ctx.stroke();
+            stroke_with_border(ctx, &line.color, line_world_width, theme);
         } else {
             // Multiple lines - position them using visual positions
             // Calculate widths for all lines in section ordering (to maintain proper spacing with gaps)
@@ -968,21 +1229,33 @@ pub fn draw_lines(
                     ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);
                 }
 
-                ctx.stroke();
+                stroke_with_border(ctx, &line.color, line_world_width, theme);
+            }
+        }
+
+        // Draw junction connections involving this edge (to maintain z-order)
+        for (connection_key, connection_lines) in &junction_connections {
+            // Only draw if this edge is involved and we haven't drawn this connection yet
+            if (connection_key.from_edge == *edge_idx || connection_key.to_edge == *edge_idx)
+                && !drawn_junctions.contains(connection_key)
+            {
+                // Draw this junction connection
+                draw_single_junction_connection(
+                    ctx,
+                    graph,
+                    connection_key,
+                    connection_lines,
+                    &edge_to_section,
+                    &section_orderings,
+                    &section_visual_positions,
+                    gap_width,
+                    zoom,
+                    theme,
+                );
+                drawn_junctions.insert(*connection_key);
             }
         }
     }
 
-    // Draw junction connections
-    draw_junction_connections(
-        ctx,
-        graph,
-        &junction_connections,
-        &edge_to_lines,
-        &edge_to_section,
-        &section_orderings,
-        &section_visual_positions,
-        gap_width,
-        zoom,
-    );
+    // All junction connections drawn in the edge loop above to maintain z-order
 }
