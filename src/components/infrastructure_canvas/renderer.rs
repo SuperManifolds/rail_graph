@@ -248,7 +248,7 @@ pub fn draw_infrastructure(
     // Draw tracks or lines based on toggle (behind nodes)
     if show_lines {
         // Draw lines instead of tracks (use zoom=1.0 for constant size scaling)
-        line_renderer::draw_lines(ctx, graph, lines, 1.0, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme);
+        line_renderer::draw_lines(ctx, graph, lines, 1.0, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, highlighted_edges);
         // Draw custom station markers for line mode (use zoom=1.0 for constant size scaling)
         line_station_renderer::draw_line_stations(ctx, graph, lines, 1.0, viewport_bounds, &cache.label_cache, selected_stations, theme);
     } else {

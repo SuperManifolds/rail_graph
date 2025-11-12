@@ -38,10 +38,24 @@ fn get_background_color(theme: Theme) -> &'static str {
     }
 }
 
-/// Stroke a line with a background-colored border to prevent color blending
-fn stroke_with_border(ctx: &CanvasRenderingContext2d, line_color: &str, line_width: f64, theme: Theme) {
-    // Draw border: wider stroke in background color
-    ctx.set_stroke_style_str(get_background_color(theme));
+/// Get the selection highlight color for the current theme
+fn get_selection_color(theme: Theme) -> &'static str {
+    match theme {
+        Theme::Dark => "#ffaa00",
+        Theme::Light => "#ff8800",
+    }
+}
+
+/// Stroke a line with a border to prevent color blending
+/// If highlighted, uses selection color for border; otherwise uses background color
+fn stroke_with_border(ctx: &CanvasRenderingContext2d, line_color: &str, line_width: f64, theme: Theme, is_highlighted: bool) {
+    // Draw border: wider stroke in background or selection color
+    let border_color = if is_highlighted {
+        get_selection_color(theme)
+    } else {
+        get_background_color(theme)
+    };
+    ctx.set_stroke_style_str(border_color);
     ctx.set_line_width(line_width + (2.0 * LINE_BORDER_WIDTH));
     ctx.stroke();
 
@@ -401,6 +415,7 @@ fn draw_single_junction_connection(
     gap_width: f64,
     zoom: f64,
     theme: Theme,
+    highlighted_edges: &HashSet<EdgeIndex>,
 ) {
     let Some(junction_pos) = graph.get_station_position(connection_key.junction) else {
         return;
@@ -621,7 +636,10 @@ fn draw_single_junction_connection(
             ctx.bezier_curve_to(cp1.0, cp1.1, cp2.0, cp2.1, exit_point.0, exit_point.1);
         }
 
-        stroke_with_border(ctx, &line.color, line_world_width, theme);
+        // Junction connection is highlighted if both connecting edges are highlighted
+        let is_highlighted = highlighted_edges.contains(&connection_key.from_edge)
+            && highlighted_edges.contains(&connection_key.to_edge);
+        stroke_with_border(ctx, &line.color, line_world_width, theme, is_highlighted);
 
         // Draw filled circle at entry point to cover rendering gap
         // (Exit point cap is drawn by the outgoing edge segment to maintain proper ordering)
@@ -646,6 +664,7 @@ fn draw_junction_connections(
     gap_width: f64,
     zoom: f64,
     theme: Theme,
+    highlighted_edges: &HashSet<EdgeIndex>,
 ) {
     for (connection_key, connection_lines) in junction_connections {
         let Some(junction_pos) = graph.get_station_position(connection_key.junction) else {
@@ -898,7 +917,10 @@ fn draw_junction_connections(
                 ctx.bezier_curve_to(cp1.0, cp1.1, cp2.0, cp2.1, exit_point.0, exit_point.1);
             }
 
-            stroke_with_border(ctx, &line.color, line_world_width, theme);
+            // Junction connection is highlighted if both connecting edges are highlighted
+            let is_highlighted = highlighted_edges.contains(&connection_key.from_edge)
+                && highlighted_edges.contains(&connection_key.to_edge);
+            stroke_with_border(ctx, &line.color, line_world_width, theme, is_highlighted);
         }
     }
 }
@@ -938,7 +960,7 @@ fn draw_line_segment_with_avoidance(
     }
 }
 
-#[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
+#[allow(clippy::cast_precision_loss, clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn draw_lines(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
@@ -948,6 +970,7 @@ pub fn draw_lines(
     viewport_bounds: (f64, f64, f64, f64),
     junctions: &HashSet<NodeIndex>,
     theme: Theme,
+    highlighted_edges: &HashSet<EdgeIndex>,
 ) {
     let (left, top, right, bottom) = viewport_bounds;
     let margin = 200.0; // Buffer to include lines slightly outside viewport
@@ -1194,7 +1217,8 @@ pub fn draw_lines(
                 ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);
             }
 
-            stroke_with_border(ctx, &line.color, line_world_width, theme);
+            let is_highlighted = highlighted_edges.contains(edge_idx);
+            stroke_with_border(ctx, &line.color, line_world_width, theme, is_highlighted);
 
             // Draw caps at junction/station endpoints to cover rendering gaps
             let cap_radius = line_world_width / 2.0;
@@ -1257,7 +1281,8 @@ pub fn draw_lines(
                     ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);
                 }
 
-                stroke_with_border(ctx, &line.color, line_world_width, theme);
+                let is_highlighted = highlighted_edges.contains(edge_idx);
+                stroke_with_border(ctx, &line.color, line_world_width, theme, is_highlighted);
 
                 // Draw caps at junction/station endpoints to cover rendering gaps
                 let cap_radius = line_world_width / 2.0;
@@ -1293,6 +1318,7 @@ pub fn draw_lines(
                     gap_width,
                     zoom,
                     theme,
+                    highlighted_edges,
                 );
                 drawn_junctions.insert(*connection_key);
             }
