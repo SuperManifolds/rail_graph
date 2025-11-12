@@ -83,6 +83,51 @@ pub fn get_junction_segments(graph: &RailwayGraph) -> Vec<((f64, f64), (f64, f64
     segments
 }
 
+/// Calculate track point positions for an edge at a junction
+/// Returns Vec of (offset, (x, y)) tuples for each track index
+fn calculate_track_points(
+    edge_source_pos: (f64, f64),
+    edge_target_pos: (f64, f64),
+    node_pos: (f64, f64),
+    junction_pos: (f64, f64),
+    track_indices: &[usize],
+    num_tracks: usize,
+) -> Vec<(f64, (f64, f64))> {
+    // Calculate edge direction and perpendicular
+    let edge_vec = (edge_target_pos.0 - edge_source_pos.0, edge_target_pos.1 - edge_source_pos.1);
+    let edge_len = (edge_vec.0 * edge_vec.0 + edge_vec.1 * edge_vec.1).sqrt();
+    let perp = (-edge_vec.1 / edge_len, edge_vec.0 / edge_len);
+
+    // Calculate base point at junction edge
+    let delta = (node_pos.0 - junction_pos.0, node_pos.1 - junction_pos.1);
+    let distance = (delta.0 * delta.0 + delta.1 * delta.1).sqrt();
+    let base = (
+        junction_pos.0 + (delta.0 / distance) * JUNCTION_TRACK_DISTANCE,
+        junction_pos.1 + (delta.1 / distance) * JUNCTION_TRACK_DISTANCE,
+    );
+
+    // Calculate track spacing and offset
+    #[allow(clippy::cast_precision_loss)]
+    let total_width = (num_tracks - 1) as f64 * TRACK_SPACING;
+    let start_offset = -total_width / 2.0;
+
+    // Calculate position for each track
+    let mut track_points = Vec::with_capacity(track_indices.len());
+    for &track_idx in track_indices {
+        #[allow(clippy::cast_precision_loss)]
+        let offset = start_offset + (track_idx as f64 * TRACK_SPACING);
+        track_points.push((
+            offset,
+            (
+                base.0 + perp.0 * offset,
+                base.1 + perp.1 * offset
+            )
+        ));
+    }
+
+    track_points
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_junction_track_connections(
     ctx: &CanvasRenderingContext2d,
@@ -139,37 +184,11 @@ fn draw_junction_track_connections(
     ctx.set_stroke_style_str(track_color);
     ctx.set_line_width(TRACK_LINE_WIDTH / zoom);
 
-    let num_connections = entry_points.len().min(exit_points.len());
+    // Use geometric matching to determine which tracks connect
+    let matches = match_tracks_geometrically(&entry_points, &exit_points);
 
-    // Calculate all pairwise distances and sort by distance
-    let mut pairs: Vec<(usize, usize, f64)> = Vec::new();
-    for (entry_idx, entry_data) in entry_points.iter().enumerate() {
-        let entry_point = entry_data.1;
-        for (exit_idx, exit_data) in exit_points.iter().enumerate() {
-            let exit_point = exit_data.1;
-            let dist = ((exit_point.0 - entry_point.0).powi(2) +
-                        (exit_point.1 - entry_point.1).powi(2)).sqrt();
-            pairs.push((entry_idx, exit_idx, dist));
-        }
-    }
-
-    // Sort by distance (closest first)
-    pairs.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
-
-    // Greedy matching: process pairs in order of distance, skip if already used
-    let mut used_entries = HashSet::new();
-    let mut used_exits = HashSet::new();
-    let mut connections_made = 0;
-
-    for (entry_idx, exit_idx, _dist) in pairs {
-        if connections_made >= num_connections {
-            break;
-        }
-
-        if used_entries.contains(&entry_idx) || used_exits.contains(&exit_idx) {
-            continue;
-        }
-
+    // Draw the matched connections
+    for (entry_idx, exit_idx) in matches {
         let entry_point = entry_points[entry_idx].1;
         let exit_point = exit_points[exit_idx].1;
 
@@ -177,11 +196,38 @@ fn draw_junction_track_connections(
         ctx.move_to(entry_point.0, entry_point.1);
         ctx.line_to(exit_point.0, exit_point.1);
         ctx.stroke();
-
-        used_entries.insert(entry_idx);
-        used_exits.insert(exit_idx);
-        connections_made += 1;
     }
+}
+
+/// Check if a crossover should be skipped for an edge at a junction
+/// Returns true if the edge has exactly one allowed connection with 1:1 track mapping
+fn should_skip_crossover(
+    edge_idx: EdgeIndex,
+    num_tracks: usize,
+    junction: &crate::models::Junction,
+    all_edges_at_junction: &[EdgeIndex],
+    edge_map: &HashMap<EdgeIndex, (NodeIndex, NodeIndex, &crate::models::TrackSegment)>,
+) -> bool {
+    // Find edges that have allowed routing to/from this edge
+    let allowed_connections: Vec<_> = all_edges_at_junction.iter()
+        .filter(|other_edge| {
+            **other_edge != edge_idx &&
+            (junction.is_routing_allowed(edge_idx, **other_edge) ||
+             junction.is_routing_allowed(**other_edge, edge_idx))
+        })
+        .collect();
+
+    // Skip crossover if there's exactly one connection and tracks map 1:1
+    if allowed_connections.len() == 1 {
+        let other_edge_idx = allowed_connections[0];
+        if let Some(&(_, _, other_edge_weight)) = edge_map.get(other_edge_idx) {
+            let other_tracks = &other_edge_weight.tracks;
+            // Skip if both edges have the same number of tracks (1:1 mapping)
+            return num_tracks == other_tracks.len();
+        }
+    }
+
+    false
 }
 
 /// Helper function to match tracks geometrically using greedy algorithm
@@ -313,66 +359,28 @@ pub fn get_orphaned_tracks_map(graph: &RailwayGraph) -> HashMap<(EdgeIndex, Node
 
                 let departing_tracks: Vec<usize> = (0..to_tracks.len()).collect();
 
-                // Calculate entry and exit points with offsets (same logic as draw_junction_track_connections)
+                // Calculate entry and exit points using helper function
                 let Some(from_source_pos) = graph.get_station_position(from_source) else { continue };
                 let Some(from_target_pos) = graph.get_station_position(from_target) else { continue };
-                let from_edge_vec = (from_target_pos.0 - from_source_pos.0, from_target_pos.1 - from_source_pos.1);
-                let from_edge_len = (from_edge_vec.0 * from_edge_vec.0 + from_edge_vec.1 * from_edge_vec.1).sqrt();
-                let from_perp = (-from_edge_vec.1 / from_edge_len, from_edge_vec.0 / from_edge_len);
-
-                let entry_delta = (from_node_pos.0 - pos.0, from_node_pos.1 - pos.1);
-                let entry_distance = (entry_delta.0 * entry_delta.0 + entry_delta.1 * entry_delta.1).sqrt();
-                let entry_base = (
-                    pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_TRACK_DISTANCE,
-                    pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_TRACK_DISTANCE,
+                let entry_points = calculate_track_points(
+                    from_source_pos,
+                    from_target_pos,
+                    *from_node_pos,
+                    pos,
+                    &arriving_tracks,
+                    from_tracks.len(),
                 );
-
-                #[allow(clippy::cast_precision_loss)]
-                let from_total_width = (from_tracks.len() - 1) as f64 * TRACK_SPACING;
-                let from_start_offset = -from_total_width / 2.0;
-
-                let mut entry_points: Vec<(f64, (f64, f64))> = Vec::new();
-                for &track_idx in &arriving_tracks {
-                    #[allow(clippy::cast_precision_loss)]
-                    let offset = from_start_offset + (track_idx as f64 * TRACK_SPACING);
-                    entry_points.push((
-                        offset,
-                        (
-                            entry_base.0 + from_perp.0 * offset,
-                            entry_base.1 + from_perp.1 * offset
-                        )
-                    ));
-                }
 
                 let Some(to_source_pos) = graph.get_station_position(to_source) else { continue };
                 let Some(to_target_pos) = graph.get_station_position(to_target) else { continue };
-                let to_edge_vec = (to_target_pos.0 - to_source_pos.0, to_target_pos.1 - to_source_pos.1);
-                let to_edge_len = (to_edge_vec.0 * to_edge_vec.0 + to_edge_vec.1 * to_edge_vec.1).sqrt();
-                let to_perp = (-to_edge_vec.1 / to_edge_len, to_edge_vec.0 / to_edge_len);
-
-                let exit_delta = (to_node_pos.0 - pos.0, to_node_pos.1 - pos.1);
-                let exit_distance = (exit_delta.0 * exit_delta.0 + exit_delta.1 * exit_delta.1).sqrt();
-                let exit_base = (
-                    pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_TRACK_DISTANCE,
-                    pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_TRACK_DISTANCE,
+                let exit_points = calculate_track_points(
+                    to_source_pos,
+                    to_target_pos,
+                    *to_node_pos,
+                    pos,
+                    &departing_tracks,
+                    to_tracks.len(),
                 );
-
-                #[allow(clippy::cast_precision_loss)]
-                let to_total_width = (to_tracks.len() - 1) as f64 * TRACK_SPACING;
-                let to_start_offset = -to_total_width / 2.0;
-
-                let mut exit_points: Vec<(f64, (f64, f64))> = Vec::new();
-                for &track_idx in &departing_tracks {
-                    #[allow(clippy::cast_precision_loss)]
-                    let offset = to_start_offset + (track_idx as f64 * TRACK_SPACING);
-                    exit_points.push((
-                        offset,
-                        (
-                            exit_base.0 + to_perp.0 * offset,
-                            exit_base.1 + to_perp.1 * offset
-                        )
-                    ));
-                }
 
                 // Run the same geometric matching logic
                 let matched = match_tracks_geometrically(&entry_points, &exit_points);
@@ -464,28 +472,7 @@ pub fn get_crossover_intersection_points(
             all_edges_at_junction.push(edge.id());
         }
 
-        let allowed_connections: Vec<_> = all_edges_at_junction.iter()
-            .filter(|other_edge| {
-                **other_edge != *edge_idx &&
-                (junction.is_routing_allowed(*edge_idx, **other_edge) ||
-                 junction.is_routing_allowed(**other_edge, *edge_idx))
-            })
-            .collect();
-
-        let should_skip_crossover = if allowed_connections.len() == 1 {
-            let other_edge_idx = allowed_connections[0];
-            if let Some(&(_, _, other_edge_weight)) = edge_map.get(other_edge_idx) {
-                let other_tracks = &other_edge_weight.tracks;
-                // Skip if both edges have the same number of tracks (1:1 mapping)
-                num_tracks == other_tracks.len()
-            } else {
-                false
-            }
-        } else {
-            false
-        };
-
-        if should_skip_crossover {
+        if should_skip_crossover(*edge_idx, num_tracks, junction, &all_edges_at_junction, &edge_map) {
             continue;
         }
 
@@ -978,28 +965,9 @@ pub fn draw_junction(
         if tracks.len() >= 2 {
             // Check if this edge has only one allowed connection with 1:1 track mapping
             // If so, skip the crossover since no track switching is needed
-            let allowed_connections: Vec<_> = all_edges.iter()
-                .filter(|(other_edge, _)| {
-                    *other_edge != *edge_idx &&
-                    (j.is_routing_allowed(*edge_idx, *other_edge) ||
-                     j.is_routing_allowed(*other_edge, *edge_idx))
-                })
-                .collect();
+            let all_edges_at_junction: Vec<EdgeIndex> = all_edges.iter().map(|(e, _)| *e).collect();
 
-            let should_skip_crossover = if allowed_connections.len() == 1 {
-                let (other_edge_idx, _) = allowed_connections[0];
-                if let Some(&(_, _, other_edge_weight)) = edge_map.get(other_edge_idx) {
-                    let other_tracks = &other_edge_weight.tracks;
-                    // Skip if both edges have the same number of tracks (1:1 mapping)
-                    tracks.len() == other_tracks.len()
-                } else {
-                    false
-                }
-            } else {
-                false
-            };
-
-            if !should_skip_crossover {
+            if !should_skip_crossover(*edge_idx, tracks.len(), j, &all_edges_at_junction, &edge_map) {
                 draw_crossover_switches(
                     ctx,
                     *edge_idx,
