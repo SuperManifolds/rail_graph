@@ -260,22 +260,32 @@ pub fn get_orphaned_tracks_map(graph: &RailwayGraph) -> HashMap<(EdgeIndex, Node
         let Some(junction) = graph.get_junction(idx) else { continue };
         let Some(pos) = graph.get_station_position(idx) else { continue };
 
+        // Pre-build edge map for O(1) lookups instead of O(n) scans
+        // Store (source, target, edge_weight) for each edge
+        let edge_map: HashMap<EdgeIndex, (NodeIndex, NodeIndex, &crate::models::TrackSegment)> = all_edges.iter()
+            .filter_map(|(edge_idx, _)| {
+                graph.graph.edge_references()
+                    .find(|e| e.id() == *edge_idx)
+                    .map(|e| (*edge_idx, (e.source(), e.target(), e.weight())))
+            })
+            .collect();
+
         // Initialize all tracks as orphaned for all edges at this junction
         for (edge_idx, _) in &all_edges {
-            let Some(edge_ref) = graph.graph.edge_references().find(|e| e.id() == *edge_idx) else {
+            let Some(&(_, _, edge)) = edge_map.get(edge_idx) else {
                 continue;
             };
-            let tracks = &edge_ref.weight().tracks;
+            let tracks = &edge.tracks;
             let all_track_indices: HashSet<usize> = (0..tracks.len()).collect();
             orphaned_map.insert((*edge_idx, idx), all_track_indices);
         }
 
         // Process each edge pair to find which tracks get matched
         for (i, (from_edge, from_node_pos)) in all_edges.iter().enumerate() {
-            let Some(from_edge_ref) = graph.graph.edge_references().find(|e| e.id() == *from_edge) else {
+            let Some(&(from_source, from_target, from_edge_weight)) = edge_map.get(from_edge) else {
                 continue;
             };
-            let from_tracks = &from_edge_ref.weight().tracks;
+            let from_tracks = &from_edge_weight.tracks;
 
             if from_tracks.is_empty() {
                 continue;
@@ -292,10 +302,10 @@ pub fn get_orphaned_tracks_map(graph: &RailwayGraph) -> HashMap<(EdgeIndex, Node
                     continue;
                 }
 
-                let Some(to_edge_ref) = graph.graph.edge_references().find(|e| e.id() == *to_edge) else {
+                let Some(&(to_source, to_target, to_edge_weight)) = edge_map.get(to_edge) else {
                     continue;
                 };
-                let to_tracks = &to_edge_ref.weight().tracks;
+                let to_tracks = &to_edge_weight.tracks;
 
                 if to_tracks.is_empty() {
                     continue;
@@ -304,8 +314,8 @@ pub fn get_orphaned_tracks_map(graph: &RailwayGraph) -> HashMap<(EdgeIndex, Node
                 let departing_tracks: Vec<usize> = (0..to_tracks.len()).collect();
 
                 // Calculate entry and exit points with offsets (same logic as draw_junction_track_connections)
-                let Some(from_source_pos) = graph.get_station_position(from_edge_ref.source()) else { continue };
-                let Some(from_target_pos) = graph.get_station_position(from_edge_ref.target()) else { continue };
+                let Some(from_source_pos) = graph.get_station_position(from_source) else { continue };
+                let Some(from_target_pos) = graph.get_station_position(from_target) else { continue };
                 let from_edge_vec = (from_target_pos.0 - from_source_pos.0, from_target_pos.1 - from_source_pos.1);
                 let from_edge_len = (from_edge_vec.0 * from_edge_vec.0 + from_edge_vec.1 * from_edge_vec.1).sqrt();
                 let from_perp = (-from_edge_vec.1 / from_edge_len, from_edge_vec.0 / from_edge_len);
@@ -334,8 +344,8 @@ pub fn get_orphaned_tracks_map(graph: &RailwayGraph) -> HashMap<(EdgeIndex, Node
                     ));
                 }
 
-                let Some(to_source_pos) = graph.get_station_position(to_edge_ref.source()) else { continue };
-                let Some(to_target_pos) = graph.get_station_position(to_edge_ref.target()) else { continue };
+                let Some(to_source_pos) = graph.get_station_position(to_source) else { continue };
+                let Some(to_target_pos) = graph.get_station_position(to_target) else { continue };
                 let to_edge_vec = (to_target_pos.0 - to_source_pos.0, to_target_pos.1 - to_source_pos.1);
                 let to_edge_len = (to_edge_vec.0 * to_edge_vec.0 + to_edge_vec.1 * to_edge_vec.1).sqrt();
                 let to_perp = (-to_edge_vec.1 / to_edge_len, to_edge_vec.0 / to_edge_len);
@@ -422,15 +432,20 @@ pub fn get_crossover_intersection_points(
 ) -> HashMap<(EdgeIndex, NodeIndex, usize), (f64, f64)> {
     let mut intersections = HashMap::new();
 
+    // Pre-build global edge map for O(1) lookups instead of O(n) scans
+    let edge_map: HashMap<EdgeIndex, (NodeIndex, NodeIndex, &crate::models::TrackSegment)> = graph.graph.edge_references()
+        .map(|e| (e.id(), (e.source(), e.target(), e.weight())))
+        .collect();
+
     for ((edge_idx, junction_idx), orphaned_set) in orphaned_tracks {
         if orphaned_set.is_empty() {
             continue;
         }
 
-        let Some(edge_ref) = graph.graph.edge_references().find(|e| e.id() == *edge_idx) else {
+        let Some(&(edge_source, edge_target, edge_weight)) = edge_map.get(edge_idx) else {
             continue;
         };
-        let num_tracks = edge_ref.weight().tracks.len();
+        let num_tracks = edge_weight.tracks.len();
 
         if num_tracks < 2 {
             continue; // No crossover for single track
@@ -459,8 +474,8 @@ pub fn get_crossover_intersection_points(
 
         let should_skip_crossover = if allowed_connections.len() == 1 {
             let other_edge_idx = allowed_connections[0];
-            if let Some(other_edge_ref) = graph.graph.edge_references().find(|e| e.id() == *other_edge_idx) {
-                let other_tracks = &other_edge_ref.weight().tracks;
+            if let Some(&(_, _, other_edge_weight)) = edge_map.get(other_edge_idx) {
+                let other_tracks = &other_edge_weight.tracks;
                 // Skip if both edges have the same number of tracks (1:1 mapping)
                 num_tracks == other_tracks.len()
             } else {
@@ -477,13 +492,12 @@ pub fn get_crossover_intersection_points(
         let Some(junction_pos) = graph.get_station_position(*junction_idx) else { continue };
 
         // Get the other end of this edge
-        let (source, target) = (edge_ref.source(), edge_ref.target());
-        let other_node = if source == *junction_idx { target } else { source };
+        let other_node = if edge_source == *junction_idx { edge_target } else { edge_source };
         let Some(other_pos) = graph.get_station_position(other_node) else { continue };
 
         // Calculate edge direction and perpendicular
-        let Some(source_pos) = graph.get_station_position(source) else { continue };
-        let Some(target_pos) = graph.get_station_position(target) else { continue };
+        let Some(source_pos) = graph.get_station_position(edge_source) else { continue };
+        let Some(target_pos) = graph.get_station_position(edge_target) else { continue };
         let edge_vec = (target_pos.0 - source_pos.0, target_pos.1 - source_pos.1);
         let edge_len = (edge_vec.0 * edge_vec.0 + edge_vec.1 * edge_vec.1).sqrt();
         if edge_len < 0.1 {
@@ -943,14 +957,23 @@ pub fn draw_junction(
     let junction = graph.get_junction(idx);
     let Some(j) = junction else { return };
 
+    // Pre-build edge map for O(1) lookups instead of O(n) scans
+    let edge_map: HashMap<EdgeIndex, (NodeIndex, NodeIndex, &crate::models::TrackSegment)> = all_edges.iter()
+        .filter_map(|(edge_idx, _)| {
+            graph.graph.edge_references()
+                .find(|e| e.id() == *edge_idx)
+                .map(|e| (*edge_idx, (e.source(), e.target(), e.weight())))
+        })
+        .collect();
+
     ctx.set_line_width(TRACK_LINE_WIDTH / zoom);
 
     // Draw crossover switches for multi-track edges
     for (edge_idx, edge_pos) in &all_edges {
-        let Some(edge_ref) = graph.graph.edge_references().find(|e| e.id() == *edge_idx) else {
+        let Some(&(_, _, edge_weight)) = edge_map.get(edge_idx) else {
             continue;
         };
-        let tracks = &edge_ref.weight().tracks;
+        let tracks = &edge_weight.tracks;
 
         if tracks.len() >= 2 {
             // Check if this edge has only one allowed connection with 1:1 track mapping
@@ -965,8 +988,8 @@ pub fn draw_junction(
 
             let should_skip_crossover = if allowed_connections.len() == 1 {
                 let (other_edge_idx, _) = allowed_connections[0];
-                if let Some(other_edge_ref) = graph.graph.edge_references().find(|e| e.id() == *other_edge_idx) {
-                    let other_tracks = &other_edge_ref.weight().tracks;
+                if let Some(&(_, _, other_edge_weight)) = edge_map.get(other_edge_idx) {
+                    let other_tracks = &other_edge_weight.tracks;
                     // Skip if both edges have the same number of tracks (1:1 mapping)
                     tracks.len() == other_tracks.len()
                 } else {
@@ -996,10 +1019,10 @@ pub fn draw_junction(
 
     // Draw connections between edges, checking track-by-track directionality
     for (i, (from_edge, from_node_pos)) in all_edges.iter().enumerate() {
-        let Some(from_edge_ref) = graph.graph.edge_references().find(|e| e.id() == *from_edge) else {
+        let Some(&(from_source, from_target, from_edge_weight)) = edge_map.get(from_edge) else {
             continue;
         };
-        let from_tracks = &from_edge_ref.weight().tracks;
+        let from_tracks = &from_edge_weight.tracks;
 
         if from_tracks.is_empty() {
             continue;
@@ -1025,10 +1048,10 @@ pub fn draw_junction(
                 continue;
             }
 
-            let Some(to_edge_ref) = graph.graph.edge_references().find(|e| e.id() == *to_edge) else {
+            let Some(&(to_source, to_target, to_edge_weight)) = edge_map.get(to_edge) else {
                 continue;
             };
-            let to_tracks = &to_edge_ref.weight().tracks;
+            let to_tracks = &to_edge_weight.tracks;
 
             if to_tracks.is_empty() {
                 continue;
@@ -1038,14 +1061,7 @@ pub fn draw_junction(
             // (Junction routing rules are still respected via is_routing_allowed check)
             let departing_tracks: Vec<usize> = (0..to_tracks.len()).collect();
 
-            // Get the from edge details to calculate proper perpendicular
-            let from_edge_ref = graph.graph.edge_references().find(|e| e.id() == *from_edge);
-            let (from_source, from_target) = if let Some(e) = from_edge_ref {
-                (e.source(), e.target())
-            } else {
-                continue;
-            };
-
+            // Get the from edge node positions (source and target already extracted from edge_map)
             let from_source_pos = graph.get_station_position(from_source).unwrap_or(pos);
             let from_target_pos = graph.get_station_position(from_target).unwrap_or(pos);
 
@@ -1063,14 +1079,7 @@ pub fn draw_junction(
             // Use cached avoidance offset for this edge
             let (avoid_from_x, avoid_from_y) = cached_avoidance.get(from_edge).copied().unwrap_or((0.0, 0.0));
 
-            // Get the to edge details to calculate proper perpendicular
-            let to_edge_ref = graph.graph.edge_references().find(|e| e.id() == *to_edge);
-            let (to_source, to_target) = if let Some(e) = to_edge_ref {
-                (e.source(), e.target())
-            } else {
-                continue;
-            };
-
+            // Get the to edge node positions (source and target already extracted from edge_map)
             let to_source_pos = graph.get_station_position(to_source).unwrap_or(pos);
             let to_target_pos = graph.get_station_position(to_target).unwrap_or(pos);
 
