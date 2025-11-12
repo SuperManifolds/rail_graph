@@ -454,27 +454,30 @@ fn draw_single_junction_connection(
     }
 
     // Calculate base stop points
+    // Match edge stop distance to align perpendicular offsets
+    let curve_stop_distance = JUNCTION_STOP_DISTANCE - 2.0;
+
     let entry_base_no_ext = if from_junction_is_target {
         (
-            junction_pos.0 - (entry_delta.0 / entry_distance) * JUNCTION_STOP_DISTANCE,
-            junction_pos.1 - (entry_delta.1 / entry_distance) * JUNCTION_STOP_DISTANCE,
+            junction_pos.0 - (entry_delta.0 / entry_distance) * curve_stop_distance,
+            junction_pos.1 - (entry_delta.1 / entry_distance) * curve_stop_distance,
         )
     } else {
         (
-            junction_pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_STOP_DISTANCE,
-            junction_pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_STOP_DISTANCE,
+            junction_pos.0 + (entry_delta.0 / entry_distance) * curve_stop_distance,
+            junction_pos.1 + (entry_delta.1 / entry_distance) * curve_stop_distance,
         )
     };
 
     let exit_base_no_ext = if to_junction_is_source {
         (
-            junction_pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_STOP_DISTANCE,
-            junction_pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_STOP_DISTANCE,
+            junction_pos.0 + (exit_delta.0 / exit_distance) * curve_stop_distance,
+            junction_pos.1 + (exit_delta.1 / exit_distance) * curve_stop_distance,
         )
     } else {
         (
-            junction_pos.0 - (exit_delta.0 / exit_distance) * JUNCTION_STOP_DISTANCE,
-            junction_pos.1 - (exit_delta.1 / exit_distance) * JUNCTION_STOP_DISTANCE,
+            junction_pos.0 - (exit_delta.0 / exit_distance) * curve_stop_distance,
+            junction_pos.1 - (exit_delta.1 / exit_distance) * curve_stop_distance,
         )
     };
 
@@ -700,27 +703,30 @@ fn draw_junction_connections(
         }
 
         // Calculate base stop points without extension
+        // Match edge stop distance to align perpendicular offsets
+        let curve_stop_distance = JUNCTION_STOP_DISTANCE - 2.0;
+
         let entry_base_no_ext = if from_junction_is_target {
             (
-                junction_pos.0 - (entry_delta.0 / entry_distance) * JUNCTION_STOP_DISTANCE,
-                junction_pos.1 - (entry_delta.1 / entry_distance) * JUNCTION_STOP_DISTANCE,
+                junction_pos.0 - (entry_delta.0 / entry_distance) * curve_stop_distance,
+                junction_pos.1 - (entry_delta.1 / entry_distance) * curve_stop_distance,
             )
         } else {
             (
-                junction_pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_STOP_DISTANCE,
-                junction_pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_STOP_DISTANCE,
+                junction_pos.0 + (entry_delta.0 / entry_distance) * curve_stop_distance,
+                junction_pos.1 + (entry_delta.1 / entry_distance) * curve_stop_distance,
             )
         };
 
         let exit_base_no_ext = if to_junction_is_source {
             (
-                junction_pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_STOP_DISTANCE,
-                junction_pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_STOP_DISTANCE,
+                junction_pos.0 + (exit_delta.0 / exit_distance) * curve_stop_distance,
+                junction_pos.1 + (exit_delta.1 / exit_distance) * curve_stop_distance,
             )
         } else {
             (
-                junction_pos.0 - (exit_delta.0 / exit_distance) * JUNCTION_STOP_DISTANCE,
-                junction_pos.1 - (exit_delta.1 / exit_distance) * JUNCTION_STOP_DISTANCE,
+                junction_pos.0 - (exit_delta.0 / exit_distance) * curve_stop_distance,
+                junction_pos.1 - (exit_delta.1 / exit_distance) * curve_stop_distance,
             )
         };
 
@@ -1078,7 +1084,7 @@ pub fn draw_lines(
         let len = (dx * dx + dy * dy).sqrt();
 
         // When there's avoidance offset, use half junction distance to match junction renderer
-        // Subtract 2.0 to create slight overlap with junction curves, eliminating gaps
+        // Subtract 2.0 to stop edges where junction curves will overlap them
         let junction_distance = if needs_avoidance {
             JUNCTION_STOP_DISTANCE * 0.5 - 2.0
         } else {
