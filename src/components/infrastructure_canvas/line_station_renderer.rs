@@ -84,7 +84,13 @@ fn line_stops_at_station(station_idx: NodeIndex, line: &Line, graph: &RailwayGra
         let edge_idx = EdgeIndex::new(segment.edge_index);
         if let Some((_source, target)) = graph.graph.edge_endpoints(edge_idx) {
             if target == station_idx && !segment.wait_time.is_zero() {
-                return true;
+                // Don't show station indicators for passing loops
+                let is_passing_loop = graph.graph.node_weight(station_idx)
+                    .and_then(|n| n.as_station())
+                    .is_some_and(|s| s.passing_loop);
+                if !is_passing_loop {
+                    return true;
+                }
             }
         }
     }
