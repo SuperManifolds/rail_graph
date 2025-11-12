@@ -1200,13 +1200,13 @@ pub fn draw_lines(
             let cap_radius = line_world_width / 2.0;
             // Draw cap at source (whether junction or station)
             ctx.begin_path();
-            let _ = ctx.arc(actual_pos1.0, actual_pos1.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+            let _ = ctx.arc(actual_pos1.0 + ox, actual_pos1.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
             ctx.set_fill_style_str(&line.color);
             ctx.fill();
 
             // Draw cap at target (whether junction or station)
             ctx.begin_path();
-            let _ = ctx.arc(actual_pos2.0, actual_pos2.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+            let _ = ctx.arc(actual_pos2.0 + ox, actual_pos2.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
             ctx.set_fill_style_str(&line.color);
             ctx.fill();
         } else {
