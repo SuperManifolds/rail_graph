@@ -11,6 +11,7 @@ struct Palette {
     background: &'static str,
     station_grid: &'static str,
     single_platform_grid: &'static str,
+    junction_grid: &'static str,
     double_track_bg: &'static str,
 }
 
@@ -18,6 +19,7 @@ const DARK_PALETTE: Palette = Palette {
     background: "#0a0a0a",
     station_grid: "#1a1a1a",
     single_platform_grid: "#121212",
+    junction_grid: "#ffb84d",
     double_track_bg: "rgba(255, 255, 255, 0.03)",
 };
 
@@ -25,6 +27,7 @@ const LIGHT_PALETTE: Palette = Palette {
     background: "#fafafa",
     station_grid: "#e0e0e0",
     single_platform_grid: "#ebebeb",
+    junction_grid: "#cc8800",
     double_track_bg: "rgba(0, 0, 0, 0.02)",
 };
 
@@ -57,12 +60,15 @@ pub fn draw_station_grid(
         // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
         let y = station_y_positions[i] - TOP_MARGIN;
 
-        // Use different color for single-platform stations
+        // Use different color for single-platform stations and junctions
         let color = match station_node {
             Node::Station(station) if station.platforms.len() == 1 => {
                 palette.single_platform_grid
             }
-            _ => palette.station_grid,
+            Node::Junction(_) => {
+                palette.junction_grid
+            }
+            Node::Station(_) => palette.station_grid,
         };
 
         draw_horizontal_line(ctx, dims, y, zoom_level, pan_offset_x, color);
