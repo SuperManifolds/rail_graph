@@ -1184,6 +1184,14 @@ pub fn draw_lines(
                 continue;
             }
 
+            // Skip if it's a passing loop (curves should extend through them)
+            let is_passing_loop = graph.graph.node_weight(station_idx)
+                .and_then(|n| n.as_station())
+                .is_some_and(|s| s.passing_loop);
+            if is_passing_loop {
+                continue;
+            }
+
             // Mark both edges as having curves at this station
             edges_with_station_curves.insert((prev_edge, station_idx));
             edges_with_station_curves.insert((next_edge, station_idx));
@@ -1222,6 +1230,14 @@ pub fn draw_lines(
 
             // Skip if it's a junction (already handled)
             if junctions.contains(&station_idx) {
+                continue;
+            }
+
+            // Skip if it's a passing loop (curves should extend through them)
+            let is_passing_loop = graph.graph.node_weight(station_idx)
+                .and_then(|n| n.as_station())
+                .is_some_and(|s| s.passing_loop);
+            if is_passing_loop {
                 continue;
             }
 
