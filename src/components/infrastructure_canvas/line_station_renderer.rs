@@ -53,6 +53,169 @@ fn get_palette(theme: Theme) -> &'static Palette {
     }
 }
 
+const JUNCTION_STOP_DISTANCE: f64 = 14.0;
+
+/// Direction change information at a station
+type DirectionChangeInfo = (NodeIndex, NodeIndex, (f64, f64), (f64, f64));
+
+/// Detect if a line has a direction change (curve) at this station
+/// Returns `(entry_node, exit_node, entry_dir, exit_dir)` if curve exists
+fn detect_direction_change_at_station(
+    station_idx: NodeIndex,
+    line: &Line,
+    graph: &RailwayGraph,
+) -> Option<DirectionChangeInfo> {
+    if line.forward_route.len() < 2 {
+        return None;
+    }
+
+    // Find consecutive edges that connect at this station
+    for i in 0..line.forward_route.len() - 1 {
+        let prev_segment = &line.forward_route[i];
+        let next_segment = &line.forward_route[i + 1];
+
+        let prev_edge = EdgeIndex::new(prev_segment.edge_index);
+        let next_edge = EdgeIndex::new(next_segment.edge_index);
+
+        let (prev_src, prev_tgt) = graph.graph.edge_endpoints(prev_edge)?;
+        let (next_src, next_tgt) = graph.graph.edge_endpoints(next_edge)?;
+
+        // Check if these edges connect at the station
+        let connects_at_station = if prev_tgt == next_src && prev_tgt == station_idx {
+            Some((prev_src, next_tgt))
+        } else if prev_src == next_tgt && prev_src == station_idx {
+            Some((prev_tgt, next_src))
+        } else {
+            None
+        };
+
+        if let Some((entry_node, exit_node)) = connects_at_station {
+            let station_pos = graph.get_station_position(station_idx)?;
+            let entry_pos = graph.get_station_position(entry_node)?;
+            let exit_pos = graph.get_station_position(exit_node)?;
+
+            // Calculate entry direction (towards station)
+            let entry_delta_x = station_pos.0 - entry_pos.0;
+            let entry_delta_y = station_pos.1 - entry_pos.1;
+            let entry_len = (entry_delta_x * entry_delta_x + entry_delta_y * entry_delta_y).sqrt();
+            if entry_len == 0.0 {
+                continue;
+            }
+            let entry_dir = (entry_delta_x / entry_len, entry_delta_y / entry_len);
+
+            // Calculate exit direction (away from station)
+            let exit_delta_x = exit_pos.0 - station_pos.0;
+            let exit_delta_y = exit_pos.1 - station_pos.1;
+            let exit_len = (exit_delta_x * exit_delta_x + exit_delta_y * exit_delta_y).sqrt();
+            if exit_len == 0.0 {
+                continue;
+            }
+            let exit_dir = (exit_delta_x / exit_len, exit_delta_y / exit_len);
+
+            return Some((entry_node, exit_node, entry_dir, exit_dir));
+        }
+    }
+
+    None
+}
+
+/// Calculate tick position on a curve at a station
+/// Uses same curve algorithm as `line_renderer` for consistency
+fn calculate_tick_position_on_curve(
+    station_pos: (f64, f64),
+    entry_dir: (f64, f64),
+    exit_dir: (f64, f64),
+    perp_offset: f64,
+) -> (f64, f64) {
+    // Use same stop distance as curves in line_renderer
+    let curve_stop = JUNCTION_STOP_DISTANCE - 2.0;
+
+    // Calculate perpendicular vector from entry direction
+    let entry_perp = (-entry_dir.1, entry_dir.0);
+
+    // Entry and exit points with offset
+    let entry_point = (
+        station_pos.0 - entry_dir.0 * curve_stop + entry_perp.0 * perp_offset,
+        station_pos.1 - entry_dir.1 * curve_stop + entry_perp.1 * perp_offset
+    );
+
+    let exit_point = (
+        station_pos.0 + exit_dir.0 * curve_stop + entry_perp.0 * perp_offset,
+        station_pos.1 + exit_dir.1 * curve_stop + entry_perp.1 * perp_offset
+    );
+
+    // Calculate actual curve position at t=0.5 using same algorithm as line_renderer
+    let exit_dir_back = (-exit_dir.0, -exit_dir.1);
+    let det = entry_dir.0 * exit_dir_back.1 - entry_dir.1 * exit_dir_back.0;
+
+    if det.abs() > 0.01 {
+        // Directions not parallel - quadratic bezier curve
+        let dx = exit_point.0 - entry_point.0;
+        let dy = exit_point.1 - entry_point.1;
+        let t = (dx * exit_dir_back.1 - dy * exit_dir_back.0) / det;
+
+        if t > 0.0 {
+            // Control point from direction vector intersection
+            let control_point = (
+                entry_point.0 + t * entry_dir.0,
+                entry_point.1 + t * entry_dir.1
+            );
+
+            // Evaluate quadratic bezier at t=0.5: P(0.5) = 0.25*P0 + 0.5*P1 + 0.25*P2
+            (
+                0.25 * entry_point.0 + 0.5 * control_point.0 + 0.25 * exit_point.0,
+                0.25 * entry_point.1 + 0.5 * control_point.1 + 0.25 * exit_point.1
+            )
+        } else {
+            // Intersection behind us, curve is essentially straight line
+            ((entry_point.0 + exit_point.0) / 2.0, (entry_point.1 + exit_point.1) / 2.0)
+        }
+    } else {
+        // Directions parallel - cubic bezier S-curve
+        let control_dist = 15.0;
+        let cp1 = (
+            entry_point.0 + entry_dir.0 * control_dist,
+            entry_point.1 + entry_dir.1 * control_dist
+        );
+        let cp2 = (
+            exit_point.0 + exit_dir_back.0 * control_dist,
+            exit_point.1 + exit_dir_back.1 * control_dist
+        );
+
+        // Evaluate cubic bezier at t=0.5: P(0.5) = 0.125*P0 + 0.375*P1 + 0.375*P2 + 0.125*P3
+        (
+            0.125 * entry_point.0 + 0.375 * cp1.0 + 0.375 * cp2.0 + 0.125 * exit_point.0,
+            0.125 * entry_point.1 + 0.375 * cp1.1 + 0.375 * cp2.1 + 0.125 * exit_point.1
+        )
+    }
+}
+
+/// Calculate the final tick position, considering curves if present
+fn get_tick_position(
+    station_idx: NodeIndex,
+    station_pos: (f64, f64),
+    line: &Line,
+    offset: Option<(f64, f64)>,
+    graph: &RailwayGraph,
+) -> (f64, f64) {
+    // Check if line has a curve at this station
+    if let Some((_, _, entry_dir, exit_dir)) = detect_direction_change_at_station(station_idx, line, graph) {
+        // Station has a curve - position tick on the curve
+        let perp_offset = if let Some((ox, oy)) = offset {
+            // Calculate perpendicular vector from entry direction (left-hand perpendicular)
+            let entry_perp = (-entry_dir.1, entry_dir.0);
+            // Project the offset onto the perpendicular to get signed offset
+            ox * entry_perp.0 + oy * entry_perp.1
+        } else {
+            0.0
+        };
+        calculate_tick_position_on_curve(station_pos, entry_dir, exit_dir, perp_offset)
+    } else {
+        // No curve - use normal station center position with offset
+        offset.map_or(station_pos, |(ox, oy)| (station_pos.0 + ox, station_pos.1 + oy))
+    }
+}
+
 /// Check if a line stops at a given station (has `wait_time` > 0, or is first/last station)
 fn line_stops_at_station(station_idx: NodeIndex, line: &Line, graph: &RailwayGraph) -> bool {
     if line.forward_route.is_empty() {
@@ -235,6 +398,8 @@ fn draw_perpendicular_ticks(
     pos: (f64, f64),
     line_color: &str,
     station_idx: NodeIndex,
+    line: &Line,
+    visual_positions_map: &HashMap<EdgeIndex, (Vec<&Line>, HashMap<uuid::Uuid, usize>)>,
     graph: &RailwayGraph,
     zoom: f64,
     is_selected: bool,
@@ -250,33 +415,36 @@ fn draw_perpendicular_ticks(
         line_color
     };
 
-    // Calculate the angle of the line through this station
-    let line_angle = calculate_line_angle(station_idx, graph);
+    // Calculate where the line is actually positioned (with offset)
+    let offset = calculate_line_offset_at_station(
+        station_idx,
+        line,
+        visual_positions_map,
+        graph,
+        zoom,
+    );
+    let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
 
-    // Calculate perpendicular direction (90 degrees from line angle)
-    let perp_angle_1 = line_angle + std::f64::consts::FRAC_PI_2;
-    let perp_angle_2 = line_angle - std::f64::consts::FRAC_PI_2;
+    // Calculate the angle of this specific line at this station
+    let line_angle = calculate_line_angle_for_line(station_idx, line, graph);
+
+    // Calculate perpendicular angle (90 degrees from line angle)
+    let perp_angle = line_angle + std::f64::consts::FRAC_PI_2;
 
     ctx.save();
     ctx.set_stroke_style_str(color);
     ctx.set_line_width((TICK_WIDTH * scale) / zoom);
     ctx.set_line_cap("butt");
 
-    // Draw first perpendicular tick
+    // Draw a single continuous perpendicular line across the terminus
     ctx.begin_path();
-    ctx.move_to(pos.0, pos.1);
-    ctx.line_to(
-        pos.0 + tick_length * perp_angle_1.cos(),
-        pos.1 + tick_length * perp_angle_1.sin(),
+    ctx.move_to(
+        tick_pos.0 + tick_length * perp_angle.cos(),
+        tick_pos.1 + tick_length * perp_angle.sin(),
     );
-    ctx.stroke();
-
-    // Draw second perpendicular tick (opposite side)
-    ctx.begin_path();
-    ctx.move_to(pos.0, pos.1);
     ctx.line_to(
-        pos.0 + tick_length * perp_angle_2.cos(),
-        pos.1 + tick_length * perp_angle_2.sin(),
+        tick_pos.0 - tick_length * perp_angle.cos(),
+        tick_pos.1 - tick_length * perp_angle.sin(),
     );
     ctx.stroke();
 
@@ -499,7 +667,7 @@ fn draw_line_name_label(
     ctx.restore();
 }
 
-/// Calculate the angle of lines passing through a station
+/// Calculate the average angle of all lines passing through a station
 #[allow(clippy::cast_precision_loss)]
 fn calculate_line_angle(station_idx: NodeIndex, graph: &RailwayGraph) -> f64 {
     use petgraph::visit::EdgeRef;
@@ -530,8 +698,36 @@ fn calculate_line_angle(station_idx: NodeIndex, graph: &RailwayGraph) -> f64 {
     }
 
     // Calculate average angle (handling wraparound)
-    let avg_angle = angles.iter().sum::<f64>() / angles.len() as f64;
-    avg_angle
+    angles.iter().sum::<f64>() / angles.len() as f64
+}
+
+/// Calculate the angle of a specific line at a station
+#[allow(clippy::cast_precision_loss)]
+fn calculate_line_angle_for_line(station_idx: NodeIndex, line: &Line, graph: &RailwayGraph) -> f64 {
+    // Find the edge(s) this line uses at this station
+    for segment in &line.forward_route {
+        let edge_idx = EdgeIndex::new(segment.edge_index);
+        let Some((source, target)) = graph.graph.edge_endpoints(edge_idx) else {
+            continue;
+        };
+
+        // Check if this edge connects to our station
+        if source == station_idx || target == station_idx {
+            let other_node = if source == station_idx { target } else { source };
+
+            if let (Some(station_pos), Some(other_pos)) = (
+                graph.get_station_position(station_idx),
+                graph.get_station_position(other_node),
+            ) {
+                let dx = other_pos.0 - station_pos.0;
+                let dy = other_pos.1 - station_pos.1;
+                return dy.atan2(dx);
+            }
+        }
+    }
+
+    // Fallback: use average of all lines at station
+    calculate_line_angle(station_idx, graph)
 }
 
 /// Draw a pill marker covering multiple lines at a station
@@ -937,16 +1133,7 @@ pub fn draw_line_stations(
             if is_single_line_terminus {
                 // Draw perpendicular T-shape ticks for terminus stations with one line
                 if let Some(line) = stopping_lines.first() {
-                    let offset = calculate_line_offset_at_station(
-                        idx,
-                        line,
-                        &visual_positions_map,
-                        graph,
-                        zoom,
-                    );
-                    let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
-
-                    draw_perpendicular_ticks(ctx, tick_pos, &line.color, idx, graph, zoom, is_selected, marker_scale, palette);
+                    draw_perpendicular_ticks(ctx, pos, &line.color, idx, line, &visual_positions_map, graph, zoom, is_selected, marker_scale, palette);
                 }
             } else {
                 // Draw individual ticks for each stopping line at their actual line positions
@@ -958,7 +1145,7 @@ pub fn draw_line_stations(
                         graph,
                         zoom,
                     );
-                    let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
+                    let tick_pos = get_tick_position(idx, pos, line, offset, graph);
 
                     draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom, is_selected, marker_scale, palette);
                 }
