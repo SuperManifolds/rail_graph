@@ -20,6 +20,8 @@ const PILL_BORDER_WIDTH: f64 = 1.0;
 const PILL_PADDING: f64 = 3.0;
 const SELECTION_RING_WIDTH: f64 = 3.0;
 const SELECTION_RING_OFFSET: f64 = 4.0;
+const MIN_LABEL_FONT_SIZE: f64 = 3.5;
+const MAX_LABEL_FONT_SIZE: f64 = 112.0;
 
 // Line name label constants
 const LINE_LABEL_PADDING: f64 = 4.0;
@@ -466,7 +468,7 @@ fn draw_line_name_label(
 ) {
     use super::station_renderer::calculate_readable_text_color;
 
-    let font_size = 14.0 / zoom;
+    let font_size = (14.0 / zoom).clamp(MIN_LABEL_FONT_SIZE, MAX_LABEL_FONT_SIZE);
 
     // Measure actual text widths using canvas measureText
     ctx.set_font(&format!("{font_size}px sans-serif"));

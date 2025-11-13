@@ -17,6 +17,8 @@ const CHAR_WIDTH_ESTIMATE: f64 = 7.5;
 const JUNCTION_LABEL_RADIUS: f64 = 22.0;
 const SELECTION_RING_WIDTH: f64 = 3.0;
 const SELECTION_RING_OFFSET: f64 = 4.0;
+const MIN_LABEL_FONT_SIZE: f64 = 3.5;
+const MAX_LABEL_FONT_SIZE: f64 = 112.0;
 
 struct Palette {
     station: &'static str,
@@ -762,7 +764,7 @@ fn process_node_group(
 
 #[must_use]
 pub fn compute_label_positions(graph: &RailwayGraph, zoom: f64) -> HashMap<NodeIndex, (f64, f64, f64, f64)> {
-    let font_size = 14.0 / zoom;
+    let font_size = (14.0 / zoom).clamp(MIN_LABEL_FONT_SIZE, MAX_LABEL_FONT_SIZE);
     let mut track_segments = track_renderer::get_track_segments(graph);
     track_segments.extend(junction_renderer::get_junction_segments(graph));
 
@@ -1060,7 +1062,7 @@ pub fn draw_stations_with_cache(
     theme: Theme,
 ) {
     let palette = get_palette(theme);
-    let font_size = 14.0 / zoom;
+    let font_size = (14.0 / zoom).clamp(MIN_LABEL_FONT_SIZE, MAX_LABEL_FONT_SIZE);
 
     let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets, &cache.orphaned_tracks, &cache.crossover_intersections, show_lines, palette);
 
