@@ -925,6 +925,77 @@ fn draw_junction_connections(
     }
 }
 
+/// Draw a curve for a line at a station where direction changes
+/// Uses the same curve algorithm as junction connections
+#[allow(clippy::too_many_arguments)]
+fn draw_station_curve(
+    ctx: &CanvasRenderingContext2d,
+    entry_point: (f64, f64),
+    exit_point: (f64, f64),
+    entry_dir: (f64, f64),
+    exit_dir: (f64, f64),
+    line_color: &str,
+    line_width: f64,
+    theme: Theme,
+    is_highlighted: bool,
+) {
+    ctx.set_line_width(line_width);
+    ctx.set_stroke_style_str(line_color);
+    ctx.begin_path();
+    ctx.move_to(entry_point.0, entry_point.1);
+
+    // Calculate exit direction going backwards (same as junction logic)
+    let exit_dir_back = (-exit_dir.0, -exit_dir.1);
+    let det = entry_dir.0 * exit_dir_back.1 - entry_dir.1 * exit_dir_back.0;
+
+    if det.abs() > 0.01 {
+        // Directions not parallel - use quadratic curve
+        let dx = exit_point.0 - entry_point.0;
+        let dy = exit_point.1 - entry_point.1;
+        let t = (dx * exit_dir_back.1 - dy * exit_dir_back.0) / det;
+
+        if t > 0.0 {
+            // Control point from direction vector intersection
+            let control_point = (
+                entry_point.0 + t * entry_dir.0,
+                entry_point.1 + t * entry_dir.1
+            );
+            ctx.quadratic_curve_to(control_point.0, control_point.1, exit_point.0, exit_point.1);
+        } else {
+            // Intersection behind us, use straight line
+            ctx.line_to(exit_point.0, exit_point.1);
+        }
+    } else {
+        // Directions parallel - use S-curve (cubic bezier)
+        let control_dist = 15.0;
+        let cp1 = (
+            entry_point.0 + entry_dir.0 * control_dist,
+            entry_point.1 + entry_dir.1 * control_dist
+        );
+        let cp2 = (
+            exit_point.0 + exit_dir_back.0 * control_dist,
+            exit_point.1 + exit_dir_back.1 * control_dist
+        );
+        ctx.bezier_curve_to(cp1.0, cp1.1, cp2.0, cp2.1, exit_point.0, exit_point.1);
+    }
+
+    stroke_with_border(ctx, line_color, line_width, theme, is_highlighted);
+
+    // Draw caps at entry and exit points to cover gaps
+    let cap_radius = line_width / 2.0;
+    ctx.set_fill_style_str(line_color);
+
+    // Cap at entry point
+    ctx.begin_path();
+    let _ = ctx.arc(entry_point.0, entry_point.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+    ctx.fill();
+
+    // Cap at exit point
+    ctx.begin_path();
+    let _ = ctx.arc(exit_point.0, exit_point.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+    ctx.fill();
+}
+
 /// Draw a line segment with optional avoidance transitions
 fn draw_line_segment_with_avoidance(
     ctx: &CanvasRenderingContext2d,
@@ -1077,6 +1148,184 @@ pub fn draw_lines(
     // Track which junction connections have been drawn to avoid duplicates
     let mut drawn_junctions: HashSet<JunctionConnectionKey> = HashSet::new();
 
+    // Pre-identify edges that will have station curves (edge, station_node)
+    // Used to shorten edges appropriately before drawing curves
+    let mut edges_with_station_curves: HashSet<(EdgeIndex, NodeIndex)> = HashSet::new();
+    for line in &sorted_lines {
+        if line.forward_route.len() < 2 {
+            continue;
+        }
+
+        for i in 0..line.forward_route.len() - 1 {
+            let prev_segment = &line.forward_route[i];
+            let next_segment = &line.forward_route[i + 1];
+
+            let prev_edge = EdgeIndex::new(prev_segment.edge_index);
+            let next_edge = EdgeIndex::new(next_segment.edge_index);
+
+            let Some((prev_src, prev_tgt)) = graph.graph.edge_endpoints(prev_edge) else {
+                continue;
+            };
+            let Some((next_src, next_tgt)) = graph.graph.edge_endpoints(next_edge) else {
+                continue;
+            };
+
+            // Find the connecting station
+            let station_idx = if prev_tgt == next_src {
+                prev_tgt
+            } else if prev_src == next_tgt {
+                prev_src
+            } else {
+                continue;
+            };
+
+            // Skip if it's a junction
+            if junctions.contains(&station_idx) {
+                continue;
+            }
+
+            // Mark both edges as having curves at this station
+            edges_with_station_curves.insert((prev_edge, station_idx));
+            edges_with_station_curves.insert((next_edge, station_idx));
+        }
+    }
+
+    // Draw station curves for lines with direction changes (before edges/junctions for z-order)
+    for line in &sorted_lines {
+        if line.forward_route.len() < 2 {
+            continue;
+        }
+
+        // Check consecutive edges for direction changes at stations
+        for i in 0..line.forward_route.len() - 1 {
+            let prev_segment = &line.forward_route[i];
+            let next_segment = &line.forward_route[i + 1];
+
+            let prev_edge = EdgeIndex::new(prev_segment.edge_index);
+            let next_edge = EdgeIndex::new(next_segment.edge_index);
+
+            let Some((prev_src, prev_tgt)) = graph.graph.edge_endpoints(prev_edge) else {
+                continue;
+            };
+            let Some((next_src, next_tgt)) = graph.graph.edge_endpoints(next_edge) else {
+                continue;
+            };
+
+            // Find the connecting station
+            let station_idx = if prev_tgt == next_src {
+                prev_tgt
+            } else if prev_src == next_tgt {
+                prev_src
+            } else {
+                continue; // Edges don't connect
+            };
+
+            // Skip if it's a junction (already handled)
+            if junctions.contains(&station_idx) {
+                continue;
+            }
+
+            let Some(station_pos) = graph.get_station_position(station_idx) else {
+                continue;
+            };
+
+            // Calculate entry and exit positions (other end of each edge)
+            let entry_node = if prev_tgt == station_idx { prev_src } else { prev_tgt };
+            let exit_node = if next_src == station_idx { next_tgt } else { next_src };
+
+            let Some(entry_pos) = graph.get_station_position(entry_node) else {
+                continue;
+            };
+            let Some(exit_pos) = graph.get_station_position(exit_node) else {
+                continue;
+            };
+
+            // Calculate entry direction (towards station)
+            let entry_delta_x = station_pos.0 - entry_pos.0;
+            let entry_delta_y = station_pos.1 - entry_pos.1;
+            let entry_len = (entry_delta_x * entry_delta_x + entry_delta_y * entry_delta_y).sqrt();
+            if entry_len == 0.0 {
+                continue;
+            }
+            let entry_dir = (entry_delta_x / entry_len, entry_delta_y / entry_len);
+
+            // Calculate exit direction (away from station)
+            let exit_delta_x = exit_pos.0 - station_pos.0;
+            let exit_delta_y = exit_pos.1 - station_pos.1;
+            let exit_len = (exit_delta_x * exit_delta_x + exit_delta_y * exit_delta_y).sqrt();
+            if exit_len == 0.0 {
+                continue;
+            }
+            let exit_dir = (exit_delta_x / exit_len, exit_delta_y / exit_len);
+
+            // Get perpendicular offset for this line
+            let Some(&section_id) = edge_to_section.get(&prev_edge) else {
+                continue;
+            };
+            let visual_pos = section_visual_positions.get(&section_id)
+                .and_then(|section_map| section_map.get(&prev_edge))
+                .and_then(|edge_map| edge_map.get(&line.id))
+                .copied()
+                .unwrap_or(0);
+
+            // Calculate perpendicular vector
+            let entry_perp = (-entry_delta_y / entry_len, entry_delta_x / entry_len);
+
+            // Get section info for offset calculation
+            let Some(section_ordering) = section_orderings.get(&section_id) else {
+                continue;
+            };
+
+            let section_line_widths: Vec<f64> = section_ordering.iter()
+                .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
+                .collect();
+
+            let num_gaps = section_ordering.len().saturating_sub(1);
+            let total_section_width: f64 = section_line_widths.iter().sum::<f64>()
+                + (num_gaps as f64) * gap_width;
+
+            let start_offset = -total_section_width / 2.0;
+            let offset_sum: f64 = section_line_widths.iter().take(visual_pos)
+                .map(|&width| width + gap_width)
+                .sum();
+            let line_world_width = section_line_widths.get(visual_pos)
+                .copied()
+                .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
+            let perp_offset = start_offset + offset_sum + line_world_width / 2.0;
+
+            // Calculate entry and exit points with offset and stop distance
+            let curve_stop = JUNCTION_STOP_DISTANCE - 2.0;
+
+            let entry_point = (
+                station_pos.0 - entry_dir.0 * curve_stop + entry_perp.0 * perp_offset,
+                station_pos.1 - entry_dir.1 * curve_stop + entry_perp.1 * perp_offset
+            );
+
+            // Use same perpendicular for exit (assumes consistent offset)
+            let exit_point = (
+                station_pos.0 + exit_dir.0 * curve_stop + entry_perp.0 * perp_offset,
+                station_pos.1 + exit_dir.1 * curve_stop + entry_perp.1 * perp_offset
+            );
+
+            // Check if highlighted (both edges must be highlighted)
+            let is_highlighted = highlighted_edges.contains(&prev_edge)
+                && highlighted_edges.contains(&next_edge);
+
+            // Draw the curve
+            draw_station_curve(
+                ctx,
+                entry_point,
+                exit_point,
+                entry_dir,
+                exit_dir,
+                &line.color,
+                line_world_width,
+                theme,
+                is_highlighted,
+            );
+        }
+    }
+
     // Draw each edge's lines
     for (edge_idx, edge_lines) in &edge_to_lines {
         // Get edge endpoints
@@ -1102,11 +1351,15 @@ pub fn draw_lines(
         let source_is_junction = junctions.contains(&source);
         let target_is_junction = junctions.contains(&target);
 
+        // Check if this edge has station curves at either end
+        let source_has_curve = edges_with_station_curves.contains(&(*edge_idx, source));
+        let target_has_curve = edges_with_station_curves.contains(&(*edge_idx, target));
+
         // Use cached avoidance offset
         let (avoid_x, avoid_y) = cached_avoidance.get(edge_idx).copied().unwrap_or((0.0, 0.0));
         let needs_avoidance = avoid_x.abs() > AVOIDANCE_OFFSET_THRESHOLD || avoid_y.abs() > AVOIDANCE_OFFSET_THRESHOLD;
 
-        // Calculate actual start and end points, stopping before junctions
+        // Calculate actual start and end points, stopping before junctions or station curves
         let mut actual_pos1 = pos1;
         let mut actual_pos2 = pos2;
 
@@ -1122,14 +1375,14 @@ pub fn draw_lines(
             JUNCTION_STOP_DISTANCE - 2.0
         };
 
-        if source_is_junction && len > junction_distance {
-            // Move start point away from junction
+        if (source_is_junction || source_has_curve) && len > junction_distance {
+            // Move start point away from junction or station curve
             let t = junction_distance / len;
             actual_pos1 = (pos1.0 + dx * t, pos1.1 + dy * t);
         }
 
-        if target_is_junction && len > junction_distance {
-            // Move end point away from junction
+        if (target_is_junction || target_has_curve) && len > junction_distance {
+            // Move end point away from junction or station curve
             let t = junction_distance / len;
             actual_pos2 = (pos2.0 - dx * t, pos2.1 - dy * t);
         }
@@ -1325,5 +1578,5 @@ pub fn draw_lines(
         }
     }
 
-    // All junction connections drawn in the edge loop above to maintain z-order
+    // All junction connections and station curves drawn above to maintain z-order
 }
