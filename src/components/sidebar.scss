@@ -64,6 +64,7 @@
         padding: var(--spacing-xl);
         border-top: 1px solid var(--color-bg-tertiary);
         display: flex;
+        flex-wrap: wrap;
         gap: var(--spacing-sm);
     }
 }
