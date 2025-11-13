@@ -44,7 +44,7 @@ pub struct ProjectSettings {
 }
 
 fn default_node_distance() -> f64 {
-    4.0
+    2.0
 }
 
 fn default_minimum_separation() -> Duration {
