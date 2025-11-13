@@ -2030,6 +2030,7 @@ pub fn InfrastructureView(
                             graph,
                             set_graph,
                             pos,
+                            topology_cache,
                         );
                     })
                 />
