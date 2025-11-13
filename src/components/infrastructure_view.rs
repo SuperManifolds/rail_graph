@@ -1532,12 +1532,8 @@ fn create_event_handlers(
                 .or_else(|| hit_detection::find_station_at_position(&current_graph, world_x, world_y));
 
             if let Some(node) = clicked_node {
-                // Ensure the node is selected when double-clicking to edit
-                let mut current_selection = selected_stations.get();
-                if !current_selection.contains(&node) {
-                    current_selection.push(node);
-                    set_selected_stations.set(current_selection);
-                }
+                // Set selection to only the clicked node when double-clicking to edit
+                set_selected_stations.set(vec![node]);
 
                 if current_graph.is_junction(node) {
                     set_editing_junction.set(Some(node));
@@ -1579,6 +1575,9 @@ fn create_event_handlers(
                 .or_else(|| hit_detection::find_station_at_position(&current_graph, world_x, world_y));
 
             if let Some(node) = clicked_node {
+                // Set selection to only the clicked node when right-clicking to edit
+                set_selected_stations.set(vec![node]);
+
                 if current_graph.is_junction(node) {
                     set_editing_junction.set(Some(node));
                 } else {
