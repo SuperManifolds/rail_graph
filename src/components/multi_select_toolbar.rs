@@ -603,6 +603,7 @@ pub fn set_label_position_for_selected(
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     label_position: Option<crate::components::infrastructure_canvas::station_renderer::LabelPosition>,
+    topology_cache: leptos::StoredValue<std::cell::RefCell<crate::components::infrastructure_canvas::renderer::TopologyCache>>,
 ) {
     let nodes = selected_nodes.get();
     if nodes.is_empty() {
@@ -623,6 +624,16 @@ pub fn set_label_position_for_selected(
             }
         }
     }
+
+    // Invalidate label cache entries for the changed nodes
+    topology_cache.with_value(|cache| {
+        let mut cache = cache.borrow_mut();
+        if let Some((_, ref mut label_cache)) = cache.label_cache {
+            for &node_idx in &nodes {
+                label_cache.remove(&node_idx);
+            }
+        }
+    });
 
     set_graph.set(current_graph);
 }
