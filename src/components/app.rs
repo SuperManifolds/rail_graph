@@ -1,4 +1,5 @@
 use crate::components::alpha_disclaimer::AlphaDisclaimer;
+use crate::components::button::Button;
 use crate::components::changelog_popup::ChangelogPopup;
 use crate::components::infrastructure_view::InfrastructureView;
 use crate::components::project_manager::ProjectManager;
@@ -137,6 +138,9 @@ pub fn App() -> impl IntoView {
     // Project manager state
     let (show_project_manager, set_show_project_manager) = create_signal(false);
     let (current_project, set_current_project) = create_signal(Project::empty());
+
+    // Sidebar visibility (global across all views)
+    let (sidebar_visible, set_sidebar_visible) = create_signal(true);
 
     // User settings (persists across projects)
     let (user_settings, set_user_settings) = create_signal(crate::models::UserSettings::default());
@@ -865,6 +869,14 @@ pub fn App() -> impl IntoView {
                     }}
                     </div>
                     <div class="app-header-actions">
+                        <Button
+                            class="button-icon-only"
+                            on_click=leptos::Callback::new(move |_| set_sidebar_visible.update(|v| *v = !*v))
+                            active=Signal::derive(move || sidebar_visible.get())
+                            title="Toggle sidebar"
+                        >
+                            <i class="fa-solid fa-bars-staggered"></i>
+                        </Button>
                         <ReportIssueButton />
                     </div>
                 </div>
@@ -898,6 +910,7 @@ pub fn App() -> impl IntoView {
                             on_open_project_manager=Callback::new(move |()| {
                                 set_show_project_manager.set(true);
                             })
+                            sidebar_visible=sidebar_visible
                         />
                     }.into_view(),
                     AppTab::GraphView(view_id) => {
@@ -930,6 +943,7 @@ pub fn App() -> impl IntoView {
                                     on_open_project_manager=Callback::new(move |()| {
                                         set_show_project_manager.set(true);
                                     })
+                                    sidebar_visible=sidebar_visible
                                 />
                             }.into_view()
                         } else {

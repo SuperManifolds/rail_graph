@@ -12,6 +12,9 @@
     flex-direction: column;
     overflow: visible;
     z-index: var(--z-base);
+    transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+    transform: translateX(0);
+    opacity: 1;
 
     .sidebar-header {
         padding: var(--spacing-xl);

@@ -298,6 +298,11 @@ label {
 
 .button-icon-only {
     @include button-icon-only;
+
+    &.active {
+        background-color: var(--color-bg-hover);
+        color: var(--color-accent);
+    }
 }
 
 .button-icon-close {

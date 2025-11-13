@@ -1627,6 +1627,7 @@ pub fn InfrastructureView(
     on_viewport_change: Option<leptos::Callback<crate::models::ViewportState>>,
     #[prop(optional)]
     on_open_project_manager: Option<leptos::Callback<()>>,
+    sidebar_visible: ReadSignal<bool>,
 ) -> impl IntoView {
     // Get user settings from context
     let (user_settings, _) = use_context::<(ReadSignal<UserSettings>, WriteSignal<UserSettings>)>()
@@ -2181,23 +2182,25 @@ pub fn InfrastructureView(
                 on_remove_waypoint=view_creation_callbacks.on_remove_waypoint.clone()
             />
 
-            <Sidebar
-                lines=lines
-                set_lines=set_lines
-                folders=folders
-                set_folders=set_folders
-                graph=graph
-                set_graph=set_graph
-                settings=settings
-                set_settings=set_settings
-                on_create_view=on_create_view
-                on_line_editor_opened=on_line_editor_opened
-                on_line_editor_closed=on_line_editor_closed
-                sidebar_width=sidebar_width
-                set_sidebar_width=set_sidebar_width
-                on_width_change=on_sidebar_width_change
-                on_open_project_manager=on_open_project_manager
-            />
+            {move || sidebar_visible.get().then(|| view! {
+                <Sidebar
+                    lines=lines
+                    set_lines=set_lines
+                    folders=folders
+                    set_folders=set_folders
+                    graph=graph
+                    set_graph=set_graph
+                    settings=settings
+                    set_settings=set_settings
+                    on_create_view=on_create_view
+                    on_line_editor_opened=on_line_editor_opened
+                    on_line_editor_closed=on_line_editor_closed
+                    sidebar_width=sidebar_width
+                    set_sidebar_width=set_sidebar_width
+                    on_width_change=on_sidebar_width_change
+                    on_open_project_manager=on_open_project_manager
+                />
+            })}
         </div>
     }
 }

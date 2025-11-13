@@ -156,6 +156,7 @@ pub fn TimeGraph(
     on_open_changelog: Option<leptos::Callback<()>>,
     #[prop(optional)]
     on_open_project_manager: Option<leptos::Callback<()>>,
+    sidebar_visible: ReadSignal<bool>,
 ) -> impl IntoView {
     let (visualization_time, set_visualization_time) =
         create_signal(chrono::Local::now().naive_local());
@@ -289,48 +290,50 @@ pub fn TimeGraph(
                     sidebar_width=sidebar_width
                 />
             </div>
-            <Sidebar
-                lines=lines
-                set_lines=set_lines
-                folders=folders
-                set_folders=set_folders
-                graph=graph
-                set_graph=set_graph
-                settings=settings
-                set_settings=set_settings
-                on_create_view=on_create_view
-                on_line_editor_opened=on_line_editor_opened
-                on_line_editor_closed=on_line_editor_closed
-                sidebar_width=sidebar_width
-                set_sidebar_width=set_sidebar_width
-                on_width_change=Some(on_sidebar_width_change)
-                on_open_changelog=on_open_changelog
-                on_open_project_manager=on_open_project_manager
-                header_children=Some(Box::new(move || view! {
-                    <DaySelector
-                        selected_day=selected_day
-                        set_selected_day=set_selected_day
-                    />
-                    <ErrorList
-                        conflicts=conflicts
-                        on_conflict_click=move |time_fraction, station_pos| {
-                            set_pan_to_conflict.set(Some((time_fraction, station_pos)));
-                        }
-                        graph=graph
-                        station_idx_map=station_idx_map
-                    />
-                }.into_view().into()))
-                footer_children=Some(Box::new(move || view! {
-                    <Legend
-                        show_conflicts=show_conflicts
-                        set_show_conflicts=set_show_conflicts
-                        show_line_blocks=show_line_blocks
-                        set_show_line_blocks=set_show_line_blocks
-                        spacing_mode=spacing_mode
-                        set_spacing_mode=set_spacing_mode
-                    />
-                }.into_view().into()))
-            />
+            {move || sidebar_visible.get().then(|| view! {
+                <Sidebar
+                    lines=lines
+                    set_lines=set_lines
+                    folders=folders
+                    set_folders=set_folders
+                    graph=graph
+                    set_graph=set_graph
+                    settings=settings
+                    set_settings=set_settings
+                    on_create_view=on_create_view
+                    on_line_editor_opened=on_line_editor_opened
+                    on_line_editor_closed=on_line_editor_closed
+                    sidebar_width=sidebar_width
+                    set_sidebar_width=set_sidebar_width
+                    on_width_change=Some(on_sidebar_width_change)
+                    on_open_changelog=on_open_changelog
+                    on_open_project_manager=on_open_project_manager
+                    header_children=Some(Box::new(move || view! {
+                        <DaySelector
+                            selected_day=selected_day
+                            set_selected_day=set_selected_day
+                        />
+                        <ErrorList
+                            conflicts=conflicts
+                            on_conflict_click=move |time_fraction, station_pos| {
+                                set_pan_to_conflict.set(Some((time_fraction, station_pos)));
+                            }
+                            graph=graph
+                            station_idx_map=station_idx_map
+                        />
+                    }.into_view().into()))
+                    footer_children=Some(Box::new(move || view! {
+                        <Legend
+                            show_conflicts=show_conflicts
+                            set_show_conflicts=set_show_conflicts
+                            show_line_blocks=show_line_blocks
+                            set_show_line_blocks=set_show_line_blocks
+                            spacing_mode=spacing_mode
+                            set_spacing_mode=set_spacing_mode
+                        />
+                    }.into_view().into()))
+                />
+            })}
         </div>
     }
 }
