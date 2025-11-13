@@ -1,22 +1,17 @@
 use crate::components::{
-    button::Button,
     day_selector::DaySelector,
     error_list::ErrorList,
     graph_canvas::GraphCanvas,
-    importer::Importer,
     legend::Legend,
-    line_controls::LineControls,
-    line_editor::LineEditor,
-    settings::Settings
+    sidebar::Sidebar
 };
 use crate::conflict::Conflict;
 #[allow(unused_imports)]
 use crate::logging::log;
 use crate::models::{Line, RailwayGraph, GraphView, Stations, Routes};
 use crate::train_journey::TrainJourney;
-use leptos::{component, view, Signal, IntoView, SignalGet, SignalGetUntracked, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, SignalWith, create_effect, Callable};
+use leptos::{component, view, Signal, IntoView, SignalGet, SignalGetUntracked, create_signal, create_memo, ReadSignal, WriteSignal, SignalUpdate, SignalSet, create_effect, Callable};
 use petgraph::visit::EdgeRef;
-use wasm_bindgen::JsCast;
 
 #[inline]
 fn compute_display_nodes(
@@ -157,9 +152,10 @@ pub fn TimeGraph(
     raw_conflicts: Signal<Vec<Conflict>>,
     on_create_view: leptos::Callback<GraphView>,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
-    set_show_project_manager: WriteSignal<bool>,
     #[prop(optional)]
     on_open_changelog: Option<leptos::Callback<()>>,
+    #[prop(optional)]
+    on_open_project_manager: Option<leptos::Callback<()>>,
 ) -> impl IntoView {
     let (visualization_time, set_visualization_time) =
         create_signal(chrono::Local::now().naive_local());
@@ -247,111 +243,27 @@ pub fn TimeGraph(
     // Signal for panning to conflicts
     let (pan_to_conflict, set_pan_to_conflict) = create_signal(None::<(f64, f64)>);
 
-    let (new_line_dialog_open, set_new_line_dialog_open) = create_signal(false);
-    let (next_line_number, set_next_line_number) = create_signal(1);
-
-    // Sidebar resize state
+    // Sidebar width state
     let initial_sidebar_width = view.as_ref().map_or(320.0, |v| v.viewport_state.sidebar_width);
     let (sidebar_width, set_sidebar_width) = create_signal(initial_sidebar_width);
-    let (is_resizing_sidebar, set_is_resizing_sidebar) = create_signal(false);
-    let (resize_start_x, set_resize_start_x) = create_signal(0.0);
-    let (resize_start_width, set_resize_start_width) = create_signal(0.0);
-    let (is_hovering_resize_edge, set_is_hovering_resize_edge) = create_signal(false);
+
+    // Callback for when sidebar width changes
+    let view_for_sidebar = view.clone();
+    let on_sidebar_width_change = leptos::Callback::new(move |new_width: f64| {
+        let viewport_state = view_for_sidebar.as_ref().map_or(
+            crate::models::ViewportState::default(),
+            |v| v.viewport_state.clone()
+        );
+        let mut updated_state = viewport_state;
+        updated_state.sidebar_width = new_width;
+        on_viewport_change.call(updated_state);
+    });
 
     // Wrap on_viewport_change to always include current sidebar_width
     let wrapped_viewport_change = leptos::Callback::new(move |mut viewport_state: crate::models::ViewportState| {
         viewport_state.sidebar_width = sidebar_width.get_untracked();
         on_viewport_change.call(viewport_state);
     });
-
-    // Mouse event handlers for sidebar resize
-    let handle_sidebar_mousedown = move |ev: leptos::ev::MouseEvent| {
-        let x = f64::from(ev.offset_x());
-        let resize_handle_width = 3.0;
-
-        // Check if mouse is near the left edge
-        if x < resize_handle_width {
-            set_is_resizing_sidebar.set(true);
-            set_resize_start_x.set(f64::from(ev.client_x()));
-            set_resize_start_width.set(sidebar_width.get());
-            ev.prevent_default();
-        }
-    };
-
-    let handle_sidebar_mousemove = move |ev: leptos::ev::MouseEvent| {
-        // Check for hover (only when not resizing)
-        if !is_resizing_sidebar.get() {
-            let x = f64::from(ev.offset_x());
-            let resize_handle_width = 3.0;
-            set_is_hovering_resize_edge.set(x < resize_handle_width);
-        }
-    };
-
-    let handle_sidebar_mouseleave = move |_ev: leptos::ev::MouseEvent| {
-        set_is_hovering_resize_edge.set(false);
-    };
-
-    // Attach window-level event listeners when resizing starts
-    let view_for_effect = view.clone();
-    create_effect(move |_| {
-        if is_resizing_sidebar.get() {
-            let window = leptos::window();
-
-            // Handle mouse move
-            let mousemove_closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |ev: web_sys::MouseEvent| {
-                let client_x = f64::from(ev.client_x());
-                let delta_x = resize_start_x.get_untracked() - client_x;
-                let new_width = (resize_start_width.get_untracked() + delta_x).clamp(200.0, 600.0);
-                set_sidebar_width.set(new_width);
-            }) as Box<dyn FnMut(_)>);
-
-            let _ = window.add_event_listener_with_callback(
-                "mousemove",
-                mousemove_closure.as_ref().unchecked_ref()
-            );
-
-            // Handle mouse up
-            let view_clone = view_for_effect.clone();
-            let mouseup_closure = wasm_bindgen::closure::Closure::wrap(Box::new(move |_ev: web_sys::MouseEvent| {
-                // Save sidebar width when resize completes
-                let viewport_state = view_clone.as_ref().map_or(
-                    crate::models::ViewportState::default(),
-                    |v| v.viewport_state.clone()
-                );
-                let mut updated_state = viewport_state;
-                updated_state.sidebar_width = sidebar_width.get_untracked();
-                on_viewport_change.call(updated_state);
-                set_is_resizing_sidebar.set(false);
-            }) as Box<dyn FnMut(_)>);
-
-            let _ = window.add_event_listener_with_callback(
-                "mouseup",
-                mouseup_closure.as_ref().unchecked_ref()
-            );
-
-            // Return cleanup function to remove listeners when effect re-runs or component unmounts
-            leptos::on_cleanup(move || {
-                let window = leptos::window();
-                let _ = window.remove_event_listener_with_callback(
-                    "mousemove",
-                    mousemove_closure.as_ref().unchecked_ref()
-                );
-                let _ = window.remove_event_listener_with_callback(
-                    "mouseup",
-                    mouseup_closure.as_ref().unchecked_ref()
-                );
-            });
-        }
-    });
-
-    // Cursor style based on resize state
-    let sidebar_cursor_style = move || {
-        if is_resizing_sidebar.get() || is_hovering_resize_edge.get() {
-            "cursor: col-resize;"
-        } else {
-            ""
-        }
-    };
 
     view! {
         <div class="time-graph-container">
@@ -377,18 +289,24 @@ pub fn TimeGraph(
                     sidebar_width=sidebar_width
                 />
             </div>
-            <div
-                class="sidebar"
-                style=move || format!("width: {}px; {}", sidebar_width.get(), sidebar_cursor_style())
-                on:mousedown=handle_sidebar_mousedown
-                on:mousemove=handle_sidebar_mousemove
-                on:mouseleave=handle_sidebar_mouseleave
-            >
-                <div class="sidebar-header">
-                    <h2>
-                        <img src="/static/railgraph.svg" alt="RailGraph" class="logo-icon" />
-                        "railgraph.app"
-                    </h2>
+            <Sidebar
+                lines=lines
+                set_lines=set_lines
+                folders=folders
+                set_folders=set_folders
+                graph=graph
+                set_graph=set_graph
+                settings=settings
+                set_settings=set_settings
+                on_create_view=on_create_view
+                on_line_editor_opened=on_line_editor_opened
+                on_line_editor_closed=on_line_editor_closed
+                sidebar_width=sidebar_width
+                set_sidebar_width=set_sidebar_width
+                on_width_change=Some(on_sidebar_width_change)
+                on_open_changelog=on_open_changelog
+                on_open_project_manager=on_open_project_manager
+                header_children=Some(Box::new(move || view! {
                     <DaySelector
                         selected_day=selected_day
                         set_selected_day=set_selected_day
@@ -401,37 +319,8 @@ pub fn TimeGraph(
                         graph=graph
                         station_idx_map=station_idx_map
                     />
-                </div>
-                <LineControls
-                    lines=lines
-                    set_lines=set_lines
-                    folders=folders
-                    set_folders=set_folders
-                    graph=graph
-                    on_create_view=on_create_view
-                    settings=settings
-                    set_settings=set_settings
-                    on_line_editor_opened=on_line_editor_opened
-                    on_line_editor_closed=on_line_editor_closed
-                />
-                <div class="sidebar-footer">
-                    <Button
-                        class="import-button"
-                        on_click=leptos::Callback::new(move |_| set_show_project_manager.set(true))
-                        shortcut_id="manage_projects"
-                        title="Manage Projects"
-                    >
-                        <i class="fa-solid fa-folder"></i>
-                    </Button>
-                    <Button
-                        class="import-button"
-                        on_click=leptos::Callback::new(move |_| set_new_line_dialog_open.set(true))
-                        shortcut_id="create_line"
-                        title="Create new line"
-                    >
-                        <i class="fa-solid fa-plus"></i>
-                    </Button>
-                    <Importer lines=lines set_lines=set_lines graph=graph set_graph=set_graph settings=settings />
+                }.into_view().into()))
+                footer_children=Some(Box::new(move || view! {
                     <Legend
                         show_conflicts=show_conflicts
                         set_show_conflicts=set_show_conflicts
@@ -440,72 +329,7 @@ pub fn TimeGraph(
                         spacing_mode=spacing_mode
                         set_spacing_mode=set_spacing_mode
                     />
-                    <Settings
-                        settings=Signal::derive(move || settings.get())
-                        set_settings=move |s| set_settings.set(s)
-                        on_open_changelog=move || {
-                            if let Some(cb) = on_open_changelog {
-                                cb.call(());
-                            }
-                        }
-                    />
-                </div>
-            </div>
-
-            <LineEditor
-                initial_line=Signal::derive(move || {
-                    if new_line_dialog_open.get() {
-                        let line_num = next_line_number.get();
-                        let line_id = format!("Line {line_num}");
-                        let existing_line_count = lines.get().len();
-
-                        Some(Line::create_from_ids(&[line_id], existing_line_count)[0].clone())
-                    } else {
-                        None
-                    }
-                })
-                is_open=Signal::derive(move || new_line_dialog_open.get())
-                set_is_open=move |open: bool| {
-                    if open {
-                        // Find next available line number when opening
-                        let current_lines = lines.get();
-                        let mut num = 1;
-                        loop {
-                            let candidate = format!("Line {num}");
-                            if !current_lines.iter().any(|l| l.name == candidate) {
-                                set_next_line_number.set(num);
-                                break;
-                            }
-                            num += 1;
-                        }
-                        set_new_line_dialog_open.set(true);
-                    } else {
-                        set_new_line_dialog_open.set(false);
-                    }
-                }
-                graph=graph
-                on_save=move |mut new_line: Line| {
-                    set_lines.update(|lines_vec| {
-                        // Check if this is a new line or an existing one
-                        if let Some(existing) = lines_vec.iter_mut().find(|l| l.id == new_line.id) {
-                            // Update existing line
-                            *existing = new_line;
-                        } else {
-                            // Add new line - assign sort_index if in Manual mode
-                            if settings.with(|s| s.line_sort_mode == crate::models::LineSortMode::Manual) {
-                                #[allow(clippy::cast_precision_loss)]
-                                let max_sort_index = lines_vec
-                                    .iter()
-                                    .filter_map(|l| l.sort_index)
-                                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                                    .unwrap_or(-1.0);
-                                new_line.sort_index = Some(max_sort_index + 1.0);
-                            }
-                            lines_vec.push(new_line);
-                        }
-                    });
-                }
-                settings=settings
+                }.into_view().into()))
             />
         </div>
     }
