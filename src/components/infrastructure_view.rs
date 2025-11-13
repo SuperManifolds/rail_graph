@@ -5,6 +5,7 @@ use crate::components::canvas_viewport;
 use crate::components::canvas_controls_hint::CanvasControlsHint;
 use crate::components::multi_select_toolbar::MultiSelectToolbar;
 use crate::components::graph_canvas::types::ViewportState;
+use crate::components::sidebar::Sidebar;
 use crate::theme::{Theme, use_theme};
 use crate::components::add_station::{AddStation, AddStationsBatchCallback};
 use crate::components::add_station_quick::QuickEntryStation;
@@ -1615,16 +1616,17 @@ pub fn InfrastructureView(
     set_graph: WriteSignal<RailwayGraph>,
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
-    #[allow(unused_variables)]
     folders: ReadSignal<Vec<crate::models::LineFolder>>,
-    #[allow(unused_variables)]
     set_folders: WriteSignal<Vec<crate::models::LineFolder>>,
     on_create_view: leptos::Callback<crate::models::GraphView>,
     settings: ReadSignal<crate::models::ProjectSettings>,
+    set_settings: WriteSignal<crate::models::ProjectSettings>,
     #[prop(optional)]
     initial_viewport: Option<crate::models::ViewportState>,
     #[prop(optional)]
     on_viewport_change: Option<leptos::Callback<crate::models::ViewportState>>,
+    #[prop(optional)]
+    on_open_project_manager: Option<leptos::Callback<()>>,
 ) -> impl IntoView {
     // Get user settings from context
     let (user_settings, _) = use_context::<(ReadSignal<UserSettings>, WriteSignal<UserSettings>)>()
@@ -1692,6 +1694,9 @@ pub fn InfrastructureView(
     let view_creation = crate::components::view_creation::ViewCreationState::new(edit_mode);
     let view_creation_callbacks = view_creation.create_callbacks(graph, set_edit_mode, on_create_view);
 
+    // Extract sidebar width before moving initial_viewport
+    let initial_sidebar_width = initial_viewport.as_ref().map_or(320.0, |v| v.sidebar_width);
+
     let viewport = if let Some(initial) = initial_viewport {
         canvas_viewport::create_viewport_signals_with_initial(false, initial)
     } else {
@@ -1703,6 +1708,41 @@ pub fn InfrastructureView(
     let pan_offset_y = viewport.pan_offset_y;
     let set_pan_offset_y = viewport.set_pan_offset_y;
     let is_panning = viewport.is_panning;
+
+    // Sidebar width state
+    let (sidebar_width, set_sidebar_width) = create_signal(initial_sidebar_width);
+
+    // Callback for when sidebar width changes
+    let on_sidebar_width_change = on_viewport_change.map(|on_change| {
+        leptos::Callback::new(move |new_width: f64| {
+            let viewport_state = crate::models::ViewportState {
+                zoom_level: zoom_level.get_untracked(),
+                zoom_level_x: None,
+                pan_offset_x: pan_offset_x.get_untracked(),
+                pan_offset_y: pan_offset_y.get_untracked(),
+                sidebar_width: new_width,
+                show_lines: show_lines.get_untracked(),
+                station_label_width: 0.0,
+            };
+            on_change.call(viewport_state);
+        })
+    });
+
+    // Line editor state (for dimming effect, though infrastructure view may not need it)
+    let (edited_line_ids, set_edited_line_ids) = create_signal(std::collections::HashSet::<uuid::Uuid>::new());
+
+    // Line editor callbacks
+    let on_line_editor_opened = leptos::Callback::new(move |line_id: uuid::Uuid| {
+        let mut ids = edited_line_ids.get();
+        ids.insert(line_id);
+        set_edited_line_ids.set(ids);
+    });
+
+    let on_line_editor_closed = leptos::Callback::new(move |line_id: uuid::Uuid| {
+        let mut ids = edited_line_ids.get();
+        ids.remove(&line_id);
+        set_edited_line_ids.set(ids);
+    });
 
     // Debounce is_zooming flag: clear it after 150ms of no zoom activity
     let zoom_timeout_handle: Rc<RefCell<Option<i32>>> = Rc::new(RefCell::new(None));
@@ -1952,7 +1992,10 @@ pub fn InfrastructureView(
                     set_edit_mode=set_edit_mode
                     set_selected_station=set_selected_station
                 />
-                <CanvasControlsHint visible=show_hint right_offset=20.0 />
+                <CanvasControlsHint
+                    visible=show_hint
+                    right_offset=Signal::derive(move || sidebar_width.get() + 20.0)
+                />
                 <MultiSelectToolbar
                     selected_stations=selected_stations
                     selection_box_start=selection_box_start
@@ -2136,6 +2179,24 @@ pub fn InfrastructureView(
                 on_create=view_creation_callbacks.on_create.clone()
                 on_add_waypoint=view_creation_callbacks.on_add_waypoint.clone()
                 on_remove_waypoint=view_creation_callbacks.on_remove_waypoint.clone()
+            />
+
+            <Sidebar
+                lines=lines
+                set_lines=set_lines
+                folders=folders
+                set_folders=set_folders
+                graph=graph
+                set_graph=set_graph
+                settings=settings
+                set_settings=set_settings
+                on_create_view=on_create_view
+                on_line_editor_opened=on_line_editor_opened
+                on_line_editor_closed=on_line_editor_closed
+                sidebar_width=sidebar_width
+                set_sidebar_width=set_sidebar_width
+                on_width_change=on_sidebar_width_change
+                on_open_project_manager=on_open_project_manager
             />
         </div>
     }

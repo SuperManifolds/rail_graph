@@ -890,9 +890,13 @@ pub fn App() -> impl IntoView {
                             set_folders=set_folders
                             on_create_view=on_create_view
                             settings=settings
+                            set_settings=set_settings
                             initial_viewport=infrastructure_viewport.get_untracked()
                             on_viewport_change=Callback::new(move |viewport_state: ViewportState| {
                                 set_infrastructure_viewport.set(viewport_state);
+                            })
+                            on_open_project_manager=Callback::new(move |()| {
+                                set_show_project_manager.set(true);
                             })
                         />
                     }.into_view(),
@@ -920,9 +924,11 @@ pub fn App() -> impl IntoView {
                                     on_viewport_change=Callback::new(move |viewport_state: ViewportState| {
                                         on_viewport_change(view_id, viewport_state);
                                     })
-                                    set_show_project_manager=set_show_project_manager
                                     on_open_changelog=Callback::new(move |()| {
                                         set_manual_open_changelog.set(true);
+                                    })
+                                    on_open_project_manager=Callback::new(move |()| {
+                                        set_show_project_manager.set(true);
                                     })
                                 />
                             }.into_view()

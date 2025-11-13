@@ -43,6 +43,7 @@ pub mod project_manager;
 pub mod report_issue_button;
 pub mod settings;
 pub mod routing_rule_editor;
+pub mod sidebar;
 pub mod station_label_tooltip;
 pub mod tab_shortcuts;
 pub mod tab_view;
