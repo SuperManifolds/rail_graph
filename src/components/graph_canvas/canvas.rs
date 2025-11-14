@@ -405,6 +405,7 @@ pub fn GraphCanvas(
                         station_label_width: label_width,
                         sidebar_width: 320.0, // Will be overridden by TimeGraph wrapper
                         show_lines: false, // Time graph doesn't use this setting
+                        hide_unscheduled_in_line_mode: true, // Time graph doesn't use this setting
                     });
                 },
                 Duration::from_millis(300)

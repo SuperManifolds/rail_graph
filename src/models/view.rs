@@ -40,6 +40,8 @@ pub struct ViewportState {
     pub sidebar_width: f64,
     #[serde(default)]
     pub show_lines: bool,
+    #[serde(default = "default_hide_unscheduled")]
+    pub hide_unscheduled_in_line_mode: bool,
 }
 
 fn default_zoom() -> f64 {
@@ -54,6 +56,10 @@ fn default_sidebar_width() -> f64 {
     320.0
 }
 
+fn default_hide_unscheduled() -> bool {
+    true
+}
+
 impl Default for ViewportState {
     fn default() -> Self {
         Self {
@@ -64,6 +70,7 @@ impl Default for ViewportState {
             station_label_width: 120.0,
             sidebar_width: 320.0,
             show_lines: false,
+            hide_unscheduled_in_line_mode: true,
         }
     }
 }
