@@ -407,6 +407,7 @@ fn draw_perpendicular_ticks(
     is_selected: bool,
     scale: f64,
     palette: &Palette,
+    edge_to_lines: &IndexMap<EdgeIndex, Vec<&Line>>,
 ) {
     let tick_length = TICK_LENGTH * scale;
 
@@ -428,7 +429,7 @@ fn draw_perpendicular_ticks(
     let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
 
     // Calculate the angle of this specific line at this station
-    let line_angle = calculate_line_angle_for_line(station_idx, line, graph);
+    let line_angle = calculate_line_angle_for_line(station_idx, line, graph, edge_to_lines);
 
     // Calculate perpendicular angle (90 degrees from line angle)
     let perp_angle = line_angle + std::f64::consts::FRAC_PI_2;
@@ -671,41 +672,54 @@ fn draw_line_name_label(
 
 /// Calculate the average angle of all lines passing through a station
 #[allow(clippy::cast_precision_loss)]
-fn calculate_line_angle(station_idx: NodeIndex, graph: &RailwayGraph) -> f64 {
+fn calculate_line_angle(
+    station_idx: NodeIndex,
+    graph: &RailwayGraph,
+    edge_to_lines: &IndexMap<EdgeIndex, Vec<&Line>>,
+) -> f64 {
     use petgraph::visit::EdgeRef;
 
-    // Get connected edges
-    let mut angles = Vec::new();
-    for edge in graph.graph.edges(station_idx) {
-        let (source, target) = (edge.source(), edge.target());
-        let other_node = if source == station_idx {
-            target
-        } else {
-            source
-        };
+    // Find the edge with the most lines going through it
+    let mut max_line_count = 0;
+    let mut best_angle = 0.0;
 
-        if let (Some(station_pos), Some(other_pos)) = (
-            graph.get_station_position(station_idx),
-            graph.get_station_position(other_node),
-        ) {
-            let dx = other_pos.0 - station_pos.0;
-            let dy = other_pos.1 - station_pos.1;
-            let angle = dy.atan2(dx);
-            angles.push(angle);
+    for edge in graph.graph.edges(station_idx) {
+        let edge_idx = edge.id();
+        let line_count = edge_to_lines.get(&edge_idx).map_or(0, std::vec::Vec::len);
+
+        if line_count > max_line_count {
+            let (source, target) = (edge.source(), edge.target());
+            let other_node = if source == station_idx {
+                target
+            } else {
+                source
+            };
+
+            if let (Some(station_pos), Some(other_pos)) = (
+                graph.get_station_position(station_idx),
+                graph.get_station_position(other_node),
+            ) {
+                let dx = other_pos.0 - station_pos.0;
+                let dy = other_pos.1 - station_pos.1;
+                let angle = dy.atan2(dx);
+
+                max_line_count = line_count;
+                best_angle = angle;
+            }
         }
     }
 
-    if angles.is_empty() {
-        return 0.0; // Default to horizontal
-    }
-
-    // Calculate average angle (handling wraparound)
-    angles.iter().sum::<f64>() / angles.len() as f64
+    best_angle // Returns 0.0 if no edges found
 }
 
 /// Calculate the angle of a specific line at a station
 #[allow(clippy::cast_precision_loss)]
-fn calculate_line_angle_for_line(station_idx: NodeIndex, line: &Line, graph: &RailwayGraph) -> f64 {
+fn calculate_line_angle_for_line(
+    station_idx: NodeIndex,
+    line: &Line,
+    graph: &RailwayGraph,
+    edge_to_lines: &IndexMap<EdgeIndex, Vec<&Line>>,
+) -> f64 {
     // Find the edge(s) this line uses at this station
     for segment in &line.forward_route {
         let edge_idx = EdgeIndex::new(segment.edge_index);
@@ -728,8 +742,8 @@ fn calculate_line_angle_for_line(station_idx: NodeIndex, line: &Line, graph: &Ra
         }
     }
 
-    // Fallback: use average of all lines at station
-    calculate_line_angle(station_idx, graph)
+    // Fallback: use edge with most lines at station
+    calculate_line_angle(station_idx, graph, edge_to_lines)
 }
 
 /// Draw a pill marker covering multiple lines at a station
@@ -744,9 +758,10 @@ fn draw_multi_line_pill(
     zoom: f64,
     palette: &Palette,
     is_selected: bool,
+    edge_to_lines: &IndexMap<EdgeIndex, Vec<&Line>>,
 ) {
     // Calculate rotation based on line direction through station
-    let angle = calculate_line_angle(station_idx, graph);
+    let angle = calculate_line_angle(station_idx, graph, edge_to_lines);
 
     // Calculate perpendicular direction for the pill (perpendicular to average line angle)
     let pill_perp_x = -angle.sin();
@@ -1130,6 +1145,7 @@ pub fn draw_line_stations(
                 zoom,
                 palette,
                 is_selected,
+                &edge_to_lines,
             );
         } else {
             // Check if this is a single-line terminus station
@@ -1141,7 +1157,7 @@ pub fn draw_line_stations(
             if is_single_line_terminus {
                 // Draw perpendicular T-shape ticks for terminus stations with one line
                 if let Some(line) = stopping_lines.first() {
-                    draw_perpendicular_ticks(ctx, pos, &line.color, idx, line, &visual_positions_map, graph, zoom, is_selected, marker_scale, palette);
+                    draw_perpendicular_ticks(ctx, pos, &line.color, idx, line, &visual_positions_map, graph, zoom, is_selected, marker_scale, palette, &edge_to_lines);
                 }
             } else {
                 // Draw individual ticks for each stopping line at their actual line positions
@@ -1172,7 +1188,7 @@ pub fn draw_line_stations(
             None
         } else {
             // Calculate the angle of lines through this station
-            let angle = calculate_line_angle(idx, graph);
+            let angle = calculate_line_angle(idx, graph, &edge_to_lines);
 
             // Calculate perpendicular direction
             let perp_x = -angle.sin();
