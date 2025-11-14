@@ -1,0 +1,42 @@
+@import '../../style/mixins';
+
+.line-settings-panel {
+    position: absolute;
+    top: calc(var(--spacing-md) + 52px + var(--spacing-sm));
+    left: var(--spacing-md);
+    @include popover;
+    border-radius: var(--radius-xxl);
+    padding: var(--spacing-md) var(--spacing-lg);
+    pointer-events: auto;
+    z-index: 110;
+    min-width: 280px;
+
+    &.hidden {
+        display: none;
+    }
+}
+
+.line-settings-checkbox {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    cursor: pointer;
+    color: var(--color-text-primary);
+    font-size: var(--font-size-base);
+    user-select: none;
+
+    input[type="checkbox"] {
+        cursor: pointer;
+        width: 16px;
+        height: 16px;
+        margin: 0;
+    }
+
+    span {
+        white-space: nowrap;
+    }
+
+    &:hover {
+        color: var(--color-text-tertiary);
+    }
+}
