@@ -42,6 +42,8 @@ pub struct ViewportState {
     pub show_lines: bool,
     #[serde(default = "default_hide_unscheduled")]
     pub hide_unscheduled_in_line_mode: bool,
+    #[serde(default = "default_line_gap_width")]
+    pub line_gap_width: f64,
 }
 
 fn default_zoom() -> f64 {
@@ -60,6 +62,10 @@ fn default_hide_unscheduled() -> bool {
     true
 }
 
+fn default_line_gap_width() -> f64 {
+    5.0
+}
+
 impl Default for ViewportState {
     fn default() -> Self {
         Self {
@@ -71,6 +77,7 @@ impl Default for ViewportState {
             sidebar_width: 320.0,
             show_lines: false,
             hide_unscheduled_in_line_mode: true,
+            line_gap_width: 5.0,
         }
     }
 }

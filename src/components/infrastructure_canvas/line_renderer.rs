@@ -1097,6 +1097,7 @@ pub fn draw_lines(
     junctions: &HashSet<NodeIndex>,
     theme: Theme,
     highlighted_edges: &HashSet<EdgeIndex>,
+    line_gap_width: f64,
 ) {
     let (left, top, right, bottom) = viewport_bounds;
     let margin = 200.0; // Buffer to include lines slightly outside viewport
@@ -1120,7 +1121,7 @@ pub fn draw_lines(
     let section_lines = get_lines_in_section_sorted(&sections, &sorted_lines);
 
     // Gap width for spacing between lines
-    let gap_width = (LINE_BASE_WIDTH + 2.0) / zoom;
+    let gap_width = line_gap_width / zoom;
 
     // Group lines by edge for rendering (needed for position assignment)
     let mut edge_to_lines: IndexMap<EdgeIndex, Vec<&Line>> = IndexMap::new();
