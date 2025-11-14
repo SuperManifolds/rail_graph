@@ -527,15 +527,29 @@ fn draw_single_junction_connection(
         .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
         .collect();
     let entry_num_gaps = entry_section_ordering.len().saturating_sub(1);
-    let entry_total_width: f64 = entry_section_widths.iter().sum::<f64>()
+    let entry_actual_width: f64 = entry_section_widths.iter().sum::<f64>()
         + (entry_num_gaps as f64) * gap_width;
+    // Always center as if there's an odd number of lines
+    let entry_total_width = if entry_section_ordering.len() % 2 == 0 {
+        // Even number: add phantom line width + gap for centering
+        entry_actual_width + entry_section_widths.last().copied().unwrap_or(0.0) + gap_width
+    } else {
+        entry_actual_width
+    };
 
     let exit_section_widths: Vec<f64> = exit_section_ordering.iter()
         .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
         .collect();
     let exit_num_gaps = exit_section_ordering.len().saturating_sub(1);
-    let exit_total_width: f64 = exit_section_widths.iter().sum::<f64>()
+    let exit_actual_width: f64 = exit_section_widths.iter().sum::<f64>()
         + (exit_num_gaps as f64) * gap_width;
+    // Always center as if there's an odd number of lines
+    let exit_total_width = if exit_section_ordering.len() % 2 == 0 {
+        // Even number: add phantom line width + gap for centering
+        exit_actual_width + exit_section_widths.last().copied().unwrap_or(0.0) + gap_width
+    } else {
+        exit_actual_width
+    };
 
     // Get visual position maps
     let entry_visual_map = section_visual_positions.get(&entry_section_id)
@@ -791,16 +805,28 @@ fn draw_junction_connections(
             .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
             .collect();
         let entry_num_gaps = entry_section_ordering.len().saturating_sub(1);
-        let entry_total_width: f64 = entry_section_widths.iter().sum::<f64>()
+        let entry_actual_width: f64 = entry_section_widths.iter().sum::<f64>()
             + (entry_num_gaps as f64) * gap_width;
+        // Always center as if there's an odd number of lines
+        let entry_total_width = if entry_section_ordering.len() % 2 == 0 {
+            entry_actual_width + entry_section_widths.last().copied().unwrap_or(0.0) + gap_width
+        } else {
+            entry_actual_width
+        };
 
         // Calculate widths for exit section
         let exit_section_widths: Vec<f64> = exit_section_ordering.iter()
             .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
             .collect();
         let exit_num_gaps = exit_section_ordering.len().saturating_sub(1);
-        let exit_total_width: f64 = exit_section_widths.iter().sum::<f64>()
+        let exit_actual_width: f64 = exit_section_widths.iter().sum::<f64>()
             + (exit_num_gaps as f64) * gap_width;
+        // Always center as if there's an odd number of lines
+        let exit_total_width = if exit_section_ordering.len() % 2 == 0 {
+            exit_actual_width + exit_section_widths.last().copied().unwrap_or(0.0) + gap_width
+        } else {
+            exit_actual_width
+        };
 
         // Get visual position maps for entry and exit edges
         let entry_visual_map = section_visual_positions.get(&entry_section_id)
@@ -1297,8 +1323,14 @@ pub fn draw_lines(
                 .collect();
 
             let num_gaps = section_ordering.len().saturating_sub(1);
-            let total_section_width: f64 = section_line_widths.iter().sum::<f64>()
+            let actual_section_width: f64 = section_line_widths.iter().sum::<f64>()
                 + (num_gaps as f64) * gap_width;
+            // Always center as if there's an odd number of lines
+            let total_section_width = if section_ordering.len() % 2 == 0 {
+                actual_section_width + section_line_widths.last().copied().unwrap_or(0.0) + gap_width
+            } else {
+                actual_section_width
+            };
 
             let start_offset = -total_section_width / 2.0;
             let offset_sum: f64 = section_line_widths.iter().take(visual_pos)
@@ -1448,8 +1480,14 @@ pub fn draw_lines(
                 .collect();
 
             let num_gaps = section_ordering.len().saturating_sub(1);
-            let total_section_width: f64 = section_line_widths.iter().sum::<f64>()
+            let actual_section_width: f64 = section_line_widths.iter().sum::<f64>()
                 + (num_gaps as f64) * gap_width;
+            // Always center as if there's an odd number of lines
+            let total_section_width = if section_ordering.len() % 2 == 0 {
+                actual_section_width + section_line_widths.last().copied().unwrap_or(0.0) + gap_width
+            } else {
+                actual_section_width
+            };
 
             // Calculate offset based on visual position (NOT compacted)
             let start_offset = -total_section_width / 2.0;
@@ -1510,8 +1548,14 @@ pub fn draw_lines(
                 .collect();
 
             let num_gaps = section_ordering.len().saturating_sub(1);
-            let total_section_width: f64 = section_line_widths.iter().sum::<f64>()
+            let actual_section_width: f64 = section_line_widths.iter().sum::<f64>()
                 + (num_gaps as f64) * gap_width;
+            // Always center as if there's an odd number of lines
+            let total_section_width = if section_ordering.len() % 2 == 0 {
+                actual_section_width + section_line_widths.last().copied().unwrap_or(0.0) + gap_width
+            } else {
+                actual_section_width
+            };
             let start_offset = -total_section_width / 2.0;
 
             for (visual_pos, line) in &positioned_lines {

@@ -1017,7 +1017,13 @@ fn calculate_line_extents_at_stations(
                 .collect();
 
             let num_gaps = section_ordering.len().saturating_sub(1);
-            let total_width: f64 = section_line_widths.iter().sum::<f64>() + (num_gaps as f64) * gap_width;
+            let actual_width: f64 = section_line_widths.iter().sum::<f64>() + (num_gaps as f64) * gap_width;
+            // Always center as if there's an odd number of lines
+            let total_width = if section_ordering.len() % 2 == 0 {
+                actual_width + section_line_widths.last().copied().unwrap_or(0.0) + gap_width
+            } else {
+                actual_width
+            };
 
             for line in section_ordering {
                 if let Some(visual_pos) = visual_pos_map.get(&line.id) {
