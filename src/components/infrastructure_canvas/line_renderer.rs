@@ -12,6 +12,35 @@ const AVOIDANCE_OFFSET_THRESHOLD: f64 = 0.1;
 const TRANSITION_LENGTH: f64 = 30.0;
 const JUNCTION_STOP_DISTANCE: f64 = 14.0;
 
+/// Check if a station is a terminal (first or last stop) for a given line
+fn is_line_terminal(station_idx: NodeIndex, line: &Line, graph: &RailwayGraph) -> bool {
+    if line.forward_route.is_empty() {
+        return false;
+    }
+
+    // Check if this is the first station (line starts here)
+    if let Some(first_segment) = line.forward_route.first() {
+        let first_edge_idx = EdgeIndex::new(first_segment.edge_index);
+        if let Some((source, _target)) = graph.graph.edge_endpoints(first_edge_idx) {
+            if source == station_idx {
+                return true;
+            }
+        }
+    }
+
+    // Check if this is the last station (line ends here)
+    if let Some(last_segment) = line.forward_route.last() {
+        let last_edge_idx = EdgeIndex::new(last_segment.edge_index);
+        if let Some((_source, target)) = graph.graph.edge_endpoints(last_edge_idx) {
+            if target == station_idx {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 /// Unique identifier for a section (group of edges between junctions)
 pub type SectionId = usize;
 
@@ -1502,26 +1531,43 @@ pub fn draw_lines(
             let ox = nx * offset;
             let oy = ny * offset;
 
+            // Extend line to center of terminal stations (undo shortening for terminals)
+            let mut line_pos1 = actual_pos1;
+            let mut line_pos2 = actual_pos2;
+
+            // Check if source is terminal for this line
+            // Extend to center regardless of whether other lines have curves at this station
+            if !source_is_junction && is_line_terminal(source, line, graph) {
+                // Extend back to station center
+                line_pos1 = (pos1.0, pos1.1);
+            }
+
+            // Check if target is terminal for this line
+            if !target_is_junction && is_line_terminal(target, line, graph) {
+                // Extend back to station center
+                line_pos2 = (pos2.0, pos2.1);
+            }
+
             ctx.set_line_width(line_world_width);
             ctx.set_stroke_style_str(&line.color);
             ctx.begin_path();
 
             if needs_avoidance {
                 // Draw segmented path: start -> offset section -> end
-                let segment_length = ((actual_pos2.0 - actual_pos1.0).powi(2) + (actual_pos2.1 - actual_pos1.1).powi(2)).sqrt();
+                let segment_length = ((line_pos2.0 - line_pos1.0).powi(2) + (line_pos2.1 - line_pos1.1).powi(2)).sqrt();
 
                 // Check if we're connecting to junctions
                 let start_needs_transition = !source_is_junction;
                 let end_needs_transition = !target_is_junction;
 
                 draw_line_segment_with_avoidance(
-                    ctx, actual_pos1, actual_pos2, segment_length,
+                    ctx, line_pos1, line_pos2, segment_length,
                     (ox, oy), (avoid_x, avoid_y),
                     (start_needs_transition, end_needs_transition)
                 );
             } else {
-                ctx.move_to(actual_pos1.0 + ox, actual_pos1.1 + oy);
-                ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);
+                ctx.move_to(line_pos1.0 + ox, line_pos1.1 + oy);
+                ctx.line_to(line_pos2.0 + ox, line_pos2.1 + oy);
             }
 
             let is_highlighted = highlighted_edges.contains(edge_idx);
@@ -1531,13 +1577,13 @@ pub fn draw_lines(
             let cap_radius = line_world_width / 2.0;
             // Draw cap at source (whether junction or station)
             ctx.begin_path();
-            let _ = ctx.arc(actual_pos1.0 + ox, actual_pos1.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+            let _ = ctx.arc(line_pos1.0 + ox, line_pos1.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
             ctx.set_fill_style_str(&line.color);
             ctx.fill();
 
             // Draw cap at target (whether junction or station)
             ctx.begin_path();
-            let _ = ctx.arc(actual_pos2.0 + ox, actual_pos2.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+            let _ = ctx.arc(line_pos2.0 + ox, line_pos2.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
             ctx.set_fill_style_str(&line.color);
             ctx.fill();
         } else {
@@ -1571,6 +1617,23 @@ pub fn draw_lines(
                 let ox = nx * offset;
                 let oy = ny * offset;
 
+                // Extend line to center of terminal stations (undo shortening for terminals)
+                let mut line_pos1 = actual_pos1;
+                let mut line_pos2 = actual_pos2;
+
+                // Check if source is terminal for this line
+                // Extend to center regardless of whether other lines have curves at this station
+                if !source_is_junction && is_line_terminal(source, line, graph) {
+                    // Extend back to station center
+                    line_pos1 = (pos1.0, pos1.1);
+                }
+
+                // Check if target is terminal for this line
+                if !target_is_junction && is_line_terminal(target, line, graph) {
+                    // Extend back to station center
+                    line_pos2 = (pos2.0, pos2.1);
+                }
+
                 // Set line width (already calculated with zoom adjustment)
                 ctx.set_line_width(line_world_width);
                 ctx.set_stroke_style_str(&line.color);
@@ -1578,20 +1641,20 @@ pub fn draw_lines(
 
                 if needs_avoidance {
                     // Draw segmented path with offset
-                    let segment_length = ((actual_pos2.0 - actual_pos1.0).powi(2) + (actual_pos2.1 - actual_pos1.1).powi(2)).sqrt();
+                    let segment_length = ((line_pos2.0 - line_pos1.0).powi(2) + (line_pos2.1 - line_pos1.1).powi(2)).sqrt();
 
                     // Check if we're connecting to junctions
                     let start_needs_transition = !source_is_junction;
                     let end_needs_transition = !target_is_junction;
 
                     draw_line_segment_with_avoidance(
-                        ctx, actual_pos1, actual_pos2, segment_length,
+                        ctx, line_pos1, line_pos2, segment_length,
                         (ox, oy), (avoid_x, avoid_y),
                         (start_needs_transition, end_needs_transition)
                     );
                 } else {
-                    ctx.move_to(actual_pos1.0 + ox, actual_pos1.1 + oy);
-                    ctx.line_to(actual_pos2.0 + ox, actual_pos2.1 + oy);
+                    ctx.move_to(line_pos1.0 + ox, line_pos1.1 + oy);
+                    ctx.line_to(line_pos2.0 + ox, line_pos2.1 + oy);
                 }
 
                 let is_highlighted = highlighted_edges.contains(edge_idx);
@@ -1601,13 +1664,13 @@ pub fn draw_lines(
                 let cap_radius = line_world_width / 2.0;
                 // Draw cap at source (whether junction or station)
                 ctx.begin_path();
-                let _ = ctx.arc(actual_pos1.0 + ox, actual_pos1.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+                let _ = ctx.arc(line_pos1.0 + ox, line_pos1.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
                 ctx.set_fill_style_str(&line.color);
                 ctx.fill();
 
                 // Draw cap at target (whether junction or station)
                 ctx.begin_path();
-                let _ = ctx.arc(actual_pos2.0 + ox, actual_pos2.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+                let _ = ctx.arc(line_pos2.0 + ox, line_pos2.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
                 ctx.set_fill_style_str(&line.color);
                 ctx.fill();
             }
