@@ -954,25 +954,34 @@ fn calculate_line_extents_at_stations(
 
         let Some(station_pos) = graph.get_station_position(station_idx) else { continue };
 
-        // Calculate angle of lines through station
-        let mut angles = Vec::new();
-        for edge in graph.graph.edges(station_idx) {
-            let (source, target) = (edge.source(), edge.target());
-            let other_node = if source == station_idx { target } else { source };
+        // Calculate angle based on edge with most lines (same logic as pills)
+        let mut max_line_count = 0;
+        let mut best_angle = 0.0;
 
-            if let Some(other_pos) = graph.get_station_position(other_node) {
-                let dx = other_pos.0 - station_pos.0;
-                let dy = other_pos.1 - station_pos.1;
-                let angle = dy.atan2(dx);
-                angles.push(angle);
+        for edge in graph.graph.edges(station_idx) {
+            let edge_idx = edge.id();
+            let line_count = edge_to_lines.get(&edge_idx).map_or(0, std::vec::Vec::len);
+
+            if line_count > max_line_count {
+                let (source, target) = (edge.source(), edge.target());
+                let other_node = if source == station_idx { target } else { source };
+
+                if let Some(other_pos) = graph.get_station_position(other_node) {
+                    let dx = other_pos.0 - station_pos.0;
+                    let dy = other_pos.1 - station_pos.1;
+                    let angle = dy.atan2(dx);
+
+                    max_line_count = line_count;
+                    best_angle = angle;
+                }
             }
         }
 
-        if angles.is_empty() {
-            continue;
+        if max_line_count == 0 {
+            continue; // No lines at this station
         }
 
-        let avg_angle = angles.iter().sum::<f64>() / angles.len() as f64;
+        let avg_angle = best_angle;
 
         // Calculate perpendicular direction
         let perp_x = -avg_angle.sin();
