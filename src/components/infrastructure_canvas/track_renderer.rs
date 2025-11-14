@@ -504,3 +504,160 @@ pub fn draw_tracks(
         }
     }
 }
+
+/// Draw tracks, excluding edges that have scheduled lines
+#[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
+pub fn draw_tracks_filtered(
+    ctx: &CanvasRenderingContext2d,
+    graph: &RailwayGraph,
+    zoom: f64,
+    highlighted_edges: &HashSet<petgraph::stable_graph::EdgeIndex>,
+    cached_avoidance: &HashMap<EdgeIndex, (f64, f64)>,
+    viewport_bounds: (f64, f64, f64, f64),
+    junctions: &HashSet<NodeIndex>,
+    theme: Theme,
+    orphaned_tracks: &HashMap<(EdgeIndex, NodeIndex), HashSet<usize>>,
+    crossover_intersections: &HashMap<(EdgeIndex, NodeIndex, usize), (f64, f64)>,
+    excluded_edges: &HashSet<EdgeIndex>,
+) {
+    let palette = get_palette(theme);
+    let (left, top, right, bottom) = viewport_bounds;
+    let margin = 200.0; // Buffer to include tracks slightly outside viewport
+
+    for edge in graph.graph.edge_references() {
+        let edge_id = edge.id();
+
+        // Skip edges that have scheduled lines (they'll be drawn as lines instead)
+        if excluded_edges.contains(&edge_id) {
+            continue;
+        }
+
+        let source = edge.source();
+        let target = edge.target();
+        let Some(pos1) = graph.get_station_position(source) else { continue };
+        let Some(pos2) = graph.get_station_position(target) else { continue };
+
+        // Viewport culling: skip tracks completely outside visible area
+        let min_x = pos1.0.min(pos2.0);
+        let max_x = pos1.0.max(pos2.0);
+        let min_y = pos1.1.min(pos2.1);
+        let max_y = pos1.1.max(pos2.1);
+
+        if max_x < left - margin || min_x > right + margin ||
+           max_y < top - margin || min_y > bottom + margin {
+            continue;
+        }
+
+        let track_count = edge.weight().tracks.len();
+
+        if track_count == 0 {
+            continue;
+        }
+
+        // Check if this edge is highlighted (part of preview path)
+        let is_highlighted = highlighted_edges.contains(&edge_id);
+        let track_color = if is_highlighted { palette.highlighted_track } else { palette.track };
+
+        // Check if source or target is a junction (use cached set)
+        let source_is_junction = junctions.contains(&source);
+        let target_is_junction = junctions.contains(&target);
+
+        // Use cached avoidance offset
+        let (avoid_x, avoid_y) = cached_avoidance.get(&edge_id).copied().unwrap_or((0.0, 0.0));
+        let needs_avoidance = avoid_x.abs() > AVOIDANCE_OFFSET_THRESHOLD || avoid_y.abs() > AVOIDANCE_OFFSET_THRESHOLD;
+
+        let dx = pos2.0 - pos1.0;
+        let dy = pos2.1 - pos1.1;
+        let len = (dx * dx + dy * dy).sqrt();
+
+        // Calculate perpendicular offset for parallel tracks
+        let nx = -dy / len;
+        let ny = dx / len;
+
+        // When there's avoidance offset, use half junction distance to match junction renderer
+        let junction_distance = if needs_avoidance {
+            JUNCTION_STOP_DISTANCE * 0.5
+        } else {
+            JUNCTION_STOP_DISTANCE
+        };
+
+        ctx.set_line_width(TRACK_LINE_WIDTH / zoom);
+
+        if track_count == 1 {
+            // Single track - draw in center (with avoidance if needed)
+            let (actual_pos1, actual_pos2, _, _) = calculate_track_endpoints_for_edge(
+                0, pos1, pos2, dx, dy, len, junction_distance,
+                source_is_junction, target_is_junction, source, target, edge_id,
+                orphaned_tracks, crossover_intersections,
+            );
+
+            ctx.set_stroke_style_str(track_color);
+            ctx.begin_path();
+
+            if needs_avoidance {
+                // Draw segmented path: start -> offset section -> end
+                let segment_length = ((actual_pos2.0 - actual_pos1.0).powi(2) + (actual_pos2.1 - actual_pos1.1).powi(2)).sqrt();
+
+                // Check if we're connecting to junctions (which handle the avoidance offset themselves)
+                let start_needs_transition = !source_is_junction;
+                let end_needs_transition = !target_is_junction;
+
+                draw_track_segment_with_avoidance(
+                    ctx, actual_pos1, actual_pos2, segment_length,
+                    (0.0, 0.0), (avoid_x, avoid_y),
+                    (start_needs_transition, end_needs_transition)
+                );
+            } else {
+                ctx.move_to(actual_pos1.0, actual_pos1.1);
+                ctx.line_to(actual_pos2.0, actual_pos2.1);
+            }
+
+            ctx.stroke();
+        } else {
+            // Multiple tracks - distribute evenly (with avoidance if needed)
+            let total_width = (track_count - 1) as f64 * TRACK_SPACING;
+            let start_offset = -total_width / 2.0;
+
+            #[allow(clippy::excessive_nesting)]
+            for (i, _track) in edge.weight().tracks.iter().enumerate() {
+                let offset = start_offset + (i as f64 * TRACK_SPACING);
+                let ox = nx * offset;
+                let oy = ny * offset;
+
+                // Calculate endpoints for this specific track (may differ if orphaned)
+                let (actual_pos1, actual_pos2, use_offset1, use_offset2) = calculate_track_endpoints_for_edge(
+                    i, pos1, pos2, dx, dy, len, junction_distance,
+                    source_is_junction, target_is_junction, source, target, edge_id,
+                    orphaned_tracks, crossover_intersections,
+                );
+
+                ctx.set_stroke_style_str(track_color);
+                ctx.begin_path();
+
+                if needs_avoidance {
+                    // Draw segmented path with offset
+                    let segment_length = ((actual_pos2.0 - actual_pos1.0).powi(2) + (actual_pos2.1 - actual_pos1.1).powi(2)).sqrt();
+
+                    // Check if we're connecting to junctions (which handle the avoidance offset themselves)
+                    let start_needs_transition = !source_is_junction;
+                    let end_needs_transition = !target_is_junction;
+
+                    draw_track_segment_with_avoidance(
+                        ctx, actual_pos1, actual_pos2, segment_length,
+                        (ox, oy), (avoid_x, avoid_y),
+                        (start_needs_transition, end_needs_transition)
+                    );
+                } else {
+                    // Apply offset only if not already in the endpoint coordinates
+                    let offset1 = if use_offset1 { (ox, oy) } else { (0.0, 0.0) };
+                    let offset2 = if use_offset2 { (ox, oy) } else { (0.0, 0.0) };
+
+                    ctx.move_to(actual_pos1.0 + offset1.0, actual_pos1.1 + offset1.1);
+                    ctx.line_to(actual_pos2.0 + offset2.0, actual_pos2.1 + offset2.1);
+                }
+
+                ctx.stroke();
+            }
+        }
+    }
+}
