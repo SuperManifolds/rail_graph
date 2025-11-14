@@ -408,6 +408,7 @@ fn draw_perpendicular_ticks(
     scale: f64,
     palette: &Palette,
     edge_to_lines: &IndexMap<EdgeIndex, Vec<&Line>>,
+    line_gap_width: f64,
 ) {
     let tick_length = TICK_LENGTH * scale;
 
@@ -425,6 +426,7 @@ fn draw_perpendicular_ticks(
         visual_positions_map,
         graph,
         zoom,
+        line_gap_width,
     );
     let tick_pos = offset.map_or(pos, |(ox, oy)| (pos.0 + ox, pos.1 + oy));
 
@@ -759,6 +761,7 @@ fn draw_multi_line_pill(
     palette: &Palette,
     is_selected: bool,
     edge_to_lines: &IndexMap<EdgeIndex, Vec<&Line>>,
+    line_gap_width: f64,
 ) {
     // Calculate rotation based on line direction through station
     let angle = calculate_line_angle(station_idx, graph, edge_to_lines);
@@ -772,7 +775,7 @@ fn draw_multi_line_pill(
 
     for line in station_lines {
         // Get the actual offset for this line using the same logic as ticks
-        let (ox, oy) = calculate_line_offset_at_station(station_idx, line, visual_positions_map, graph, zoom)
+        let (ox, oy) = calculate_line_offset_at_station(station_idx, line, visual_positions_map, graph, zoom, line_gap_width)
             .unwrap_or((0.0, 0.0)); // Fallback to center if calculation fails
 
         // Store the actual world position
@@ -798,7 +801,7 @@ fn draw_multi_line_pill(
     let max_offset = perpendicular_offsets.iter().copied().fold(f64::NEG_INFINITY, f64::max);
 
     // Add extra margin to ensure full coverage (account for line widths)
-    let line_width_margin = (LINE_BASE_WIDTH + 2.0) / zoom;
+    let line_width_margin = line_gap_width / zoom;
 
     // Calculate pill dimensions with margins
     // The span across lines (perpendicular to line direction) becomes the HEIGHT after rotation
@@ -906,6 +909,7 @@ fn calculate_line_offset_at_station(
     visual_positions_map: &HashMap<EdgeIndex, (Vec<&Line>, HashMap<uuid::Uuid, usize>)>,
     graph: &RailwayGraph,
     zoom: f64,
+    line_gap_width: f64,
 ) -> Option<(f64, f64)> {
     use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
@@ -964,7 +968,7 @@ fn calculate_line_offset_at_station(
     let ny = dx / len;
 
     // Calculate widths and offsets (matching line_renderer logic exactly)
-    let gap_width = (LINE_BASE_WIDTH + 2.0) / zoom;
+    let gap_width = line_gap_width / zoom;
     let section_line_widths: Vec<f64> = section_ordering
         .iter()
         .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
@@ -1007,6 +1011,7 @@ pub fn draw_line_stations(
     label_cache: &Option<(f64, HashMap<NodeIndex, CachedLabelPosition>)>,
     selected_stations: &[NodeIndex],
     theme: Theme,
+    line_gap_width: f64,
 ) {
     let palette = get_palette(theme);
     let (left, top, right, bottom) = viewport_bounds;
@@ -1146,6 +1151,7 @@ pub fn draw_line_stations(
                 palette,
                 is_selected,
                 &edge_to_lines,
+                line_gap_width,
             );
         } else {
             // Check if this is a single-line terminus station
@@ -1157,7 +1163,7 @@ pub fn draw_line_stations(
             if is_single_line_terminus {
                 // Draw perpendicular T-shape ticks for terminus stations with one line
                 if let Some(line) = stopping_lines.first() {
-                    draw_perpendicular_ticks(ctx, pos, &line.color, idx, line, &visual_positions_map, graph, zoom, is_selected, marker_scale, palette, &edge_to_lines);
+                    draw_perpendicular_ticks(ctx, pos, &line.color, idx, line, &visual_positions_map, graph, zoom, is_selected, marker_scale, palette, &edge_to_lines, line_gap_width);
                 }
             } else {
                 // Draw individual ticks for each stopping line at their actual line positions
@@ -1168,6 +1174,7 @@ pub fn draw_line_stations(
                         &visual_positions_map,
                         graph,
                         zoom,
+                        line_gap_width,
                     );
                     let tick_pos = get_tick_position(idx, pos, line, offset, graph);
 
@@ -1197,7 +1204,7 @@ pub fn draw_line_stations(
             // Collect perpendicular offsets for all lines
             let mut perpendicular_offsets = Vec::new();
             for line in &all_lines {
-                if let Some((ox, oy)) = calculate_line_offset_at_station(idx, line, &visual_positions_map, graph, zoom) {
+                if let Some((ox, oy)) = calculate_line_offset_at_station(idx, line, &visual_positions_map, graph, zoom, line_gap_width) {
                     let projected = ox * perp_x + oy * perp_y;
                     perpendicular_offsets.push(projected);
                 }

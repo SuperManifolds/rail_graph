@@ -882,6 +882,7 @@ fn calculate_line_extents_at_stations(
     lines: &[Line],
     zoom: f64,
     junctions: &HashSet<NodeIndex>,
+    line_gap_width: f64,
 ) -> HashMap<NodeIndex, (f64, f64, f64)> {
     use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
@@ -1019,7 +1020,7 @@ fn calculate_line_extents_at_stations(
             let nx = -dy / len;
             let ny = dx / len;
 
-            let gap_width = (LINE_BASE_WIDTH + 2.0) / zoom;
+            let gap_width = line_gap_width / zoom;
             let section_line_widths: Vec<f64> = section_ordering
                 .iter()
                 .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
@@ -1086,6 +1087,7 @@ pub fn draw_stations_with_cache(
     hide_unscheduled_in_line_mode: bool,
     scheduled_stations: Option<&HashSet<NodeIndex>>,
     theme: Theme,
+    line_gap_width: f64,
 ) {
     let palette = get_palette(theme);
     let font_size = (14.0 / zoom).clamp(MIN_LABEL_FONT_SIZE, MAX_LABEL_FONT_SIZE);
@@ -1094,7 +1096,7 @@ pub fn draw_stations_with_cache(
 
     // Calculate line extents in line mode for label positioning
     let line_extents = if show_lines {
-        calculate_line_extents_at_stations(graph, lines, zoom, &cache.junctions)
+        calculate_line_extents_at_stations(graph, lines, zoom, &cache.junctions, line_gap_width)
     } else {
         HashMap::new()
     };

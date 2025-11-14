@@ -240,6 +240,7 @@ pub fn draw_infrastructure(
     preview_station_position: Option<(f64, f64)>,
     selection_box: Option<((f64, f64), (f64, f64))>,
     theme: Theme,
+    line_gap_width: f64,
 ) {
     let palette = get_palette(theme);
 
@@ -284,9 +285,9 @@ pub fn draw_infrastructure(
             track_renderer::draw_tracks_filtered(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, &cache.orphaned_tracks, &cache.crossover_intersections, &scheduled_edges);
         }
         // Draw lines (use zoom=1.0 for constant size scaling)
-        line_renderer::draw_lines(ctx, graph, lines, 1.0, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, highlighted_edges);
+        line_renderer::draw_lines(ctx, graph, lines, 1.0, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, highlighted_edges, line_gap_width);
         // Draw custom station markers for line mode (use zoom=1.0 for constant size scaling)
-        line_station_renderer::draw_line_stations(ctx, graph, lines, 1.0, viewport_bounds, &cache.label_cache, selected_stations, theme);
+        line_station_renderer::draw_line_stations(ctx, graph, lines, 1.0, viewport_bounds, &cache.label_cache, selected_stations, theme, line_gap_width);
     } else {
         // Infrastructure mode: draw all tracks
         track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, &cache.orphaned_tracks, &cache.crossover_intersections);
@@ -300,7 +301,7 @@ pub fn draw_infrastructure(
     } else {
         None
     };
-    station_renderer::draw_stations_with_cache(ctx, graph, lines, if show_lines { 1.0 } else { zoom }, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds, show_lines, hide_unscheduled_in_line_mode, scheduled_stations_ref, theme);
+    station_renderer::draw_stations_with_cache(ctx, graph, lines, if show_lines { 1.0 } else { zoom }, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds, show_lines, hide_unscheduled_in_line_mode, scheduled_stations_ref, theme, line_gap_width);
 
     // Draw preview station if position is set
     if let Some((x, y)) = preview_station_position {

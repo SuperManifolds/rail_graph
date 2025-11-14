@@ -978,6 +978,7 @@ fn setup_render_effect(
     lines: ReadSignal<Vec<Line>>,
     show_lines: ReadSignal<bool>,
     hide_unscheduled_in_line_mode: ReadSignal<bool>,
+    line_gap_width: ReadSignal<f64>,
     zoom_level: ReadSignal<f64>,
     pan_offset_x: ReadSignal<f64>,
     pan_offset_y: ReadSignal<f64>,
@@ -1002,6 +1003,7 @@ fn setup_render_effect(
         let _ = lines.get();
         let _ = show_lines.get();
         let _ = hide_unscheduled_in_line_mode.get();
+        let _ = line_gap_width.get();
         let _ = zoom_level.get();
         let _ = pan_offset_x.get();
         let _ = pan_offset_y.get();
@@ -1029,6 +1031,7 @@ fn setup_render_effect(
                 let current_lines = lines.get_untracked();
                 let current_show_lines = show_lines.get_untracked();
                 let current_hide_unscheduled = hide_unscheduled_in_line_mode.get_untracked();
+                let current_line_gap_width = line_gap_width.get_untracked();
                 let zoom = zoom_level.get_untracked();
                 let pan_x = pan_offset_x.get_untracked();
                 let pan_y = pan_offset_y.get_untracked();
@@ -1089,7 +1092,7 @@ fn setup_render_effect(
                 // Pass cache to renderer (mutable to update label cache)
                 topology_cache.with_value(|cache| {
                     let mut cache_mut = cache.borrow_mut();
-                    renderer::draw_infrastructure(&ctx, &current_graph, &current_lines, current_show_lines, current_hide_unscheduled, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming, preview_station_pos, current_selection_box, current_theme);
+                    renderer::draw_infrastructure(&ctx, &current_graph, &current_lines, current_show_lines, current_hide_unscheduled, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming, preview_station_pos, current_selection_box, current_theme, current_line_gap_width);
                 });
             });
 
@@ -1656,6 +1659,8 @@ pub fn InfrastructureView(
     let (show_lines, set_show_lines) = create_signal(initial_show_lines);
     let initial_hide_unscheduled = initial_viewport.as_ref().is_none_or(|v| v.hide_unscheduled_in_line_mode);
     let (hide_unscheduled_in_line_mode, set_hide_unscheduled_in_line_mode) = create_signal(initial_hide_unscheduled);
+    let initial_line_gap_width = initial_viewport.as_ref().map_or(5.0, |v| v.line_gap_width);
+    let (line_gap_width, set_line_gap_width) = create_signal(initial_line_gap_width);
     let (edit_mode, set_edit_mode) = create_signal(EditMode::None);
     let (selected_station, set_selected_station) = create_signal(None::<NodeIndex>);
     let (show_add_station, set_show_add_station) = create_signal(false);
@@ -1737,6 +1742,7 @@ pub fn InfrastructureView(
                 show_lines: show_lines.get_untracked(),
                 station_label_width: 0.0,
                 hide_unscheduled_in_line_mode: hide_unscheduled_in_line_mode.get_untracked(),
+                line_gap_width: line_gap_width.get_untracked(),
             };
             on_change.call(viewport_state);
         })
@@ -1850,6 +1856,7 @@ pub fn InfrastructureView(
                 sidebar_width: 320.0, // Infrastructure view uses default width (no sidebar)
                 show_lines: show_lines.get(),
                 hide_unscheduled_in_line_mode: hide_unscheduled_in_line_mode.get(),
+                line_gap_width: line_gap_width.get(),
             };
             on_change.call(viewport_state);
         });
@@ -1878,7 +1885,7 @@ pub fn InfrastructureView(
     let (handle_add_station, handle_add_stations_batch, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
         create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_delete_bypass_info, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment, settings, set_selected_stations, set_selection_bounds);
 
-    setup_render_effect(graph, lines, show_lines, hide_unscheduled_in_line_mode, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position, selected_stations, selection_box_start, selection_box_end, theme);
+    setup_render_effect(graph, lines, show_lines, hide_unscheduled_in_line_mode, line_gap_width, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position, selected_stations, selection_box_start, selection_box_end, theme);
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_context_menu, handle_wheel) = create_event_handlers(
         canvas_ref, edit_mode, set_edit_mode, selected_station, set_selected_station, view_creation_callbacks.on_add_waypoint.clone(), graph, set_graph,
@@ -2011,6 +2018,8 @@ pub fn InfrastructureView(
                     show_lines=show_lines
                     hide_unscheduled=hide_unscheduled_in_line_mode
                     set_hide_unscheduled=set_hide_unscheduled_in_line_mode
+                    line_gap_width=line_gap_width
+                    set_line_gap_width=set_line_gap_width
                 />
                 <CanvasControlsHint
                     visible=show_hint
