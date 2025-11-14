@@ -198,12 +198,37 @@ fn draw_grid(
     ctx.restore();
 }
 
+/// Get the set of stations and edges that have scheduled lines going through them
+fn get_scheduled_elements(
+    graph: &RailwayGraph,
+    lines: &[Line],
+) -> (HashSet<NodeIndex>, HashSet<EdgeIndex>) {
+    let mut scheduled_stations = HashSet::new();
+    let mut scheduled_edges = HashSet::new();
+
+    for line in lines {
+        if !line.visible {
+            continue;
+        }
+
+        let station_path = line.get_station_path(graph);
+        scheduled_stations.extend(station_path);
+
+        for segment in &line.forward_route {
+            scheduled_edges.insert(EdgeIndex::new(segment.edge_index));
+        }
+    }
+
+    (scheduled_stations, scheduled_edges)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn draw_infrastructure(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
     lines: &[Line],
     show_lines: bool,
+    hide_unscheduled_in_line_mode: bool,
     (width, height): (f64, f64),
     zoom: f64,
     pan_x: f64,
@@ -245,20 +270,37 @@ pub fn draw_infrastructure(
     let _ = ctx.translate(pan_x, pan_y);
     let _ = ctx.scale(zoom, zoom);
 
+    // Compute scheduled stations/edges for mixed rendering mode
+    let (scheduled_stations, scheduled_edges) = if show_lines && !hide_unscheduled_in_line_mode {
+        get_scheduled_elements(graph, lines)
+    } else {
+        (HashSet::new(), HashSet::new())
+    };
+
     // Draw tracks or lines based on toggle (behind nodes)
     if show_lines {
-        // Draw lines instead of tracks (use zoom=1.0 for constant size scaling)
+        if !hide_unscheduled_in_line_mode {
+            // Mixed mode: draw unscheduled tracks (infrastructure style) and scheduled lines (line style)
+            track_renderer::draw_tracks_filtered(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, &cache.orphaned_tracks, &cache.crossover_intersections, &scheduled_edges);
+        }
+        // Draw lines (use zoom=1.0 for constant size scaling)
         line_renderer::draw_lines(ctx, graph, lines, 1.0, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, highlighted_edges);
         // Draw custom station markers for line mode (use zoom=1.0 for constant size scaling)
         line_station_renderer::draw_line_stations(ctx, graph, lines, 1.0, viewport_bounds, &cache.label_cache, selected_stations, theme);
     } else {
-        // Draw tracks (using cached avoidance offsets)
+        // Infrastructure mode: draw all tracks
         track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, &cache.orphaned_tracks, &cache.crossover_intersections);
     }
 
     // Draw stations and junctions on top (with label cache)
     // Use zoom=1.0 in line mode for constant size labels
-    station_renderer::draw_stations_with_cache(ctx, graph, lines, if show_lines { 1.0 } else { zoom }, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds, show_lines, theme);
+    // Pass scheduled stations in mixed mode so unscheduled stations get infrastructure rendering
+    let scheduled_stations_ref = if show_lines && !hide_unscheduled_in_line_mode {
+        Some(&scheduled_stations)
+    } else {
+        None
+    };
+    station_renderer::draw_stations_with_cache(ctx, graph, lines, if show_lines { 1.0 } else { zoom }, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds, show_lines, hide_unscheduled_in_line_mode, scheduled_stations_ref, theme);
 
     // Draw preview station if position is set
     if let Some((x, y)) = preview_station_position {

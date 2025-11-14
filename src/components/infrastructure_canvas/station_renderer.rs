@@ -233,6 +233,7 @@ fn draw_station_nodes(
     orphaned_tracks: &HashMap<(petgraph::stable_graph::EdgeIndex, NodeIndex), HashSet<usize>>,
     crossover_intersections: &HashMap<(petgraph::stable_graph::EdgeIndex, NodeIndex, usize), (f64, f64)>,
     show_lines: bool,
+    scheduled_stations: Option<&HashSet<NodeIndex>>,
     palette: &Palette,
 ) -> Vec<(NodeIndex, (f64, f64), f64)> {
     let mut node_positions = Vec::new();
@@ -256,8 +257,12 @@ fn draw_station_nodes(
                 (palette.station, NODE_RADIUS)
             };
 
-            // Draw stations as circles (but not in line mode - custom markers are drawn separately)
-            if !show_lines {
+            // Draw stations as circles
+            // - Always draw in infrastructure mode
+            // - In mixed mode (line mode with unscheduled visible), only draw if unscheduled
+            let should_draw_circle = !show_lines || scheduled_stations.is_some_and(|set| !set.contains(&idx));
+
+            if should_draw_circle {
                 ctx.set_fill_style_str(palette.node_fill);
                 ctx.set_stroke_style_str(border_color);
                 ctx.set_line_width(2.0 / zoom);
@@ -278,8 +283,12 @@ fn draw_station_nodes(
 
             node_positions.push((idx, pos, radius));
         } else if junctions.contains(&idx) {
-            // Draw junction (but not in lines mode - lines are drawn separately)
-            if !show_lines {
+            // Draw junction nodes
+            // - Always draw in infrastructure mode
+            // - In mixed mode (line mode with unscheduled visible), only draw if unscheduled
+            let should_draw_junction = !show_lines || scheduled_stations.is_some_and(|set| !set.contains(&idx));
+
+            if should_draw_junction {
                 junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, cached_avoidance, orphaned_tracks, crossover_intersections, selected_stations);
             }
             // Use larger radius for label overlap to account for junction connection lines
@@ -1059,12 +1068,14 @@ pub fn draw_stations_with_cache(
     is_zooming: bool,
     viewport_bounds: (f64, f64, f64, f64),
     show_lines: bool,
+    hide_unscheduled_in_line_mode: bool,
+    scheduled_stations: Option<&HashSet<NodeIndex>>,
     theme: Theme,
 ) {
     let palette = get_palette(theme);
     let font_size = (14.0 / zoom).clamp(MIN_LABEL_FONT_SIZE, MAX_LABEL_FONT_SIZE);
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets, &cache.orphaned_tracks, &cache.crossover_intersections, show_lines, palette);
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets, &cache.orphaned_tracks, &cache.crossover_intersections, show_lines, scheduled_stations, palette);
 
     // Calculate line extents in line mode for label positioning
     let line_extents = if show_lines {
@@ -1090,7 +1101,7 @@ pub fn draw_stations_with_cache(
     if use_cache {
         // Use cached positions
         if let Some((_, cached_positions)) = &cache.label_cache {
-            draw_cached_labels(ctx, graph, lines, &node_positions, cached_positions, font_size, &cache.junctions, show_lines, &line_extents, palette);
+            draw_cached_labels(ctx, graph, lines, &node_positions, cached_positions, font_size, &cache.junctions, show_lines, hide_unscheduled_in_line_mode, &line_extents, palette);
         }
         return;
     }
@@ -1203,8 +1214,8 @@ pub fn draw_stations_with_cache(
             continue;
         }
 
-        // Skip stations with no lines going through them in line mode
-        if show_lines {
+        // Skip stations with no lines going through them in line mode (if hide_unscheduled is enabled)
+        if show_lines && hide_unscheduled_in_line_mode {
             let lines_through = line_station_renderer::get_lines_through_station(*idx, lines, graph);
             if lines_through.is_empty() {
                 continue;
@@ -1245,6 +1256,7 @@ fn draw_cached_labels(
     font_size: f64,
     junctions: &HashSet<NodeIndex>,
     show_lines: bool,
+    hide_unscheduled_in_line_mode: bool,
     line_extents: &HashMap<NodeIndex, (f64, f64, f64)>,
     palette: &Palette,
 ) {
@@ -1271,8 +1283,8 @@ fn draw_cached_labels(
             continue;
         }
 
-        // Skip stations with no lines going through them in line mode
-        if show_lines {
+        // Skip stations with no lines going through them in line mode (if hide_unscheduled is enabled)
+        if show_lines && hide_unscheduled_in_line_mode {
             let lines_through = line_station_renderer::get_lines_through_station(*idx, lines, graph);
             if lines_through.is_empty() {
                 continue;
