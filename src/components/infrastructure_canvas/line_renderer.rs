@@ -499,33 +499,8 @@ fn draw_single_junction_connection(
         return;
     }
 
-    // Calculate base stop points
-    // Match edge stop distance to align perpendicular offsets
+    // Base curve stop distance (will be adjusted per-line based on offset for proper offset curves)
     let curve_stop_distance = JUNCTION_STOP_DISTANCE - 2.0;
-
-    let entry_base_no_ext = if from_junction_is_target {
-        (
-            junction_pos.0 - (entry_delta.0 / entry_distance) * curve_stop_distance,
-            junction_pos.1 - (entry_delta.1 / entry_distance) * curve_stop_distance,
-        )
-    } else {
-        (
-            junction_pos.0 + (entry_delta.0 / entry_distance) * curve_stop_distance,
-            junction_pos.1 + (entry_delta.1 / entry_distance) * curve_stop_distance,
-        )
-    };
-
-    let exit_base_no_ext = if to_junction_is_source {
-        (
-            junction_pos.0 + (exit_delta.0 / exit_distance) * curve_stop_distance,
-            junction_pos.1 + (exit_delta.1 / exit_distance) * curve_stop_distance,
-        )
-    } else {
-        (
-            junction_pos.0 - (exit_delta.0 / exit_distance) * curve_stop_distance,
-            junction_pos.1 - (exit_delta.1 / exit_distance) * curve_stop_distance,
-        )
-    };
 
     // Calculate perpendicular vectors
     let entry_perp = (-entry_delta.1 / entry_distance, entry_delta.0 / entry_distance);
@@ -588,6 +563,10 @@ fn draw_single_junction_connection(
     let exit_visual_map = section_visual_positions.get(&exit_section_id)
         .and_then(|section_map| section_map.get(&connection_key.to_edge));
 
+    // Calculate normalized directions for curves
+    let entry_dir = (entry_delta.0 / entry_distance, entry_delta.1 / entry_distance);
+    let exit_dir = (exit_delta.0 / exit_distance, exit_delta.1 / exit_distance);
+
     // Sort connection lines by z-order
     let mut sorted_connection_lines = connection_lines.to_vec();
     sorted_connection_lines.sort_by(|a, b| {
@@ -635,64 +614,63 @@ fn draw_single_junction_connection(
 
         let line_world_width = (line_entry_width + line_exit_width) / 2.0;
 
+        // Calculate base points at same stop distance for all lines
+        let entry_base = if from_junction_is_target {
+            (
+                junction_pos.0 - entry_dir.0 * curve_stop_distance,
+                junction_pos.1 - entry_dir.1 * curve_stop_distance,
+            )
+        } else {
+            (
+                junction_pos.0 + entry_dir.0 * curve_stop_distance,
+                junction_pos.1 + entry_dir.1 * curve_stop_distance,
+            )
+        };
+
         let entry_point = (
-            entry_base_no_ext.0 + entry_perp.0 * entry_offset,
-            entry_base_no_ext.1 + entry_perp.1 * entry_offset
+            entry_base.0 + entry_perp.0 * entry_offset,
+            entry_base.1 + entry_perp.1 * entry_offset
         );
+
+        let exit_base = if to_junction_is_source {
+            (
+                junction_pos.0 + exit_dir.0 * curve_stop_distance,
+                junction_pos.1 + exit_dir.1 * curve_stop_distance,
+            )
+        } else {
+            (
+                junction_pos.0 - exit_dir.0 * curve_stop_distance,
+                junction_pos.1 - exit_dir.1 * curve_stop_distance,
+            )
+        };
 
         let exit_point = (
-            exit_base_no_ext.0 + exit_perp.0 * exit_offset,
-            exit_base_no_ext.1 + exit_perp.1 * exit_offset
+            exit_base.0 + exit_perp.0 * exit_offset,
+            exit_base.1 + exit_perp.1 * exit_offset
         );
 
-        ctx.set_line_width(line_world_width);
-        ctx.set_stroke_style_str(&line.color);
-        ctx.begin_path();
-        ctx.move_to(entry_point.0, entry_point.1);
-
-        let entry_dir = (entry_delta.0 / entry_distance, entry_delta.1 / entry_distance);
-        let exit_dir_back = (-exit_delta.0 / exit_distance, -exit_delta.1 / exit_distance);
-        let det = entry_dir.0 * exit_dir_back.1 - entry_dir.1 * exit_dir_back.0;
-
-        if det.abs() > 0.01 {
-            let dx = exit_point.0 - entry_point.0;
-            let dy = exit_point.1 - entry_point.1;
-            let t = (dx * exit_dir_back.1 - dy * exit_dir_back.0) / det;
-
-            if t > 0.0 {
-                let control_point = (
-                    entry_point.0 + t * entry_dir.0,
-                    entry_point.1 + t * entry_dir.1
-                );
-                ctx.quadratic_curve_to(control_point.0, control_point.1, exit_point.0, exit_point.1);
-            } else {
-                ctx.line_to(exit_point.0, exit_point.1);
-            }
-        } else {
-            let control_dist = 15.0;
-            let cp1 = (
-                entry_point.0 + entry_dir.0 * control_dist,
-                entry_point.1 + entry_dir.1 * control_dist
-            );
-            let cp2 = (
-                exit_point.0 + exit_dir_back.0 * control_dist,
-                exit_point.1 + exit_dir_back.1 * control_dist
-            );
-            ctx.bezier_curve_to(cp1.0, cp1.1, cp2.0, cp2.1, exit_point.0, exit_point.1);
-        }
+        // Calculate average offset for control point adjustment
+        let avg_offset = (entry_offset + exit_offset) / 2.0;
 
         // Junction connection is highlighted if both connecting edges are highlighted
         let is_highlighted = highlighted_edges.contains(&connection_key.from_edge)
             && highlighted_edges.contains(&connection_key.to_edge);
-        stroke_with_border(ctx, &line.color, line_world_width, gap_width * 0.2, theme, is_highlighted);
 
-        // Draw filled circle at entry point to cover rendering gap
-        // (Exit point cap is drawn by the outgoing edge segment to maintain proper ordering)
-        let cap_radius = line_world_width / 2.0;
-        ctx.begin_path();
-        let _ = ctx.arc(entry_point.0, entry_point.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
-        ctx.set_fill_style_str(&line.color);
-        ctx.fill();
+        // Use unified curve drawing function
+        draw_curve(
+            ctx,
+            entry_point,
+            exit_point,
+            entry_dir,
+            exit_dir,
+            &line.color,
+            line_world_width,
+            gap_width * 0.2,
+            theme,
+            is_highlighted,
+            false,  // draw_exit_cap - junctions don't draw exit cap (handled by outgoing edge)
+            avg_offset,  // offset for control point adjustment
+        );
     }
 }
 
@@ -985,7 +963,7 @@ fn draw_junction_connections(
 /// Draw a curve for a line at a station where direction changes
 /// Uses the same curve algorithm as junction connections
 #[allow(clippy::too_many_arguments)]
-fn draw_station_curve(
+fn draw_curve(
     ctx: &CanvasRenderingContext2d,
     entry_point: (f64, f64),
     exit_point: (f64, f64),
@@ -996,6 +974,8 @@ fn draw_station_curve(
     border_width: f64,
     theme: Theme,
     is_highlighted: bool,
+    draw_exit_cap: bool,
+    perp_offset: f64,  // Perpendicular offset for this line - used to scale control point distance
 ) {
     ctx.set_line_width(line_width);
     ctx.set_stroke_style_str(line_color);
@@ -1008,16 +988,31 @@ fn draw_station_curve(
 
     if det.abs() > 0.01 {
         // Directions not parallel - use quadratic curve
-        let dx = exit_point.0 - entry_point.0;
-        let dy = exit_point.1 - entry_point.1;
+        // For proper offset curves, calculate base control point then offset it perpendicular
+
+        // Calculate perpendicular direction for offsetting control point
+        let perp = (-entry_dir.1, entry_dir.0);
+
+        // Calculate base control point (as if no offset)
+        let base_entry = (entry_point.0 - perp.0 * perp_offset, entry_point.1 - perp.1 * perp_offset);
+        let base_exit = (exit_point.0 - perp.0 * perp_offset, exit_point.1 - perp.1 * perp_offset);
+
+        let dx = base_exit.0 - base_entry.0;
+        let dy = base_exit.1 - base_entry.1;
         let t = (dx * exit_dir_back.1 - dy * exit_dir_back.0) / det;
 
         if t > 0.0 {
-            // Control point from direction vector intersection
-            let control_point = (
-                entry_point.0 + t * entry_dir.0,
-                entry_point.1 + t * entry_dir.1
+            // Calculate base control point and offset it
+            let base_control = (
+                base_entry.0 + t * entry_dir.0,
+                base_entry.1 + t * entry_dir.1
             );
+
+            let control_point = (
+                base_control.0 + perp.0 * perp_offset,
+                base_control.1 + perp.1 * perp_offset
+            );
+
             ctx.quadratic_curve_to(control_point.0, control_point.1, exit_point.0, exit_point.1);
         } else {
             // Intersection behind us, use straight line
@@ -1048,10 +1043,12 @@ fn draw_station_curve(
     let _ = ctx.arc(entry_point.0, entry_point.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
     ctx.fill();
 
-    // Cap at exit point
-    ctx.begin_path();
-    let _ = ctx.arc(exit_point.0, exit_point.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
-    ctx.fill();
+    // Cap at exit point (conditional)
+    if draw_exit_cap {
+        ctx.begin_path();
+        let _ = ctx.arc(exit_point.0, exit_point.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+        ctx.fill();
+    }
 }
 
 /// Draw a line segment with optional avoidance transitions
@@ -1343,8 +1340,15 @@ pub fn draw_lines(
                 .copied()
                 .unwrap_or(0);
 
-            // Calculate perpendicular vector
+            // Calculate perpendicular vectors for entry and exit
             let entry_perp = (-entry_delta_y / entry_len, entry_delta_x / entry_len);
+            let mut exit_perp = (-exit_delta_y / exit_len, exit_delta_x / exit_len);
+
+            // Check if perpendiculars point in opposite directions and flip if needed
+            let dot_product = entry_perp.0 * exit_perp.0 + entry_perp.1 * exit_perp.1;
+            if dot_product < 0.0 {
+                exit_perp = (-exit_perp.0, -exit_perp.1);
+            }
 
             // Get section info for offset calculation
             let Some(section_ordering) = section_orderings.get(&section_id) else {
@@ -1382,10 +1386,9 @@ pub fn draw_lines(
                 station_pos.1 - entry_dir.1 * curve_stop + entry_perp.1 * perp_offset
             );
 
-            // Use same perpendicular for exit (assumes consistent offset)
             let exit_point = (
-                station_pos.0 + exit_dir.0 * curve_stop + entry_perp.0 * perp_offset,
-                station_pos.1 + exit_dir.1 * curve_stop + entry_perp.1 * perp_offset
+                station_pos.0 + exit_dir.0 * curve_stop + exit_perp.0 * perp_offset,
+                station_pos.1 + exit_dir.1 * curve_stop + exit_perp.1 * perp_offset
             );
 
             // Check if highlighted (both edges must be highlighted)
@@ -1393,7 +1396,7 @@ pub fn draw_lines(
                 && highlighted_edges.contains(&next_edge);
 
             // Draw the curve
-            draw_station_curve(
+            draw_curve(
                 ctx,
                 entry_point,
                 exit_point,
@@ -1404,6 +1407,8 @@ pub fn draw_lines(
                 gap_width * 0.2,
                 theme,
                 is_highlighted,
+                true,  // draw_exit_cap - stations need both entry and exit caps
+                perp_offset,  // perp_offset for control point adjustment
             );
         }
     }
