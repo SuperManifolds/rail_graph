@@ -649,9 +649,6 @@ fn draw_single_junction_connection(
             exit_base.1 + exit_perp.1 * exit_offset
         );
 
-        // Calculate average offset for control point adjustment
-        let avg_offset = (entry_offset + exit_offset) / 2.0;
-
         // Junction connection is highlighted if both connecting edges are highlighted
         let is_highlighted = highlighted_edges.contains(&connection_key.from_edge)
             && highlighted_edges.contains(&connection_key.to_edge);
@@ -669,7 +666,8 @@ fn draw_single_junction_connection(
             theme,
             is_highlighted,
             false,  // draw_exit_cap - junctions don't draw exit cap (handled by outgoing edge)
-            avg_offset,  // offset for control point adjustment
+            entry_offset,
+            exit_offset,
         );
     }
 }
@@ -960,6 +958,54 @@ fn draw_junction_connections(
     }
 }
 
+/// Calculate radially-scaled control point for 90-degree turns
+/// Returns the offset control point, or None if radial scaling fails
+fn calculate_radial_control_point(
+    base_entry: (f64, f64),
+    base_exit: (f64, f64),
+    base_control: (f64, f64),
+    entry_dir: (f64, f64),
+    exit_dir: (f64, f64),
+    perp_offset: f64,
+) -> Option<(f64, f64)> {
+    // Calculate arc center (intersection of perpendiculars from base entry/exit points)
+    let entry_perp = (-entry_dir.1, entry_dir.0);
+    let exit_perp = (-exit_dir.1, exit_dir.0);
+    let perp_det = entry_perp.0 * exit_perp.1 - entry_perp.1 * exit_perp.0;
+
+    if perp_det.abs() <= 0.01 {
+        return None; // Perpendiculars are parallel
+    }
+
+    // Find intersection of perpendicular lines from base points
+    let pdx = base_exit.0 - base_entry.0;
+    let pdy = base_exit.1 - base_entry.1;
+    let s = (pdx * exit_perp.1 - pdy * exit_perp.0) / perp_det;
+
+    let arc_center = (
+        base_entry.0 + s * entry_perp.0,
+        base_entry.1 + s * entry_perp.1
+    );
+
+    // Calculate base radius
+    let rdx = base_entry.0 - arc_center.0;
+    let rdy = base_entry.1 - arc_center.1;
+    let base_radius = (rdx * rdx + rdy * rdy).sqrt();
+
+    if base_radius <= 0.1 {
+        return None; // Radius too small
+    }
+
+    // Scale control point radially from arc center
+    let offset_radius = base_radius + perp_offset;
+    let scale = offset_radius / base_radius;
+
+    Some((
+        arc_center.0 + (base_control.0 - arc_center.0) * scale,
+        arc_center.1 + (base_control.1 - arc_center.1) * scale
+    ))
+}
+
 /// Draw a curve for a line at a station where direction changes
 /// Uses the same curve algorithm as junction connections
 #[allow(clippy::too_many_arguments)]
@@ -975,7 +1021,8 @@ fn draw_curve(
     theme: Theme,
     is_highlighted: bool,
     draw_exit_cap: bool,
-    perp_offset: f64,  // Perpendicular offset for this line - used to scale control point distance
+    entry_offset: f64,  // Perpendicular offset at entry
+    exit_offset: f64,   // Perpendicular offset at exit
 ) {
     ctx.set_line_width(line_width);
     ctx.set_stroke_style_str(line_color);
@@ -988,35 +1035,83 @@ fn draw_curve(
 
     if det.abs() > 0.01 {
         // Directions not parallel - use quadratic curve
-        // For proper offset curves, calculate base control point then offset it perpendicular
+        // For proper offset curves, calculate base control point then offset it
 
-        // Calculate perpendicular direction for offsetting control point
-        let perp = (-entry_dir.1, entry_dir.0);
+        // Calculate perpendicular vectors (same as junction code)
+        let entry_perp = (-entry_dir.1, entry_dir.0);
+        let mut exit_perp = (-exit_dir.1, exit_dir.0);
 
-        // Calculate base control point (as if no offset)
-        let base_entry = (entry_point.0 - perp.0 * perp_offset, entry_point.1 - perp.1 * perp_offset);
-        let base_exit = (exit_point.0 - perp.0 * perp_offset, exit_point.1 - perp.1 * perp_offset);
+        // Check if perpendiculars point in opposite directions and flip if needed
+        let dot_product = entry_perp.0 * exit_perp.0 + entry_perp.1 * exit_perp.1;
+        if dot_product < 0.0 {
+            exit_perp = (-exit_perp.0, -exit_perp.1);
+        }
 
-        let dx = base_exit.0 - base_entry.0;
-        let dy = base_exit.1 - base_entry.1;
-        let t = (dx * exit_dir_back.1 - dy * exit_dir_back.0) / det;
+        // Check if perpendiculars are well-aligned (stations) or different (junctions)
+        // If they're well-aligned and offsets are similar, we can use radial scaling
+        let perps_aligned = (entry_perp.0 - exit_perp.0).abs() < 0.01 && (entry_perp.1 - exit_perp.1).abs() < 0.01;
+        let offsets_similar = (entry_offset - exit_offset).abs() < 0.1;
 
-        if t > 0.0 {
-            // Calculate base control point and offset it
-            let base_control = (
-                base_entry.0 + t * entry_dir.0,
-                base_entry.1 + t * entry_dir.1
-            );
+        if perps_aligned && offsets_similar {
+            // Stations: use radial scaling for proper offset curves
+            let avg_offset = (entry_offset + exit_offset) / 2.0;
 
-            let control_point = (
-                base_control.0 + perp.0 * perp_offset,
-                base_control.1 + perp.1 * perp_offset
-            );
+            // Calculate base points by removing offset
+            let base_entry = (entry_point.0 - entry_perp.0 * avg_offset, entry_point.1 - entry_perp.1 * avg_offset);
+            let base_exit = (exit_point.0 - exit_perp.0 * avg_offset, exit_point.1 - exit_perp.1 * avg_offset);
 
-            ctx.quadratic_curve_to(control_point.0, control_point.1, exit_point.0, exit_point.1);
+            let dx = base_exit.0 - base_entry.0;
+            let dy = base_exit.1 - base_entry.1;
+            let t = (dx * exit_dir_back.1 - dy * exit_dir_back.0) / det;
+
+            if t > 0.0 {
+                let base_control = (
+                    base_entry.0 + t * entry_dir.0,
+                    base_entry.1 + t * entry_dir.1
+                );
+
+                let cos_angle = entry_dir.0 * exit_dir.0 + entry_dir.1 * exit_dir.1;
+                let angle = cos_angle.acos();
+                let use_radial_scaling = angle > 0.35 && angle < 2.79 && avg_offset.abs() > 0.1;
+
+                let control_point = if use_radial_scaling {
+                    calculate_radial_control_point(
+                        base_entry,
+                        base_exit,
+                        base_control,
+                        entry_dir,
+                        exit_dir,
+                        avg_offset
+                    ).unwrap_or((
+                        base_control.0 + entry_perp.0 * avg_offset,
+                        base_control.1 + entry_perp.1 * avg_offset
+                    ))
+                } else {
+                    (
+                        base_control.0 + entry_perp.0 * avg_offset,
+                        base_control.1 + entry_perp.1 * avg_offset
+                    )
+                };
+
+                ctx.quadratic_curve_to(control_point.0, control_point.1, exit_point.0, exit_point.1);
+            } else {
+                ctx.line_to(exit_point.0, exit_point.1);
+            }
         } else {
-            // Intersection behind us, use straight line
-            ctx.line_to(exit_point.0, exit_point.1);
+            // Junctions with different perpendiculars: use simple intersection
+            let dx = exit_point.0 - entry_point.0;
+            let dy = exit_point.1 - entry_point.1;
+            let t = (dx * exit_dir_back.1 - dy * exit_dir_back.0) / det;
+
+            if t > 0.0 {
+                let control_point = (
+                    entry_point.0 + t * entry_dir.0,
+                    entry_point.1 + t * entry_dir.1
+                );
+                ctx.quadratic_curve_to(control_point.0, control_point.1, exit_point.0, exit_point.1);
+            } else {
+                ctx.line_to(exit_point.0, exit_point.1);
+            }
         }
     } else {
         // Directions parallel - use S-curve (cubic bezier)
@@ -1408,7 +1503,8 @@ pub fn draw_lines(
                 theme,
                 is_highlighted,
                 true,  // draw_exit_cap - stations need both entry and exit caps
-                perp_offset,  // perp_offset for control point adjustment
+                perp_offset,  // entry_offset
+                perp_offset,  // exit_offset - same as entry for stations
             );
         }
     }
