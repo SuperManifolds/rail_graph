@@ -614,16 +614,27 @@ fn draw_single_junction_connection(
 
         let line_world_width = (line_entry_width + line_exit_width) / 2.0;
 
-        // Calculate base points at same stop distance for all lines
+        // For parallel directions (S-curves), adjust stop distance based on offset
+        // Lines with larger offsets need more room to transition smoothly
+        let det_test = entry_dir.0 * (-exit_dir.1) - entry_dir.1 * (-exit_dir.0);
+        let is_parallel = det_test.abs() <= 0.01;
+        let avg_offset = (entry_offset.abs() + exit_offset.abs()) / 2.0;
+        let adjusted_stop_distance = if is_parallel {
+            curve_stop_distance + avg_offset * 0.75
+        } else {
+            curve_stop_distance
+        };
+
+        // Calculate base points with adjusted stop distance
         let entry_base = if from_junction_is_target {
             (
-                junction_pos.0 - entry_dir.0 * curve_stop_distance,
-                junction_pos.1 - entry_dir.1 * curve_stop_distance,
+                junction_pos.0 - entry_dir.0 * adjusted_stop_distance,
+                junction_pos.1 - entry_dir.1 * adjusted_stop_distance,
             )
         } else {
             (
-                junction_pos.0 + entry_dir.0 * curve_stop_distance,
-                junction_pos.1 + entry_dir.1 * curve_stop_distance,
+                junction_pos.0 + entry_dir.0 * adjusted_stop_distance,
+                junction_pos.1 + entry_dir.1 * adjusted_stop_distance,
             )
         };
 
@@ -634,13 +645,13 @@ fn draw_single_junction_connection(
 
         let exit_base = if to_junction_is_source {
             (
-                junction_pos.0 + exit_dir.0 * curve_stop_distance,
-                junction_pos.1 + exit_dir.1 * curve_stop_distance,
+                junction_pos.0 + exit_dir.0 * adjusted_stop_distance,
+                junction_pos.1 + exit_dir.1 * adjusted_stop_distance,
             )
         } else {
             (
-                junction_pos.0 - exit_dir.0 * curve_stop_distance,
-                junction_pos.1 - exit_dir.1 * curve_stop_distance,
+                junction_pos.0 - exit_dir.0 * adjusted_stop_distance,
+                junction_pos.1 - exit_dir.1 * adjusted_stop_distance,
             )
         };
 
@@ -1033,24 +1044,24 @@ fn draw_curve(
     let exit_dir_back = (-exit_dir.0, -exit_dir.1);
     let det = entry_dir.0 * exit_dir_back.1 - entry_dir.1 * exit_dir_back.0;
 
+    // Calculate perpendicular vectors (same as junction code)
+    let entry_perp = (-entry_dir.1, entry_dir.0);
+    let mut exit_perp = (-exit_dir.1, exit_dir.0);
+
+    // Check if perpendiculars point in opposite directions and flip if needed
+    let dot_product = entry_perp.0 * exit_perp.0 + entry_perp.1 * exit_perp.1;
+    if dot_product < 0.0 {
+        exit_perp = (-exit_perp.0, -exit_perp.1);
+    }
+
+    // Check if perpendiculars are well-aligned (stations) or different (junctions)
+    // If they're well-aligned and offsets are similar, we can use radial scaling
+    let perps_aligned = (entry_perp.0 - exit_perp.0).abs() < 0.01 && (entry_perp.1 - exit_perp.1).abs() < 0.01;
+    let offsets_similar = (entry_offset - exit_offset).abs() < 0.1;
+
     if det.abs() > 0.01 {
         // Directions not parallel - use quadratic curve
         // For proper offset curves, calculate base control point then offset it
-
-        // Calculate perpendicular vectors (same as junction code)
-        let entry_perp = (-entry_dir.1, entry_dir.0);
-        let mut exit_perp = (-exit_dir.1, exit_dir.0);
-
-        // Check if perpendiculars point in opposite directions and flip if needed
-        let dot_product = entry_perp.0 * exit_perp.0 + entry_perp.1 * exit_perp.1;
-        if dot_product < 0.0 {
-            exit_perp = (-exit_perp.0, -exit_perp.1);
-        }
-
-        // Check if perpendiculars are well-aligned (stations) or different (junctions)
-        // If they're well-aligned and offsets are similar, we can use radial scaling
-        let perps_aligned = (entry_perp.0 - exit_perp.0).abs() < 0.01 && (entry_perp.1 - exit_perp.1).abs() < 0.01;
-        let offsets_similar = (entry_offset - exit_offset).abs() < 0.1;
 
         if perps_aligned && offsets_similar {
             // Stations: use radial scaling for proper offset curves
@@ -1115,16 +1126,48 @@ fn draw_curve(
         }
     } else {
         // Directions parallel - use S-curve (cubic bezier)
+        // For proper offset curves, calculate base control points then offset them perpendicular
+        let avg_offset = (entry_offset + exit_offset) / 2.0;
         let control_dist = 15.0;
-        let cp1 = (
-            entry_point.0 + entry_dir.0 * control_dist,
-            entry_point.1 + entry_dir.1 * control_dist
-        );
-        let cp2 = (
-            exit_point.0 + exit_dir_back.0 * control_dist,
-            exit_point.1 + exit_dir_back.1 * control_dist
-        );
-        ctx.bezier_curve_to(cp1.0, cp1.1, cp2.0, cp2.1, exit_point.0, exit_point.1);
+
+        // Check if we can use offset control points for S-curves
+        if perps_aligned && offsets_similar {
+            // Calculate base control points (centerline)
+            let base_entry = (entry_point.0 - entry_perp.0 * avg_offset, entry_point.1 - entry_perp.1 * avg_offset);
+            let base_exit = (exit_point.0 - exit_perp.0 * avg_offset, exit_point.1 - exit_perp.1 * avg_offset);
+
+            let base_cp1 = (
+                base_entry.0 + entry_dir.0 * control_dist,
+                base_entry.1 + entry_dir.1 * control_dist
+            );
+            let base_cp2 = (
+                base_exit.0 + exit_dir_back.0 * control_dist,
+                base_exit.1 + exit_dir_back.1 * control_dist
+            );
+
+            // Offset control points perpendicular
+            let cp1 = (
+                base_cp1.0 + entry_perp.0 * avg_offset,
+                base_cp1.1 + entry_perp.1 * avg_offset
+            );
+            let cp2 = (
+                base_cp2.0 + exit_perp.0 * avg_offset,
+                base_cp2.1 + exit_perp.1 * avg_offset
+            );
+
+            ctx.bezier_curve_to(cp1.0, cp1.1, cp2.0, cp2.1, exit_point.0, exit_point.1);
+        } else {
+            // Simple S-curve from offset points
+            let cp1 = (
+                entry_point.0 + entry_dir.0 * control_dist,
+                entry_point.1 + entry_dir.1 * control_dist
+            );
+            let cp2 = (
+                exit_point.0 + exit_dir_back.0 * control_dist,
+                exit_point.1 + exit_dir_back.1 * control_dist
+            );
+            ctx.bezier_curve_to(cp1.0, cp1.1, cp2.0, cp2.1, exit_point.0, exit_point.1);
+        }
     }
 
     stroke_with_border(ctx, line_color, line_width, border_width, theme, is_highlighted);
@@ -1298,6 +1341,171 @@ pub fn draw_lines(
 
     // Track which junction connections have been drawn to avoid duplicates
     let mut drawn_junctions: HashSet<JunctionConnectionKey> = HashSet::new();
+
+    // Pre-calculate adjusted stop distances for each line at each junction
+    // Maps (edge, line_id, junction_node) -> adjusted_stop_distance
+    let mut junction_stop_distances: HashMap<(EdgeIndex, uuid::Uuid, NodeIndex), f64> = HashMap::new();
+
+    for (connection_key, connection_lines) in &junction_connections {
+        let Some(junction_pos) = graph.get_station_position(connection_key.junction) else {
+            continue;
+        };
+
+        let Some((from_src, from_tgt)) = graph.graph.edge_endpoints(connection_key.from_edge) else {
+            continue;
+        };
+        let Some((to_src, to_tgt)) = graph.graph.edge_endpoints(connection_key.to_edge) else {
+            continue;
+        };
+
+        let from_junction_is_target = from_tgt == connection_key.junction;
+        let to_junction_is_source = to_src == connection_key.junction;
+
+        let from_node_pos = if from_junction_is_target {
+            graph.get_station_position(from_src)
+        } else {
+            graph.get_station_position(from_tgt)
+        };
+
+        let to_node_pos = if to_junction_is_source {
+            graph.get_station_position(to_tgt)
+        } else {
+            graph.get_station_position(to_src)
+        };
+
+        let (Some(from_pos), Some(to_pos)) = (from_node_pos, to_node_pos) else {
+            continue;
+        };
+
+        let entry_delta = if from_junction_is_target {
+            (junction_pos.0 - from_pos.0, junction_pos.1 - from_pos.1)
+        } else {
+            (from_pos.0 - junction_pos.0, from_pos.1 - junction_pos.1)
+        };
+        let entry_distance = (entry_delta.0 * entry_delta.0 + entry_delta.1 * entry_delta.1).sqrt();
+
+        let exit_delta = if to_junction_is_source {
+            (to_pos.0 - junction_pos.0, to_pos.1 - junction_pos.1)
+        } else {
+            (junction_pos.0 - to_pos.0, junction_pos.1 - to_pos.1)
+        };
+        let exit_distance = (exit_delta.0 * exit_delta.0 + exit_delta.1 * exit_delta.1).sqrt();
+
+        if entry_distance < 0.1 || exit_distance < 0.1 {
+            continue;
+        }
+
+        let entry_dir = (entry_delta.0 / entry_distance, entry_delta.1 / entry_distance);
+        let exit_dir = (exit_delta.0 / exit_distance, exit_delta.1 / exit_distance);
+
+        // Get section info for calculating offsets
+        let Some(&entry_section_id) = edge_to_section.get(&connection_key.from_edge) else {
+            continue;
+        };
+        let Some(&exit_section_id) = edge_to_section.get(&connection_key.to_edge) else {
+            continue;
+        };
+
+        let Some(entry_section_ordering) = section_orderings.get(&entry_section_id) else {
+            continue;
+        };
+        let Some(exit_section_ordering) = section_orderings.get(&exit_section_id) else {
+            continue;
+        };
+
+        let entry_section_widths: Vec<f64> = entry_section_ordering.iter()
+            .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
+            .collect();
+        let exit_section_widths: Vec<f64> = exit_section_ordering.iter()
+            .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
+            .collect();
+
+        let entry_visual_map = section_visual_positions.get(&entry_section_id)
+            .and_then(|section_map| section_map.get(&connection_key.from_edge));
+        let exit_visual_map = section_visual_positions.get(&exit_section_id)
+            .and_then(|section_map| section_map.get(&connection_key.to_edge));
+
+        let entry_num_gaps = entry_section_ordering.len().saturating_sub(1);
+        let entry_actual_width: f64 = entry_section_widths.iter().sum::<f64>()
+            + (entry_num_gaps as f64) * gap_width;
+        let entry_total_width = if entry_section_ordering.len() % 2 == 0 {
+            entry_actual_width + entry_section_widths.last().copied().unwrap_or(0.0) + gap_width
+        } else {
+            entry_actual_width
+        };
+
+        let exit_num_gaps = exit_section_ordering.len().saturating_sub(1);
+        let exit_actual_width: f64 = exit_section_widths.iter().sum::<f64>()
+            + (exit_num_gaps as f64) * gap_width;
+        let exit_total_width = if exit_section_ordering.len() % 2 == 0 {
+            exit_actual_width + exit_section_widths.last().copied().unwrap_or(0.0) + gap_width
+        } else {
+            exit_actual_width
+        };
+
+        // Calculate adjusted stop distance for each line
+        for line in connection_lines {
+            let Some(&entry_visual_pos) = entry_visual_map.and_then(|map| map.get(&line.id)) else {
+                continue;
+            };
+            let Some(&exit_visual_pos) = exit_visual_map.and_then(|map| map.get(&line.id)) else {
+                continue;
+            };
+
+            let entry_start_offset = -entry_total_width / 2.0;
+            let entry_offset_sum: f64 = entry_section_widths.iter().take(entry_visual_pos)
+                .map(|&width| width + gap_width)
+                .sum();
+            let line_entry_width = entry_section_widths.get(entry_visual_pos)
+                .copied()
+                .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
+            let mut entry_offset = entry_start_offset + entry_offset_sum + line_entry_width / 2.0;
+
+            let exit_start_offset = -exit_total_width / 2.0;
+            let exit_offset_sum: f64 = exit_section_widths.iter().take(exit_visual_pos)
+                .map(|&width| width + gap_width)
+                .sum();
+            let line_exit_width = exit_section_widths.get(exit_visual_pos)
+                .copied()
+                .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
+            let mut exit_offset = exit_start_offset + exit_offset_sum + line_exit_width / 2.0;
+
+            // Check if we need to flip offsets
+            let flip_exit_offsets = {
+                let entry_perp = (-entry_dir.1, entry_dir.0);
+                let exit_perp = (-exit_dir.1, exit_dir.0);
+                let dot_product = entry_perp.0 * exit_perp.0 + entry_perp.1 * exit_perp.1;
+                dot_product < 0.0
+            };
+
+            if flip_exit_offsets {
+                entry_offset = -entry_offset;
+                exit_offset = -exit_offset;
+            }
+
+            // Calculate adjusted stop distance for parallel directions (S-curves)
+            // Match the curve_stop_distance calculation in draw_single_junction_connection
+            let curve_stop_distance = JUNCTION_STOP_DISTANCE - 2.0;
+            let det_test = entry_dir.0 * (-exit_dir.1) - entry_dir.1 * (-exit_dir.0);
+            let is_parallel = det_test.abs() <= 0.01;
+            let avg_offset = (entry_offset.abs() + exit_offset.abs()) / 2.0;
+            let adjusted_stop_distance = if is_parallel {
+                curve_stop_distance + avg_offset * 0.75
+            } else {
+                curve_stop_distance
+            };
+
+            // Store adjusted stop distance for both edges
+            junction_stop_distances.insert(
+                (connection_key.from_edge, line.id, connection_key.junction),
+                adjusted_stop_distance
+            );
+            junction_stop_distances.insert(
+                (connection_key.to_edge, line.id, connection_key.junction),
+                adjusted_stop_distance
+            );
+        }
+    }
 
     // Pre-identify edges that will have station curves (edge, station_node)
     // Used to shorten edges appropriately before drawing curves
@@ -1542,33 +1750,9 @@ pub fn draw_lines(
         let (avoid_x, avoid_y) = cached_avoidance.get(edge_idx).copied().unwrap_or((0.0, 0.0));
         let needs_avoidance = avoid_x.abs() > AVOIDANCE_OFFSET_THRESHOLD || avoid_y.abs() > AVOIDANCE_OFFSET_THRESHOLD;
 
-        // Calculate actual start and end points, stopping before junctions or station curves
-        let mut actual_pos1 = pos1;
-        let mut actual_pos2 = pos2;
-
         let dx = pos2.0 - pos1.0;
         let dy = pos2.1 - pos1.1;
         let len = (dx * dx + dy * dy).sqrt();
-
-        // When there's avoidance offset, use half junction distance to match junction renderer
-        // Subtract 2.0 to stop edges where junction curves will overlap them
-        let junction_distance = if needs_avoidance {
-            JUNCTION_STOP_DISTANCE * 0.5 - 2.0
-        } else {
-            JUNCTION_STOP_DISTANCE - 2.0
-        };
-
-        if (source_is_junction || source_has_curve) && len > junction_distance {
-            // Move start point away from junction or station curve
-            let t = junction_distance / len;
-            actual_pos1 = (pos1.0 + dx * t, pos1.1 + dy * t);
-        }
-
-        if (target_is_junction || target_has_curve) && len > junction_distance {
-            // Move end point away from junction or station curve
-            let t = junction_distance / len;
-            actual_pos2 = (pos2.0 - dx * t, pos2.1 - dy * t);
-        }
 
         // Calculate perpendicular offset for parallel lines
         let nx = -dy / len;
@@ -1637,9 +1821,55 @@ pub fn draw_lines(
             let ox = nx * offset;
             let oy = ny * offset;
 
-            // Extend line to center of terminal stations (undo shortening for terminals)
-            let mut line_pos1 = actual_pos1;
-            let mut line_pos2 = actual_pos2;
+            // Calculate actual start and end points, stopping before junctions or station curves
+            let mut line_pos1 = pos1;
+            let mut line_pos2 = pos2;
+
+            // Get line-specific adjusted stop distance at source junction
+            // Note: stored distances already have -2.0 applied
+            let source_stop_distance = if source_is_junction {
+                junction_stop_distances.get(&(*edge_idx, line.id, source))
+                    .copied()
+                    .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
+            } else {
+                // Station curves use fixed distance
+                JUNCTION_STOP_DISTANCE - 2.0
+            };
+
+            // Get line-specific adjusted stop distance at target junction
+            // Note: stored distances already have -2.0 applied
+            let target_stop_distance = if target_is_junction {
+                junction_stop_distances.get(&(*edge_idx, line.id, target))
+                    .copied()
+                    .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
+            } else {
+                // Station curves use fixed distance
+                JUNCTION_STOP_DISTANCE - 2.0
+            };
+
+            // When there's avoidance offset, use half junction distance
+            let source_distance = if needs_avoidance && source_is_junction {
+                source_stop_distance * 0.5
+            } else {
+                source_stop_distance
+            };
+            let target_distance = if needs_avoidance && target_is_junction {
+                target_stop_distance * 0.5
+            } else {
+                target_stop_distance
+            };
+
+            if (source_is_junction || source_has_curve) && len > source_distance {
+                // Move start point away from junction or station curve
+                let t = source_distance / len;
+                line_pos1 = (pos1.0 + dx * t, pos1.1 + dy * t);
+            }
+
+            if (target_is_junction || target_has_curve) && len > target_distance {
+                // Move end point away from junction or station curve
+                let t = target_distance / len;
+                line_pos2 = (pos2.0 - dx * t, pos2.1 - dy * t);
+            }
 
             // Check if source is terminal for this line
             // Extend to center regardless of whether other lines have curves at this station
@@ -1723,9 +1953,55 @@ pub fn draw_lines(
                 let ox = nx * offset;
                 let oy = ny * offset;
 
-                // Extend line to center of terminal stations (undo shortening for terminals)
-                let mut line_pos1 = actual_pos1;
-                let mut line_pos2 = actual_pos2;
+                // Calculate actual start and end points, stopping before junctions or station curves
+                let mut line_pos1 = pos1;
+                let mut line_pos2 = pos2;
+
+                // Get line-specific adjusted stop distance at source junction
+                // Note: stored distances already have -2.0 applied
+                let source_stop_distance = if source_is_junction {
+                    junction_stop_distances.get(&(*edge_idx, line.id, source))
+                        .copied()
+                        .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
+                } else {
+                    // Station curves use fixed distance
+                    JUNCTION_STOP_DISTANCE - 2.0
+                };
+
+                // Get line-specific adjusted stop distance at target junction
+                // Note: stored distances already have -2.0 applied
+                let target_stop_distance = if target_is_junction {
+                    junction_stop_distances.get(&(*edge_idx, line.id, target))
+                        .copied()
+                        .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
+                } else {
+                    // Station curves use fixed distance
+                    JUNCTION_STOP_DISTANCE - 2.0
+                };
+
+                // When there's avoidance offset, use half junction distance
+                let source_distance = if needs_avoidance && source_is_junction {
+                    source_stop_distance * 0.5
+                } else {
+                    source_stop_distance
+                };
+                let target_distance = if needs_avoidance && target_is_junction {
+                    target_stop_distance * 0.5
+                } else {
+                    target_stop_distance
+                };
+
+                if (source_is_junction || source_has_curve) && len > source_distance {
+                    // Move start point away from junction or station curve
+                    let t = source_distance / len;
+                    line_pos1 = (pos1.0 + dx * t, pos1.1 + dy * t);
+                }
+
+                if (target_is_junction || target_has_curve) && len > target_distance {
+                    // Move end point away from junction or station curve
+                    let t = target_distance / len;
+                    line_pos2 = (pos2.0 - dx * t, pos2.1 - dy * t);
+                }
 
                 // Check if source is terminal for this line
                 // Extend to center regardless of whether other lines have curves at this station
