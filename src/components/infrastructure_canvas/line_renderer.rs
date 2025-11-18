@@ -580,50 +580,9 @@ fn draw_single_junction_connection(
         .then_with(|| a.id.cmp(&b.id))
     });
 
-    // Calculate maximum offset across all lines for this junction connection
-    let mut max_offset = 0.0_f64;
-    for line in &sorted_connection_lines {
-        if let Some(&entry_visual_pos) = entry_visual_map.and_then(|map| map.get(&line.id)) {
-            if let Some(&exit_visual_pos) = exit_visual_map.and_then(|map| map.get(&line.id)) {
-                let entry_start_offset = -entry_total_width / 2.0;
-                let entry_offset_sum: f64 = entry_section_widths.iter().take(entry_visual_pos)
-                    .map(|&width| width + gap_width)
-                    .sum();
-                let line_entry_width = entry_section_widths.get(entry_visual_pos)
-                    .copied()
-                    .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
-                let entry_offset = entry_start_offset + entry_offset_sum + line_entry_width / 2.0;
-
-                let exit_start_offset = -exit_total_width / 2.0;
-                let exit_offset_sum: f64 = exit_section_widths.iter().take(exit_visual_pos)
-                    .map(|&width| width + gap_width)
-                    .sum();
-                let line_exit_width = exit_section_widths.get(exit_visual_pos)
-                    .copied()
-                    .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
-                let exit_offset = exit_start_offset + exit_offset_sum + line_exit_width / 2.0;
-
-                let avg_offset = (entry_offset.abs() + exit_offset.abs()) / 2.0;
-                max_offset = max_offset.max(avg_offset);
-            }
-        }
-    }
-
-    // Calculate stop distance once for all lines based on maximum offset
+    // Pre-calculate parallel check for all lines
     let det_test = entry_dir.0 * (-exit_dir.1) - entry_dir.1 * (-exit_dir.0);
     let is_parallel = det_test.abs() <= 0.01;
-    let base_adjusted = if is_parallel {
-        curve_stop_distance + max_offset * 0.75
-    } else {
-        curve_stop_distance
-    };
-    let min_stop_distance = calculate_min_stop_distance_for_radius(
-        entry_dir,
-        exit_dir,
-        MIN_CURVE_RADIUS,
-        max_offset
-    );
-    let adjusted_stop_distance = base_adjusted.max(min_stop_distance);
 
     // Draw each line through the junction
     for line in &sorted_connection_lines {
@@ -660,7 +619,21 @@ fn draw_single_junction_connection(
 
         let line_world_width = (line_entry_width + line_exit_width) / 2.0;
 
-        // Use the shared adjusted stop distance calculated for all lines
+        // Calculate stop distance individually for this line based on its offset
+        let avg_offset = (entry_offset.abs() + exit_offset.abs()) / 2.0;
+        let base_adjusted = if is_parallel {
+            curve_stop_distance + avg_offset * 0.75
+        } else {
+            curve_stop_distance
+        };
+        let min_stop_distance = calculate_min_stop_distance_for_radius(
+            entry_dir,
+            exit_dir,
+            MIN_CURVE_RADIUS,
+            avg_offset
+        );
+        let adjusted_stop_distance = base_adjusted.max(min_stop_distance);
+
         // Calculate base points with adjusted stop distance
         let entry_base = if from_junction_is_target {
             (
@@ -1070,13 +1043,21 @@ fn calculate_min_stop_distance_for_radius(
         return 0.0;
     }
 
-    // For a circular arc, radius r relates to stop distance d by:
-    // r ≈ d / tan(θ/2)
-    // Therefore: d ≈ r * tan(θ/2)
-    // Account for perpendicular offset reducing effective radius
     let half_angle = angle / 2.0;
+
+    // For a circular arc: d ≈ r * tan(θ/2)
+    // Account for perpendicular offset reducing effective radius
     let required_base_radius = min_radius + avg_offset_abs;
-    required_base_radius * half_angle.tan()
+    let calculated_distance = required_base_radius * half_angle.tan();
+
+    // For quadratic bezier curves, what matters is the distance between entry and exit points
+    // This distance is approximately: 2 * d * sin(θ/2)
+    // We need this distance to be adequate for smooth curve formation
+    // Enforce minimum separation of min_radius
+    let min_separation = min_radius;
+    let min_stop_for_separation = min_separation / (2.0 * half_angle.sin()).max(0.01);
+
+    calculated_distance.max(min_stop_for_separation)
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -1236,15 +1217,13 @@ fn draw_curve(
             let dy = exit_point.1 - entry_point.1;
             let t = (dx * exit_dir_back.1 - dy * exit_dir_back.0) / det;
 
-            if t > 0.0 {
-                let control_point = (
-                    entry_point.0 + t * entry_dir.0,
-                    entry_point.1 + t * entry_dir.1
-                );
-                ctx.quadratic_curve_to(control_point.0, control_point.1, exit_point.0, exit_point.1);
-            } else {
-                ctx.line_to(exit_point.0, exit_point.1);
-            }
+            // Always draw a curve, even if t is negative
+            // For small negative t values, the control point will still produce a reasonable curve
+            let control_point = (
+                entry_point.0 + t * entry_dir.0,
+                entry_point.1 + t * entry_dir.1
+            );
+            ctx.quadratic_curve_to(control_point.0, control_point.1, exit_point.0, exit_point.1);
         }
     } else {
         // Directions parallel - use S-curve (cubic bezier)
@@ -1565,8 +1544,12 @@ pub fn draw_lines(
             exit_actual_width
         };
 
-        // Calculate maximum offset across all lines in this junction connection
-        let mut max_offset = 0.0_f64;
+        // Pre-calculate parallel check for all lines
+        let curve_stop_distance = JUNCTION_STOP_DISTANCE - 2.0;
+        let det_test = entry_dir.0 * (-exit_dir.1) - entry_dir.1 * (-exit_dir.0);
+        let is_parallel = det_test.abs() <= 0.01;
+
+        // Calculate individual stop distance for each line based on its own offset
         for line in connection_lines {
             let Some(&entry_visual_pos) = entry_visual_map.and_then(|map| map.get(&line.id)) else {
                 continue;
@@ -1594,31 +1577,24 @@ pub fn draw_lines(
             let exit_offset = exit_start_offset + exit_offset_sum + line_exit_width / 2.0;
 
             let avg_offset = (entry_offset.abs() + exit_offset.abs()) / 2.0;
-            max_offset = max_offset.max(avg_offset);
-        }
 
-        // Calculate adjusted stop distance once for all lines based on maximum offset
-        let curve_stop_distance = JUNCTION_STOP_DISTANCE - 2.0;
-        let det_test = entry_dir.0 * (-exit_dir.1) - entry_dir.1 * (-exit_dir.0);
-        let is_parallel = det_test.abs() <= 0.01;
+            // Calculate stop distance for this specific line
+            let base_adjusted = if is_parallel {
+                curve_stop_distance + avg_offset * 0.75
+            } else {
+                curve_stop_distance
+            };
 
-        let base_adjusted = if is_parallel {
-            curve_stop_distance + max_offset * 0.75
-        } else {
-            curve_stop_distance
-        };
+            let min_stop_distance = calculate_min_stop_distance_for_radius(
+                entry_dir,
+                exit_dir,
+                MIN_CURVE_RADIUS,
+                avg_offset
+            );
 
-        let min_stop_distance = calculate_min_stop_distance_for_radius(
-            entry_dir,
-            exit_dir,
-            MIN_CURVE_RADIUS,
-            max_offset
-        );
+            let adjusted_stop_distance = base_adjusted.max(min_stop_distance);
 
-        let adjusted_stop_distance = base_adjusted.max(min_stop_distance);
-
-        // Store the same adjusted stop distance for all lines
-        for line in connection_lines {
+            // Store the individual stop distance for this line
             junction_stop_distances.insert(
                 (connection_key.from_edge, line.id, connection_key.junction),
                 adjusted_stop_distance
