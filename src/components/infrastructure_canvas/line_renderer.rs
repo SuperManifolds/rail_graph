@@ -1034,13 +1034,18 @@ fn calculate_min_stop_distance_for_radius(
     min_radius: f64,
     avg_offset_abs: f64,
 ) -> f64 {
+    // Control distance used for S-curve (cubic bezier) control points
+    const S_CURVE_CONTROL_DIST: f64 = 15.0;
+
     // Calculate angle between entry and exit directions
     let cos_angle = entry_dir.0 * exit_dir.0 + entry_dir.1 * exit_dir.1;
     let angle = cos_angle.acos();
 
-    // For very small angles (nearly straight), no constraint needed
+    // For very small angles (parallel/nearly straight - S-curves):
+    // Control points are placed at fixed distance along entry/exit directions
+    // Stop distance must be larger than control distance to avoid geometric issues
     if angle < 0.01 {
-        return 0.0;
+        return S_CURVE_CONTROL_DIST + avg_offset_abs * 0.5;
     }
 
     let half_angle = angle / 2.0;
