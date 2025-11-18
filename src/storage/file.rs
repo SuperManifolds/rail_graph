@@ -47,6 +47,9 @@ pub fn deserialize_project_from_bytes(bytes: &[u8]) -> Result<Project, String> {
     // Validate and fix any invalid track indices in all lines
     project.fix_invalid_track_indices();
 
+    // Populate missing line codes from line names
+    project.populate_missing_line_codes();
+
     Ok(project)
 }
 

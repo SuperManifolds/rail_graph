@@ -245,6 +245,9 @@ impl Project {
                     // Validate and fix any invalid track indices in all lines
                     project.fix_invalid_track_indices();
 
+                    // Populate missing line codes from line names
+                    project.populate_missing_line_codes();
+
                     Ok(project)
                 }
                 _ => Err(format!("Unsupported project version: {version}")),
@@ -266,6 +269,23 @@ impl Project {
                     "Fixed {} invalid track indices in line '{}'",
                     fixed_count, line.name
                 ).into());
+            }
+        }
+    }
+
+    /// Populate missing line codes from first word of line name
+    /// For lines where code is empty, sets code to the first word of the name
+    pub(crate) fn populate_missing_line_codes(&mut self) {
+        for line in &mut self.lines {
+            if line.code.is_empty() {
+                if let Some(first_word) = line.name.split_whitespace().next() {
+                    line.code = first_word.to_string();
+                    #[cfg(target_arch = "wasm32")]
+                    web_sys::console::log_1(&format!(
+                        "Set code '{}' for line '{}'",
+                        line.code, line.name
+                    ).into());
+                }
             }
         }
     }
