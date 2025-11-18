@@ -652,130 +652,101 @@ fn draw_line_name_label(
     };
 
     // Calculate position based on label direction
-    // Labels are positioned after the station name and stack with equal spacing
-    let (label_x, label_y) = match label_position {
+    // Badges are always horizontal or vertical (never diagonal)
+    // - Top/Bottom: horizontal badges stacked horizontally
+    // - TopRight/TopLeft/BottomRight/BottomLeft: vertical badges stacked vertically
+    // - Right/Left: horizontal badges stacked horizontally
+    let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+
+    // Calculate station label endpoint and badge stacking direction
+    let (endpoint_x, endpoint_y, stack_dir_x, stack_dir_y, is_vertical) = match label_position {
         super::station_renderer::LabelPosition::Right => {
-            // Station label starts at offset 20.0 and extends rightward by station_name_width
-            // Line labels continue extending rightward
-            let base_offset = station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
-            let offset = base_offset + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
-            (adjusted_pos.0 + offset, adjusted_pos.1 - rect_height / 2.0)
+            // Horizontal label extending right
+            let endpoint_x = adjusted_pos.0 + station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
+            let endpoint_y = adjusted_pos.1;
+            // Stack horizontally to the right
+            (endpoint_x, endpoint_y, 1.0, 0.0, false)
         }
         super::station_renderer::LabelPosition::Left => {
-            // Station label ends at offset -20.0 and extends leftward by station_name_width
-            // Line labels continue extending leftward
-            let base_offset = station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
-            let offset = base_offset + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
-            (adjusted_pos.0 - offset - rect_width, adjusted_pos.1 - rect_height / 2.0)
+            // Horizontal label extending left
+            let endpoint_x = adjusted_pos.0 - station_node_radius - station_label_offset - station_name_width - LINE_LABEL_SPACING;
+            let endpoint_y = adjusted_pos.1;
+            // Stack horizontally to the left
+            (endpoint_x, endpoint_y, -1.0, 0.0, false)
         }
         super::station_renderer::LabelPosition::Top => {
-            // Station label is drawn at -45° rotation
-            // Text starts at (offset*cos45, -offset*cos45) in rotated space
-            // and extends rightward by station_name_width in rotated space
-            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            let base_offset = station_node_radius + station_label_offset; // 20.0
-            let angle = -std::f64::consts::PI / 4.0; // -45°
-
-            // Start position in rotated space
-            let x_start_rotated = base_offset * cos45;
-            let y_start_rotated = -base_offset * cos45;
-
-            // Transform start to world space
-            let world_start_x = x_start_rotated * angle.cos() - y_start_rotated * angle.sin();
-            let world_start_y = x_start_rotated * angle.sin() + y_start_rotated * angle.cos();
-
-            // End of station text in world space
-            // (text extends along rotated x-axis direction)
-            let text_end_x = adjusted_pos.0 + world_start_x + station_name_width * angle.cos();
-            let text_end_y = adjusted_pos.1 + world_start_y + station_name_width * angle.sin();
-
-            // Continue extending in the same diagonal direction
-            // Add extra spacing for visual clearance
-            let spacing_with_index = LINE_LABEL_SPACING + 6.0 + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
-            (
-                text_end_x + spacing_with_index * angle.cos(),
-                text_end_y + spacing_with_index * angle.sin() - rect_height / 2.0,
-            )
+            // Diagonal label extending top-left at -45°
+            let distance = station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
+            let endpoint_x = adjusted_pos.0 - distance * cos45;
+            let endpoint_y = adjusted_pos.1 - distance * cos45;
+            // Badges are horizontal, stack horizontally to the right
+            (endpoint_x, endpoint_y, 1.0, 0.0, false)
         }
         super::station_renderer::LabelPosition::Bottom => {
-            // Station label is drawn at +45° rotation
-            // Text starts at (offset*cos45, offset*cos45) in rotated space
-            // and extends rightward by station_name_width in rotated space
-            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            let base_offset = station_node_radius + station_label_offset; // 20.0
-            let angle = std::f64::consts::PI / 4.0; // +45°
-
-            // Start position in rotated space
-            let x_start_rotated = base_offset * cos45;
-            let y_start_rotated = base_offset * cos45;
-
-            // Transform start to world space
-            let world_start_x = x_start_rotated * angle.cos() - y_start_rotated * angle.sin();
-            let world_start_y = x_start_rotated * angle.sin() + y_start_rotated * angle.cos();
-
-            // End of station text in world space
-            // (text extends along rotated x-axis direction)
-            let text_end_x = adjusted_pos.0 + world_start_x + station_name_width * angle.cos();
-            let text_end_y = adjusted_pos.1 + world_start_y + station_name_width * angle.sin();
-
-            // Continue extending in the same diagonal direction
-            // Add extra spacing for visual clearance
-            let spacing_with_index = LINE_LABEL_SPACING + 6.0 + (label_index as f64 * (stack_width + LINE_LABEL_SPACING));
-            (
-                text_end_x + spacing_with_index * angle.cos(),
-                text_end_y + spacing_with_index * angle.sin() - rect_height / 2.0,
-            )
+            // Diagonal label extending bottom-right at +45°
+            let distance = station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
+            let endpoint_x = adjusted_pos.0 + distance * cos45;
+            let endpoint_y = adjusted_pos.1 + distance * cos45;
+            // Badges are horizontal, stack horizontally to the right
+            (endpoint_x, endpoint_y, 1.0, 0.0, false)
         }
         super::station_renderer::LabelPosition::TopRight => {
-            // Station label is at diagonal position (offset * 0.707, offset * 0.707)
-            // Text extends horizontally rightward by station_name_width
-            // Line labels continue extending diagonally, but account for horizontal text extent
-            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            let diagonal_offset = (station_node_radius + station_label_offset) * cos45;
-            let horizontal_offset = station_name_width + LINE_LABEL_SPACING;
-            let stack_offset = label_index as f64 * (stack_width + LINE_LABEL_SPACING) * cos45;
-            (
-                adjusted_pos.0 + diagonal_offset + horizontal_offset + stack_offset,
-                adjusted_pos.1 - diagonal_offset - LINE_LABEL_SPACING - rect_height - stack_offset,
-            )
+            // Diagonal position, then horizontal text extending right
+            let diagonal_dist = (station_node_radius + station_label_offset) * cos45;
+            let endpoint_x = adjusted_pos.0 + diagonal_dist + station_name_width + LINE_LABEL_SPACING;
+            let endpoint_y = adjusted_pos.1 - diagonal_dist;
+            // Badges are vertical, stack vertically downward
+            (endpoint_x, endpoint_y, 0.0, 1.0, true)
         }
         super::station_renderer::LabelPosition::TopLeft => {
-            // Station label is at diagonal position (-offset * 0.707, -offset * 0.707)
-            // Text extends horizontally rightward by station_name_width (but from left position)
-            // Line labels continue extending diagonally to top-left
-            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            let diagonal_offset = (station_node_radius + station_label_offset) * cos45;
-            let stack_offset = label_index as f64 * (stack_width + LINE_LABEL_SPACING) * cos45;
-            (
-                adjusted_pos.0 - diagonal_offset - LINE_LABEL_SPACING - rect_width - stack_offset,
-                adjusted_pos.1 - diagonal_offset - LINE_LABEL_SPACING - rect_height - stack_offset,
-            )
+            // Diagonal position, then horizontal text extending left
+            let diagonal_dist = (station_node_radius + station_label_offset) * cos45;
+            let endpoint_x = adjusted_pos.0 - diagonal_dist - LINE_LABEL_SPACING;
+            let endpoint_y = adjusted_pos.1 - diagonal_dist;
+            // Badges are vertical, stack vertically downward
+            (endpoint_x, endpoint_y, 0.0, 1.0, true)
         }
         super::station_renderer::LabelPosition::BottomRight => {
-            // Station label is at diagonal position (offset * 0.707, offset * 0.707)
-            // Text extends horizontally rightward by station_name_width
-            // Line labels continue extending diagonally to bottom-right
-            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            let diagonal_offset = (station_node_radius + station_label_offset) * cos45;
-            let horizontal_offset = station_name_width + LINE_LABEL_SPACING;
-            let stack_offset = label_index as f64 * (stack_width + LINE_LABEL_SPACING) * cos45;
-            (
-                adjusted_pos.0 + diagonal_offset + horizontal_offset + stack_offset,
-                adjusted_pos.1 + diagonal_offset + LINE_LABEL_SPACING + stack_offset,
-            )
+            // Diagonal position, then horizontal text extending right
+            let diagonal_dist = (station_node_radius + station_label_offset) * cos45;
+            let endpoint_x = adjusted_pos.0 + diagonal_dist + station_name_width + LINE_LABEL_SPACING;
+            let endpoint_y = adjusted_pos.1 + diagonal_dist;
+            // Badges are vertical, stack vertically downward
+            (endpoint_x, endpoint_y, 0.0, 1.0, true)
         }
         super::station_renderer::LabelPosition::BottomLeft => {
-            // Station label is at diagonal position (-offset * 0.707, offset * 0.707)
-            // Text extends horizontally rightward by station_name_width (but from left position)
-            // Line labels continue extending diagonally to bottom-left
-            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            let diagonal_offset = (station_node_radius + station_label_offset) * cos45;
-            let stack_offset = label_index as f64 * (stack_width + LINE_LABEL_SPACING) * cos45;
-            (
-                adjusted_pos.0 - diagonal_offset - LINE_LABEL_SPACING - rect_width - stack_offset,
-                adjusted_pos.1 + diagonal_offset + LINE_LABEL_SPACING + stack_offset,
-            )
+            // Diagonal position, then horizontal text extending left
+            let diagonal_dist = (station_node_radius + station_label_offset) * cos45;
+            let endpoint_x = adjusted_pos.0 - diagonal_dist - LINE_LABEL_SPACING;
+            let endpoint_y = adjusted_pos.1 + diagonal_dist;
+            // Badges are vertical, stack vertically downward
+            (endpoint_x, endpoint_y, 0.0, 1.0, true)
         }
+    };
+
+    // Calculate stacking offset
+    let stack_offset = if is_vertical {
+        label_index as f64 * (rect_height + LINE_LABEL_SPACING)
+    } else {
+        label_index as f64 * (stack_width + LINE_LABEL_SPACING)
+    };
+
+    // Calculate badge position with stacking
+    let stacked_x = endpoint_x + stack_dir_x * stack_offset;
+    let stacked_y = endpoint_y + stack_dir_y * stack_offset;
+
+    // Adjust for badge size and alignment
+    let (label_x, label_y) = if is_vertical {
+        // Vertical badge: center horizontally
+        (stacked_x - rect_width / 2.0, stacked_y)
+    } else {
+        // Horizontal badge: align based on stacking direction, center vertically
+        let x = if stack_dir_x < 0.0 {
+            stacked_x - rect_width  // Stacking left
+        } else {
+            stacked_x  // Stacking right
+        };
+        (x, stacked_y - rect_height / 2.0)
     };
 
     // Draw rectangle background
