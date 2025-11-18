@@ -580,6 +580,51 @@ fn draw_single_junction_connection(
         .then_with(|| a.id.cmp(&b.id))
     });
 
+    // Calculate maximum offset across all lines for this junction connection
+    let mut max_offset = 0.0_f64;
+    for line in &sorted_connection_lines {
+        if let Some(&entry_visual_pos) = entry_visual_map.and_then(|map| map.get(&line.id)) {
+            if let Some(&exit_visual_pos) = exit_visual_map.and_then(|map| map.get(&line.id)) {
+                let entry_start_offset = -entry_total_width / 2.0;
+                let entry_offset_sum: f64 = entry_section_widths.iter().take(entry_visual_pos)
+                    .map(|&width| width + gap_width)
+                    .sum();
+                let line_entry_width = entry_section_widths.get(entry_visual_pos)
+                    .copied()
+                    .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
+                let entry_offset = entry_start_offset + entry_offset_sum + line_entry_width / 2.0;
+
+                let exit_start_offset = -exit_total_width / 2.0;
+                let exit_offset_sum: f64 = exit_section_widths.iter().take(exit_visual_pos)
+                    .map(|&width| width + gap_width)
+                    .sum();
+                let line_exit_width = exit_section_widths.get(exit_visual_pos)
+                    .copied()
+                    .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
+                let exit_offset = exit_start_offset + exit_offset_sum + line_exit_width / 2.0;
+
+                let avg_offset = (entry_offset.abs() + exit_offset.abs()) / 2.0;
+                max_offset = max_offset.max(avg_offset);
+            }
+        }
+    }
+
+    // Calculate stop distance once for all lines based on maximum offset
+    let det_test = entry_dir.0 * (-exit_dir.1) - entry_dir.1 * (-exit_dir.0);
+    let is_parallel = det_test.abs() <= 0.01;
+    let base_adjusted = if is_parallel {
+        curve_stop_distance + max_offset * 0.75
+    } else {
+        curve_stop_distance
+    };
+    let min_stop_distance = calculate_min_stop_distance_for_radius(
+        entry_dir,
+        exit_dir,
+        MIN_CURVE_RADIUS,
+        max_offset
+    );
+    let adjusted_stop_distance = base_adjusted.max(min_stop_distance);
+
     // Draw each line through the junction
     for line in &sorted_connection_lines {
         let Some(&entry_visual_pos) = entry_visual_map.and_then(|map| map.get(&line.id)) else {
@@ -615,30 +660,7 @@ fn draw_single_junction_connection(
 
         let line_world_width = (line_entry_width + line_exit_width) / 2.0;
 
-        // For parallel directions (S-curves), adjust stop distance based on offset
-        // Lines with larger offsets need more room to transition smoothly
-        let det_test = entry_dir.0 * (-exit_dir.1) - entry_dir.1 * (-exit_dir.0);
-        let is_parallel = det_test.abs() <= 0.01;
-        let avg_offset = (entry_offset.abs() + exit_offset.abs()) / 2.0;
-
-        // Calculate base adjusted distance
-        let base_adjusted = if is_parallel {
-            curve_stop_distance + avg_offset * 0.75
-        } else {
-            curve_stop_distance
-        };
-
-        // Calculate minimum stop distance to maintain minimum curve radius
-        let min_stop_distance = calculate_min_stop_distance_for_radius(
-            entry_dir,
-            exit_dir,
-            MIN_CURVE_RADIUS,
-            avg_offset
-        );
-
-        // Use the larger of the two to ensure both smooth transitions and minimum radius
-        let adjusted_stop_distance = base_adjusted.max(min_stop_distance);
-
+        // Use the shared adjusted stop distance calculated for all lines
         // Calculate base points with adjusted stop distance
         let entry_base = if from_junction_is_target {
             (
@@ -1543,7 +1565,8 @@ pub fn draw_lines(
             exit_actual_width
         };
 
-        // Calculate adjusted stop distance for each line
+        // Calculate maximum offset across all lines in this junction connection
+        let mut max_offset = 0.0_f64;
         for line in connection_lines {
             let Some(&entry_visual_pos) = entry_visual_map.and_then(|map| map.get(&line.id)) else {
                 continue;
@@ -1559,7 +1582,7 @@ pub fn draw_lines(
             let line_entry_width = entry_section_widths.get(entry_visual_pos)
                 .copied()
                 .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
-            let mut entry_offset = entry_start_offset + entry_offset_sum + line_entry_width / 2.0;
+            let entry_offset = entry_start_offset + entry_offset_sum + line_entry_width / 2.0;
 
             let exit_start_offset = -exit_total_width / 2.0;
             let exit_offset_sum: f64 = exit_section_widths.iter().take(exit_visual_pos)
@@ -1568,47 +1591,34 @@ pub fn draw_lines(
             let line_exit_width = exit_section_widths.get(exit_visual_pos)
                 .copied()
                 .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
-            let mut exit_offset = exit_start_offset + exit_offset_sum + line_exit_width / 2.0;
+            let exit_offset = exit_start_offset + exit_offset_sum + line_exit_width / 2.0;
 
-            // Check if we need to flip offsets
-            let flip_exit_offsets = {
-                let entry_perp = (-entry_dir.1, entry_dir.0);
-                let exit_perp = (-exit_dir.1, exit_dir.0);
-                let dot_product = entry_perp.0 * exit_perp.0 + entry_perp.1 * exit_perp.1;
-                dot_product < 0.0
-            };
-
-            if flip_exit_offsets {
-                entry_offset = -entry_offset;
-                exit_offset = -exit_offset;
-            }
-
-            // Calculate adjusted stop distance for parallel directions (S-curves)
-            // Match the curve_stop_distance calculation in draw_single_junction_connection
-            let curve_stop_distance = JUNCTION_STOP_DISTANCE - 2.0;
-            let det_test = entry_dir.0 * (-exit_dir.1) - entry_dir.1 * (-exit_dir.0);
-            let is_parallel = det_test.abs() <= 0.01;
             let avg_offset = (entry_offset.abs() + exit_offset.abs()) / 2.0;
+            max_offset = max_offset.max(avg_offset);
+        }
 
-            // Calculate base adjusted distance
-            let base_adjusted = if is_parallel {
-                curve_stop_distance + avg_offset * 0.75
-            } else {
-                curve_stop_distance
-            };
+        // Calculate adjusted stop distance once for all lines based on maximum offset
+        let curve_stop_distance = JUNCTION_STOP_DISTANCE - 2.0;
+        let det_test = entry_dir.0 * (-exit_dir.1) - entry_dir.1 * (-exit_dir.0);
+        let is_parallel = det_test.abs() <= 0.01;
 
-            // Calculate minimum stop distance to maintain minimum curve radius
-            let min_stop_distance = calculate_min_stop_distance_for_radius(
-                entry_dir,
-                exit_dir,
-                MIN_CURVE_RADIUS,
-                avg_offset
-            );
+        let base_adjusted = if is_parallel {
+            curve_stop_distance + max_offset * 0.75
+        } else {
+            curve_stop_distance
+        };
 
-            // Use the larger of the two to ensure both smooth transitions and minimum radius
-            let adjusted_stop_distance = base_adjusted.max(min_stop_distance);
+        let min_stop_distance = calculate_min_stop_distance_for_radius(
+            entry_dir,
+            exit_dir,
+            MIN_CURVE_RADIUS,
+            max_offset
+        );
 
-            // Store adjusted stop distance for both edges
+        let adjusted_stop_distance = base_adjusted.max(min_stop_distance);
+
+        // Store the same adjusted stop distance for all lines
+        for line in connection_lines {
             junction_stop_distances.insert(
                 (connection_key.from_edge, line.id, connection_key.junction),
                 adjusted_stop_distance
