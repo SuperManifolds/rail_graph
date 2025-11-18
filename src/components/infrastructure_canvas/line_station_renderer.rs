@@ -9,11 +9,12 @@ use web_sys::CanvasRenderingContext2d;
 // Import section-related logic from line_renderer
 use super::line_renderer::{
     assign_visual_positions_with_reuse, get_lines_in_section, identify_sections,
-    order_lines_for_section,
+    order_lines_for_section, calculate_min_stop_distance_for_radius,
+    calculate_max_offset_for_station_curve, MIN_CURVE_RADIUS,
 };
 
 const LINE_BASE_WIDTH: f64 = 3.0;
-const TICK_LENGTH: f64 = 6.0;
+const TICK_LENGTH: f64 = 4.5;
 const TICK_WIDTH: f64 = 5.0;
 const PILL_HEIGHT: f64 = 16.0;
 const PILL_BORDER_WIDTH: f64 = 1.0;
@@ -121,29 +122,30 @@ fn detect_direction_change_at_station(
     None
 }
 
-/// Calculate tick position on a curve at a station
+/// Calculate tick position and tangent direction on a curve at a station
 /// Uses same curve algorithm as `line_renderer` for consistency
+/// Returns (position, `tangent_direction`)
 fn calculate_tick_position_on_curve(
     station_pos: (f64, f64),
     entry_dir: (f64, f64),
     exit_dir: (f64, f64),
     perp_offset: f64,
-) -> (f64, f64) {
-    // Use same stop distance as curves in line_renderer
-    let curve_stop = JUNCTION_STOP_DISTANCE - 2.0;
+    curve_stop_distance: f64,
+) -> ((f64, f64), (f64, f64)) {
+    let curve_stop = curve_stop_distance;
 
     // Calculate perpendicular vector from entry direction
     let entry_perp = (-entry_dir.1, entry_dir.0);
 
-    // Entry and exit points with offset
-    let entry_point = (
-        station_pos.0 - entry_dir.0 * curve_stop + entry_perp.0 * perp_offset,
-        station_pos.1 - entry_dir.1 * curve_stop + entry_perp.1 * perp_offset
+    // Calculate BASE curve points (centerline, no offset) - all ticks align here
+    let base_entry_point = (
+        station_pos.0 - entry_dir.0 * curve_stop,
+        station_pos.1 - entry_dir.1 * curve_stop
     );
 
-    let exit_point = (
-        station_pos.0 + exit_dir.0 * curve_stop + entry_perp.0 * perp_offset,
-        station_pos.1 + exit_dir.1 * curve_stop + entry_perp.1 * perp_offset
+    let base_exit_point = (
+        station_pos.0 + exit_dir.0 * curve_stop,
+        station_pos.1 + exit_dir.1 * curve_stop
     );
 
     // Calculate actual curve position at t=0.5 using same algorithm as line_renderer
@@ -152,54 +154,126 @@ fn calculate_tick_position_on_curve(
 
     if det.abs() > 0.01 {
         // Directions not parallel - quadratic bezier curve
-        let dx = exit_point.0 - entry_point.0;
-        let dy = exit_point.1 - entry_point.1;
+        let dx = base_exit_point.0 - base_entry_point.0;
+        let dy = base_exit_point.1 - base_entry_point.1;
         let t = (dx * exit_dir_back.1 - dy * exit_dir_back.0) / det;
 
         if t > 0.0 {
-            // Control point from direction vector intersection
-            let control_point = (
-                entry_point.0 + t * entry_dir.0,
-                entry_point.1 + t * entry_dir.1
+            // Control point from direction vector intersection (on base curve)
+            let base_control_point = (
+                base_entry_point.0 + t * entry_dir.0,
+                base_entry_point.1 + t * entry_dir.1
             );
 
-            // Evaluate quadratic bezier at t=0.5: P(0.5) = 0.25*P0 + 0.5*P1 + 0.25*P2
-            (
-                0.25 * entry_point.0 + 0.5 * control_point.0 + 0.25 * exit_point.0,
-                0.25 * entry_point.1 + 0.5 * control_point.1 + 0.25 * exit_point.1
-            )
+            // Evaluate quadratic bezier at t=0.5 on BASE curve: P(0.5) = 0.25*P0 + 0.5*P1 + 0.25*P2
+            let base_position = (
+                0.25 * base_entry_point.0 + 0.5 * base_control_point.0 + 0.25 * base_exit_point.0,
+                0.25 * base_entry_point.1 + 0.5 * base_control_point.1 + 0.25 * base_exit_point.1
+            );
+
+            // Tangent at t=0.5 for quadratic bezier: derivative = (P2-P0)
+            let tangent_x = base_exit_point.0 - base_entry_point.0;
+            let tangent_y = base_exit_point.1 - base_entry_point.1;
+            let tangent_len = (tangent_x * tangent_x + tangent_y * tangent_y).sqrt();
+            let tangent = if tangent_len > 0.0 {
+                (tangent_x / tangent_len, tangent_y / tangent_len)
+            } else {
+                entry_dir
+            };
+
+            // Perpendicular to the tangent at this point (not entry_perp!)
+            let tangent_perp = (-tangent.1, tangent.0);
+
+            // Offset the base position perpendicular to the tangent by the line's offset
+            let position = (
+                base_position.0 + tangent_perp.0 * perp_offset,
+                base_position.1 + tangent_perp.1 * perp_offset
+            );
+
+            (position, tangent)
         } else {
             // Intersection behind us, curve is essentially straight line
-            ((entry_point.0 + exit_point.0) / 2.0, (entry_point.1 + exit_point.1) / 2.0)
+            let base_position = ((base_entry_point.0 + base_exit_point.0) / 2.0, (base_entry_point.1 + base_exit_point.1) / 2.0);
+            // For straight line, entry_perp is correct
+            let position = (
+                base_position.0 + entry_perp.0 * perp_offset,
+                base_position.1 + entry_perp.1 * perp_offset
+            );
+            (position, entry_dir)
         }
     } else {
         // Directions parallel - cubic bezier S-curve
         let control_dist = 15.0;
-        let cp1 = (
-            entry_point.0 + entry_dir.0 * control_dist,
-            entry_point.1 + entry_dir.1 * control_dist
+        let base_cp1 = (
+            base_entry_point.0 + entry_dir.0 * control_dist,
+            base_entry_point.1 + entry_dir.1 * control_dist
         );
-        let cp2 = (
-            exit_point.0 + exit_dir_back.0 * control_dist,
-            exit_point.1 + exit_dir_back.1 * control_dist
+        let base_cp2 = (
+            base_exit_point.0 + exit_dir_back.0 * control_dist,
+            base_exit_point.1 + exit_dir_back.1 * control_dist
         );
 
-        // Evaluate cubic bezier at t=0.5: P(0.5) = 0.125*P0 + 0.375*P1 + 0.375*P2 + 0.125*P3
-        (
-            0.125 * entry_point.0 + 0.375 * cp1.0 + 0.375 * cp2.0 + 0.125 * exit_point.0,
-            0.125 * entry_point.1 + 0.375 * cp1.1 + 0.375 * cp2.1 + 0.125 * exit_point.1
-        )
+        // Evaluate cubic bezier at t=0.5 on BASE curve: P(0.5) = 0.125*P0 + 0.375*P1 + 0.375*P2 + 0.125*P3
+        let base_position = (
+            0.125 * base_entry_point.0 + 0.375 * base_cp1.0 + 0.375 * base_cp2.0 + 0.125 * base_exit_point.0,
+            0.125 * base_entry_point.1 + 0.375 * base_cp1.1 + 0.375 * base_cp2.1 + 0.125 * base_exit_point.1
+        );
+
+        // Tangent at t=0.5 for cubic bezier: derivative = 0.75*(P1-P0) + 1.5*(P2-P1) + 0.75*(P3-P2)
+        let tangent_x = 0.75 * (base_cp1.0 - base_entry_point.0) + 1.5 * (base_cp2.0 - base_cp1.0) + 0.75 * (base_exit_point.0 - base_cp2.0);
+        let tangent_y = 0.75 * (base_cp1.1 - base_entry_point.1) + 1.5 * (base_cp2.1 - base_cp1.1) + 0.75 * (base_exit_point.1 - base_cp2.1);
+        let tangent_len = (tangent_x * tangent_x + tangent_y * tangent_y).sqrt();
+        let tangent = if tangent_len > 0.0 {
+            (tangent_x / tangent_len, tangent_y / tangent_len)
+        } else {
+            entry_dir
+        };
+
+        // Perpendicular to the tangent at this point (not entry_perp!)
+        let tangent_perp = (-tangent.1, tangent.0);
+
+        // Offset the base position perpendicular to the tangent by the line's offset
+        let position = (
+            base_position.0 + tangent_perp.0 * perp_offset,
+            base_position.1 + tangent_perp.1 * perp_offset
+        );
+
+        (position, tangent)
     }
 }
 
-/// Calculate the final tick position, considering curves if present
+/// Get the curve stop distance for a line at a station, or default if not found
+fn get_curve_stop_distance(
+    station_idx: NodeIndex,
+    line: &Line,
+    station_curve_stops: &HashMap<(EdgeIndex, EdgeIndex, NodeIndex), f64>,
+) -> f64 {
+    // Find prev and next edges for this line at this station
+    for i in 0..line.forward_route.len() - 1 {
+        let prev_edge = EdgeIndex::new(line.forward_route[i].edge_index);
+        let next_edge = EdgeIndex::new(line.forward_route[i + 1].edge_index);
+
+        // Check if these edges connect at this station (simplified check)
+        let curve_key = (prev_edge, next_edge, station_idx);
+        if let Some(&stop_distance) = station_curve_stops.get(&curve_key) {
+            return stop_distance;
+        }
+    }
+
+    // Default if not found
+    JUNCTION_STOP_DISTANCE - 2.0
+}
+
+/// Calculate the final tick position and tangent direction, considering curves if present
+/// Returns (position, `optional_tangent_direction`)
 fn get_tick_position(
     station_idx: NodeIndex,
     station_pos: (f64, f64),
     line: &Line,
     offset: Option<(f64, f64)>,
     graph: &RailwayGraph,
-) -> (f64, f64) {
+    curve_stop_distance: f64,
+) -> ((f64, f64), Option<(f64, f64)>) {
     // Check if line has a curve at this station
     if let Some((_, _, entry_dir, exit_dir)) = detect_direction_change_at_station(station_idx, line, graph) {
         // Station has a curve - position tick on the curve
@@ -211,10 +285,12 @@ fn get_tick_position(
         } else {
             0.0
         };
-        calculate_tick_position_on_curve(station_pos, entry_dir, exit_dir, perp_offset)
+        let (position, tangent) = calculate_tick_position_on_curve(station_pos, entry_dir, exit_dir, perp_offset, curve_stop_distance);
+        (position, Some(tangent))
     } else {
         // No curve - use normal station center position with offset
-        offset.map_or(station_pos, |(ox, oy)| (station_pos.0 + ox, station_pos.1 + oy))
+        let position = offset.map_or(station_pos, |(ox, oy)| (station_pos.0 + ox, station_pos.1 + oy));
+        (position, None)
     }
 }
 
@@ -338,6 +414,7 @@ fn get_stopping_lines_at_station<'a>(
 }
 
 /// Draw a tick marker for a single line at a station
+#[allow(clippy::too_many_arguments)]
 fn draw_single_line_tick(
     ctx: &CanvasRenderingContext2d,
     pos: (f64, f64),
@@ -347,8 +424,10 @@ fn draw_single_line_tick(
     is_selected: bool,
     scale: f64,
     palette: &Palette,
+    tangent: Option<(f64, f64)>,
 ) {
     let tick_length = TICK_LENGTH * scale;
+    let line_half_width = (TICK_WIDTH * scale) / (2.0 * zoom);
 
     // Use selection orange if selected
     let color = if is_selected {
@@ -357,28 +436,81 @@ fn draw_single_line_tick(
         line_color
     };
 
-    // Calculate tick direction based on label position
-    let (dx, dy) = match label_position {
-        LabelPosition::Right => (tick_length, 0.0),
-        LabelPosition::Left => (-tick_length, 0.0),
-        LabelPosition::Top => (0.0, -tick_length),
-        LabelPosition::Bottom => (0.0, tick_length),
-        LabelPosition::TopRight => {
-            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            (tick_length * cos45, -tick_length * cos45)
-        }
-        LabelPosition::TopLeft => {
-            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            (-tick_length * cos45, -tick_length * cos45)
-        }
-        LabelPosition::BottomRight => {
-            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            (tick_length * cos45, tick_length * cos45)
-        }
-        LabelPosition::BottomLeft => {
-            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-            (-tick_length * cos45, tick_length * cos45)
-        }
+    // Calculate tick direction and starting position based on tangent (for curves) or label position (for straight lines)
+    let (start_pos, dx, dy) = if let Some((tx, ty)) = tangent {
+        // For curves: tick is perpendicular to tangent, pointing toward label
+        // Perpendicular to tangent: (-ty, tx) is left perp, (ty, -tx) is right perp
+        let left_perp = (-ty, tx);
+        let right_perp = (ty, -tx);
+
+        // Determine label direction
+        let label_dir = match label_position {
+            LabelPosition::Right => (1.0, 0.0),
+            LabelPosition::Left => (-1.0, 0.0),
+            LabelPosition::Top => (0.0, -1.0),
+            LabelPosition::Bottom => (0.0, 1.0),
+            LabelPosition::TopRight => {
+                let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+                (cos45, -cos45)
+            }
+            LabelPosition::TopLeft => {
+                let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+                (-cos45, -cos45)
+            }
+            LabelPosition::BottomRight => {
+                let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+                (cos45, cos45)
+            }
+            LabelPosition::BottomLeft => {
+                let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+                (-cos45, cos45)
+            }
+        };
+
+        // Choose perpendicular with larger dot product with label direction
+        let left_dot = left_perp.0 * label_dir.0 + left_perp.1 * label_dir.1;
+        let right_dot = right_perp.0 * label_dir.0 + right_perp.1 * label_dir.1;
+
+        let tick_perp = if left_dot > right_dot {
+            left_perp
+        } else {
+            right_perp
+        };
+
+        // Start from the edge of the line (not the center)
+        let start = (
+            pos.0 + tick_perp.0 * line_half_width,
+            pos.1 + tick_perp.1 * line_half_width
+        );
+
+        (start, tick_perp.0 * tick_length, tick_perp.1 * tick_length)
+    } else {
+        // For straight lines: use label position
+        let (dx, dy) = match label_position {
+            LabelPosition::Right => (tick_length, 0.0),
+            LabelPosition::Left => (-tick_length, 0.0),
+            LabelPosition::Top => (0.0, -tick_length),
+            LabelPosition::Bottom => (0.0, tick_length),
+            LabelPosition::TopRight => {
+                let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+                (tick_length * cos45, -tick_length * cos45)
+            }
+            LabelPosition::TopLeft => {
+                let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+                (-tick_length * cos45, -tick_length * cos45)
+            }
+            LabelPosition::BottomRight => {
+                let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+                (tick_length * cos45, tick_length * cos45)
+            }
+            LabelPosition::BottomLeft => {
+                let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+                (-tick_length * cos45, tick_length * cos45)
+            }
+        };
+
+        // For straight lines, no offset needed - start from center
+        (pos, dx, dy)
     };
 
     ctx.save();
@@ -386,8 +518,8 @@ fn draw_single_line_tick(
     ctx.set_line_width((TICK_WIDTH * scale) / zoom);
     ctx.set_line_cap("butt");
     ctx.begin_path();
-    ctx.move_to(pos.0, pos.1);
-    ctx.line_to(pos.0 + dx, pos.1 + dy);
+    ctx.move_to(start_pos.0, start_pos.1);
+    ctx.line_to(start_pos.0 + dx, start_pos.1 + dy);
     ctx.stroke();
     ctx.restore();
 }
@@ -1082,6 +1214,113 @@ pub fn draw_line_stations(
         }
     }
 
+    // Pre-calculate station curve stop distances (same logic as line_renderer)
+    // Maps (prev_edge, next_edge, station_node) -> curve_stop_distance
+    let mut station_curve_stops: HashMap<(EdgeIndex, EdgeIndex, NodeIndex), f64> = HashMap::new();
+
+    // Create a vector of line references for calculate_max_offset_for_station_curve
+    let line_refs: Vec<&Line> = lines.iter().collect();
+
+    // Calculate stop distances for all station curves
+    for line in lines {
+        if !line.visible || line.forward_route.len() < 2 {
+            continue;
+        }
+
+        for i in 0..line.forward_route.len() - 1 {
+            let prev_segment = &line.forward_route[i];
+            let next_segment = &line.forward_route[i + 1];
+
+            let prev_edge = EdgeIndex::new(prev_segment.edge_index);
+            let next_edge = EdgeIndex::new(next_segment.edge_index);
+
+            let Some((prev_src, prev_tgt)) = graph.graph.edge_endpoints(prev_edge) else {
+                continue;
+            };
+            let Some((next_src, next_tgt)) = graph.graph.edge_endpoints(next_edge) else {
+                continue;
+            };
+
+            // Find the connecting station
+            let station_idx = if prev_tgt == next_src {
+                prev_tgt
+            } else if prev_src == next_tgt {
+                prev_src
+            } else {
+                continue;
+            };
+
+            // Skip junctions
+            if junctions.contains(&station_idx) {
+                continue;
+            }
+
+            // Skip passing loops
+            let is_passing_loop = graph.graph.node_weight(station_idx)
+                .and_then(|n| n.as_station())
+                .is_some_and(|s| s.passing_loop);
+            if is_passing_loop {
+                continue;
+            }
+
+            let Some(station_pos) = graph.get_station_position(station_idx) else {
+                continue;
+            };
+
+            let entry_node = if prev_tgt == station_idx { prev_src } else { prev_tgt };
+            let exit_node = if next_src == station_idx { next_tgt } else { next_src };
+
+            let Some(entry_pos) = graph.get_station_position(entry_node) else {
+                continue;
+            };
+            let Some(exit_pos) = graph.get_station_position(exit_node) else {
+                continue;
+            };
+
+            // Calculate entry direction
+            let entry_delta_x = station_pos.0 - entry_pos.0;
+            let entry_delta_y = station_pos.1 - entry_pos.1;
+            let entry_len = (entry_delta_x * entry_delta_x + entry_delta_y * entry_delta_y).sqrt();
+            if entry_len == 0.0 {
+                continue;
+            }
+            let entry_dir = (entry_delta_x / entry_len, entry_delta_y / entry_len);
+
+            // Calculate exit direction
+            let exit_delta_x = exit_pos.0 - station_pos.0;
+            let exit_delta_y = exit_pos.1 - station_pos.1;
+            let exit_len = (exit_delta_x * exit_delta_x + exit_delta_y * exit_delta_y).sqrt();
+            if exit_len == 0.0 {
+                continue;
+            }
+            let exit_dir = (exit_delta_x / exit_len, exit_delta_y / exit_len);
+
+            // Calculate stop distance once per unique curve using maximum offset
+            let curve_key = (prev_edge, next_edge, station_idx);
+            station_curve_stops.entry(curve_key).or_insert_with(|| {
+                let max_offset = calculate_max_offset_for_station_curve(
+                    &line_refs,
+                    prev_edge,
+                    next_edge,
+                    &edge_to_section,
+                    &section_visual_positions,
+                    &section_orderings,
+                    line_gap_width,
+                    zoom
+                );
+
+                let base_curve_stop = JUNCTION_STOP_DISTANCE - 2.0;
+                let min_stop_distance = calculate_min_stop_distance_for_radius(
+                    entry_dir,
+                    exit_dir,
+                    MIN_CURVE_RADIUS,
+                    max_offset
+                );
+                base_curve_stop.max(min_stop_distance)
+            });
+        }
+    }
+
     // Draw stations
     for idx in graph.graph.node_indices() {
         let Some(pos) = graph.get_station_position(idx) else {
@@ -1167,6 +1406,12 @@ pub fn draw_line_stations(
                 }
             } else {
                 // Draw individual ticks for each stopping line at their actual line positions
+                // Find the maximum curve stop distance for this station across all stopping lines
+                // so that ticks align (all at same t=0.5 on base curve)
+                let max_curve_stop_distance = stopping_lines.iter()
+                    .map(|line| get_curve_stop_distance(idx, line, &station_curve_stops))
+                    .fold(JUNCTION_STOP_DISTANCE - 2.0, f64::max);
+
                 for line in &stopping_lines {
                     let offset = calculate_line_offset_at_station(
                         idx,
@@ -1176,9 +1421,9 @@ pub fn draw_line_stations(
                         zoom,
                         line_gap_width,
                     );
-                    let tick_pos = get_tick_position(idx, pos, line, offset, graph);
+                    let (tick_pos, tangent) = get_tick_position(idx, pos, line, offset, graph, max_curve_stop_distance);
 
-                    draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom, is_selected, marker_scale, palette);
+                    draw_single_line_tick(ctx, tick_pos, &line.color, label_position, zoom, is_selected, marker_scale, palette, tangent);
                 }
             }
         }
