@@ -10,7 +10,7 @@ const LINE_BASE_WIDTH: f64 = 3.0;
 const AVOIDANCE_OFFSET_THRESHOLD: f64 = 0.1;
 const TRANSITION_LENGTH: f64 = 30.0;
 const JUNCTION_STOP_DISTANCE: f64 = 14.0;
-const MIN_CURVE_RADIUS: f64 = 20.0;
+pub const MIN_CURVE_RADIUS: f64 = 20.0;
 
 /// Check if a station is a terminal (first or last stop) for a given line
 fn is_line_terminal(station_idx: NodeIndex, line: &Line, graph: &RailwayGraph) -> bool {
@@ -1028,7 +1028,8 @@ fn calculate_radial_control_point(
 
 /// Calculate minimum stop distance required to achieve minimum curve radius
 /// Uses geometry of circular arc approximation for quadratic Bezier curves
-fn calculate_min_stop_distance_for_radius(
+#[must_use]
+pub fn calculate_min_stop_distance_for_radius(
     entry_dir: (f64, f64),
     exit_dir: (f64, f64),
     min_radius: f64,
@@ -1066,7 +1067,8 @@ fn calculate_min_stop_distance_for_radius(
 }
 
 #[allow(clippy::cast_precision_loss)]
-fn calculate_max_offset_for_station_curve(
+#[must_use]
+pub fn calculate_max_offset_for_station_curve(
     sorted_lines: &[&Line],
     prev_edge: EdgeIndex,
     next_edge: EdgeIndex,
