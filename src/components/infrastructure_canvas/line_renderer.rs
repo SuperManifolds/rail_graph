@@ -10,6 +10,7 @@ const LINE_BASE_WIDTH: f64 = 3.0;
 const AVOIDANCE_OFFSET_THRESHOLD: f64 = 0.1;
 const TRANSITION_LENGTH: f64 = 30.0;
 const JUNCTION_STOP_DISTANCE: f64 = 14.0;
+const MIN_CURVE_RADIUS: f64 = 20.0;
 
 /// Check if a station is a terminal (first or last stop) for a given line
 fn is_line_terminal(station_idx: NodeIndex, line: &Line, graph: &RailwayGraph) -> bool {
@@ -619,11 +620,24 @@ fn draw_single_junction_connection(
         let det_test = entry_dir.0 * (-exit_dir.1) - entry_dir.1 * (-exit_dir.0);
         let is_parallel = det_test.abs() <= 0.01;
         let avg_offset = (entry_offset.abs() + exit_offset.abs()) / 2.0;
-        let adjusted_stop_distance = if is_parallel {
+
+        // Calculate base adjusted distance
+        let base_adjusted = if is_parallel {
             curve_stop_distance + avg_offset * 0.75
         } else {
             curve_stop_distance
         };
+
+        // Calculate minimum stop distance to maintain minimum curve radius
+        let min_stop_distance = calculate_min_stop_distance_for_radius(
+            entry_dir,
+            exit_dir,
+            MIN_CURVE_RADIUS,
+            avg_offset
+        );
+
+        // Use the larger of the two to ensure both smooth transitions and minimum radius
+        let adjusted_stop_distance = base_adjusted.max(min_stop_distance);
 
         // Calculate base points with adjusted stop distance
         let entry_base = if from_junction_is_target {
@@ -1015,6 +1029,92 @@ fn calculate_radial_control_point(
         arc_center.0 + (base_control.0 - arc_center.0) * scale,
         arc_center.1 + (base_control.1 - arc_center.1) * scale
     ))
+}
+
+/// Calculate minimum stop distance required to achieve minimum curve radius
+/// Uses geometry of circular arc approximation for quadratic Bezier curves
+fn calculate_min_stop_distance_for_radius(
+    entry_dir: (f64, f64),
+    exit_dir: (f64, f64),
+    min_radius: f64,
+    avg_offset_abs: f64,
+) -> f64 {
+    // Calculate angle between entry and exit directions
+    let cos_angle = entry_dir.0 * exit_dir.0 + entry_dir.1 * exit_dir.1;
+    let angle = cos_angle.acos();
+
+    // For very small angles (nearly straight), no constraint needed
+    if angle < 0.01 {
+        return 0.0;
+    }
+
+    // For a circular arc, radius r relates to stop distance d by:
+    // r ≈ d / tan(θ/2)
+    // Therefore: d ≈ r * tan(θ/2)
+    // Account for perpendicular offset reducing effective radius
+    let half_angle = angle / 2.0;
+    let required_base_radius = min_radius + avg_offset_abs;
+    required_base_radius * half_angle.tan()
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn calculate_max_offset_for_station_curve(
+    sorted_lines: &[&Line],
+    prev_edge: EdgeIndex,
+    next_edge: EdgeIndex,
+    edge_to_section: &HashMap<EdgeIndex, SectionId>,
+    section_visual_positions: &HashMap<SectionId, HashMap<EdgeIndex, HashMap<uuid::Uuid, usize>>>,
+    section_orderings: &HashMap<SectionId, Vec<&Line>>,
+    gap_width: f64,
+    zoom: f64,
+) -> f64 {
+    let mut max_offset = 0.0_f64;
+
+    for check_line in sorted_lines {
+        // Check if this line goes through the same curve
+        let Some(i) = check_line.forward_route.iter().position(|seg| EdgeIndex::new(seg.edge_index) == prev_edge) else {
+            continue;
+        };
+        if i + 1 >= check_line.forward_route.len() || EdgeIndex::new(check_line.forward_route[i + 1].edge_index) != next_edge {
+            continue;
+        }
+
+        // This line goes through this curve - calculate its offset
+        let Some(&check_section_id) = edge_to_section.get(&prev_edge) else {
+            continue;
+        };
+        let Some(&check_visual_pos) = section_visual_positions.get(&check_section_id)
+            .and_then(|section_map| section_map.get(&prev_edge))
+            .and_then(|edge_map| edge_map.get(&check_line.id)) else {
+            continue;
+        };
+        let Some(check_section_ordering) = section_orderings.get(&check_section_id) else {
+            continue;
+        };
+
+        let check_section_widths: Vec<f64> = check_section_ordering.iter()
+            .map(|l| (LINE_BASE_WIDTH + l.thickness) / zoom)
+            .collect();
+        let check_num_gaps = check_section_ordering.len().saturating_sub(1);
+        let check_actual_width: f64 = check_section_widths.iter().sum::<f64>()
+            + (check_num_gaps as f64) * gap_width;
+        let check_total_width = if check_section_ordering.len() % 2 == 0 {
+            check_actual_width + check_section_widths.last().copied().unwrap_or(0.0) + gap_width
+        } else {
+            check_actual_width
+        };
+        let check_start_offset = -check_total_width / 2.0;
+        let check_offset_sum: f64 = check_section_widths.iter().take(check_visual_pos)
+            .map(|&width| width + gap_width)
+            .sum();
+        let check_line_width = check_section_widths.get(check_visual_pos)
+            .copied()
+            .unwrap_or((LINE_BASE_WIDTH + check_line.thickness) / zoom);
+        let check_perp_offset = check_start_offset + check_offset_sum + check_line_width / 2.0;
+        max_offset = max_offset.max(check_perp_offset.abs());
+    }
+
+    max_offset
 }
 
 /// Draw a curve for a line at a station where direction changes
@@ -1489,11 +1589,24 @@ pub fn draw_lines(
             let det_test = entry_dir.0 * (-exit_dir.1) - entry_dir.1 * (-exit_dir.0);
             let is_parallel = det_test.abs() <= 0.01;
             let avg_offset = (entry_offset.abs() + exit_offset.abs()) / 2.0;
-            let adjusted_stop_distance = if is_parallel {
+
+            // Calculate base adjusted distance
+            let base_adjusted = if is_parallel {
                 curve_stop_distance + avg_offset * 0.75
             } else {
                 curve_stop_distance
             };
+
+            // Calculate minimum stop distance to maintain minimum curve radius
+            let min_stop_distance = calculate_min_stop_distance_for_radius(
+                entry_dir,
+                exit_dir,
+                MIN_CURVE_RADIUS,
+                avg_offset
+            );
+
+            // Use the larger of the two to ensure both smooth transitions and minimum radius
+            let adjusted_stop_distance = base_adjusted.max(min_stop_distance);
 
             // Store adjusted stop distance for both edges
             junction_stop_distances.insert(
@@ -1506,6 +1619,14 @@ pub fn draw_lines(
             );
         }
     }
+
+    // Pre-calculate station curve stop distances for track segment alignment
+    // Maps (edge, line_id, station_node) -> curve_stop_distance
+    let mut station_curve_stop_distances: HashMap<(EdgeIndex, uuid::Uuid, NodeIndex), f64> = HashMap::new();
+
+    // Cache for station curve stop distances per curve (not per line)
+    // Maps (prev_edge, next_edge, station_node) -> curve_stop_distance
+    let mut station_curve_stops: HashMap<(EdgeIndex, EdgeIndex, NodeIndex), f64> = HashMap::new();
 
     // Pre-identify edges that will have station curves (edge, station_node)
     // Used to shorten edges appropriately before drawing curves
@@ -1633,16 +1754,6 @@ pub fn draw_lines(
             }
             let exit_dir = (exit_delta_x / exit_len, exit_delta_y / exit_len);
 
-            // Get perpendicular offset for this line
-            let Some(&section_id) = edge_to_section.get(&prev_edge) else {
-                continue;
-            };
-            let visual_pos = section_visual_positions.get(&section_id)
-                .and_then(|section_map| section_map.get(&prev_edge))
-                .and_then(|edge_map| edge_map.get(&line.id))
-                .copied()
-                .unwrap_or(0);
-
             // Calculate perpendicular vectors for entry and exit
             let entry_perp = (-entry_delta_y / entry_len, entry_delta_x / entry_len);
             let mut exit_perp = (-exit_delta_y / exit_len, exit_delta_x / exit_len);
@@ -1653,7 +1764,16 @@ pub fn draw_lines(
                 exit_perp = (-exit_perp.0, -exit_perp.1);
             }
 
-            // Get section info for offset calculation
+            // Get perpendicular offset for this line (use prev_edge for consistency)
+            let Some(&section_id) = edge_to_section.get(&prev_edge) else {
+                continue;
+            };
+            let visual_pos = section_visual_positions.get(&section_id)
+                .and_then(|section_map| section_map.get(&prev_edge))
+                .and_then(|edge_map| edge_map.get(&line.id))
+                .copied()
+                .unwrap_or(0);
+
             let Some(section_ordering) = section_orderings.get(&section_id) else {
                 continue;
             };
@@ -1665,7 +1785,6 @@ pub fn draw_lines(
             let num_gaps = section_ordering.len().saturating_sub(1);
             let actual_section_width: f64 = section_line_widths.iter().sum::<f64>()
                 + (num_gaps as f64) * gap_width;
-            // Always center as if there's an odd number of lines
             let total_section_width = if section_ordering.len() % 2 == 0 {
                 actual_section_width + section_line_widths.last().copied().unwrap_or(0.0) + gap_width
             } else {
@@ -1681,8 +1800,35 @@ pub fn draw_lines(
                 .unwrap_or((LINE_BASE_WIDTH + line.thickness) / zoom);
             let perp_offset = start_offset + offset_sum + line_world_width / 2.0;
 
-            // Calculate entry and exit points with offset and stop distance
-            let curve_stop = JUNCTION_STOP_DISTANCE - 2.0;
+            // Calculate curve stop distance (once per unique station curve)
+            let curve_key = (prev_edge, next_edge, station_idx);
+            let curve_stop = *station_curve_stops.entry(curve_key).or_insert_with(|| {
+                // Calculate maximum offset for all lines going through this curve
+                let max_offset = calculate_max_offset_for_station_curve(
+                    &sorted_lines,
+                    prev_edge,
+                    next_edge,
+                    &edge_to_section,
+                    &section_visual_positions,
+                    &section_orderings,
+                    gap_width,
+                    zoom
+                );
+
+                // Calculate stop distance based on maximum offset (innermost curve)
+                let base_curve_stop = JUNCTION_STOP_DISTANCE - 2.0;
+                let min_stop_distance = calculate_min_stop_distance_for_radius(
+                    entry_dir,
+                    exit_dir,
+                    MIN_CURVE_RADIUS,
+                    max_offset
+                );
+                base_curve_stop.max(min_stop_distance)
+            });
+
+            // Store adjusted stop distance for both edges
+            station_curve_stop_distances.insert((prev_edge, line.id, station_idx), curve_stop);
+            station_curve_stop_distances.insert((next_edge, line.id, station_idx), curve_stop);
 
             let entry_point = (
                 station_pos.0 - entry_dir.0 * curve_stop + entry_perp.0 * perp_offset,
@@ -1712,7 +1858,7 @@ pub fn draw_lines(
                 is_highlighted,
                 true,  // draw_exit_cap - stations need both entry and exit caps
                 perp_offset,  // entry_offset
-                perp_offset,  // exit_offset - same as entry for stations
+                perp_offset,  // exit_offset - same for radial scaling
             );
         }
     }
@@ -1825,25 +1971,31 @@ pub fn draw_lines(
             let mut line_pos1 = pos1;
             let mut line_pos2 = pos2;
 
-            // Get line-specific adjusted stop distance at source junction
+            // Get line-specific adjusted stop distance at source junction/station
             // Note: stored distances already have -2.0 applied
             let source_stop_distance = if source_is_junction {
                 junction_stop_distances.get(&(*edge_idx, line.id, source))
                     .copied()
                     .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
+            } else if source_has_curve {
+                station_curve_stop_distances.get(&(*edge_idx, line.id, source))
+                    .copied()
+                    .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
             } else {
-                // Station curves use fixed distance
                 JUNCTION_STOP_DISTANCE - 2.0
             };
 
-            // Get line-specific adjusted stop distance at target junction
+            // Get line-specific adjusted stop distance at target junction/station
             // Note: stored distances already have -2.0 applied
             let target_stop_distance = if target_is_junction {
                 junction_stop_distances.get(&(*edge_idx, line.id, target))
                     .copied()
                     .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
+            } else if target_has_curve {
+                station_curve_stop_distances.get(&(*edge_idx, line.id, target))
+                    .copied()
+                    .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
             } else {
-                // Station curves use fixed distance
                 JUNCTION_STOP_DISTANCE - 2.0
             };
 
@@ -1872,14 +2024,17 @@ pub fn draw_lines(
             }
 
             // Check if source is terminal for this line
-            // Extend to center regardless of whether other lines have curves at this station
-            if !source_is_junction && is_line_terminal(source, line, graph) {
+            // Only extend to center if this specific line doesn't have a curve at this station
+            let source_has_curve_for_this_line = station_curve_stop_distances.contains_key(&(*edge_idx, line.id, source));
+            if !source_is_junction && !source_has_curve_for_this_line && is_line_terminal(source, line, graph) {
                 // Extend back to station center
                 line_pos1 = (pos1.0, pos1.1);
             }
 
             // Check if target is terminal for this line
-            if !target_is_junction && is_line_terminal(target, line, graph) {
+            // Only extend to center if this specific line doesn't have a curve at this station
+            let target_has_curve_for_this_line = station_curve_stop_distances.contains_key(&(*edge_idx, line.id, target));
+            if !target_is_junction && !target_has_curve_for_this_line && is_line_terminal(target, line, graph) {
                 // Extend back to station center
                 line_pos2 = (pos2.0, pos2.1);
             }
@@ -1957,25 +2112,31 @@ pub fn draw_lines(
                 let mut line_pos1 = pos1;
                 let mut line_pos2 = pos2;
 
-                // Get line-specific adjusted stop distance at source junction
+                // Get line-specific adjusted stop distance at source junction/station
                 // Note: stored distances already have -2.0 applied
                 let source_stop_distance = if source_is_junction {
                     junction_stop_distances.get(&(*edge_idx, line.id, source))
                         .copied()
                         .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
+                } else if source_has_curve {
+                    station_curve_stop_distances.get(&(*edge_idx, line.id, source))
+                        .copied()
+                        .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
                 } else {
-                    // Station curves use fixed distance
                     JUNCTION_STOP_DISTANCE - 2.0
                 };
 
-                // Get line-specific adjusted stop distance at target junction
+                // Get line-specific adjusted stop distance at target junction/station
                 // Note: stored distances already have -2.0 applied
                 let target_stop_distance = if target_is_junction {
                     junction_stop_distances.get(&(*edge_idx, line.id, target))
                         .copied()
                         .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
+                } else if target_has_curve {
+                    station_curve_stop_distances.get(&(*edge_idx, line.id, target))
+                        .copied()
+                        .unwrap_or(JUNCTION_STOP_DISTANCE - 2.0)
                 } else {
-                    // Station curves use fixed distance
                     JUNCTION_STOP_DISTANCE - 2.0
                 };
 
@@ -2004,14 +2165,17 @@ pub fn draw_lines(
                 }
 
                 // Check if source is terminal for this line
-                // Extend to center regardless of whether other lines have curves at this station
-                if !source_is_junction && is_line_terminal(source, line, graph) {
+                // Only extend to center if this specific line doesn't have a curve at this station
+                let source_has_curve_for_this_line = station_curve_stop_distances.contains_key(&(*edge_idx, line.id, source));
+                if !source_is_junction && !source_has_curve_for_this_line && is_line_terminal(source, line, graph) {
                     // Extend back to station center
                     line_pos1 = (pos1.0, pos1.1);
                 }
 
                 // Check if target is terminal for this line
-                if !target_is_junction && is_line_terminal(target, line, graph) {
+                // Only extend to center if this specific line doesn't have a curve at this station
+                let target_has_curve_for_this_line = station_curve_stop_distances.contains_key(&(*edge_idx, line.id, target));
+                if !target_is_junction && !target_has_curve_for_this_line && is_line_terminal(target, line, graph) {
                     // Extend back to station center
                     line_pos2 = (pos2.0, pos2.1);
                 }
