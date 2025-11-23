@@ -698,6 +698,8 @@ pub fn import_jtraingraph(
             folder_id: None,
             code: String::new(),
             style: LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         new_lines.push(line);

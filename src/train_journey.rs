@@ -55,6 +55,7 @@ pub struct TrainJourney {
     pub route_start_node: Option<petgraph::stable_graph::NodeIndex>, // First node of the complete route
     pub route_end_node: Option<petgraph::stable_graph::NodeIndex>, // Last node of the complete route
     pub timing_inherited: Vec<bool>, // Whether each station time was calculated via duration inheritance (true) or explicit (false)
+    pub is_forward: bool, // True for forward journeys, false for return journeys
 }
 
 impl TrainJourney {
@@ -296,7 +297,97 @@ impl TrainJourney {
             });
         }
 
+        // Apply turnaround logic: extend departure times for journeys with turnaround enabled
+        Self::apply_turnaround_extensions(&mut journeys, lines);
+
         journeys
+    }
+
+    /// Apply turnaround extensions to journeys
+    /// Extends the last station's departure time to match the next opposite-direction service
+    fn apply_turnaround_extensions(
+        journeys: &mut HashMap<uuid::Uuid, TrainJourney>,
+        lines: &[Line],
+    ) {
+        type DepartureLookupKey = (uuid::Uuid, petgraph::stable_graph::NodeIndex, usize, bool);
+        type DepartureLookupValue = Vec<(uuid::Uuid, NaiveDateTime)>;
+
+        // Build a map of line_id -> line for quick lookup
+        let line_map: HashMap<uuid::Uuid, &Line> = lines.iter().map(|l| (l.id, l)).collect();
+
+        // Build lookup: (line_id, first_station, first_platform, is_forward) -> sorted list of arrival times
+        // We store arrival times because services may have wait times at their first station
+        let mut departure_lookup: HashMap<DepartureLookupKey, DepartureLookupValue> = HashMap::new();
+
+        for (journey_id, journey) in journeys.iter() {
+            if let Some((first_station, first_arrival, ..)) = journey.station_times.first() {
+                let first_platform = if journey.segments.is_empty() {
+                    0
+                } else {
+                    journey.segments[0].origin_platform
+                };
+
+                let key = (journey.line_id, *first_station, first_platform, journey.is_forward);
+                // Store arrival times - we need this to account for wait times at first station
+                departure_lookup.entry(key).or_default().push((*journey_id, *first_arrival));
+            }
+        }
+
+        // Sort all arrival time lists for efficient lookup
+        for times in departure_lookup.values_mut() {
+            times.sort_by_key(|(_, time)| *time);
+        }
+
+        // Now extend journeys with turnaround enabled
+        let mut extensions: Vec<(uuid::Uuid, NaiveDateTime)> = Vec::new();
+
+        for (journey_id, journey) in journeys.iter() {
+            // Check if this line has turnaround enabled for this direction
+            let Some(line) = line_map.get(&journey.line_id) else { continue; };
+            let turnaround_enabled = if journey.is_forward {
+                line.forward_turnaround
+            } else {
+                line.return_turnaround
+            };
+
+            if !turnaround_enabled {
+                continue;
+            }
+
+            // Get last station info
+            let Some((last_station, last_arrival, ..)) = journey.station_times.last() else { continue; };
+            let last_platform = if journey.segments.len() >= 2 {
+                journey.segments[journey.segments.len() - 1].destination_platform
+            } else if journey.segments.is_empty() {
+                0
+            } else {
+                journey.segments[0].destination_platform
+            };
+
+            // Look for opposite-direction journeys from this station/platform
+            let lookup_key = (journey.line_id, *last_station, last_platform, !journey.is_forward);
+            if let Some(opposite_arrivals) = departure_lookup.get(&lookup_key) {
+                // Find first arrival after this journey's arrival (accounts for wait time at first station)
+                // But limit to reasonable turnaround times (3 hours max to avoid overnight waits)
+                let max_turnaround_wait = Duration::hours(3);
+                if let Some((_, next_arrival)) = opposite_arrivals.iter()
+                    .find(|(_, arr_time)| {
+                        *arr_time > *last_arrival && *arr_time - *last_arrival <= max_turnaround_wait
+                    }) {
+                    // Extend this journey's departure time to match opposite service's arrival
+                    extensions.push((*journey_id, *next_arrival));
+                }
+            }
+        }
+
+        // Apply extensions
+        for (journey_id, new_departure) in extensions {
+            if let Some(journey) = journeys.get_mut(&journey_id) {
+                if let Some(last_time) = journey.station_times.last_mut() {
+                    last_time.2 = new_departure; // Update departure time
+                }
+            }
+        }
     }
 
     fn determine_start_node(
@@ -456,7 +547,8 @@ impl TrainJourney {
                 }
 
                 let id = uuid::Uuid::new_v4();
-                let train_number = generate_train_number(&line.auto_train_number_format, &line_name, journey_count + 1);
+                // Use odd numbers for forward journeys (1, 3, 5, 7, ...)
+                let train_number = generate_train_number(&line.auto_train_number_format, &line_name, (journey_count * 2) + 1);
                 let route_start_node = station_times.first().map(|(node_idx, _, _)| *node_idx);
                 let route_end_node = station_times.last().map(|(node_idx, _, _)| *node_idx);
                 journeys.insert(id, TrainJourney {
@@ -471,6 +563,7 @@ impl TrainJourney {
                     route_start_node,
                     route_end_node,
                     timing_inherited,
+                    is_forward: true,
                 });
                 journey_count += 1;
             }
@@ -587,6 +680,7 @@ impl TrainJourney {
             from_idx,
             to_idx,
             &train_number,
+            true, // is_forward
         ) {
             journeys.insert(journey.id, journey);
             *sequence += 1;
@@ -602,6 +696,7 @@ impl TrainJourney {
             from_idx,
             to_idx,
             &train_number,
+            false, // is_forward
         ) {
             journeys.insert(journey.id, journey);
             *sequence += 1;
@@ -619,6 +714,7 @@ impl TrainJourney {
         from_idx: petgraph::graph::NodeIndex,
         to_idx: petgraph::graph::NodeIndex,
         train_number: &str,
+        is_forward: bool,
     ) -> Option<TrainJourney> {
         // Use the same route node building logic as auto-generated journeys
         let route_nodes_opt = Self::build_route_nodes(route, graph);
@@ -704,6 +800,7 @@ impl TrainJourney {
                 route_start_node,
                 route_end_node,
                 timing_inherited,
+                is_forward,
             })
         } else {
             None
@@ -815,7 +912,8 @@ impl TrainJourney {
                 }
 
                 let id = uuid::Uuid::new_v4();
-                let train_number = generate_train_number(&line.auto_train_number_format, &line_name, return_journey_count + 1);
+                // Use even numbers for return journeys (2, 4, 6, 8, ...)
+                let train_number = generate_train_number(&line.auto_train_number_format, &line_name, (return_journey_count + 1) * 2);
                 let route_start_node = station_times.first().map(|(node_idx, _, _)| *node_idx);
                 let route_end_node = station_times.last().map(|(node_idx, _, _)| *node_idx);
                 journeys.insert(id, TrainJourney {
@@ -830,6 +928,7 @@ impl TrainJourney {
                     route_start_node,
                     route_end_node,
                     timing_inherited,
+                    is_forward: false,
                 });
                 return_journey_count += 1;
             }
@@ -922,6 +1021,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: crate::models::LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         }
     }
 
@@ -1267,6 +1368,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: crate::models::LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
@@ -1396,6 +1499,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: crate::models::LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         // Apply sync to create return route
@@ -1586,6 +1691,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: crate::models::LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         line.apply_route_sync_if_enabled();

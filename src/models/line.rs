@@ -94,6 +94,7 @@ pub struct ManualDeparture {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Line {
     #[serde(default = "uuid::Uuid::new_v4")]
     pub id: uuid::Uuid,
@@ -143,6 +144,10 @@ pub struct Line {
     pub code: String,
     #[serde(default)]
     pub style: LineStyle,
+    #[serde(default)]
+    pub forward_turnaround: bool,
+    #[serde(default)]
+    pub return_turnaround: bool,
 }
 
 fn default_visible() -> bool {
@@ -214,6 +219,8 @@ impl Line {
                     folder_id: None,
                     code: String::new(),
                     style: LineStyle::default(),
+                    forward_turnaround: false,
+                    return_turnaround: false,
                 }
             })
             .collect()
@@ -1238,6 +1245,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         assert!(line.uses_edge(1));
@@ -1274,6 +1283,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         assert!(line.uses_any_edge(&[1, 5, 6]));
@@ -1313,6 +1324,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
@@ -1363,6 +1376,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         // Remove edge 1 but no bypass mapping
@@ -1421,6 +1436,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         line.fix_track_indices_after_change(edge.index(), 2, &graph);
@@ -1520,6 +1537,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         // Create a minimal test graph for platform assignment
@@ -1603,6 +1622,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         // Delete the direct edge B -> C
@@ -1655,6 +1676,8 @@ mod tests {
             folder_id: None,
             code: String::new(),
             style: LineStyle::default(),
+            forward_turnaround: false,
+            return_turnaround: false,
         };
 
         // Delete the edge
