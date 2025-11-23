@@ -1168,11 +1168,31 @@ fn extract_platform_occupancies(
             (0, None)
         };
 
+        // Determine if this is the first or last station in the journey
+        let is_first_station = i == 0;
+        let is_last_station = i == journey.station_times.len() - 1;
+
+        // Apply buffer only when NOT at journey start/end
+        // - First station (journey start): no buffer before arrival
+        // - Last station (journey end): no buffer after departure
+        // - Middle stations: buffer on both sides
+        let time_start = if is_first_station {
+            *arrival_time
+        } else {
+            *arrival_time - buffer
+        };
+
+        let time_end = if is_last_station {
+            *departure_time
+        } else {
+            *departure_time + buffer
+        };
+
         occupancies.push(PlatformOccupancy {
             station_idx,
             platform_idx,
-            time_start: *arrival_time - buffer,
-            time_end: *departure_time + buffer,
+            time_start,
+            time_end,
             timing_uncertain: journey.timing_inherited.get(i).copied().unwrap_or(false),
             arrival_edge_index,
         });
