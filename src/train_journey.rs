@@ -921,6 +921,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: crate::models::LineStyle::default(),
         }
     }
 
@@ -1265,6 +1266,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: crate::models::LineStyle::default(),
         };
 
         let journeys = TrainJourney::generate_journeys(&[line], &graph, None);
@@ -1393,6 +1395,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: crate::models::LineStyle::default(),
         };
 
         // Apply sync to create return route
@@ -1582,6 +1585,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: crate::models::LineStyle::default(),
         };
 
         line.apply_route_sync_if_enabled();

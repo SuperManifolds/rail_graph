@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use crate::models::{RailwayGraph, Line, RouteSegment, ManualDeparture, ScheduleMode, DaysOfWeek, Stations, Tracks, generate_random_color};
+use crate::models::{RailwayGraph, Line, LineStyle, RouteSegment, ManualDeparture, ScheduleMode, DaysOfWeek, Stations, Tracks, generate_random_color};
 use crate::constants::BASE_DATE;
 use chrono::{Duration, Timelike};
 use petgraph::stable_graph::{NodeIndex, EdgeIndex};
@@ -697,6 +697,7 @@ pub fn import_jtraingraph(
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: LineStyle::default(),
         };
 
         new_lines.push(line);

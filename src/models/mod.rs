@@ -20,7 +20,7 @@ pub use keyboard_shortcuts::{
     setup_shortcut_handler, setup_single_shortcut_handler,
     is_mac_platform, is_windows_platform, is_input_field_target,
 };
-pub use line::{Line, ScheduleMode, ManualDeparture, RouteSegment, generate_random_color};
+pub use line::{Line, LineStyle, ScheduleMode, ManualDeparture, RouteSegment, generate_random_color};
 pub use node::Node;
 pub use project::{Project, ProjectMetadata, Legend, SpacingMode, ProjectSettings, TrackHandedness, LineSortMode};
 pub use railway_graph::{RailwayGraph, Stations, Tracks, Routes, Junctions};

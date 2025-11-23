@@ -56,6 +56,14 @@ fn default_first_stop_wait_time() -> Duration {
     Duration::zero()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum LineStyle {
+    #[default]
+    Solid,
+    Double,
+    CenterLined,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[derive(Default)]
 pub enum ScheduleMode {
@@ -133,6 +141,8 @@ pub struct Line {
     pub folder_id: Option<uuid::Uuid>,
     #[serde(default)]
     pub code: String,
+    #[serde(default)]
+    pub style: LineStyle,
 }
 
 fn default_visible() -> bool {
@@ -203,6 +213,7 @@ impl Line {
                     sync_departure_offsets: false,
                     folder_id: None,
                     code: String::new(),
+                    style: LineStyle::default(),
                 }
             })
             .collect()
@@ -1226,6 +1237,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: LineStyle::default(),
         };
 
         assert!(line.uses_edge(1));
@@ -1261,6 +1273,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: LineStyle::default(),
         };
 
         assert!(line.uses_any_edge(&[1, 5, 6]));
@@ -1299,6 +1312,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: LineStyle::default(),
         };
 
         // Simulate deleting a station that used edges 1 and 2, creating bypass edge 10
@@ -1348,6 +1362,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: LineStyle::default(),
         };
 
         // Remove edge 1 but no bypass mapping
@@ -1405,6 +1420,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: LineStyle::default(),
         };
 
         line.fix_track_indices_after_change(edge.index(), 2, &graph);
@@ -1503,6 +1519,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: LineStyle::default(),
         };
 
         // Create a minimal test graph for platform assignment
@@ -1585,6 +1602,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: LineStyle::default(),
         };
 
         // Delete the direct edge B -> C
@@ -1636,6 +1654,7 @@ mod tests {
             sync_departure_offsets: false,
             folder_id: None,
             code: String::new(),
+            style: LineStyle::default(),
         };
 
         // Delete the edge

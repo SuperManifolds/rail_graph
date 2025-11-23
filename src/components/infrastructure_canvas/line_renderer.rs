@@ -1,4 +1,4 @@
-use crate::models::{Line, RailwayGraph, Stations};
+use crate::models::{Line, LineStyle, RailwayGraph, Stations};
 use crate::theme::Theme;
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::IntoEdgeReferences;
@@ -11,6 +11,12 @@ const AVOIDANCE_OFFSET_THRESHOLD: f64 = 0.1;
 const TRANSITION_LENGTH: f64 = 30.0;
 const JUNCTION_STOP_DISTANCE: f64 = 14.0;
 pub const MIN_CURVE_RADIUS: f64 = 20.0;
+
+// Line style constants
+const DOUBLE_GAP_MULTIPLIER: f64 = 2.0;
+const CENTER_LINE_WIDTH_RATIO: f64 = 0.33;
+const CENTER_DASH_LENGTH: f64 = 12.0;
+const CENTER_DASH_GAP: f64 = 12.0;
 
 /// Check if a station is a terminal (first or last stop) for a given line
 fn is_line_terminal(station_idx: NodeIndex, line: &Line, graph: &RailwayGraph) -> bool {
@@ -95,6 +101,128 @@ fn stroke_with_border(ctx: &CanvasRenderingContext2d, line_color: &str, line_wid
     ctx.set_stroke_style_str(line_color);
     ctx.set_line_width(line_width);
     ctx.stroke();
+}
+
+/// Stroke a line with a specific style (solid, double, or center-lined)
+/// The path should already be defined using `begin_path()`, `move_to()`, `line_to()`, etc.
+/// `dash_offset` is used for center-lined style to maintain dash continuity across segments
+fn stroke_with_style(ctx: &CanvasRenderingContext2d, line_color: &str, line_width: f64, border_width: f64, theme: Theme, is_highlighted: bool, style: LineStyle, dash_offset: f64) {
+    match style {
+        LineStyle::Solid => {
+            // Standard solid line - use existing stroke_with_border
+            stroke_with_border(ctx, line_color, line_width, border_width, theme, is_highlighted);
+        }
+        LineStyle::Double => {
+            // Double track style: two parallel lines with gap between
+            // Gap is 2× the individual line width
+            // Total width = line_width = individual + gap + individual = 1w + 2w + 1w = 4w
+            // So individual_width = line_width / 4
+            let individual_width = line_width / 4.0;
+
+            // Draw border if highlighted
+            if is_highlighted && border_width > 0.01 {
+                ctx.set_stroke_style_str(get_selection_color(theme));
+                ctx.set_line_width(line_width + (2.0 * border_width));
+                ctx.stroke();
+            }
+
+            // Draw outer background stroke to create gap illusion
+            if border_width > 0.01 {
+                ctx.set_stroke_style_str(get_background_color(theme));
+                ctx.set_line_width(line_width);
+                ctx.stroke();
+            }
+
+            // Draw the actual double line by drawing full width, then gap in background color
+            ctx.set_stroke_style_str(line_color);
+            ctx.set_line_width(line_width);
+            ctx.stroke();
+
+            // Draw center gap in background color to create two lines
+            ctx.set_stroke_style_str(get_background_color(theme));
+            ctx.set_line_width(individual_width * DOUBLE_GAP_MULTIPLIER);
+            ctx.stroke();
+        }
+        LineStyle::CenterLined => {
+            // Center-lined style: solid line with dashed white center line
+            // First draw the solid line
+            stroke_with_border(ctx, line_color, line_width, border_width, theme, is_highlighted);
+
+            // Then draw white dashed center line on top
+            let center_width = line_width * CENTER_LINE_WIDTH_RATIO;
+            ctx.set_stroke_style_str("#FFFFFF");
+            ctx.set_line_width(center_width);
+
+            // Set dash pattern
+            let dash_array = js_sys::Array::new();
+            dash_array.push(&wasm_bindgen::JsValue::from_f64(CENTER_DASH_LENGTH));
+            dash_array.push(&wasm_bindgen::JsValue::from_f64(CENTER_DASH_GAP));
+            ctx.set_line_dash(&dash_array).ok();
+
+            // Set dash offset to maintain continuity across segments
+            ctx.set_line_dash_offset(dash_offset);
+
+            ctx.stroke();
+
+            // Clear dash pattern for subsequent drawing
+            let empty_array = js_sys::Array::new();
+            ctx.set_line_dash(&empty_array).ok();
+        }
+    }
+}
+
+/// Draw endpoint caps based on line style
+/// For double track, draws two smaller caps; for solid/center-lined, draws one cap
+fn draw_endpoint_cap(
+    ctx: &CanvasRenderingContext2d,
+    center_x: f64,
+    center_y: f64,
+    line_width: f64,
+    perp_x: f64,  // Perpendicular direction X component (normalized)
+    perp_y: f64,  // Perpendicular direction Y component (normalized)
+    line_color: &str,
+    style: LineStyle,
+) {
+    match style {
+        LineStyle::Solid | LineStyle::CenterLined => {
+            // Single cap at full width
+            let cap_radius = line_width / 2.0;
+            ctx.begin_path();
+            let _ = ctx.arc(center_x, center_y, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
+            ctx.set_fill_style_str(line_color);
+            ctx.fill();
+        }
+        LineStyle::Double => {
+            // Two smaller caps at offset positions
+            let individual_width = line_width / 4.0;
+            let cap_radius = individual_width / 2.0;
+            let offset = (line_width / 2.0) - (individual_width / 2.0);
+
+            // Draw first cap
+            ctx.begin_path();
+            let _ = ctx.arc(
+                center_x + perp_x * offset,
+                center_y + perp_y * offset,
+                cap_radius,
+                0.0,
+                2.0 * std::f64::consts::PI
+            );
+            ctx.set_fill_style_str(line_color);
+            ctx.fill();
+
+            // Draw second cap
+            ctx.begin_path();
+            let _ = ctx.arc(
+                center_x - perp_x * offset,
+                center_y - perp_y * offset,
+                cap_radius,
+                0.0,
+                2.0 * std::f64::consts::PI
+            );
+            ctx.set_fill_style_str(line_color);
+            ctx.fill();
+        }
+    }
 }
 
 /// Assign visual positions to lines within a section based on which lines conflict (share edges).
@@ -448,6 +576,7 @@ fn draw_single_junction_connection(
     zoom: f64,
     theme: Theme,
     highlighted_edges: &HashSet<EdgeIndex>,
+    segment_cumulative_distances: &HashMap<(uuid::Uuid, usize), f64>,
 ) {
     let Some(junction_pos) = graph.get_station_position(connection_key.junction) else {
         return;
@@ -673,6 +802,29 @@ fn draw_single_junction_connection(
         let is_highlighted = highlighted_edges.contains(&connection_key.from_edge)
             && highlighted_edges.contains(&connection_key.to_edge);
 
+        // Find segment index of from_edge in this line's route for pre-calculated distance
+        // Junction curve happens after the from_edge, so we use distance at end of from_edge
+        let segment_index = line.forward_route.iter()
+            .position(|seg| seg.edge_index == connection_key.from_edge.index());
+        let cumulative_distance = if let Some(idx) = segment_index {
+            // Get distance at start of this segment, then add the edge distance
+            let start_distance = segment_cumulative_distances.get(&(line.id, idx)).copied().unwrap_or(0.0);
+            // Calculate edge length to get to the junction curve start
+            // The edge stops at adjusted_stop_distance before the junction
+            if let Some((source, target)) = graph.graph.edge_endpoints(connection_key.from_edge) {
+                if let (Some(pos1), Some(pos2)) = (graph.get_station_position(source), graph.get_station_position(target)) {
+                    let edge_distance = ((pos2.0 - pos1.0).powi(2) + (pos2.1 - pos1.1).powi(2)).sqrt();
+                    start_distance + (edge_distance - adjusted_stop_distance)
+                } else {
+                    start_distance
+                }
+            } else {
+                start_distance
+            }
+        } else {
+            0.0
+        };
+
         // Use unified curve drawing function
         draw_curve(
             ctx,
@@ -688,6 +840,8 @@ fn draw_single_junction_connection(
             false,  // draw_exit_cap - junctions don't draw exit cap (handled by outgoing edge)
             entry_offset,
             exit_offset,
+            line.style,
+            cumulative_distance,
         );
     }
 }
@@ -973,7 +1127,7 @@ fn draw_junction_connections(
             // Junction connection is highlighted if both connecting edges are highlighted
             let is_highlighted = highlighted_edges.contains(&connection_key.from_edge)
                 && highlighted_edges.contains(&connection_key.to_edge);
-            stroke_with_border(ctx, &line.color, line_world_width, gap_width * 0.2, theme, is_highlighted);
+            stroke_with_style(ctx, &line.color, line_world_width, gap_width * 0.2, theme, is_highlighted, line.style, 0.0);
         }
     }
 }
@@ -1144,6 +1298,8 @@ fn draw_curve(
     draw_exit_cap: bool,
     entry_offset: f64,  // Perpendicular offset at entry
     exit_offset: f64,   // Perpendicular offset at exit
+    line_style: LineStyle,
+    cumulative_distance: f64,  // For dash offset continuity
 ) {
     ctx.set_line_width(line_width);
     ctx.set_stroke_style_str(line_color);
@@ -1278,22 +1434,20 @@ fn draw_curve(
         }
     }
 
-    stroke_with_border(ctx, line_color, line_width, border_width, theme, is_highlighted);
+    let dash_offset = cumulative_distance % (CENTER_DASH_LENGTH + CENTER_DASH_GAP);
+    stroke_with_style(ctx, line_color, line_width, border_width, theme, is_highlighted, line_style, dash_offset);
 
     // Draw caps at entry and exit points to cover gaps
-    let cap_radius = line_width / 2.0;
-    ctx.set_fill_style_str(line_color);
+    // Calculate perpendicular directions for cap placement
+    let entry_perp = (-entry_dir.1, entry_dir.0);
+    let exit_perp = (-exit_dir.1, exit_dir.0);
 
     // Cap at entry point
-    ctx.begin_path();
-    let _ = ctx.arc(entry_point.0, entry_point.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
-    ctx.fill();
+    draw_endpoint_cap(ctx, entry_point.0, entry_point.1, line_width, entry_perp.0, entry_perp.1, line_color, line_style);
 
     // Cap at exit point (conditional)
     if draw_exit_cap {
-        ctx.begin_path();
-        let _ = ctx.arc(exit_point.0, exit_point.1, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
-        ctx.fill();
+        draw_endpoint_cap(ctx, exit_point.0, exit_point.1, line_width, exit_perp.0, exit_perp.1, line_color, line_style);
     }
 }
 
@@ -1671,6 +1825,64 @@ pub fn draw_lines(
         }
     }
 
+    // Pre-calculate cumulative distances for each line segment in route order
+    // Key: (line_id, segment_index) -> cumulative distance at START of that segment
+    let mut segment_cumulative_distances: HashMap<(uuid::Uuid, usize), f64> = HashMap::new();
+
+    for line in &sorted_lines {
+        if !line.visible {
+            continue;
+        }
+
+        let mut cumulative_distance = 0.0;
+
+        for (i, segment) in line.forward_route.iter().enumerate() {
+            // Store distance at start of this edge segment
+            segment_cumulative_distances.insert((line.id, i), cumulative_distance);
+
+            // Calculate edge length
+            let edge_idx = EdgeIndex::new(segment.edge_index);
+            let Some((source, target)) = graph.graph.edge_endpoints(edge_idx) else {
+                continue;
+            };
+            let (Some(pos1), Some(pos2)) = (graph.get_station_position(source), graph.get_station_position(target)) else {
+                continue;
+            };
+
+            let edge_distance = ((pos2.0 - pos1.0).powi(2) + (pos2.1 - pos1.1).powi(2)).sqrt();
+
+            // Check if there's a curve after this edge
+            let has_curve_after = i + 1 < line.forward_route.len() && {
+                let next_segment = &line.forward_route[i + 1];
+                let next_edge_idx = EdgeIndex::new(next_segment.edge_index);
+
+                graph.graph.edge_endpoints(next_edge_idx).is_some_and(|(next_source, next_target)| {
+                    // Find connecting node
+                    let connecting_node = [
+                        (target == next_source, target),
+                        (source == next_target, source),
+                        (target == next_target, target),
+                        (source == next_source, source),
+                    ].into_iter()
+                        .find(|(matches, _)| *matches)
+                        .map(|(_, node)| node);
+
+                    connecting_node.is_some_and(|node| graph.get_station_position(node).is_some())
+                })
+            };
+
+            if has_curve_after {
+                // Edge stops curve_stop before the node, then curve adds distance
+                let curve_stop = JUNCTION_STOP_DISTANCE - 2.0;
+                let curve_distance = curve_stop * 2.0; // Rough approximation
+                cumulative_distance += edge_distance - curve_stop + curve_distance;
+            } else {
+                // No curve after this edge, add full edge distance
+                cumulative_distance += edge_distance;
+            }
+        }
+    }
+
     // Draw station curves for lines with direction changes (before edges/junctions for z-order)
     for line in &sorted_lines {
         if line.forward_route.len() < 2 {
@@ -1837,6 +2049,23 @@ pub fn draw_lines(
             let is_highlighted = highlighted_edges.contains(&prev_edge)
                 && highlighted_edges.contains(&next_edge);
 
+            // Get cumulative distance at the start of this curve (after edge i)
+            let cumulative_distance = if let Some(&start_distance) = segment_cumulative_distances.get(&(line.id, i)) {
+                // Calculate distance of edge i to get to the curve start point
+                // The edge stops at curve_stop distance before the station, so subtract that
+                if let (Some(prev_pos1), Some(prev_pos2)) = (
+                    graph.get_station_position(prev_src),
+                    graph.get_station_position(prev_tgt)
+                ) {
+                    let edge_distance = ((prev_pos2.0 - prev_pos1.0).powi(2) + (prev_pos2.1 - prev_pos1.1).powi(2)).sqrt();
+                    start_distance + (edge_distance - curve_stop)
+                } else {
+                    start_distance
+                }
+            } else {
+                0.0
+            };
+
             // Draw the curve
             draw_curve(
                 ctx,
@@ -1852,6 +2081,8 @@ pub fn draw_lines(
                 true,  // draw_exit_cap - stations need both entry and exit caps
                 perp_offset,  // entry_offset
                 perp_offset,  // exit_offset - same for radial scaling
+                line.style,
+                cumulative_distance,
             );
         }
     }
@@ -2036,14 +2267,28 @@ pub fn draw_lines(
             ctx.set_stroke_style_str(&line.color);
             ctx.begin_path();
 
+            // Find segment index in this line's route for pre-calculated distance
+            let segment_index = line.forward_route.iter()
+                .position(|seg| seg.edge_index == edge_idx.index());
+            let cumulative_distance = if let Some(idx) = segment_index {
+                let start_distance = segment_cumulative_distances.get(&(line.id, idx)).copied().unwrap_or(0.0);
+                // If there's a curve/junction at source, the edge starts after it
+                if source_is_junction || source_has_curve {
+                    start_distance + source_distance
+                } else {
+                    start_distance
+                }
+            } else {
+                0.0
+            };
+
             if needs_avoidance {
                 // Draw segmented path: start -> offset section -> end
-                let segment_length = ((line_pos2.0 - line_pos1.0).powi(2) + (line_pos2.1 - line_pos1.1).powi(2)).sqrt();
-
                 // Check if we're connecting to junctions
                 let start_needs_transition = !source_is_junction;
                 let end_needs_transition = !target_is_junction;
 
+                let segment_length = ((line_pos2.0 - line_pos1.0).powi(2) + (line_pos2.1 - line_pos1.1).powi(2)).sqrt();
                 draw_line_segment_with_avoidance(
                     ctx, line_pos1, line_pos2, segment_length,
                     (ox, oy), (avoid_x, avoid_y),
@@ -2055,21 +2300,15 @@ pub fn draw_lines(
             }
 
             let is_highlighted = highlighted_edges.contains(edge_idx);
-            stroke_with_border(ctx, &line.color, line_world_width, gap_width * 0.2, theme, is_highlighted);
+            let dash_offset = cumulative_distance % (CENTER_DASH_LENGTH + CENTER_DASH_GAP);
+            stroke_with_style(ctx, &line.color, line_world_width, gap_width * 0.2, theme, is_highlighted, line.style, dash_offset);
 
             // Draw caps at junction/station endpoints to cover rendering gaps
-            let cap_radius = line_world_width / 2.0;
             // Draw cap at source (whether junction or station)
-            ctx.begin_path();
-            let _ = ctx.arc(line_pos1.0 + ox, line_pos1.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
-            ctx.set_fill_style_str(&line.color);
-            ctx.fill();
+            draw_endpoint_cap(ctx, line_pos1.0 + ox, line_pos1.1 + oy, line_world_width, nx, ny, &line.color, line.style);
 
             // Draw cap at target (whether junction or station)
-            ctx.begin_path();
-            let _ = ctx.arc(line_pos2.0 + ox, line_pos2.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
-            ctx.set_fill_style_str(&line.color);
-            ctx.fill();
+            draw_endpoint_cap(ctx, line_pos2.0 + ox, line_pos2.1 + oy, line_world_width, nx, ny, &line.color, line.style);
         } else {
             // Multiple lines - position them using visual positions
             // Calculate widths for all lines in section ordering (to maintain proper spacing with gaps)
@@ -2178,14 +2417,24 @@ pub fn draw_lines(
                 ctx.set_stroke_style_str(&line.color);
                 ctx.begin_path();
 
+                // Find segment index in this line's route for pre-calculated distance
+                let segment_index = line.forward_route.iter()
+                    .position(|seg| seg.edge_index == edge_idx.index());
+                let mut cumulative_distance = segment_index
+                    .and_then(|idx| segment_cumulative_distances.get(&(line.id, idx)).copied())
+                    .unwrap_or(0.0);
+                // If there's a curve/junction at source, the edge starts after it
+                if source_is_junction || source_has_curve {
+                    cumulative_distance += source_distance;
+                }
+
                 if needs_avoidance {
                     // Draw segmented path with offset
-                    let segment_length = ((line_pos2.0 - line_pos1.0).powi(2) + (line_pos2.1 - line_pos1.1).powi(2)).sqrt();
-
                     // Check if we're connecting to junctions
                     let start_needs_transition = !source_is_junction;
                     let end_needs_transition = !target_is_junction;
 
+                    let segment_length = ((line_pos2.0 - line_pos1.0).powi(2) + (line_pos2.1 - line_pos1.1).powi(2)).sqrt();
                     draw_line_segment_with_avoidance(
                         ctx, line_pos1, line_pos2, segment_length,
                         (ox, oy), (avoid_x, avoid_y),
@@ -2197,21 +2446,15 @@ pub fn draw_lines(
                 }
 
                 let is_highlighted = highlighted_edges.contains(edge_idx);
-                stroke_with_border(ctx, &line.color, line_world_width, gap_width * 0.2, theme, is_highlighted);
+                let dash_offset = cumulative_distance % (CENTER_DASH_LENGTH + CENTER_DASH_GAP);
+                stroke_with_style(ctx, &line.color, line_world_width, gap_width * 0.2, theme, is_highlighted, line.style, dash_offset);
 
                 // Draw caps at junction/station endpoints to cover rendering gaps
-                let cap_radius = line_world_width / 2.0;
                 // Draw cap at source (whether junction or station)
-                ctx.begin_path();
-                let _ = ctx.arc(line_pos1.0 + ox, line_pos1.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
-                ctx.set_fill_style_str(&line.color);
-                ctx.fill();
+                draw_endpoint_cap(ctx, line_pos1.0 + ox, line_pos1.1 + oy, line_world_width, nx, ny, &line.color, line.style);
 
                 // Draw cap at target (whether junction or station)
-                ctx.begin_path();
-                let _ = ctx.arc(line_pos2.0 + ox, line_pos2.1 + oy, cap_radius, 0.0, 2.0 * std::f64::consts::PI);
-                ctx.set_fill_style_str(&line.color);
-                ctx.fill();
+                draw_endpoint_cap(ctx, line_pos2.0 + ox, line_pos2.1 + oy, line_world_width, nx, ny, &line.color, line.style);
             }
         }
 
@@ -2234,6 +2477,7 @@ pub fn draw_lines(
                     zoom,
                     theme,
                     highlighted_edges,
+                    &segment_cumulative_distances,
                 );
                 drawn_junctions.insert(*connection_key);
             }
