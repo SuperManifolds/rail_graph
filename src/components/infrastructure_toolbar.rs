@@ -1,6 +1,14 @@
-use leptos::{component, view, IntoView, ReadSignal, WriteSignal, SignalGet, SignalSet, Callback, Signal};
+use leptos::{component, view, IntoView, ReadSignal, WriteSignal, SignalGet, SignalSet, Callback, Signal, Show};
 use petgraph::stable_graph::NodeIndex;
 use crate::components::button::Button;
+
+/// Check if line view feature is enabled via localStorage
+fn is_line_view_enabled() -> bool {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|storage| storage.get_item("enable_line_view").ok().flatten())
+        .is_some()
+}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum EditMode {
@@ -30,13 +38,15 @@ pub fn InfrastructureToolbar(
                 <i class="fa-solid fa-diagram-project"></i>
                 {move || if auto_layout_enabled.get() { " Auto Layout: On" } else { " Auto Layout: Off" }}
             </button>
-            <button
-                class=move || if show_lines.get() { "toolbar-button active" } else { "toolbar-button" }
-                on:click=move |_| set_show_lines.set(!show_lines.get())
-            >
-                <i class="fa-solid fa-route"></i>
-                {move || if show_lines.get() { " Show Lines: On" } else { " Show Lines: Off" }}
-            </button>
+            <Show when=is_line_view_enabled>
+                <button
+                    class=move || if show_lines.get() { "toolbar-button active" } else { "toolbar-button" }
+                    on:click=move |_| set_show_lines.set(!show_lines.get())
+                >
+                    <i class="fa-solid fa-route"></i>
+                    {move || if show_lines.get() { " Show Lines: On" } else { " Show Lines: Off" }}
+                </button>
+            </Show>
             <Button
                 class="toolbar-button"
                 on_click=Callback::new(move |_| set_show_add_station.set(true))
