@@ -65,7 +65,8 @@ fn RouteStopsList(
     let on_save = on_save_stored.get_value();
     let on_save_for_start = on_save.clone();
     let on_save_for_list = on_save.clone();
-    let on_save_for_end = on_save;
+    let on_save_for_end = on_save.clone();
+    let on_save_for_turnaround = on_save;
 
     view! {
         <p class="help-text travel-time-info">
@@ -142,6 +143,42 @@ fn RouteStopsList(
                     on_save=on_save_for_end.clone()
                     settings=settings
                 />
+            })
+        }}
+
+        // Turnaround checkbox
+        {move || {
+            edited_line.with(|line_opt| {
+                line_opt.as_ref().map(|line| {
+                    let current_dir = dir.get();
+                    let is_turnaround = match current_dir {
+                        RouteDirection::Forward => line.forward_turnaround,
+                        RouteDirection::Return => line.return_turnaround,
+                    };
+                    let on_save_clone = on_save_for_turnaround.clone();
+
+                    view! {
+                        <div class="turnaround-section">
+                            <label>
+                                <input
+                                    type="checkbox"
+                                    checked=is_turnaround
+                                    on:change=move |ev| {
+                                        let checked = event_target_checked(&ev);
+                                        if let Some(mut updated_line) = edited_line.get_untracked() {
+                                            match current_dir {
+                                                RouteDirection::Forward => updated_line.forward_turnaround = checked,
+                                                RouteDirection::Return => updated_line.return_turnaround = checked,
+                                            }
+                                            on_save_clone(updated_line);
+                                        }
+                                    }
+                                />
+                                " Turnaround: Hold at terminus for opposite-direction service"
+                            </label>
+                        </div>
+                    }
+                })
             })
         }}
     }

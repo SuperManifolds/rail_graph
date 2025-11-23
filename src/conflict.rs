@@ -1418,6 +1418,7 @@ mod tests {
             route_start_node: Some(idx1),
             route_end_node: Some(idx2),
             timing_inherited: vec![false, false], // Test journey with explicit timing
+            is_forward: true,
         };
 
         let station_indices = graph.graph.node_indices()
