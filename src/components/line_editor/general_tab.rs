@@ -1,10 +1,11 @@
 use crate::components::tab_view::TabPanel;
 use crate::components::duration_input::DurationInput;
-use crate::models::Line;
+use crate::models::{Line, LineStyle};
 use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_value, event_target_checked, SignalGetUntracked, SignalSet};
 use std::rc::Rc;
 
 #[component]
+#[allow(clippy::too_many_lines)]
 pub fn GeneralTab(
     edited_line: ReadSignal<Option<Line>>,
     set_edited_line: WriteSignal<Option<Line>>,
@@ -104,6 +105,41 @@ pub fn GeneralTab(
                             }
                         }}
                     </div>
+                </div>
+
+                <div class="form-group">
+                    <label>"Line Style"</label>
+                    <select
+                        value=move || {
+                            edited_line.get().map_or("Solid".to_string(), |l| {
+                                match l.style {
+                                    LineStyle::Solid => "Solid",
+                                    LineStyle::Double => "Double",
+                                    LineStyle::CenterLined => "CenterLined",
+                                }.to_string()
+                            })
+                        }
+                        on:change={
+                            let on_save = on_save.get_value();
+                            move |ev| {
+                                let style_str = event_target_value(&ev);
+                                let style = match style_str.as_str() {
+                                    "Double" => LineStyle::Double,
+                                    "CenterLined" => LineStyle::CenterLined,
+                                    _ => LineStyle::Solid,
+                                };
+                                if let Some(mut updated_line) = edited_line.get_untracked() {
+                                    updated_line.style = style;
+                                    set_edited_line.set(Some(updated_line.clone()));
+                                    on_save(updated_line);
+                                }
+                            }
+                        }
+                    >
+                        <option value="Solid">"Solid"</option>
+                        <option value="Double">"Double track"</option>
+                        <option value="CenterLined">"Center line"</option>
+                    </select>
                 </div>
 
                 <div class="form-group">
