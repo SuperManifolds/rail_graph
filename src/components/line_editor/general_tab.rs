@@ -1,8 +1,16 @@
 use crate::components::tab_view::TabPanel;
 use crate::components::duration_input::DurationInput;
 use crate::models::{Line, LineStyle};
-use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_value, event_target_checked, SignalGetUntracked, SignalSet};
+use leptos::{component, view, ReadSignal, WriteSignal, RwSignal, IntoView, store_value, Signal, SignalGet, event_target_value, event_target_checked, SignalGetUntracked, SignalSet, Show};
 use std::rc::Rc;
+
+/// Check if line view feature is enabled via localStorage
+fn is_line_view_enabled() -> bool {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok().flatten())
+        .and_then(|storage| storage.get_item("enable_line_view").ok().flatten())
+        .is_some()
+}
 
 #[component]
 #[allow(clippy::too_many_lines)]
@@ -107,40 +115,42 @@ pub fn GeneralTab(
                     </div>
                 </div>
 
-                <div class="form-group">
-                    <label>"Line Style"</label>
-                    <select
-                        value=move || {
-                            edited_line.get().map_or("Solid".to_string(), |l| {
-                                match l.style {
-                                    LineStyle::Solid => "Solid",
-                                    LineStyle::Double => "Double",
-                                    LineStyle::CenterLined => "CenterLined",
-                                }.to_string()
-                            })
-                        }
-                        on:change={
-                            let on_save = on_save.get_value();
-                            move |ev| {
-                                let style_str = event_target_value(&ev);
-                                let style = match style_str.as_str() {
-                                    "Double" => LineStyle::Double,
-                                    "CenterLined" => LineStyle::CenterLined,
-                                    _ => LineStyle::Solid,
-                                };
-                                if let Some(mut updated_line) = edited_line.get_untracked() {
-                                    updated_line.style = style;
-                                    set_edited_line.set(Some(updated_line.clone()));
-                                    on_save(updated_line);
+                <Show when=is_line_view_enabled>
+                    <div class="form-group">
+                        <label>"Line Style"</label>
+                        <select
+                            value=move || {
+                                edited_line.get().map_or("Solid".to_string(), |l| {
+                                    match l.style {
+                                        LineStyle::Solid => "Solid",
+                                        LineStyle::Double => "Double",
+                                        LineStyle::CenterLined => "CenterLined",
+                                    }.to_string()
+                                })
+                            }
+                            on:change={
+                                let on_save = on_save.get_value();
+                                move |ev| {
+                                    let style_str = event_target_value(&ev);
+                                    let style = match style_str.as_str() {
+                                        "Double" => LineStyle::Double,
+                                        "CenterLined" => LineStyle::CenterLined,
+                                        _ => LineStyle::Solid,
+                                    };
+                                    if let Some(mut updated_line) = edited_line.get_untracked() {
+                                        updated_line.style = style;
+                                        set_edited_line.set(Some(updated_line.clone()));
+                                        on_save(updated_line);
+                                    }
                                 }
                             }
-                        }
-                    >
-                        <option value="Solid">"Solid"</option>
-                        <option value="Double">"Double track"</option>
-                        <option value="CenterLined">"Center line"</option>
-                    </select>
-                </div>
+                        >
+                            <option value="Solid">"Solid"</option>
+                            <option value="Double">"Double track"</option>
+                            <option value="CenterLined">"Center line"</option>
+                        </select>
+                    </div>
+                </Show>
 
                 <div class="form-group">
                     <label>"Default Wait Time"</label>

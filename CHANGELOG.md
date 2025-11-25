@@ -1,3 +1,26 @@
+# v0.1.22 - 2025-11-25
+
+## Features
+- Added turnaround option for train services - trains can hold at terminus platforms until the next opposite-direction service departs, with independent per-direction configuration
+- Added line code property (short identifier like "R14") that appears in terminal station labels, auto-generated train numbers, and conflict indicators
+- Added global sidebar toggle button in app header to hide/show sidebar across all views
+- Added track highlighting between selected stations - selecting two stations highlights the connecting tracks in orange
+
+## Improvements
+- Selection rings now appear on junctions for visual feedback when selected
+- Junctions with exactly 2 connections now auto-reconnect and re-route lines when deleted
+- Station label scaling now has min/max limits (0.25x to 8x) to prevent labels becoming too large or too small
+- Changed default node distance from 4 to 2 grid squares for more compact network layouts
+- Junction horizontal label lines now use matching yellow/orange color scheme
+- Double-clicking to edit a station or junction now also selects it
+
+## Bug Fixes
+- Fixed platform occupancy buffer incorrectly applied at journey start/end stations causing false conflicts
+- Fixed dash pattern continuity for center-lined trains appearing cut short at stations
+- Fixed line number badges sometimes rendering diagonally - now always horizontal or vertical
+- Fixed passing loop click detection being too sensitive - reduced threshold to 6 pixels
+- Fixed forward and return journeys getting duplicate train numbers - implemented even/odd numbering convention (forward=odd, return=even)
+
 # v0.1.21 - 2025-11-11
 
 ## Features
