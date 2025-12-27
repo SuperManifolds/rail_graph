@@ -1,7 +1,9 @@
 use crate::import::jtraingraph::{parse_jtraingraph, import_jtraingraph};
+use crate::import::nimby::{parse_nimby_json, import_nimby_lines, NimbyImportData, NimbyImportConfig};
 use crate::models::{Line, RailwayGraph};
 use crate::components::button::Button;
 use crate::components::csv_column_mapper::CsvColumnMapper;
+use crate::components::nimby_line_selector::NimbyLineSelector;
 use crate::components::window::Window;
 use crate::import::csv::{analyze_csv, parse_csv_with_mapping, parse_csv_with_existing_infrastructure, CsvImportConfig};
 use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, SignalGetUntracked, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback, Show};
@@ -78,6 +80,7 @@ fn handle_csv_analysis(
 
 #[component]
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn Importer(
     lines: ReadSignal<Vec<Line>>,
     set_lines: WriteSignal<Vec<Line>>,
@@ -90,6 +93,10 @@ pub fn Importer(
     let (file_content, set_file_content) = create_signal(String::new());
     let (csv_config, set_csv_config) = create_signal(None::<CsvImportConfig>);
     let (import_error, set_import_error) = create_signal(None::<String>);
+
+    // NIMBY Rails import state
+    let (nimby_data, set_nimby_data) = create_signal(None::<NimbyImportData>);
+    let (show_nimby_selector, set_show_nimby_selector) = create_signal(false);
 
     let handle_file_change = move |_| {
         let Some(input_elem) = file_input_ref.get() else { return };
@@ -120,17 +127,37 @@ pub fn Importer(
             set_file_content.set(text.clone());
 
             // Check file type by extension
-            let is_fpl = std::path::Path::new(&filename)
+            let extension = std::path::Path::new(&filename)
                 .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("fpl"));
+                .and_then(|ext| ext.to_str())
+                .map(str::to_ascii_lowercase);
 
-            leptos::logging::log!("File type: {}", if is_fpl { "FPL" } else { "CSV" });
+            leptos::logging::log!("File type: {:?}", extension);
 
-            if is_fpl {
-                let handedness = settings.get_untracked().track_handedness;
-                handle_fpl_import(&text, set_graph, set_lines, lines, handedness);
-            } else {
-                handle_csv_analysis(&text, filename.clone(), set_csv_config, set_show_mapper, set_import_error);
+            match extension.as_deref() {
+                Some("fpl") => {
+                    let handedness = settings.get_untracked().track_handedness;
+                    handle_fpl_import(&text, set_graph, set_lines, lines, handedness);
+                }
+                Some("json") => {
+                    // NIMBY Rails JSON import
+                    match parse_nimby_json(&text) {
+                        Ok(data) => {
+                            leptos::logging::log!("NIMBY JSON parsed: {} stations, {} lines", data.stations.len(), data.lines.len());
+                            set_nimby_data.set(Some(data));
+                            set_show_nimby_selector.set(true);
+                            set_import_error.set(None);
+                        }
+                        Err(e) => {
+                            leptos::logging::error!("Failed to parse NIMBY JSON: {}", e);
+                            set_import_error.set(Some(e));
+                        }
+                    }
+                }
+                _ => {
+                    // Default to CSV
+                    handle_csv_analysis(&text, filename.clone(), set_csv_config, set_show_mapper, set_import_error);
+                }
             }
         });
     };
@@ -185,10 +212,39 @@ pub fn Importer(
         }
     };
 
+    let handle_nimby_import = move |config: NimbyImportConfig| {
+        set_import_error.set(None);
+
+        let Some(data) = nimby_data.get() else {
+            set_import_error.set(Some("No NIMBY data available".to_string()));
+            return;
+        };
+
+        let existing_line_count = lines.get().len();
+        let mut current_graph = graph.get();
+
+        match import_nimby_lines(&data, &config, &mut current_graph, existing_line_count) {
+            Ok(imported_lines) => {
+                leptos::logging::log!("Imported {} lines from NIMBY JSON", imported_lines.len());
+                set_graph.set(current_graph);
+                set_lines.update(|existing| existing.extend(imported_lines));
+                set_show_nimby_selector.set(false);
+                set_nimby_data.set(None);
+                if let Some(input) = file_input_ref.get() {
+                    input.set_value("");
+                }
+            }
+            Err(e) => {
+                leptos::logging::error!("NIMBY import failed: {}", e);
+                set_import_error.set(Some(e));
+            }
+        }
+    };
+
     view! {
         <input
             type="file"
-            accept=".csv,.fpl"
+            accept=".csv,.fpl,.json"
             node_ref=file_input_ref
             on:change=handle_file_change
             style="display: none;"
@@ -204,7 +260,7 @@ pub fn Importer(
                 });
             })
             shortcut_id="import_data"
-            title="Import CSV or JTrainGraph (.fpl)"
+            title="Import CSV, JTrainGraph (.fpl), or NIMBY Rails (.json)"
         >
             <i class="fa-solid fa-file-import"></i>
         </Button>
@@ -234,6 +290,35 @@ pub fn Importer(
                         set_import_error.set(None);
                     })
                     on_import=Callback::new(handle_import)
+                    import_error=import_error
+                />
+            </Window>
+        </Show>
+
+        <Show when=move || nimby_data.get().is_some()>
+            <Window
+                is_open=show_nimby_selector
+                title=Signal::derive(|| "Import NIMBY Rails Schedules".to_string())
+                on_close=move || {
+                    set_show_nimby_selector.set(false);
+                    set_nimby_data.set(None);
+                    set_import_error.set(None);
+                }
+                position_key="nimby_importer"
+            >
+                <NimbyLineSelector
+                    data=Signal::derive(move || nimby_data.get().unwrap_or_default())
+                    handedness=Signal::derive(move || settings.get().track_handedness)
+                    station_spacing=Signal::derive(move || {
+                        const GRID_SIZE: f64 = 30.0;
+                        settings.get().default_node_distance_grid_squares * GRID_SIZE
+                    })
+                    on_cancel=Callback::new(move |()| {
+                        set_show_nimby_selector.set(false);
+                        set_nimby_data.set(None);
+                        set_import_error.set(None);
+                    })
+                    on_import=Callback::new(handle_nimby_import)
                     import_error=import_error
                 />
             </Window>

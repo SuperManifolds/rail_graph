@@ -2,9 +2,87 @@ use crate::models::{RailwayGraph, Stations, Junctions, ProjectSettings};
 use crate::geometry::{angle_difference, line_segment_distance};
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 const GRID_SIZE: f64 = 30.0;
+
+/// Maximum bonus for continuing in the same direction as incoming
+const CONTINUITY_BONUS_MAX: f64 = 2000.0;
+
+/// Maximum bonus for matching geographic direction
+const GEOGRAPHIC_BONUS_MAX: f64 = 3000.0;
+
+/// Geographic hints for layout - provides preferred directions based on real-world coordinates
+#[derive(Debug, Clone, Default)]
+pub struct GeographicHints {
+    /// Map from `NodeIndex` to (longitude, latitude) coordinates
+    lonlat_map: HashMap<NodeIndex, (f64, f64)>,
+}
+
+impl GeographicHints {
+    /// Create empty hints (no geographic data)
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            lonlat_map: HashMap::new(),
+        }
+    }
+
+    /// Create hints from a lonlat map
+    #[must_use]
+    pub fn new(lonlat_map: HashMap<NodeIndex, (f64, f64)>) -> Self {
+        Self { lonlat_map }
+    }
+
+    /// Check if hints are available
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.lonlat_map.is_empty()
+    }
+
+    /// Get number of nodes with geographic hints
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.lonlat_map.len()
+    }
+
+    /// Get preferred direction from one node to another based on geography
+    /// Returns angle in radians where 0 = East, -π/2 = North (screen up)
+    #[must_use]
+    pub fn preferred_direction(&self, from: NodeIndex, to: NodeIndex) -> Option<f64> {
+        let from_lonlat = self.lonlat_map.get(&from)?;
+        let to_lonlat = self.lonlat_map.get(&to)?;
+
+        let dx = to_lonlat.0 - from_lonlat.0;  // East is positive
+        let dy = from_lonlat.1 - to_lonlat.1;  // Invert: North (higher lat) = negative Y (up on screen)
+
+        let angle = dy.atan2(dx);
+
+        // Debug: log geographic direction calculations for specific stations
+        // Uncomment to debug geographic calculations
+        // println!(
+        //     "GEO: ({:.4}, {:.4}) -> ({:.4}, {:.4}), dx={:.4}, dy={:.4}, angle={:.0}°",
+        //     from_lonlat.0, from_lonlat.1,
+        //     to_lonlat.0, to_lonlat.1,
+        //     dx, dy,
+        //     angle.to_degrees()
+        // );
+
+        Some(angle)
+    }
+}
+
+/// Snap angle to nearest 45° compass direction
+fn snap_to_compass(angle: f64) -> f64 {
+    DIRECTIONS.iter()
+        .min_by(|&&a, &&b| {
+            angle_difference(angle, a)
+                .partial_cmp(&angle_difference(angle, b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .copied()
+        .unwrap_or(0.0)
+}
 
 // 8 compass directions (45° increments)
 const DIRECTIONS: [f64; 8] = [
@@ -17,6 +95,51 @@ const DIRECTIONS: [f64; 8] = [
     -std::f64::consts::FRAC_PI_2,          // N (-90°)
     -std::f64::consts::FRAC_PI_4,          // NE (-45°)
 ];
+
+/// Filter compass directions to only those consistent with geographic relationship.
+/// Returns directions within 90° of the true geographic direction.
+/// This ensures stations are never placed opposite to their real-world positions.
+fn filter_valid_directions(
+    geo_hints: &GeographicHints,
+    from_node: NodeIndex,
+    to_node: NodeIndex,
+) -> Vec<f64> {
+    let Some(geo_dir) = geo_hints.preferred_direction(from_node, to_node) else {
+        return DIRECTIONS.to_vec(); // No geo data, all directions valid
+    };
+
+    // Filter to directions within 90° of the true geographic direction
+    DIRECTIONS
+        .iter()
+        .copied()
+        .filter(|&dir| angle_difference(dir, geo_dir) <= std::f64::consts::FRAC_PI_2)
+        .collect()
+}
+
+/// Get the best compass direction for spine placement based on geographic hints.
+/// Returns the direction closest to the true geographic direction from valid options.
+fn get_spine_direction(
+    geo_hints: &GeographicHints,
+    from_node: NodeIndex,
+    to_node: NodeIndex,
+    fallback: f64,
+) -> f64 {
+    let valid_dirs = filter_valid_directions(geo_hints, from_node, to_node);
+    let Some(geo_dir) = geo_hints.preferred_direction(from_node, to_node) else {
+        return fallback;
+    };
+
+    // Pick the valid direction closest to the geographic direction
+    valid_dirs
+        .iter()
+        .copied()
+        .min_by(|&a, &b| {
+            angle_difference(a, geo_dir)
+                .partial_cmp(&angle_difference(b, geo_dir))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(fallback)
+}
 
 /// Snap coordinates to grid intersections
 #[must_use]
@@ -241,6 +364,7 @@ fn find_fallback_position(
 #[allow(clippy::too_many_arguments)]
 fn find_best_direction_for_branch(
     graph: &RailwayGraph,
+    current_node: NodeIndex,
     current_pos: (f64, f64),
     neighbor: NodeIndex,
     target_pos: Option<(f64, f64)>,
@@ -249,17 +373,9 @@ fn find_best_direction_for_branch(
     incoming_direction: f64,
     base_station_spacing: f64,
     is_through_path: bool,
+    geo_hints: Option<&GeographicHints>,
 ) -> (f64, f64, i32) {
     let debug_this = graph.graph[neighbor].display_name() == "Upper Tyndrum";
-
-    if debug_this {
-        leptos::logging::log!("find_best_direction_for_branch for {}", graph.graph[neighbor].display_name());
-        leptos::logging::log!("  current_pos: ({:.1}, {:.1})", current_pos.0, current_pos.1);
-        leptos::logging::log!("  already_used: {} branches", already_used.len());
-        for (i, (dir, _)) in already_used.iter().enumerate() {
-            leptos::logging::log!("    branch {}: {:.0}°", i, dir.to_degrees());
-        }
-    }
 
     // If this is a through path at a junction, continue straight in the incoming direction
     if is_through_path {
@@ -289,6 +405,12 @@ fn find_best_direction_for_branch(
         dy.atan2(dx)
     });
 
+    // Filter directions to only those consistent with geography (hard constraint)
+    let valid_directions: Vec<f64> = geo_hints.map_or_else(
+        || DIRECTIONS.to_vec(),
+        |h| filter_valid_directions(h, current_node, neighbor),
+    );
+
     // Try spacing multipliers from 1.0 up to 10.0
     for spacing_mult in [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 10.0] {
         let mut best_at_this_spacing = i32::MIN;
@@ -297,7 +419,7 @@ fn find_best_direction_for_branch(
             leptos::logging::log!("  Trying spacing multiplier: {:.1}", spacing_mult);
         }
 
-        for &direction in &DIRECTIONS {
+        for &direction in &valid_directions {
             let test_pos = snap_to_grid(
                 current_pos.0 + direction.cos() * base_station_spacing * spacing_mult,
                 current_pos.1 + direction.sin() * base_station_spacing * spacing_mult,
@@ -310,19 +432,27 @@ fn find_best_direction_for_branch(
                 continue;
             }
 
-            // CRITICAL: If node has a target, reject directions that move away from it
+            // If node has a target, apply constraint based on whether we have geography
+            // With geography: soft constraint (penalty in scoring) - geography is ground truth
+            // Without geography: hard constraint (reject) - target is our best guess
             if let Some(target_dir) = target_direction {
                 let angle_to_target = angle_difference(direction, target_dir);
 
-                // If we're moving away from target (> 90°), reject this direction
+                // If we're moving away from target (> 90°)
                 #[allow(clippy::excessive_nesting)]
                 if angle_to_target > std::f64::consts::FRAC_PI_2 {
-                    if debug_this {
-                        leptos::logging::log!("    {:.0}°: AWAY FROM TARGET", direction.to_degrees());
+                    // With geographic hints, we trust geography over target position
+                    // (target position comes from earlier layout decisions that might be wrong)
+                    // So we only soft-penalize via score, not hard reject
+                    if geo_hints.is_none() {
+                        continue;
                     }
-                    continue;
+                    // With geo_hints, penalty is applied via score_direction_for_branch
                 }
             }
+
+            // Get geographic preferred direction if hints available
+            let geo_preferred = geo_hints.and_then(|h| h.preferred_direction(current_node, neighbor));
 
             let score = score_direction_for_branch(
                 graph,
@@ -334,6 +464,7 @@ fn find_best_direction_for_branch(
                 already_used,
                 incoming_direction,
                 base_station_spacing,
+                geo_preferred,
             );
 
             if debug_this {
@@ -376,6 +507,7 @@ fn score_direction_for_branch(
     already_used: &[(f64, HashSet<NodeIndex>)],
     incoming_direction: f64,
     base_station_spacing: f64,
+    geo_preferred_direction: Option<f64>,
 ) -> i32 {
     let mut score = 0;
 
@@ -402,12 +534,37 @@ fn score_direction_for_branch(
         return i32::MIN;
     }
 
+    // Continuity bonus: reward directions similar to incoming direction
+    // This prevents zigzagging when geography changes slightly between segments
+    let continuity_angle_diff = angle_difference(direction, incoming_direction);
+    let continuity_bonus = ((std::f64::consts::PI - continuity_angle_diff)
+        / std::f64::consts::PI
+        * CONTINUITY_BONUS_MAX) as i32;
+    score += continuity_bonus;
+
     // If we have a target, strongly prefer moving towards it
     if let Some(target_dir) = target_direction {
         let angle_to_target = angle_difference(direction, target_dir);
 
         // Strong bonus for moving towards target
         score += ((std::f64::consts::PI - angle_to_target) * 2000.0) as i32;
+    }
+
+    // If we have geographic hints, add bonus for directions matching real-world geography
+    if let Some(geo_dir) = geo_preferred_direction {
+        // Snap geographic direction to nearest compass direction
+        let compass_geo = snap_to_compass(geo_dir);
+        let angle_diff = angle_difference(direction, compass_geo);
+
+        // Strong bonus for directions matching geographic direction
+        // This is stronger than the target bonus (2000) so geography has significant influence
+        let geo_bonus = ((std::f64::consts::PI - angle_diff) / std::f64::consts::PI * GEOGRAPHIC_BONUS_MAX) as i32;
+        score += geo_bonus;
+
+        if debug {
+            leptos::logging::log!("    geo_dir={:.0}°, compass_geo={:.0}°, angle_diff={:.0}°, geo_bonus=+{}",
+                geo_dir.to_degrees(), compass_geo.to_degrees(), angle_diff.to_degrees(), geo_bonus);
+        }
     }
 
     // Count branches in similar direction to apply crowding penalty
@@ -471,8 +628,36 @@ fn score_direction_for_branch(
     score
 }
 
+/// Apply layout, preserving positions of pinned nodes
 #[allow(clippy::too_many_lines, clippy::missing_panics_doc, clippy::cast_precision_loss)]
-pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSettings) {
+pub fn apply_layout_with_pinned(
+    graph: &mut RailwayGraph,
+    height: f64,
+    settings: &ProjectSettings,
+    geo_hints: Option<&GeographicHints>,
+    pinned_nodes: &std::collections::HashSet<NodeIndex>,
+) {
+    apply_layout_internal(graph, height, settings, geo_hints, pinned_nodes);
+}
+
+#[allow(clippy::too_many_lines, clippy::missing_panics_doc, clippy::cast_precision_loss)]
+pub fn apply_layout(
+    graph: &mut RailwayGraph,
+    height: f64,
+    settings: &ProjectSettings,
+    geo_hints: Option<&GeographicHints>,
+) {
+    apply_layout_internal(graph, height, settings, geo_hints, &std::collections::HashSet::new());
+}
+
+#[allow(clippy::too_many_lines, clippy::missing_panics_doc, clippy::cast_precision_loss)]
+fn apply_layout_internal(
+    graph: &mut RailwayGraph,
+    height: f64,
+    settings: &ProjectSettings,
+    geo_hints: Option<&GeographicHints>,
+    pinned_nodes: &std::collections::HashSet<NodeIndex>,
+) {
     let base_station_spacing = settings.default_node_distance_grid_squares * GRID_SIZE;
     let start_x = 150.0;
     let start_y = height / 2.0;
@@ -481,9 +666,13 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
         return; // Empty graph
     }
 
-    // Clear all positions (skip passing loops - they will be auto-positioned)
+    // Clear positions for nodes that will be laid out (skip pinned and passing loops)
     let all_nodes: Vec<_> = graph.graph.node_indices().collect();
     for node_idx in all_nodes {
+        // Skip pinned nodes - their positions are preserved
+        if pinned_nodes.contains(&node_idx) {
+            continue;
+        }
         // Skip passing loops - they will be automatically positioned between adjacent stations
         if let Some(node) = graph.graph.node_weight(node_idx) {
             if let Some(station) = node.as_station() {
@@ -502,29 +691,50 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
         return;
     }
 
-    // Phase 2: Place spine vertically (North-South)
+    // Phase 2: Place spine - each segment follows its own geographic direction
     let mut visited = HashSet::new();
-    let spine_direction = -std::f64::consts::FRAC_PI_2; // North (-90°)
+    let default_direction = -std::f64::consts::FRAC_PI_2; // North (-90°) as fallback
 
-    let mut non_passing_loop_count = 0;
+    let mut current_pos = snap_to_grid(start_x, start_y);
+    let mut prev_node: Option<NodeIndex> = None;
+    let mut last_direction = default_direction;
+
     for &node in &spine {
         // Check if this is a passing loop
         let is_passing_loop = graph.graph.node_weight(node)
             .and_then(|n| n.as_station())
             .is_some_and(|s| s.passing_loop);
 
-        if !is_passing_loop {
-            // Only count and position non-passing-loop stations
-            // Passing loops will be automatically positioned between their neighbors
-            let offset = f64::from(non_passing_loop_count) * base_station_spacing;
-            let pos = snap_to_grid(
-                start_x + spine_direction.cos() * offset,
-                start_y + spine_direction.sin() * offset,
-            );
+        // Check if this node is pinned (has existing position we should preserve)
+        let is_pinned = pinned_nodes.contains(&node);
 
-            // Place spine nodes without collision checking - spine is the primary structure
-            graph.set_station_position(node, pos);
-            non_passing_loop_count += 1;
+        if !is_passing_loop {
+            if is_pinned {
+                // Use pinned node's existing position as reference
+                if let Some(pos) = graph.graph.node_weight(node)
+                    .and_then(|n| n.as_station())
+                    .and_then(|s| s.position)
+                {
+                    current_pos = pos;
+                }
+            } else if let Some(prev) = prev_node {
+                // Get direction filtered by geography (hard constraint)
+                let direction = geo_hints.map_or(last_direction, |hints| {
+                    get_spine_direction(hints, prev, node, last_direction)
+                });
+
+                current_pos = snap_to_grid(
+                    current_pos.0 + direction.cos() * base_station_spacing,
+                    current_pos.1 + direction.sin() * base_station_spacing,
+                );
+                last_direction = direction;
+                // Place spine node at current position
+                graph.set_station_position(node, current_pos);
+            } else {
+                // First node, no previous - just place it
+                graph.set_station_position(node, current_pos);
+            }
+            prev_node = Some(node);
         }
         visited.insert(node);
     }
@@ -540,19 +750,24 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
     // Add all spine nodes to queue with their positions, incoming direction, and incoming edge
     for (i, &node) in spine.iter().enumerate() {
         if let Some(pos) = graph.get_station_position(node) {
-            // Find the incoming edge (from previous spine node)
-            let incoming_edge = if i > 0 {
+            // Find the incoming edge and direction (from previous spine node)
+            let (incoming_edge, incoming_dir) = if i > 0 {
                 let prev_node = spine[i - 1];
-                graph
+                let edge = graph
                     .graph
                     .edges_connecting(prev_node, node)
                     .next()
                     .or_else(|| graph.graph.edges_connecting(node, prev_node).next())
-                    .map(|e| e.id())
+                    .map(|e| e.id());
+                // Compute direction from previous node's position
+                let dir = geo_hints
+                    .and_then(|h| h.preferred_direction(prev_node, node))
+                    .map_or(default_direction, snap_to_compass);
+                (edge, dir)
             } else {
-                None
+                (None, default_direction)
             };
-            queue.push_back((node, pos, spine_direction, incoming_edge));
+            queue.push_back((node, pos, incoming_dir, incoming_edge));
         }
     }
 
@@ -600,6 +815,7 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
 
             let (best_direction, best_spacing, best_score) = find_best_direction_for_branch(
                 graph,
+                current_node,
                 current_pos,
                 neighbor,
                 target_pos,
@@ -608,6 +824,7 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
                 incoming_direction,
                 base_station_spacing,
                 is_through_path,
+                geo_hints,
             );
 
             // DEBUG: Log when placing specific nodes
@@ -660,12 +877,26 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
                 .and_then(|n| n.as_station())
                 .is_some_and(|s| s.passing_loop);
 
+            // Check if neighbor is pinned (preserve its existing position)
+            let is_pinned = pinned_nodes.contains(&neighbor);
+
             if is_passing_loop {
                 // Passing loop - mark as visited but don't position it
                 visited.insert(neighbor);
                 // Still add to queue so we can process its children
                 // Use parent position as placeholder for queue processing
                 queue.push_back((neighbor, current_pos, incoming_direction, edge_to_neighbor));
+            } else if is_pinned {
+                // Pinned node - use existing position, don't reposition
+                let pinned_pos = graph.graph.node_weight(neighbor)
+                    .and_then(|n| n.as_station())
+                    .and_then(|s| s.position)
+                    .unwrap_or(current_pos);
+                visited.insert(neighbor);
+                let dir_to_pinned = (pinned_pos.1 - current_pos.1).atan2(pinned_pos.0 - current_pos.0);
+                local_branches.push((dir_to_pinned, reachable.clone()));
+                global_branches.push((dir_to_pinned, reachable.clone()));
+                queue.push_back((neighbor, pinned_pos, dir_to_pinned, edge_to_neighbor));
             } else if let Some(pos) = final_pos {
                 graph.set_station_position(neighbor, pos);
                 visited.insert(neighbor);
@@ -716,15 +947,19 @@ pub fn apply_layout(graph: &mut RailwayGraph, height: f64, settings: &ProjectSet
                     .and_then(|n| n.as_station())
                     .is_some_and(|s| s.passing_loop);
 
-                if !is_passing_loop {
+                let is_pinned = pinned_nodes.contains(&comp_node);
+
+                if !is_passing_loop && !is_pinned {
                     let offset = f64::from(comp_non_passing_count) * base_station_spacing;
                     let pos = snap_to_grid(
                         offset_x,
-                        start_y + spine_direction.sin() * offset,
+                        start_y + default_direction.sin() * offset,
                     );
 
                     // Place disconnected components without adjustment - they're offset far enough
                     graph.set_station_position(comp_node, pos);
+                    comp_non_passing_count += 1;
+                } else if !is_passing_loop {
                     comp_non_passing_count += 1;
                 }
                 visited.insert(comp_node);

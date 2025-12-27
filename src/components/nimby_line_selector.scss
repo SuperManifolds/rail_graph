@@ -1,0 +1,188 @@
+.nimby-line-selector {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xl);
+    padding: var(--spacing-lg);
+    min-width: 500px;
+
+    .import-summary {
+        display: flex;
+        gap: var(--spacing-xl);
+        padding: var(--spacing-md);
+        background-color: var(--color-bg-tertiary);
+        border-radius: var(--radius-md);
+
+        .summary-item {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-xs);
+        }
+
+        .summary-label {
+            font-size: var(--font-size-xs);
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+        }
+
+        .summary-value {
+            font-size: var(--font-size-lg);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text-primary);
+        }
+    }
+
+    .mode-selection {
+        h3 {
+            margin: 0 0 var(--spacing-md) 0;
+            color: var(--color-text-primary);
+        }
+    }
+
+    .mode-options {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+
+    .mode-option {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md);
+        background-color: var(--color-bg-tertiary);
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        transition: background-color var(--transition-base);
+
+        &:hover {
+            background-color: var(--color-bg-hover);
+        }
+
+        input[type="radio"] {
+            margin-top: var(--spacing-xs);
+        }
+    }
+
+    .mode-content {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+    }
+
+    .mode-title {
+        font-weight: var(--font-weight-medium);
+        color: var(--color-text-primary);
+    }
+
+    .mode-description {
+        font-size: var(--font-size-sm);
+        color: var(--color-text-muted);
+    }
+
+    .line-selection {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+
+        h3 {
+            margin: 0;
+            color: var(--color-text-primary);
+        }
+    }
+
+    .selection-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--spacing-md);
+    }
+
+    .bulk-actions {
+        display: flex;
+        gap: var(--spacing-sm);
+    }
+
+    .preset-button {
+        @include button-default;
+        padding: var(--spacing-xs) var(--spacing-md);
+        font-size: var(--font-size-sm);
+    }
+
+    .line-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: var(--spacing-sm);
+        background-color: var(--color-bg-tertiary);
+        border-radius: var(--radius-md);
+    }
+
+    .line-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition: background-color var(--transition-base);
+
+        &:hover {
+            background-color: var(--color-bg-hover);
+        }
+
+        input[type="checkbox"] {
+            flex-shrink: 0;
+        }
+    }
+
+    .line-code {
+        font-family: var(--font-family-mono);
+        font-weight: var(--font-weight-semibold);
+        min-width: 50px;
+        padding: var(--spacing-xs) var(--spacing-sm);
+        border-radius: var(--radius-sm);
+        text-align: center;
+        flex-shrink: 0;
+    }
+
+    .line-name {
+        flex: 1;
+        color: var(--color-text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .stop-count {
+        font-size: var(--font-size-sm);
+        color: var(--color-text-muted);
+        flex-shrink: 0;
+    }
+
+    .mapper-error {
+        @extend .banner-error;
+        margin-top: var(--spacing-md);
+        border-left: 4px solid var(--color-danger);
+        border-radius: var(--radius-md);
+    }
+
+    .mapper-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--spacing-md);
+        padding-top: var(--spacing-md);
+        border-top: 1px solid var(--color-border-light);
+
+        button {
+            @extend .button-default;
+
+            &.primary {
+                @extend .button-primary;
+            }
+        }
+    }
+}
