@@ -473,8 +473,8 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
-        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let route = vec![
             create_test_route_segment(edge1.index()),
@@ -493,8 +493,8 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
-        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let route = vec![
             create_test_route_segment(edge2.index()),
@@ -523,8 +523,8 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
-        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let route = vec![
             create_test_route_segment(edge1.index()),
@@ -545,8 +545,8 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
-        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Return route: C -> B -> A
         let route = vec![
@@ -569,8 +569,8 @@ mod tests {
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
         // Create: A -> B -> C
-        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let edge2 = graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Route currently starts at B
         let route = vec![create_test_route_segment(edge2.index())];
@@ -589,8 +589,8 @@ mod tests {
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
         // Create: A -> B -> C
-        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Route currently ends at B
         let route = vec![create_test_route_segment(edge1.index())];
@@ -621,7 +621,7 @@ mod tests {
         let a = graph.add_or_get_station("A".to_string());
         let b = graph.add_or_get_station("B".to_string());
 
-        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Direct path exists
         let path = graph.find_path_between_nodes(a, b);
@@ -640,8 +640,8 @@ mod tests {
         let c = graph.add_or_get_station("C".to_string());
 
         // Create A -> B -> C
-        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2 = graph.add_track(b, c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2 = graph.add_track(b, c, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Find path from A to C (should go through B)
         let path = graph.find_path_between_nodes(a, c);
@@ -661,7 +661,7 @@ mod tests {
         let c = graph.add_or_get_station("C".to_string());
 
         // Create A -> B, but C is disconnected
-        graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // No path from A to C
         let path = graph.find_path_between_nodes(a, c);
@@ -684,8 +684,8 @@ mod tests {
         });
 
         // Create A -> J -> B
-        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Find path from A to B through junction
         let path = graph.find_path_between_nodes(a, b);
@@ -713,8 +713,8 @@ mod tests {
         });
 
         // Create A -> J -> B
-        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let route = vec![
             create_test_route_segment(e1.index()),
@@ -746,8 +746,8 @@ mod tests {
         });
 
         // Create A -> J -> B
-        graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Use pathfinding like the UI does
         let path = graph.find_path_between_nodes(a, b);
@@ -797,9 +797,9 @@ mod tests {
         });
 
         // Create A -> J -> B and A -> J -> C
-        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e3 = graph.add_track(j, c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e3 = graph.add_track(j, c, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // First verify path from A to B exists with default routing (all allowed)
         let path = graph.find_path_between_nodes(a, b);
@@ -852,10 +852,10 @@ mod tests {
         });
 
         // Create network: A -> J -> B and also A -> C -> B (alternate route)
-        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e3 = graph.add_track(a, c, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e4 = graph.add_track(c, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e3 = graph.add_track(a, c, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e4 = graph.add_track(c, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Disable routing from e1 to e2 at junction J
         if let Some(junction) = graph.get_junction_mut(j) {
@@ -900,9 +900,9 @@ mod tests {
         //     J (junction)
         //    / \
         //   B   C
-        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e3 = graph.add_track(j, c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2 = graph.add_track(j, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e3 = graph.add_track(j, c, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Block direct route from A to C (e1 -> e3)
         if let Some(junction) = graph.get_junction_mut(j) {

@@ -181,7 +181,7 @@ impl Stations for RailwayGraph {
             let Some(edge1) = incoming_edge else { continue };
             let Some(edge2) = outgoing_edge else { continue };
 
-            let new_edge = self.add_track(from_station, to_station, tracks);
+            let new_edge = self.add_track(from_station, to_station, tracks, None);
 
             // Set the combined distance on the bypass edge
             if let Some(distance) = combined_distance {
@@ -506,8 +506,8 @@ mod tests {
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
         // Create a linear graph A -> B -> C
-        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let stations = graph.get_all_stations_ordered();
         assert_eq!(stations.len(), 3);
@@ -531,8 +531,8 @@ mod tests {
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
         // Create A -> B -> C
-        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         assert_eq!(graph.graph.node_count(), 3);
         assert_eq!(graph.graph.edge_count(), 2);
@@ -556,8 +556,8 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
-        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let edges = graph.get_station_edges(idx2);
         assert_eq!(edges.len(), 2); // Station B has 2 connected edges
@@ -573,8 +573,8 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
-        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let connections = graph.find_connections_through_station(idx2);
         assert_eq!(connections.len(), 1);

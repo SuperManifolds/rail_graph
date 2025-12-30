@@ -540,13 +540,12 @@ pub fn import_jtraingraph(
                     })
                 });
 
-            let edge_idx = graph.add_track(from, to, tracks);
+            let edge_idx = graph.add_track(from, to, tracks, distance);
 
-            // Set default platforms and distance on the track segment
+            // Set default platforms on the track segment
             if let Some(track_segment) = graph.graph.edge_weight_mut(edge_idx) {
                 track_segment.default_platform_source = default_platform_source;
                 track_segment.default_platform_target = default_platform_target;
-                track_segment.distance = distance;
             }
 
             edge_idx

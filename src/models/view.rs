@@ -537,7 +537,7 @@ mod tests {
         let mut graph = RailwayGraph::new();
         let s1 = graph.add_or_get_station("A".to_string());
         let s2 = graph.add_or_get_station("B".to_string());
-        graph.add_track(s1, s2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s1, s2, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let view = GraphView::default_main_line(&graph);
 
@@ -555,8 +555,8 @@ mod tests {
         let s1 = graph.add_or_get_station("A".to_string());
         let s2 = graph.add_or_get_station("B".to_string());
         let s3 = graph.add_or_get_station("C".to_string());
-        graph.add_track(s1, s2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(s2, s3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s1, s2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(s2, s3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let view = GraphView {
             id: Uuid::new_v4(),

@@ -46,7 +46,7 @@ fn handle_mouse_down_adding_track(
 
     if first_station != clicked_station {
         let mut updated_graph = graph.get();
-        updated_graph.add_track(first_station, clicked_station, vec![Track { direction: TrackDirection::Bidirectional }]);
+        updated_graph.add_track(first_station, clicked_station, vec![Track { direction: TrackDirection::Bidirectional }], None);
         set_graph.set(updated_graph);
     }
     set_selected_station.set(None);
@@ -127,7 +127,7 @@ fn handle_segment_click_in_track_mode(
     if let Some(first_station) = selected_station.get() {
         // A station was already selected - connect it to the new junction
         if first_station != junction_idx {
-            updated_graph.add_track(first_station, junction_idx, vec![Track { direction: TrackDirection::Bidirectional }]);
+            updated_graph.add_track(first_station, junction_idx, vec![Track { direction: TrackDirection::Bidirectional }], None);
         }
         set_selected_station.set(None);
     } else {
@@ -350,8 +350,8 @@ fn split_segment_and_insert_node(
 
     // Create two new edges: from_node -> new_node and new_node -> to_node
     // If distance is set, split it in half
-    let edge1 = updated_graph.add_track(from_node, new_node_idx, tracks.clone());
-    let edge2 = updated_graph.add_track(new_node_idx, to_node, tracks);
+    let edge1 = updated_graph.add_track(from_node, new_node_idx, tracks.clone(), None);
+    let edge2 = updated_graph.add_track(new_node_idx, to_node, tracks, None);
 
     if let Some(dist) = distance {
         if let Some(edge1_weight) = updated_graph.graph.edge_weight_mut(edge1) {
@@ -477,7 +477,7 @@ fn add_station_handler(
 
         // Still honor the connect_to dropdown if selected
         if let Some(connect_idx) = connect_to {
-            current_graph.add_track(connect_idx, node_idx, vec![Track { direction: TrackDirection::Bidirectional }]);
+            current_graph.add_track(connect_idx, node_idx, vec![Track { direction: TrackDirection::Bidirectional }], None);
         }
     }
     // Default behavior: use connect_to logic
@@ -485,7 +485,7 @@ fn add_station_handler(
         if let Some(connect_pos) = current_graph.get_station_position(connect_idx) {
             current_graph.set_station_position(node_idx, (connect_pos.0 + 80.0, connect_pos.1 + 40.0));
         }
-        current_graph.add_track(connect_idx, node_idx, vec![Track { direction: TrackDirection::Bidirectional }]);
+        current_graph.add_track(connect_idx, node_idx, vec![Track { direction: TrackDirection::Bidirectional }], None);
     }
 
     set_graph.set(current_graph);
@@ -554,12 +554,7 @@ fn add_stations_batch_handler(
 
         // Connect to previous station if we have one
         if let Some(prev_idx) = prev_station_idx {
-            let edge_idx = current_graph.add_track(prev_idx, node_idx, tracks.clone());
-
-            // Set the distance on the edge
-            if let Some(segment) = current_graph.graph.edge_weight_mut(edge_idx) {
-                segment.distance = Some(entry.distance_from_previous);
-            }
+            current_graph.add_track(prev_idx, node_idx, tracks.clone(), Some(entry.distance_from_previous));
         }
 
         added_stations.push(node_idx);
@@ -2145,7 +2140,7 @@ pub fn InfrastructureView(
                 })
                 on_add_connection=Rc::new(move |from_station: NodeIndex, to_station: NodeIndex| {
                     let mut current_graph = graph.get();
-                    current_graph.add_track(from_station, to_station, vec![Track { direction: TrackDirection::Bidirectional }]);
+                    current_graph.add_track(from_station, to_station, vec![Track { direction: TrackDirection::Bidirectional }], None);
                     set_graph.set(current_graph);
                 })
             />

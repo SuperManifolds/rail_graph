@@ -1401,7 +1401,7 @@ mod tests {
         let edge = graph.add_track(idx1, idx2, vec![
             Track { direction: TrackDirection::Forward },
             Track { direction: TrackDirection::Backward },
-        ]);
+        ], None);
 
         let mut line = Line {
             id: uuid::Uuid::new_v4(),
@@ -1587,12 +1587,12 @@ mod tests {
         });
 
         // Direct path: A -> B -> C
-        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2 = graph.add_track(b, c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2 = graph.add_track(b, c, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Alternative path through junction: B -> J -> C
-        let _e3 = graph.add_track(b, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let _e4 = graph.add_track(j, c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let _e3 = graph.add_track(b, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let _e4 = graph.add_track(j, c, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let mut line = Line {
             id: uuid::Uuid::new_v4(),
@@ -1649,7 +1649,7 @@ mod tests {
         let a = graph.add_or_get_station("A".to_string());
         let b = graph.add_or_get_station("B".to_string());
 
-        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(a, b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let mut line = Line {
             id: uuid::Uuid::new_v4(),

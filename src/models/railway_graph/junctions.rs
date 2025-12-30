@@ -147,7 +147,7 @@ impl Junctions for RailwayGraph {
                 let edge1 = edge_indices[0];
                 let edge2 = edge_indices[1];
 
-                let new_edge = self.add_track(endpoint1, endpoint2, tracks);
+                let new_edge = self.add_track(endpoint1, endpoint2, tracks, None);
 
                 // Set the combined distance on the bypass edge
                 if let (Some(distance), Some(edge_weight)) = (combined_distance, self.graph.edge_weight_mut(new_edge)) {
@@ -405,8 +405,8 @@ mod tests {
         let j_idx = graph.add_junction(junction);
 
         let tracks = vec![Track { direction: TrackDirection::Bidirectional }];
-        graph.add_track(s1, j_idx, tracks.clone());
-        graph.add_track(j_idx, s2, tracks);
+        graph.add_track(s1, j_idx, tracks.clone(), None);
+        graph.add_track(j_idx, s2, tracks, None);
 
         assert_eq!(graph.graph.node_count(), 3);
         assert_eq!(graph.graph.edge_count(), 2);
@@ -488,10 +488,10 @@ mod tests {
         let s3 = graph.add_or_get_station("East Station".to_string());
         let s4 = graph.add_or_get_station("West Station".to_string());
 
-        graph.add_track(s1, j_idx, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(s2, j_idx, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j_idx, s3, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j_idx, s4, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s1, j_idx, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(s2, j_idx, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j_idx, s3, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j_idx, s4, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         assert_eq!(graph.graph.node_count(), 5);
         assert_eq!(graph.graph.edge_count(), 4);
@@ -539,9 +539,9 @@ mod tests {
         let s2 = graph.add_or_get_station("Station B".to_string());
         let s3 = graph.add_or_get_station("Station C".to_string());
 
-        graph.add_track(s1, j1, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j1, s2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(s2, s3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s1, j1, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j1, s2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(s2, s3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         assert_eq!(graph.graph.node_count(), 4);
         assert_eq!(graph.graph.edge_count(), 3);
@@ -576,8 +576,8 @@ mod tests {
         });
         let s_b = graph.add_or_get_station("B".to_string());
 
-        let e1 = graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2 = graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2 = graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let route = vec![
             RouteSegment {
@@ -621,8 +621,8 @@ mod tests {
         let j = graph.add_junction(junction.clone());
         let s_b = graph.add_or_get_station("B".to_string());
 
-        let e1 = graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2 = graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2 = graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Add routing rule forbidding e1 -> e2
         junction.set_routing_rule(e1, e2, false);
@@ -673,9 +673,9 @@ mod tests {
         let s_b = graph.add_or_get_station("B".to_string());
         let s_c = graph.add_or_get_station("C".to_string());
 
-        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j, s_c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j, s_c, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Should be valid
         assert!(graph.validate_junction(j).is_ok());
@@ -696,8 +696,8 @@ mod tests {
             external_id: None,
         });
 
-        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Should fail validation (has 2, needs 3)
         let result = graph.validate_junction(j);
@@ -734,9 +734,9 @@ mod tests {
         let s_b = graph.add_or_get_station("B".to_string());
         let s_c = graph.add_or_get_station("C".to_string());
 
-        let e1 = graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2 = graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e3 = graph.add_track(j, s_c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2 = graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e3 = graph.add_track(j, s_c, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Forbid all routes from e1, creating a dead end
         junction.set_routing_rule(e1, e2, false);
@@ -772,9 +772,9 @@ mod tests {
         };
         let j = graph.add_junction(junction.clone());
 
-        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j, s_c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j, s_c, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Add a rule referencing a non-existent edge
         junction.set_routing_rule(EdgeIndex::new(999), EdgeIndex::new(1000), false);
@@ -811,10 +811,10 @@ mod tests {
         let s_b = graph.add_or_get_station("B".to_string());
 
         // Create edges in both directions for bidirectional connectivity
-        let e1 = graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2 = graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e1_rev = graph.add_track(j, s_a, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let e2_rev = graph.add_track(s_b, j, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let e1 = graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2 = graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e1_rev = graph.add_track(j, s_a, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let e2_rev = graph.add_track(s_b, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Forbid only e2_rev -> e1_rev (B -> A direction through junction)
         junction.set_routing_rule(e2_rev, e1_rev, false);
@@ -890,8 +890,8 @@ mod tests {
         });
 
         // Connect junction to both stations
-        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Interpolate position
         let updated = graph.interpolate_junction_position(j, false);
@@ -924,9 +924,9 @@ mod tests {
         });
 
         // Connect junction to all three stations
-        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j, s_c, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j, s_c, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Interpolate position
         let updated = graph.interpolate_junction_position(j, false);
@@ -976,8 +976,8 @@ mod tests {
         });
 
         // Connect junction to stations
-        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Should not interpolate (already has position, force=false)
         let updated = graph.interpolate_junction_position(j, false);
@@ -1008,8 +1008,8 @@ mod tests {
         });
 
         // Connect junction to stations
-        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(j, s_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Should interpolate (force=true)
         let updated = graph.interpolate_junction_position(j, true);

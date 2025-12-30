@@ -964,8 +964,8 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
         let idx3 = graph.add_or_get_station("Station C".to_string());
 
-        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(idx2, idx3, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         graph
     }
@@ -1323,8 +1323,8 @@ mod tests {
         let idx_junction = graph.add_junction(junction);
         let idx_b = graph.add_or_get_station("Station B".to_string());
 
-        let edge1 = graph.add_track(idx_a, idx_junction, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let edge2 = graph.add_track(idx_junction, idx_b, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge1 = graph.add_track(idx_a, idx_junction, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let edge2 = graph.add_track(idx_junction, idx_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let line = Line {
             id: uuid::Uuid::new_v4(),
@@ -1419,11 +1419,11 @@ mod tests {
         let station_e = graph.add_or_get_station("Station E".to_string());
         let station_f = graph.add_or_get_station("Station F".to_string());
 
-        graph.add_track(station_a, station_b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(station_b, station_c, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(station_c, station_d, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(station_d, station_e, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(station_e, station_f, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(station_a, station_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(station_b, station_c, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(station_c, station_d, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(station_d, station_e, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(station_e, station_f, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let edge_ab = graph.graph.find_edge(station_a, station_b).expect("edge exists");
         let edge_bc = graph.graph.find_edge(station_b, station_c).expect("edge exists");
@@ -1605,9 +1605,9 @@ mod tests {
         let station_c = graph.add_or_get_station("Station C".to_string());
         let station_d = graph.add_or_get_station("Station D".to_string());
 
-        graph.add_track(station_a, station_b, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(station_b, station_c, vec![Track { direction: TrackDirection::Bidirectional }]);
-        graph.add_track(station_c, station_d, vec![Track { direction: TrackDirection::Bidirectional }]);
+        graph.add_track(station_a, station_b, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(station_b, station_c, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        graph.add_track(station_c, station_d, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let edge_ab = graph.graph.find_edge(station_a, station_b).expect("edge exists");
         let edge_bc = graph.graph.find_edge(station_b, station_c).expect("edge exists");

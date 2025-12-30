@@ -477,9 +477,18 @@ fn create_infrastructure_from_segments(
                 continue;
             }
 
+            // Look up distance from segment_map for this consecutive pair
+            let pair_key = (seg_from.to_string(), seg_to.to_string());
+            let reverse_key = (seg_to.to_string(), seg_from.to_string());
+            let distance = segment_map
+                .get(&pair_key)
+                .or_else(|| segment_map.get(&reverse_key))
+                .and_then(|paths| paths.first())
+                .map(|p| p.total_distance);
+
             // Create the edge
             let tracks = super::shared::create_tracks_with_count(1, handedness);
-            graph.add_track(from_node, to_node, tracks);
+            graph.add_track(from_node, to_node, tracks, distance);
             created_edges.insert((from_node, to_node));
         }
     }
@@ -563,7 +572,8 @@ fn create_consecutive_edges(
             }
 
             let tracks = super::shared::create_tracks_with_count(1, handedness);
-            graph.add_track(from_node, to_node, tracks);
+            let distance = if total_distance > 0.0 { Some(total_distance) } else { None };
+            graph.add_track(from_node, to_node, tracks, distance);
             created_edges.insert((from_node, to_node));
         }
     }
@@ -839,10 +849,7 @@ fn create_passing_loops_from_segment_map(
             // Create edge from previous node to this loop
             let edge_distance = loop_distance - prev_distance;
             let tracks = super::shared::create_tracks_with_count(1, handedness);
-            let edge = graph.add_track(prev_node, loop_node, tracks);
-            if let Some(segment) = graph.graph.edge_weight_mut(edge) {
-                segment.distance = Some(edge_distance);
-            }
+            graph.add_track(prev_node, loop_node, tracks, Some(edge_distance));
 
             prev_node = loop_node;
             prev_distance = loop_distance;
@@ -852,10 +859,7 @@ fn create_passing_loops_from_segment_map(
         // Create final edge from last loop to destination station
         let final_distance = total_distance - prev_distance;
         let tracks = super::shared::create_tracks_with_count(1, handedness);
-        let edge = graph.add_track(prev_node, chain_end, tracks);
-        if let Some(segment) = graph.graph.edge_weight_mut(edge) {
-            segment.distance = Some(final_distance);
-        }
+        graph.add_track(prev_node, chain_end, tracks, Some(final_distance));
     }
 
     loop_count

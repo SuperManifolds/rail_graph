@@ -6,7 +6,7 @@ use crate::models::TrackHandedness;
 /// Extension trait for track-related operations on `RailwayGraph`
 pub trait Tracks {
     /// Add a track segment between two stations, returns the `EdgeIndex`
-    fn add_track(&mut self, from: NodeIndex, to: NodeIndex, tracks: Vec<Track>) -> EdgeIndex;
+    fn add_track(&mut self, from: NodeIndex, to: NodeIndex, tracks: Vec<Track>, distance: Option<f64>) -> EdgeIndex;
 
     /// Get track segment by edge index
     fn get_track(&self, edge_idx: EdgeIndex) -> Option<&TrackSegment>;
@@ -39,10 +39,10 @@ pub trait Tracks {
 }
 
 impl Tracks for RailwayGraph {
-    fn add_track(&mut self, from: NodeIndex, to: NodeIndex, tracks: Vec<Track>) -> EdgeIndex {
+    fn add_track(&mut self, from: NodeIndex, to: NodeIndex, tracks: Vec<Track>, distance: Option<f64>) -> EdgeIndex {
         self.graph.add_edge(from, to, TrackSegment {
             tracks,
-            distance: None,
+            distance,
             default_platform_source: None,
             default_platform_target: None,
         })
@@ -159,7 +159,7 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
 
         let tracks = vec![Track { direction: TrackDirection::Bidirectional }];
-        let edge = graph.add_track(idx1, idx2, tracks);
+        let edge = graph.add_track(idx1, idx2, tracks, None);
 
         assert_eq!(graph.graph.edge_count(), 1);
         assert!(graph.get_track(edge).is_some());
@@ -173,7 +173,7 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
 
         let tracks = vec![Track { direction: TrackDirection::Bidirectional }];
-        let edge = graph.add_track(idx1, idx2, tracks);
+        let edge = graph.add_track(idx1, idx2, tracks, None);
 
         let track_segment = graph.get_track(edge).expect("track should exist");
         assert_eq!(track_segment.tracks.len(), 1);
@@ -186,7 +186,7 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
 
         let tracks = vec![Track { direction: TrackDirection::Bidirectional }];
-        let edge = graph.add_track(idx1, idx2, tracks);
+        let edge = graph.add_track(idx1, idx2, tracks, None);
 
         let endpoints = graph.get_track_endpoints(edge);
         assert_eq!(endpoints, Some((idx1, idx2)));
@@ -199,7 +199,7 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
 
         let tracks = vec![Track { direction: TrackDirection::Bidirectional }];
-        let edge = graph.add_track(idx1, idx2, tracks);
+        let edge = graph.add_track(idx1, idx2, tracks, None);
 
         // Initially single track
         assert_eq!(graph.get_track(edge).expect("track should exist").tracks.len(), 1);
@@ -236,8 +236,8 @@ mod tests {
         let idx2 = graph.add_or_get_station("Station B".to_string());
 
         // Add edges in both directions
-        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
-        let edge2 = graph.add_track(idx2, idx1, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
+        let edge2 = graph.add_track(idx2, idx1, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Toggle should affect both edges
         let changes = graph.toggle_segment_double_track("Station A", "Station B");

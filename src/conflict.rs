@@ -1395,7 +1395,7 @@ mod tests {
         let mut graph = RailwayGraph::new();
         let idx1 = graph.add_or_get_station("A".to_string());
         let idx2 = graph.add_or_get_station("B".to_string());
-        let edge = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         let line_id = uuid::Uuid::new_v4();
         let journey = TrainJourney {
@@ -1437,13 +1437,13 @@ mod tests {
         let idx2 = graph.add_or_get_station("B".to_string());
 
         // Single bidirectional track
-        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }]);
+        let edge1 = graph.add_track(idx1, idx2, vec![Track { direction: TrackDirection::Bidirectional }], None);
 
         // Double track
         let edge2 = graph.add_track(idx1, idx2, vec![
             Track { direction: TrackDirection::Forward },
             Track { direction: TrackDirection::Backward },
-        ]);
+        ], None);
 
         let serializable_ctx = SerializableConflictContext::from_graph(&graph, HashMap::new(), STATION_MARGIN, PLATFORM_BUFFER, false);
         let ctx = ConflictContext {

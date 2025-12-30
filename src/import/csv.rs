@@ -1096,7 +1096,7 @@ fn get_or_create_edge(
             } else {
                 let track_count = prev_line_data.track_number.unwrap_or(1);
                 let tracks = super::shared::create_tracks_with_count(track_count, handedness);
-                graph.add_track(prev_idx, station_idx, tracks)
+                graph.add_track(prev_idx, station_idx, tracks, None)
             }
         })
 }
