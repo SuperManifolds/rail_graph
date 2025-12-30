@@ -1,4 +1,4 @@
-use petgraph::stable_graph::{StableGraph, NodeIndex};
+use petgraph::stable_graph::{EdgeIndex, StableGraph, NodeIndex};
 use petgraph::algo::dijkstra;
 use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
@@ -216,6 +216,108 @@ impl RailwayGraph {
         // Backtrack
         current_path.pop();
         visited.remove(&current);
+    }
+
+    /// Finds the main trunk path by greedily following highest-weight edges.
+    ///
+    /// Strategy:
+    /// 1. Find the highest-weight edge - this is on the main trunk
+    /// 2. From both endpoints, greedily extend by following the highest-weight unvisited neighbor
+    /// 3. Combine the two directions into the spine
+    ///
+    /// This ensures we stay on the "main corridor" rather than meandering through branches.
+    /// Falls back to longest path if all edges have zero weight.
+    #[must_use]
+    pub fn find_heaviest_path(&self, edge_weights: &HashMap<EdgeIndex, usize>) -> Vec<NodeIndex> {
+        // Check if there are any non-zero weights
+        let has_weights = edge_weights.values().any(|&w| w > 0);
+        if !has_weights {
+            return self.find_longest_path();
+        }
+
+        // Find the highest-weight edge - this is definitely on the main trunk
+        let Some((&best_edge, _)) = edge_weights.iter().max_by_key(|(_, &w)| w) else {
+            return self.find_longest_path();
+        };
+
+        let Some((node_a, node_b)) = self.graph.edge_endpoints(best_edge) else {
+            return self.find_longest_path();
+        };
+
+        // Greedily extend from node_a (away from node_b)
+        let mut visited = HashSet::new();
+        visited.insert(node_a);
+        visited.insert(node_b);
+
+        let path_from_a = self.greedy_extend(node_a, Some(node_b), &mut visited.clone(), edge_weights);
+
+        // Greedily extend from node_b (away from node_a)
+        let path_from_b = self.greedy_extend(node_b, Some(node_a), &mut visited, edge_weights);
+
+        // Combine: reverse path_from_a + node_a + node_b + path_from_b
+        let mut spine: Vec<NodeIndex> = path_from_a.into_iter().rev().collect();
+        spine.push(node_a);
+        spine.push(node_b);
+        spine.extend(path_from_b);
+
+        spine
+    }
+
+    /// Greedily extend a path by always following the highest-weight unvisited neighbor.
+    fn greedy_extend(
+        &self,
+        start: NodeIndex,
+        came_from: Option<NodeIndex>,
+        visited: &mut HashSet<NodeIndex>,
+        edge_weights: &HashMap<EdgeIndex, usize>,
+    ) -> Vec<NodeIndex> {
+        let mut path = Vec::new();
+        let mut current = start;
+        let mut prev = came_from;
+
+        loop {
+            // Find the highest-weight unvisited neighbor
+            let mut best_neighbor: Option<NodeIndex> = None;
+            let mut best_weight: usize = 0;
+
+            for neighbor in self.graph.neighbors_undirected(current) {
+                if visited.contains(&neighbor) {
+                    continue;
+                }
+
+                // Build a minimal path for junction routing check
+                let check_path: Vec<NodeIndex> = if let Some(p) = prev {
+                    vec![p, current]
+                } else {
+                    vec![current]
+                };
+
+                if !self.is_path_allowed(&check_path, current, neighbor) {
+                    continue;
+                }
+
+                let edge = self.graph.find_edge(current, neighbor)
+                    .or_else(|| self.graph.find_edge(neighbor, current));
+                let weight = edge.and_then(|e| edge_weights.get(&e).copied()).unwrap_or(0);
+
+                if weight > best_weight || (weight == best_weight && best_neighbor.is_none()) {
+                    best_weight = weight;
+                    best_neighbor = Some(neighbor);
+                }
+            }
+
+            // If no unvisited neighbor, we're done
+            let Some(next) = best_neighbor else {
+                break;
+            };
+
+            visited.insert(next);
+            path.push(next);
+            prev = Some(current);
+            current = next;
+        }
+
+        path
     }
 
     /// DFS helper that respects global visited set.

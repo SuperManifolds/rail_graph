@@ -1,6 +1,6 @@
 use crate::models::{RailwayGraph, Stations, Junctions, ProjectSettings};
-use crate::geometry::{angle_difference, line_segment_distance};
-use petgraph::stable_graph::NodeIndex;
+use crate::geometry::angle_difference;
+use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::collections::{HashMap, HashSet};
 
@@ -116,31 +116,6 @@ fn filter_valid_directions(
         .collect()
 }
 
-/// Get the best compass direction for spine placement based on geographic hints.
-/// Returns the direction closest to the true geographic direction from valid options.
-fn get_spine_direction(
-    geo_hints: &GeographicHints,
-    from_node: NodeIndex,
-    to_node: NodeIndex,
-    fallback: f64,
-) -> f64 {
-    let valid_dirs = filter_valid_directions(geo_hints, from_node, to_node);
-    let Some(geo_dir) = geo_hints.preferred_direction(from_node, to_node) else {
-        return fallback;
-    };
-
-    // Pick the valid direction closest to the geographic direction
-    valid_dirs
-        .iter()
-        .copied()
-        .min_by(|&a, &b| {
-            angle_difference(a, geo_dir)
-                .partial_cmp(&angle_difference(b, geo_dir))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .unwrap_or(fallback)
-}
-
 /// Snap coordinates to grid intersections
 #[must_use]
 pub fn snap_to_grid(x: f64, y: f64) -> (f64, f64) {
@@ -232,86 +207,6 @@ fn has_node_collision_at(
     false
 }
 
-/// Check if a line segment would cross or come too close to any existing edges or nodes
-#[allow(clippy::similar_names)]
-fn would_overlap_existing_edges(
-    graph: &RailwayGraph,
-    pos1: (f64, f64),
-    pos2: (f64, f64),
-) -> bool {
-    const MIN_DISTANCE: f64 = 50.0; // Minimum distance between parallel segments
-
-    // Check all existing edges
-    for edge in graph.graph.edge_references() {
-        let source = edge.source();
-        let target = edge.target();
-
-        let Some(source_pos) = graph.get_station_position(source) else { continue };
-        let Some(target_pos) = graph.get_station_position(target) else { continue };
-
-        // Skip if either endpoint not placed yet
-        if source_pos == (0.0, 0.0) || target_pos == (0.0, 0.0) {
-            continue;
-        }
-
-        // Check if edges share an endpoint
-        let shared_endpoint = if source_pos == pos1 || target_pos == pos1 {
-            Some(pos1)
-        } else if source_pos == pos2 || target_pos == pos2 {
-            Some(pos2)
-        } else {
-            None
-        };
-
-        if let Some(shared_point) = shared_endpoint {
-            // Edges share an endpoint - check angle between them
-            let new_edge_other = if pos1 == shared_point { pos2 } else { pos1 };
-            let existing_edge_other = if source_pos == shared_point { target_pos } else { source_pos };
-
-            // Get direction vectors (normalized)
-            let new_dx = new_edge_other.0 - shared_point.0;
-            let new_dy = new_edge_other.1 - shared_point.1;
-            let new_len = (new_dx * new_dx + new_dy * new_dy).sqrt();
-
-            let exist_dx = existing_edge_other.0 - shared_point.0;
-            let exist_dy = existing_edge_other.1 - shared_point.1;
-            let exist_len = (exist_dx * exist_dx + exist_dy * exist_dy).sqrt();
-
-            if new_len > 0.1 && exist_len > 0.1 {
-                // Normalize direction vectors
-                let new_dir_x = new_dx / new_len;
-                let new_dir_y = new_dy / new_len;
-                let exist_dir_x = exist_dx / exist_len;
-                let exist_dir_y = exist_dy / exist_len;
-
-                // Calculate angle between directions using atan2
-                let new_angle = new_dir_y.atan2(new_dir_x);
-                let exist_angle = exist_dir_y.atan2(exist_dir_x);
-
-                let angle_diff = angle_difference(new_angle, exist_angle);
-
-                // If angle difference is less than 45 degrees (π/4), edges are too close
-                if angle_diff < std::f64::consts::FRAC_PI_4 {
-                    return true;
-                }
-            }
-        } else {
-            // Edges don't share an endpoint - check normal segment distance
-            let dist = line_segment_distance(pos1, pos2, source_pos, target_pos);
-            if dist < MIN_DISTANCE {
-                return true;
-            }
-        }
-    }
-
-    // NOTE: Edge-to-node collision detection disabled for now
-    // The renderer has avoidance logic that handles visual overlaps
-    // Enabling this check causes too many placement failures, forcing nodes into fallback
-    // which creates horizontal lines
-
-    false
-}
-
 /// Find a valid fallback position using a spiral search pattern
 /// This prevents creating long horizontal lines by varying the search direction
 fn find_fallback_position(
@@ -375,7 +270,8 @@ fn find_best_direction_for_branch(
     is_through_path: bool,
     geo_hints: Option<&GeographicHints>,
 ) -> (f64, f64, i32) {
-    let debug_this = graph.graph[neighbor].display_name() == "Upper Tyndrum";
+    let neighbor_name = graph.graph[neighbor].display_name();
+    let debug_this = neighbor_name == "Ski" || neighbor_name == "Upper Tyndrum";
 
     // If this is a through path at a junction, continue straight in the incoming direction
     if is_through_path {
@@ -405,13 +301,91 @@ fn find_best_direction_for_branch(
         dy.atan2(dx)
     });
 
+    // Get geographic preferred direction and snap to nearest compass direction
+    let geo_preferred = geo_hints.and_then(|h| h.preferred_direction(current_node, neighbor));
+
     // Filter directions to only those consistent with geography (hard constraint)
     let valid_directions: Vec<f64> = geo_hints.map_or_else(
         || DIRECTIONS.to_vec(),
         |h| filter_valid_directions(h, current_node, neighbor),
     );
 
-    // Try spacing multipliers from 1.0 up to 10.0
+    // Directions to avoid: both incoming (would overlap spine) and reverse (would go back)
+    // This ensures branches go PERPENDICULAR to the spine, not along it
+    let reverse_direction = incoming_direction + std::f64::consts::PI;
+
+    // Sort valid directions by closeness to geographic direction, excluding spine directions
+    let priority_directions: Vec<f64> = if let Some(geo_dir) = geo_preferred {
+        let mut sorted_dirs: Vec<_> = valid_directions.iter()
+            .filter(|&&d| {
+                // Exclude directions too close to incoming (would continue along spine)
+                let too_close_to_incoming = angle_difference(d, incoming_direction) < std::f64::consts::FRAC_PI_4;
+                // Exclude directions too close to reverse (would go back)
+                let too_close_to_reverse = angle_difference(d, reverse_direction) < std::f64::consts::FRAC_PI_4;
+                !too_close_to_incoming && !too_close_to_reverse
+            })
+            .copied()
+            .collect();
+        sorted_dirs.sort_by(|&a, &b| {
+            angle_difference(a, geo_dir)
+                .partial_cmp(&angle_difference(b, geo_dir))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        sorted_dirs
+    } else {
+        Vec::new()
+    };
+
+    // PRIORITY 1: Try geographic-priority directions in order at all spacings
+    // This ensures stations are placed in their geographic direction even if it requires more spacing
+    for &pref_dir in &priority_directions {
+        if debug_this {
+            leptos::logging::log!("  [PRIORITY] Trying direction {:.0}° (geo preferred)", pref_dir.to_degrees());
+        }
+        for spacing_mult in [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 10.0] {
+            let test_pos = snap_to_grid(
+                current_pos.0 + pref_dir.cos() * base_station_spacing * spacing_mult,
+                current_pos.1 + pref_dir.sin() * base_station_spacing * spacing_mult,
+            );
+
+            if debug_this {
+                leptos::logging::log!("    spacing {:.1}: testing ({:.0}, {:.0})", spacing_mult, test_pos.0, test_pos.1);
+            }
+
+            if has_node_collision_at(graph, test_pos, neighbor, base_station_spacing) {
+                if debug_this {
+                    leptos::logging::log!("      COLLISION");
+                }
+                continue;
+            }
+
+            // Found a valid position in this direction
+            let score = score_direction_for_branch(
+                graph,
+                current_pos,
+                pref_dir,
+                spacing_mult,
+                target_direction,
+                neighbor_reachable,
+                already_used,
+                incoming_direction,
+                base_station_spacing,
+                geo_preferred,
+            );
+
+            if debug_this {
+                leptos::logging::log!("      SUCCESS, score={}", score);
+            }
+
+            return (pref_dir, spacing_mult, score);
+        }
+        if debug_this {
+            leptos::logging::log!("    Direction {:.0}° blocked at all spacings", pref_dir.to_degrees());
+        }
+    }
+
+    // PRIORITY 2: Try remaining valid directions at increasing spacings
+    // (skip those already exhausted in priority phase)
     for spacing_mult in [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 7.0, 10.0] {
         let mut best_at_this_spacing = i32::MIN;
 
@@ -420,6 +394,11 @@ fn find_best_direction_for_branch(
         }
 
         for &direction in &valid_directions {
+            // Skip directions already tried exhaustively in priority phase
+            if priority_directions.iter().any(|&d| (d - direction).abs() < 0.01) {
+                continue;
+            }
+
             let test_pos = snap_to_grid(
                 current_pos.0 + direction.cos() * base_station_spacing * spacing_mult,
                 current_pos.1 + direction.sin() * base_station_spacing * spacing_mult,
@@ -427,9 +406,13 @@ fn find_best_direction_for_branch(
 
             if has_node_collision_at(graph, test_pos, neighbor, base_station_spacing) {
                 if debug_this {
-                    leptos::logging::log!("    {:.0}°: COLLISION", direction.to_degrees());
+                    leptos::logging::log!("    {:.0}°: COLLISION at ({:.0}, {:.0})", direction.to_degrees(), test_pos.0, test_pos.1);
                 }
                 continue;
+            }
+
+            if debug_this {
+                leptos::logging::log!("    {:.0}°: no collision at ({:.0}, {:.0})", direction.to_degrees(), test_pos.0, test_pos.1);
             }
 
             // If node has a target, apply constraint based on whether we have geography
@@ -450,9 +433,6 @@ fn find_best_direction_for_branch(
                     // With geo_hints, penalty is applied via score_direction_for_branch
                 }
             }
-
-            // Get geographic preferred direction if hints available
-            let geo_preferred = geo_hints.and_then(|h| h.preferred_direction(current_node, neighbor));
 
             let score = score_direction_for_branch(
                 graph,
@@ -498,32 +478,21 @@ fn find_best_direction_for_branch(
 /// Score a direction for placing a branch node
 #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::too_many_arguments)]
 fn score_direction_for_branch(
-    graph: &RailwayGraph,
-    current_pos: (f64, f64),
+    _graph: &RailwayGraph,
+    _current_pos: (f64, f64),
     direction: f64,
-    spacing_multiplier: f64,
+    _spacing_multiplier: f64,
     target_direction: Option<f64>,
     neighbor_reachable: &HashSet<NodeIndex>,
     already_used: &[(f64, HashSet<NodeIndex>)],
     incoming_direction: f64,
-    base_station_spacing: f64,
+    _base_station_spacing: f64,
     geo_preferred_direction: Option<f64>,
 ) -> i32 {
     let mut score = 0;
 
     // DEBUG: Log scoring details
     let debug = false; // Set to true to enable debug logging
-
-    // Calculate proposed position
-    let neighbor_pos = snap_to_grid(
-        current_pos.0 + direction.cos() * base_station_spacing * spacing_multiplier,
-        current_pos.1 + direction.sin() * base_station_spacing * spacing_multiplier,
-    );
-
-    // CRITICAL: Check for geometric overlap with existing edges
-    if would_overlap_existing_edges(graph, current_pos, neighbor_pos) {
-        return i32::MIN;
-    }
 
     // Check if this direction goes back where we came from (opposite of incoming)
     let reverse_direction = incoming_direction + std::f64::consts::PI;
@@ -628,6 +597,452 @@ fn score_direction_for_branch(
     score
 }
 
+/// Represents a pair of stations with both a direct edge and an alternative path with intermediate stations
+#[derive(Debug)]
+struct ParallelRouteGroup {
+    /// First hub station
+    hub_a: NodeIndex,
+    /// Second hub station
+    hub_b: NodeIndex,
+    /// Intermediate stations on the local route (excluding hubs)
+    local_intermediates: Vec<NodeIndex>,
+}
+
+/// Maximum perpendicular distance (in degrees) from direct line for parallel route stations
+const MAX_PARALLEL_DEVIATION_DEG: f64 = 0.05; // ~5km at mid-latitudes
+
+/// Find all edges that have an alternative path with intermediate stations.
+/// These represent express (direct) vs local (with stops) routes.
+/// Uses geographic hints to verify the alternative path stays close to the direct line.
+fn detect_parallel_routes(
+    graph: &RailwayGraph,
+    geo_hints: Option<&GeographicHints>,
+) -> Vec<ParallelRouteGroup> {
+    let mut parallel_routes = Vec::new();
+    let mut processed_pairs: HashSet<(NodeIndex, NodeIndex)> = HashSet::new();
+
+    // Look at each edge in the graph
+    for edge in graph.graph.edge_references() {
+        let hub_a = edge.source();
+        let hub_b = edge.target();
+
+        // Skip if already processed this pair (in either direction)
+        let pair = if hub_a < hub_b { (hub_a, hub_b) } else { (hub_b, hub_a) };
+        if processed_pairs.contains(&pair) {
+            continue;
+        }
+        processed_pairs.insert(pair);
+
+        // Only consider edges where both endpoints have degree >= 2 (potential hubs)
+        let degree_a = graph.graph.neighbors_undirected(hub_a).count();
+        let degree_b = graph.graph.neighbors_undirected(hub_b).count();
+        if degree_a < 2 || degree_b < 2 {
+            continue;
+        }
+
+        // Try to find alternative path from hub_a to hub_b that doesn't use the direct edge
+        if let Some(alt_path) = find_alternative_path(graph, hub_a, hub_b) {
+            // alt_path includes hub_a and hub_b, extract intermediates
+            if alt_path.len() > 2 {
+                let local_intermediates: Vec<NodeIndex> = alt_path[1..alt_path.len()-1].to_vec();
+
+                // Verify all intermediates are geographically close to the direct line
+                if is_path_geographically_parallel(geo_hints, hub_a, hub_b, &local_intermediates) {
+                    parallel_routes.push(ParallelRouteGroup {
+                        hub_a,
+                        hub_b,
+                        local_intermediates,
+                    });
+                }
+            }
+        }
+    }
+
+    parallel_routes
+}
+
+/// Check if all intermediate stations are geographically close to the line between hubs
+fn is_path_geographically_parallel(
+    geo_hints: Option<&GeographicHints>,
+    hub_a: NodeIndex,
+    hub_b: NodeIndex,
+    intermediates: &[NodeIndex],
+) -> bool {
+    let Some(hints) = geo_hints else {
+        // No geographic data - can't verify, so reject
+        return false;
+    };
+
+    // Get hub coordinates
+    let Some(&(lon_a, lat_a)) = hints.lonlat_map.get(&hub_a) else { return false };
+    let Some(&(lon_b, lat_b)) = hints.lonlat_map.get(&hub_b) else { return false };
+
+    // Direction vector from A to B
+    let dx = lon_b - lon_a;
+    let dy = lat_b - lat_a;
+    let len_sq = dx * dx + dy * dy;
+
+    if len_sq < 1e-10 {
+        return false; // Hubs too close
+    }
+
+    // Check each intermediate
+    for &node in intermediates {
+        let Some(&(lon, lat)) = hints.lonlat_map.get(&node) else { return false };
+
+        // Vector from A to this point
+        let px = lon - lon_a;
+        let py = lat - lat_a;
+
+        // Project onto line AB to find closest point
+        let t = (px * dx + py * dy) / len_sq;
+
+        // Closest point on line
+        let closest_x = lon_a + t * dx;
+        let closest_y = lat_a + t * dy;
+
+        // Perpendicular distance
+        let dist = ((lon - closest_x).powi(2) + (lat - closest_y).powi(2)).sqrt();
+
+        if dist > MAX_PARALLEL_DEVIATION_DEG {
+            return false; // Too far from direct line
+        }
+    }
+
+    true
+}
+
+/// Find an alternative path between two nodes that doesn't use the direct edge.
+/// Returns the path as a vector of node indices including start and end.
+fn find_alternative_path(
+    graph: &RailwayGraph,
+    from: NodeIndex,
+    to: NodeIndex,
+) -> Option<Vec<NodeIndex>> {
+    use std::collections::VecDeque;
+
+    let mut visited: HashSet<NodeIndex> = HashSet::new();
+    let mut queue: VecDeque<(NodeIndex, Vec<NodeIndex>)> = VecDeque::new();
+
+    queue.push_back((from, vec![from]));
+    visited.insert(from);
+
+    while let Some((current, path)) = queue.pop_front() {
+        for neighbor in graph.graph.neighbors_undirected(current) {
+            // Skip the direct edge from source to destination
+            if current == from && neighbor == to {
+                continue;
+            }
+
+            if neighbor == to {
+                // Found alternative path
+                let mut full_path = path.clone();
+                full_path.push(to);
+                return Some(full_path);
+            }
+
+            if !visited.contains(&neighbor) {
+                visited.insert(neighbor);
+                let mut new_path = path.clone();
+                new_path.push(neighbor);
+                queue.push_back((neighbor, new_path));
+            }
+        }
+    }
+
+    None
+}
+
+/// Maximum geographic distance (in degrees) for stations to be considered part of the same cluster
+const MAX_CLUSTER_DISTANCE_DEG: f64 = 0.01; // ~1km at mid-latitudes
+
+/// Cluster spacing in grid squares (1-2 grid squares apart)
+const CLUSTER_SPACING_GRIDS: f64 = 1.5;
+
+/// Represents a group of stations with the same name that should be placed close together
+#[derive(Debug)]
+struct StationCluster {
+    nodes: Vec<NodeIndex>,
+}
+
+/// Detect stations with the same name that are geographically close.
+/// These represent transfer points (e.g., Bryn metro and Bryn tram).
+fn detect_station_clusters(
+    graph: &RailwayGraph,
+    geo_hints: Option<&GeographicHints>,
+) -> Vec<StationCluster> {
+    let hints = match geo_hints {
+        Some(h) if !h.is_empty() => h,
+        _ => return Vec::new(), // No geographic data, can't verify proximity
+    };
+
+    // Group stations by lowercase name
+    let mut name_groups: HashMap<String, Vec<NodeIndex>> = HashMap::new();
+
+    for node_idx in graph.graph.node_indices() {
+        let name = graph.graph[node_idx].display_name().to_lowercase();
+        name_groups.entry(name).or_default().push(node_idx);
+    }
+
+    let mut clusters = Vec::new();
+
+    // For each name group with 2+ stations, verify geographic proximity
+    for (_name, nodes) in name_groups {
+        if nodes.len() < 2 {
+            continue;
+        }
+
+        // Check that all nodes are geographically close to each other
+        let all_close = nodes.iter().all(|&node_a| {
+            let Some(&(lon_a, lat_a)) = hints.lonlat_map.get(&node_a) else {
+                return false;
+            };
+            nodes.iter().all(|&node_b| {
+                if node_a == node_b {
+                    return true;
+                }
+                let Some(&(lon_b, lat_b)) = hints.lonlat_map.get(&node_b) else {
+                    return false;
+                };
+                let dist = ((lon_a - lon_b).powi(2) + (lat_a - lat_b).powi(2)).sqrt();
+                dist <= MAX_CLUSTER_DISTANCE_DEG
+            })
+        });
+
+        if all_close {
+            clusters.push(StationCluster { nodes });
+        }
+    }
+
+    clusters
+}
+
+/// Build a lookup from node to its cluster index
+fn build_cluster_lookup(clusters: &[StationCluster]) -> HashMap<NodeIndex, usize> {
+    let mut lookup = HashMap::new();
+    for (cluster_idx, cluster) in clusters.iter().enumerate() {
+        for &node in &cluster.nodes {
+            lookup.insert(node, cluster_idx);
+        }
+    }
+    lookup
+}
+
+/// Place secondary nodes of a cluster near the primary (already placed) node
+fn place_cluster_secondaries(
+    graph: &mut RailwayGraph,
+    cluster: &StationCluster,
+    primary_node: NodeIndex,
+    visited: &mut HashSet<NodeIndex>,
+    base_station_spacing: f64,
+    pinned_nodes: &HashSet<NodeIndex>,
+) {
+    let Some(primary_pos) = graph.get_station_position(primary_node) else {
+        return;
+    };
+    if primary_pos == (0.0, 0.0) {
+        return;
+    }
+
+    let cluster_offset = GRID_SIZE * CLUSTER_SPACING_GRIDS;
+
+    // Place each secondary node around the primary
+    for (i, &node) in cluster.nodes.iter().enumerate() {
+        if node == primary_node || visited.contains(&node) || pinned_nodes.contains(&node) {
+            continue;
+        }
+
+        // Offset in different directions for each secondary
+        let angle = DIRECTIONS[i % DIRECTIONS.len()];
+        let preferred = (
+            primary_pos.0 + angle.cos() * cluster_offset,
+            primary_pos.1 + angle.sin() * cluster_offset,
+        );
+
+        let final_pos = find_non_colliding_position(graph, preferred, node, base_station_spacing);
+        graph.set_station_position(node, final_pos);
+        visited.insert(node);
+    }
+}
+
+/// Find a non-colliding position near the preferred position
+fn find_non_colliding_position(
+    graph: &RailwayGraph,
+    preferred: (f64, f64),
+    node: NodeIndex,
+    base_station_spacing: f64,
+) -> (f64, f64) {
+    let snapped = snap_to_grid(preferred.0, preferred.1);
+
+    // Check if preferred position is clear
+    if !has_node_collision_at(graph, snapped, node, base_station_spacing) {
+        return snapped;
+    }
+
+    // Try positions in expanding circles around preferred
+    for radius_mult in 1..=10 {
+        let radius = GRID_SIZE * f64::from(radius_mult);
+        for &dir in &DIRECTIONS {
+            let test_pos = snap_to_grid(
+                preferred.0 + dir.cos() * radius,
+                preferred.1 + dir.sin() * radius,
+            );
+            if !has_node_collision_at(graph, test_pos, node, base_station_spacing) {
+                return test_pos;
+            }
+        }
+    }
+
+    // Last resort: return snapped position anyway (shouldn't happen)
+    snapped
+}
+
+/// Place intermediate stations for parallel routes, offset from the direct line between hubs
+fn place_parallel_routes(
+    graph: &mut RailwayGraph,
+    parallel_routes: &[ParallelRouteGroup],
+    visited: &mut HashSet<NodeIndex>,
+    base_station_spacing: f64,
+    pinned_nodes: &HashSet<NodeIndex>,
+) {
+    const OFFSET_FACTOR: f64 = 0.5; // Perpendicular offset as fraction of base spacing
+
+    for group in parallel_routes {
+        // Get hub positions
+        let Some(pos_a) = graph.get_station_position(group.hub_a) else { continue };
+        let Some(pos_b) = graph.get_station_position(group.hub_b) else { continue };
+
+        // Skip if hubs not yet positioned
+        if pos_a == (0.0, 0.0) || pos_b == (0.0, 0.0) {
+            continue;
+        }
+
+        // Calculate direction vector from hub_a to hub_b
+        let dx = pos_b.0 - pos_a.0;
+        let dy = pos_b.1 - pos_a.1;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist < 1.0 {
+            continue; // Hubs too close
+        }
+
+        // Perpendicular offset vector (rotate 90° clockwise for offset "below")
+        let perp_x = dy / dist;
+        let perp_y = -dx / dist;
+
+        let offset = base_station_spacing * OFFSET_FACTOR;
+        let intermediate_count = group.local_intermediates.len();
+
+        // Place each intermediate station
+        for (i, &node) in group.local_intermediates.iter().enumerate() {
+            // Skip if already visited or pinned
+            if visited.contains(&node) || pinned_nodes.contains(&node) {
+                visited.insert(node);
+                continue;
+            }
+
+            // Interpolate position along hub_a -> hub_b line
+            // t goes from 1/(n+1) to n/(n+1) for n intermediates
+            #[allow(clippy::cast_precision_loss)]
+            let t = (i + 1) as f64 / (intermediate_count + 1) as f64;
+            let base_x = pos_a.0 + dx * t;
+            let base_y = pos_a.1 + dy * t;
+
+            // Apply perpendicular offset
+            let preferred_x = base_x + perp_x * offset;
+            let preferred_y = base_y + perp_y * offset;
+
+            // Find non-colliding position
+            let final_pos = find_non_colliding_position(
+                graph,
+                (preferred_x, preferred_y),
+                node,
+                base_station_spacing,
+            );
+
+            graph.set_station_position(node, final_pos);
+            visited.insert(node);
+        }
+    }
+}
+
+/// Analyze branches from the hub to determine optimal spine direction.
+/// Returns the angle for the spine direction.
+///
+/// Strategy: Find which axis has the heaviest OFF-spine branches.
+/// Place spine perpendicular to that axis so branches have room to spread.
+#[allow(clippy::cast_precision_loss)]
+fn determine_spine_direction(
+    graph: &RailwayGraph,
+    hub: NodeIndex,
+    spine_nodes: &HashSet<NodeIndex>,
+    geo_hints: Option<&GeographicHints>,
+    edge_weights: Option<&HashMap<EdgeIndex, usize>>,
+) -> f64 {
+    // Weight for each of the 8 compass directions
+    let mut dir_weights: [usize; 8] = [0; 8];
+    // DIRECTIONS: E(0), SE(1), S(2), SW(3), W(4), NW(5), N(6), NE(7)
+
+    // For each neighbor of the hub that's NOT on the spine
+    for neighbor in graph.graph.neighbors_undirected(hub) {
+        if spine_nodes.contains(&neighbor) {
+            continue;
+        }
+
+        // Get geographic direction to this neighbor
+        let Some(geo_dir) = geo_hints.and_then(|h| h.preferred_direction(hub, neighbor)) else {
+            continue;
+        };
+
+        // Snap to nearest compass direction
+        let compass_dir = snap_to_compass(geo_dir);
+        let dir_idx = DIRECTIONS.iter().position(|&d| (d - compass_dir).abs() < 0.01).unwrap_or(0);
+
+        // Count reachable nodes from this neighbor (excluding hub)
+        let reachable = get_reachable_nodes(graph, neighbor, Some(hub));
+        let mut weight = reachable.len();
+
+        // Add edge weights if available
+        if let Some(weights) = edge_weights {
+            for node in &reachable {
+                for edge in graph.graph.edges(*node) {
+                    weight += weights.get(&edge.id()).copied().unwrap_or(0);
+                }
+            }
+        }
+
+        dir_weights[dir_idx] += weight;
+    }
+
+    // Calculate weight for each axis (opposite directions combined)
+    // Axis 0: E-W (indices 0,4)
+    // Axis 1: SE-NW (indices 1,5)
+    // Axis 2: S-N (indices 2,6)
+    // Axis 3: SW-NE (indices 3,7)
+    let axis_weights = [
+        dir_weights[0] + dir_weights[4], // E-W
+        dir_weights[1] + dir_weights[5], // SE-NW
+        dir_weights[2] + dir_weights[6], // S-N
+        dir_weights[3] + dir_weights[7], // SW-NE
+    ];
+
+    // Find the heaviest axis - this is where branches want to go
+    let heaviest_axis = axis_weights.iter().enumerate()
+        .max_by_key(|(_, &w)| w)
+        .map_or(0, |(i, _)| i);
+
+    // Spine should be PERPENDICULAR to heaviest branch axis
+    // Axis 0 (E-W) -> spine N-S (direction -90° or 90°)
+    // Axis 1 (SE-NW) -> spine SW-NE (direction 135° or -45°)
+    // Axis 2 (S-N) -> spine E-W (direction 0° or 180°)
+    // Axis 3 (SW-NE) -> spine SE-NW (direction 45° or -135°)
+    match heaviest_axis {
+        1 => -std::f64::consts::FRAC_PI_4, // SW-NE spine
+        2 => 0.0,                           // E-W spine (horizontal)
+        3 => std::f64::consts::FRAC_PI_4,  // SE-NW spine
+        _ => -std::f64::consts::FRAC_PI_2, // N-S spine (vertical) - default for axis 0 and any other
+    }
+}
+
 /// Apply layout, preserving positions of pinned nodes
 #[allow(clippy::too_many_lines, clippy::missing_panics_doc, clippy::cast_precision_loss)]
 pub fn apply_layout_with_pinned(
@@ -637,7 +1052,20 @@ pub fn apply_layout_with_pinned(
     geo_hints: Option<&GeographicHints>,
     pinned_nodes: &std::collections::HashSet<NodeIndex>,
 ) {
-    apply_layout_internal(graph, height, settings, geo_hints, pinned_nodes);
+    apply_layout_internal(graph, height, settings, geo_hints, pinned_nodes, None);
+}
+
+/// Apply layout with edge weights for spine detection (NIMBY import)
+#[allow(clippy::too_many_lines, clippy::missing_panics_doc, clippy::cast_precision_loss)]
+pub fn apply_layout_with_edge_weights(
+    graph: &mut RailwayGraph,
+    height: f64,
+    settings: &ProjectSettings,
+    geo_hints: Option<&GeographicHints>,
+    pinned_nodes: &std::collections::HashSet<NodeIndex>,
+    edge_weights: &HashMap<EdgeIndex, usize>,
+) {
+    apply_layout_internal(graph, height, settings, geo_hints, pinned_nodes, Some(edge_weights));
 }
 
 #[allow(clippy::too_many_lines, clippy::missing_panics_doc, clippy::cast_precision_loss)]
@@ -647,7 +1075,7 @@ pub fn apply_layout(
     settings: &ProjectSettings,
     geo_hints: Option<&GeographicHints>,
 ) {
-    apply_layout_internal(graph, height, settings, geo_hints, &std::collections::HashSet::new());
+    apply_layout_internal(graph, height, settings, geo_hints, &std::collections::HashSet::new(), None);
 }
 
 #[allow(clippy::too_many_lines, clippy::missing_panics_doc, clippy::cast_precision_loss)]
@@ -657,6 +1085,7 @@ fn apply_layout_internal(
     settings: &ProjectSettings,
     geo_hints: Option<&GeographicHints>,
     pinned_nodes: &std::collections::HashSet<NodeIndex>,
+    edge_weights: Option<&HashMap<EdgeIndex, usize>>,
 ) {
     let base_station_spacing = settings.default_node_distance_grid_squares * GRID_SIZE;
     let start_x = 150.0;
@@ -665,6 +1094,13 @@ fn apply_layout_internal(
     if graph.graph.node_count() == 0 {
         return; // Empty graph
     }
+
+    // Detect parallel routes (express vs local) for offset placement
+    let parallel_routes = detect_parallel_routes(graph, geo_hints);
+
+    // Detect same-name station clusters for proximity placement
+    let station_clusters = detect_station_clusters(graph, geo_hints);
+    let cluster_lookup = build_cluster_lookup(&station_clusters);
 
     // Clear positions for nodes that will be laid out (skip pinned and passing loops)
     let all_nodes: Vec<_> = graph.graph.node_indices().collect();
@@ -684,60 +1120,155 @@ fn apply_layout_internal(
         graph.set_station_position(node_idx, (0.0, 0.0));
     }
 
-    // Phase 1: Find longest path (the main spine)
-    let spine = graph.find_longest_path();
+    // Phase 1: Find main spine
+    // Use edge weights (line usage) if available, otherwise longest path
+    let spine = match edge_weights {
+        Some(weights) if !weights.is_empty() => graph.find_heaviest_path(weights),
+        _ => graph.find_longest_path(),
+    };
 
     if spine.is_empty() {
         return;
     }
 
-    // Phase 2: Place spine - each segment follows its own geographic direction
+    // Find the hub node on the spine (highest degree = most connections)
+    // This node will be placed at the center, with the spine extending in both directions
+    let hub_index = spine
+        .iter()
+        .enumerate()
+        .max_by_key(|(_, &node)| graph.graph.neighbors_undirected(node).count())
+        .map_or(spine.len() / 2, |(idx, _)| idx);
+
+    let hub_node = spine[hub_index];
+    let spine_set: HashSet<NodeIndex> = spine.iter().copied().collect();
+
+    // Determine optimal spine direction based on branch analysis
+    let base_spine_direction = determine_spine_direction(graph, hub_node, &spine_set, geo_hints, edge_weights);
+
+    // Orient the spine correctly based on geography of endpoints
+    // "Before hub" end should go in the direction that matches its geographic position
+    let spine_direction = if let Some(hints) = geo_hints {
+        let first_node = spine.first().copied();
+        let last_node = spine.last().copied();
+
+        // Get geographic directions from hub to both ends
+        let dir_to_first = first_node.and_then(|n| hints.preferred_direction(hub_node, n));
+        let dir_to_last = last_node.and_then(|n| hints.preferred_direction(hub_node, n));
+
+        // Check which end is more aligned with base_spine_direction
+        // "Before hub" nodes are placed going in spine_reverse, so first_node should be in spine_reverse direction
+        let should_swap = match (dir_to_first, dir_to_last) {
+            (Some(first_dir), Some(last_dir)) => {
+                // If first_node is more aligned with spine_direction (not reverse), swap
+                let first_alignment = angle_difference(first_dir, base_spine_direction);
+                let last_alignment = angle_difference(last_dir, base_spine_direction);
+                first_alignment < last_alignment
+            }
+            _ => false,
+        };
+
+        if should_swap {
+            base_spine_direction + std::f64::consts::PI // Flip the direction
+        } else {
+            base_spine_direction
+        }
+    } else {
+        base_spine_direction
+    };
+    let spine_reverse = spine_direction + std::f64::consts::PI;
+
+    // Phase 2: Place spine from hub outward in both directions
     let mut visited = HashSet::new();
-    let default_direction = -std::f64::consts::FRAC_PI_2; // North (-90°) as fallback
+    let center_pos = snap_to_grid(start_x, start_y);
 
-    let mut current_pos = snap_to_grid(start_x, start_y);
-    let mut prev_node: Option<NodeIndex> = None;
-    let mut last_direction = default_direction;
+    // Place the hub node at the center first
+    if !pinned_nodes.contains(&hub_node) {
+        graph.set_station_position(hub_node, center_pos);
+    }
+    visited.insert(hub_node);
 
-    for &node in &spine {
-        // Check if this is a passing loop
+    // Place nodes BEFORE the hub - go in spine_reverse direction (away from hub)
+    let mut current_pos = center_pos;
+    for i in (0..hub_index).rev() {
+        let node = spine[i];
+
         let is_passing_loop = graph.graph.node_weight(node)
             .and_then(|n| n.as_station())
             .is_some_and(|s| s.passing_loop);
 
-        // Check if this node is pinned (has existing position we should preserve)
-        let is_pinned = pinned_nodes.contains(&node);
-
-        if !is_passing_loop {
-            if is_pinned {
-                // Use pinned node's existing position as reference
-                if let Some(pos) = graph.graph.node_weight(node)
-                    .and_then(|n| n.as_station())
-                    .and_then(|s| s.position)
-                {
-                    current_pos = pos;
-                }
-            } else if let Some(prev) = prev_node {
-                // Get direction filtered by geography (hard constraint)
-                let direction = geo_hints.map_or(last_direction, |hints| {
-                    get_spine_direction(hints, prev, node, last_direction)
-                });
-
-                current_pos = snap_to_grid(
-                    current_pos.0 + direction.cos() * base_station_spacing,
-                    current_pos.1 + direction.sin() * base_station_spacing,
-                );
-                last_direction = direction;
-                // Place spine node at current position
-                graph.set_station_position(node, current_pos);
-            } else {
-                // First node, no previous - just place it
-                graph.set_station_position(node, current_pos);
-            }
-            prev_node = Some(node);
+        if is_passing_loop {
+            visited.insert(node);
+            continue;
         }
+
+        if pinned_nodes.contains(&node) {
+            if let Some(pos) = graph.graph.node_weight(node)
+                .and_then(|n| n.as_station())
+                .and_then(|s| s.position)
+            {
+                current_pos = pos;
+            }
+            visited.insert(node);
+            continue;
+        }
+
+        let preferred_pos = snap_to_grid(
+            current_pos.0 + spine_reverse.cos() * base_station_spacing,
+            current_pos.1 + spine_reverse.sin() * base_station_spacing,
+        );
+        current_pos = find_non_colliding_position(graph, preferred_pos, node, base_station_spacing);
+        graph.set_station_position(node, current_pos);
         visited.insert(node);
     }
+
+    // Place nodes AFTER the hub - go in spine_direction (away from hub)
+    current_pos = center_pos;
+    for &node in spine.iter().skip(hub_index + 1) {
+        let is_passing_loop = graph.graph.node_weight(node)
+            .and_then(|n| n.as_station())
+            .is_some_and(|s| s.passing_loop);
+
+        if is_passing_loop {
+            visited.insert(node);
+            continue;
+        }
+
+        if pinned_nodes.contains(&node) {
+            if let Some(pos) = graph.graph.node_weight(node)
+                .and_then(|n| n.as_station())
+                .and_then(|s| s.position)
+            {
+                current_pos = pos;
+            }
+            visited.insert(node);
+            continue;
+        }
+
+        let preferred_pos = snap_to_grid(
+            current_pos.0 + spine_direction.cos() * base_station_spacing,
+            current_pos.1 + spine_direction.sin() * base_station_spacing,
+        );
+        current_pos = find_non_colliding_position(graph, preferred_pos, node, base_station_spacing);
+        graph.set_station_position(node, current_pos);
+        visited.insert(node);
+    }
+
+    // Place cluster siblings for spine nodes
+    for &node in &spine {
+        if let Some(&cluster_idx) = cluster_lookup.get(&node) {
+            place_cluster_secondaries(
+                graph,
+                &station_clusters[cluster_idx],
+                node,
+                &mut visited,
+                base_station_spacing,
+                pinned_nodes,
+            );
+        }
+    }
+
+    // Phase 2.5: Place parallel route intermediates (local line stations offset from express)
+    place_parallel_routes(graph, &parallel_routes, &mut visited, base_station_spacing, pinned_nodes);
 
     // Phase 3: Place branches from spine nodes
     let mut queue = std::collections::VecDeque::new();
@@ -759,13 +1290,11 @@ fn apply_layout_internal(
                     .next()
                     .or_else(|| graph.graph.edges_connecting(node, prev_node).next())
                     .map(|e| e.id());
-                // Compute direction from previous node's position
-                let dir = geo_hints
-                    .and_then(|h| h.preferred_direction(prev_node, node))
-                    .map_or(default_direction, snap_to_compass);
+                // Use spine direction: before hub came from spine_direction, after hub came from spine_reverse
+                let dir = if i <= hub_index { spine_direction } else { spine_reverse };
                 (edge, dir)
             } else {
-                (None, default_direction)
+                (None, spine_direction)
             };
             queue.push_back((node, pos, incoming_dir, incoming_edge));
         }
@@ -828,17 +1357,18 @@ fn apply_layout_internal(
             );
 
             // DEBUG: Log when placing specific nodes
-            if graph.graph[neighbor].display_name() == "Upper Tyndrum" {
-                leptos::logging::log!("Placing {} from {} at ({:.1}, {:.1})",
-                    graph.graph[neighbor].display_name(),
+            let debug_stations = ["Roa", "Heggedal", "Ski", "Lillestrøm", "Drammen", "Gjøvik"];
+            let neighbor_name = graph.graph[neighbor].display_name();
+            if debug_stations.contains(&neighbor_name.as_str()) {
+                let geo_dir = geo_hints.and_then(|h| h.preferred_direction(current_node, neighbor));
+                leptos::logging::log!("PLACING {} from {} at ({:.1}, {:.1})",
+                    neighbor_name,
                     graph.graph[current_node].display_name(),
                     current_pos.0, current_pos.1);
+                leptos::logging::log!("  Geographic direction: {:?}°", geo_dir.map(f64::to_degrees));
                 leptos::logging::log!("  Best direction: {:.0}°, spacing: {:.1}, score: {}",
                     best_direction.to_degrees(), best_spacing, best_score);
-                leptos::logging::log!("  Global branches: {} total", global_branches.len());
-                for (dir, _) in &global_branches {
-                    leptos::logging::log!("    - {:.0}°", dir.to_degrees());
-                }
+                leptos::logging::log!("  Incoming direction: {:.0}°", incoming_direction.to_degrees());
             }
 
             let neighbor_pos = snap_to_grid(
@@ -904,20 +1434,50 @@ fn apply_layout_internal(
                 local_branches.push((best_direction, reachable.clone()));
                 global_branches.push((best_direction, reachable.clone()));
                 queue.push_back((neighbor, pos, best_direction, edge_to_neighbor));
+
+                // If this node is in a cluster, place its siblings nearby
+                if let Some(&cluster_idx) = cluster_lookup.get(&neighbor) {
+                    place_cluster_secondaries(
+                        graph,
+                        &station_clusters[cluster_idx],
+                        neighbor,
+                        &mut visited,
+                        base_station_spacing,
+                        pinned_nodes,
+                    );
+                }
             } else {
                 // Absolutely no valid position found - this should be extremely rare
-                // Use a varied emergency direction
+                // Use a varied emergency direction with collision checking
                 let emergency_dir = DIRECTIONS[fallback_direction_index % DIRECTIONS.len()];
                 fallback_direction_index += 1;
-                let emergency_pos = snap_to_grid(
-                    current_pos.0 + emergency_dir.cos() * base_station_spacing * 20.0,
-                    current_pos.1 + emergency_dir.sin() * base_station_spacing * 20.0,
+                let preferred_emergency = (
+                    current_pos.0 + emergency_dir.cos() * base_station_spacing * 5.0,
+                    current_pos.1 + emergency_dir.sin() * base_station_spacing * 5.0,
+                );
+                let emergency_pos = find_non_colliding_position(
+                    graph,
+                    preferred_emergency,
+                    neighbor,
+                    base_station_spacing,
                 );
                 graph.set_station_position(neighbor, emergency_pos);
                 visited.insert(neighbor);
                 local_branches.push((emergency_dir, reachable.clone()));
                 global_branches.push((emergency_dir, reachable.clone()));
                 queue.push_back((neighbor, emergency_pos, emergency_dir, edge_to_neighbor));
+
+                // If this node is in a cluster, place its siblings nearby
+                if let Some(&cluster_idx) = cluster_lookup.get(&neighbor) {
+                    place_cluster_secondaries(
+                        graph,
+                        &station_clusters[cluster_idx],
+                        neighbor,
+                        &mut visited,
+                        base_station_spacing,
+                        pinned_nodes,
+                    );
+                }
             }
         }
     }
@@ -951,12 +1511,14 @@ fn apply_layout_internal(
 
                 if !is_passing_loop && !is_pinned {
                     let offset = f64::from(comp_non_passing_count) * base_station_spacing;
-                    let pos = snap_to_grid(
+                    // Place disconnected components going downward (positive Y)
+                    let preferred_pos = snap_to_grid(
                         offset_x,
-                        start_y + default_direction.sin() * offset,
+                        start_y + offset,
                     );
 
-                    // Place disconnected components without adjustment - they're offset far enough
+                    // Find non-colliding position for disconnected component nodes
+                    let pos = find_non_colliding_position(graph, preferred_pos, comp_node, base_station_spacing);
                     graph.set_station_position(comp_node, pos);
                     comp_non_passing_count += 1;
                 } else if !is_passing_loop {
