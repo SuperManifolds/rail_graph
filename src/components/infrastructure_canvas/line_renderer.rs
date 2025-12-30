@@ -7,8 +7,6 @@ use indexmap::IndexMap;
 use web_sys::CanvasRenderingContext2d;
 
 const LINE_BASE_WIDTH: f64 = 3.0;
-const AVOIDANCE_OFFSET_THRESHOLD: f64 = 0.1;
-const TRANSITION_LENGTH: f64 = 30.0;
 const JUNCTION_STOP_DISTANCE: f64 = 14.0;
 pub const MIN_CURVE_RADIUS: f64 = 20.0;
 
@@ -1451,48 +1449,12 @@ fn draw_curve(
     }
 }
 
-/// Draw a line segment with optional avoidance transitions
-fn draw_line_segment_with_avoidance(
-    ctx: &CanvasRenderingContext2d,
-    pos1: (f64, f64),
-    pos2: (f64, f64),
-    segment_length: f64,
-    line_offset: (f64, f64),
-    avoidance_offset: (f64, f64),
-    transitions: (bool, bool),
-) {
-    let (ox, oy) = line_offset;
-    let (avoid_x, avoid_y) = avoidance_offset;
-    let (start_needs_transition, end_needs_transition) = transitions;
-
-    if start_needs_transition {
-        ctx.move_to(pos1.0 + ox, pos1.1 + oy);
-        let t1 = TRANSITION_LENGTH / segment_length;
-        let mid1_x = pos1.0 + (pos2.0 - pos1.0) * t1;
-        let mid1_y = pos1.1 + (pos2.1 - pos1.1) * t1;
-        ctx.line_to(mid1_x + ox + avoid_x, mid1_y + oy + avoid_y);
-    } else {
-        ctx.move_to(pos1.0 + ox + avoid_x, pos1.1 + oy + avoid_y);
-    }
-
-    if end_needs_transition {
-        let t2 = (segment_length - TRANSITION_LENGTH) / segment_length;
-        let mid2_x = pos1.0 + (pos2.0 - pos1.0) * t2;
-        let mid2_y = pos1.1 + (pos2.1 - pos1.1) * t2;
-        ctx.line_to(mid2_x + ox + avoid_x, mid2_y + oy + avoid_y);
-        ctx.line_to(pos2.0 + ox, pos2.1 + oy);
-    } else {
-        ctx.line_to(pos2.0 + ox + avoid_x, pos2.1 + oy + avoid_y);
-    }
-}
-
 #[allow(clippy::cast_precision_loss, clippy::too_many_lines, clippy::too_many_arguments)]
 pub fn draw_lines(
     ctx: &CanvasRenderingContext2d,
     graph: &RailwayGraph,
     lines: &[Line],
     zoom: f64,
-    cached_avoidance: &HashMap<EdgeIndex, (f64, f64)>,
     viewport_bounds: (f64, f64, f64, f64),
     junctions: &HashSet<NodeIndex>,
     theme: Theme,
@@ -2116,10 +2078,6 @@ pub fn draw_lines(
         let source_has_curve = edges_with_station_curves.contains(&(*edge_idx, source));
         let target_has_curve = edges_with_station_curves.contains(&(*edge_idx, target));
 
-        // Use cached avoidance offset
-        let (avoid_x, avoid_y) = cached_avoidance.get(edge_idx).copied().unwrap_or((0.0, 0.0));
-        let needs_avoidance = avoid_x.abs() > AVOIDANCE_OFFSET_THRESHOLD || avoid_y.abs() > AVOIDANCE_OFFSET_THRESHOLD;
-
         let dx = pos2.0 - pos1.0;
         let dy = pos2.1 - pos1.1;
         let len = (dx * dx + dy * dy).sqrt();
@@ -2223,17 +2181,8 @@ pub fn draw_lines(
                 JUNCTION_STOP_DISTANCE - 2.0
             };
 
-            // When there's avoidance offset, use half junction distance
-            let source_distance = if needs_avoidance && source_is_junction {
-                source_stop_distance * 0.5
-            } else {
-                source_stop_distance
-            };
-            let target_distance = if needs_avoidance && target_is_junction {
-                target_stop_distance * 0.5
-            } else {
-                target_stop_distance
-            };
+            let source_distance = source_stop_distance;
+            let target_distance = target_stop_distance;
 
             if (source_is_junction || source_has_curve) && len > source_distance {
                 // Move start point away from junction or station curve
@@ -2282,22 +2231,8 @@ pub fn draw_lines(
                 0.0
             };
 
-            if needs_avoidance {
-                // Draw segmented path: start -> offset section -> end
-                // Check if we're connecting to junctions
-                let start_needs_transition = !source_is_junction;
-                let end_needs_transition = !target_is_junction;
-
-                let segment_length = ((line_pos2.0 - line_pos1.0).powi(2) + (line_pos2.1 - line_pos1.1).powi(2)).sqrt();
-                draw_line_segment_with_avoidance(
-                    ctx, line_pos1, line_pos2, segment_length,
-                    (ox, oy), (avoid_x, avoid_y),
-                    (start_needs_transition, end_needs_transition)
-                );
-            } else {
-                ctx.move_to(line_pos1.0 + ox, line_pos1.1 + oy);
-                ctx.line_to(line_pos2.0 + ox, line_pos2.1 + oy);
-            }
+            ctx.move_to(line_pos1.0 + ox, line_pos1.1 + oy);
+            ctx.line_to(line_pos2.0 + ox, line_pos2.1 + oy);
 
             let is_highlighted = highlighted_edges.contains(edge_idx);
             let dash_offset = cumulative_distance % (CENTER_DASH_LENGTH + CENTER_DASH_GAP);
@@ -2372,17 +2307,8 @@ pub fn draw_lines(
                     JUNCTION_STOP_DISTANCE - 2.0
                 };
 
-                // When there's avoidance offset, use half junction distance
-                let source_distance = if needs_avoidance && source_is_junction {
-                    source_stop_distance * 0.5
-                } else {
-                    source_stop_distance
-                };
-                let target_distance = if needs_avoidance && target_is_junction {
-                    target_stop_distance * 0.5
-                } else {
-                    target_stop_distance
-                };
+                let source_distance = source_stop_distance;
+                let target_distance = target_stop_distance;
 
                 if (source_is_junction || source_has_curve) && len > source_distance {
                     // Move start point away from junction or station curve
@@ -2428,22 +2354,8 @@ pub fn draw_lines(
                     cumulative_distance += source_distance;
                 }
 
-                if needs_avoidance {
-                    // Draw segmented path with offset
-                    // Check if we're connecting to junctions
-                    let start_needs_transition = !source_is_junction;
-                    let end_needs_transition = !target_is_junction;
-
-                    let segment_length = ((line_pos2.0 - line_pos1.0).powi(2) + (line_pos2.1 - line_pos1.1).powi(2)).sqrt();
-                    draw_line_segment_with_avoidance(
-                        ctx, line_pos1, line_pos2, segment_length,
-                        (ox, oy), (avoid_x, avoid_y),
-                        (start_needs_transition, end_needs_transition)
-                    );
-                } else {
-                    ctx.move_to(line_pos1.0 + ox, line_pos1.1 + oy);
-                    ctx.line_to(line_pos2.0 + ox, line_pos2.1 + oy);
-                }
+                ctx.move_to(line_pos1.0 + ox, line_pos1.1 + oy);
+                ctx.line_to(line_pos2.0 + ox, line_pos2.1 + oy);
 
                 let is_highlighted = highlighted_edges.contains(edge_idx);
                 let dash_offset = cumulative_distance % (CENTER_DASH_LENGTH + CENTER_DASH_GAP);

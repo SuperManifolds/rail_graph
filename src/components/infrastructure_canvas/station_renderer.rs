@@ -229,7 +229,6 @@ fn draw_station_nodes(
     highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
     viewport_bounds: (f64, f64, f64, f64),
     junctions: &HashSet<NodeIndex>,
-    cached_avoidance: &HashMap<petgraph::stable_graph::EdgeIndex, (f64, f64)>,
     orphaned_tracks: &HashMap<(petgraph::stable_graph::EdgeIndex, NodeIndex), HashSet<usize>>,
     crossover_intersections: &HashMap<(petgraph::stable_graph::EdgeIndex, NodeIndex, usize), (f64, f64)>,
     show_lines: bool,
@@ -289,7 +288,7 @@ fn draw_station_nodes(
             let should_draw_junction = !show_lines || scheduled_stations.is_some_and(|set| !set.contains(&idx));
 
             if should_draw_junction {
-                junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, cached_avoidance, orphaned_tracks, crossover_intersections, selected_stations);
+                junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, orphaned_tracks, crossover_intersections, selected_stations);
             }
             // Use larger radius for label overlap to account for junction connection lines
             node_positions.push((idx, pos, JUNCTION_LABEL_RADIUS));
@@ -1092,7 +1091,7 @@ pub fn draw_stations_with_cache(
     let palette = get_palette(theme);
     let font_size = (14.0 / zoom).clamp(MIN_LABEL_FONT_SIZE, MAX_LABEL_FONT_SIZE);
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.avoidance_offsets, &cache.orphaned_tracks, &cache.crossover_intersections, show_lines, scheduled_stations, palette);
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.orphaned_tracks, &cache.crossover_intersections, show_lines, scheduled_stations, palette);
 
     // Calculate line extents in line mode for label positioning
     let line_extents = if show_lines {

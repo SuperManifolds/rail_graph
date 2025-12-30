@@ -62,7 +62,7 @@ fn distance_to_segment(point: (f64, f64), seg_start: (f64, f64), seg_end: (f64, 
 #[must_use]
 pub fn find_track_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<EdgeIndex> {
     // Build a mapping from segments to edge indices
-    // For each edge, get its actual rendered segments (including avoidance paths)
+    // For each edge, get its actual rendered segments
     let mut edge_segments: HashMap<EdgeIndex, TrackSegments> = HashMap::new();
 
     // Use same logic as track renderer to get actual segments
@@ -74,7 +74,6 @@ pub fn find_track_at_position(graph: &RailwayGraph, x: f64, y: f64) -> Option<Ed
         let Some(pos1) = graph.get_station_position(source) else { continue };
         let Some(pos2) = graph.get_station_position(target) else { continue };
 
-        // Check if we need avoidance (using same logic as track_renderer)
         let segments = track_renderer::get_segments_for_edge(graph, source, target, pos1, pos2);
         edge_segments.insert(edge_id, segments);
     }

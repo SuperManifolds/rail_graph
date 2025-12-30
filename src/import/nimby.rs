@@ -221,11 +221,11 @@ fn build_edge_usage_map(
             continue;
         }
 
-        // Get valid stops (non-null station IDs that exist in graph)
+        // Get valid stops (non-null station IDs that exist in graph, excluding depots)
         let valid_stops: Vec<_> = nimby_line
             .stops
             .iter()
-            .filter(|s| s.station_id != "0x0")
+            .filter(|s| s.station_id != "0x0" && !is_depot(data, &s.station_id))
             .filter_map(|s| station_id_to_node.get(&s.station_id).copied())
             .collect();
 
@@ -300,14 +300,17 @@ pub fn import_nimby_lines(
             .collect();
 
         // Phase 1: Analyze all lines to build segment map
-        let segment_map = build_segment_map(&valid_lines);
+        let segment_map = build_segment_map(&valid_lines, data);
         leptos::logging::log!("NIMBY import: analyzed {} segment pairs", segment_map.len());
 
-        // Phase 2: Create all stations first
+        // Phase 2: Create all stations first (excluding depots)
         let mut station_id_to_node: HashMap<String, NodeIndex> = HashMap::new();
         for nimby_line in &valid_lines {
             for stop in &nimby_line.stops {
-                if stop.station_id != "0x0" && !station_id_to_node.contains_key(&stop.station_id) {
+                if stop.station_id != "0x0"
+                    && !is_depot(data, &stop.station_id)
+                    && !station_id_to_node.contains_key(&stop.station_id)
+                {
                     let node = find_or_create_station(
                         graph,
                         &stop.station_id,
@@ -338,11 +341,26 @@ pub fn import_nimby_lines(
             &station_id_to_node,
             &segment_map,
             config.handedness,
+            data,
         );
         if consecutive_count > 0 {
             leptos::logging::log!(
                 "NIMBY import: created {} additional consecutive edges",
                 consecutive_count
+            );
+        }
+
+        // Phase 4: Detect and create passing loops using segment map
+        let passing_loop_count = create_passing_loops_from_segment_map(
+            graph,
+            &segment_map,
+            &station_id_to_node,
+            config.handedness,
+        );
+        if passing_loop_count > 0 {
+            leptos::logging::log!(
+                "NIMBY import: created {} passing loops",
+                passing_loop_count
             );
         }
 
@@ -437,11 +455,10 @@ fn create_infrastructure_from_segments(
                 continue;
             };
 
-            // Skip if edge already exists (in either direction)
+            // Skip if edge already exists (in either direction, or through passing loops)
             if created_edges.contains(&(from_node, to_node))
                 || created_edges.contains(&(to_node, from_node))
-                || graph.graph.find_edge(from_node, to_node).is_some()
-                || graph.graph.find_edge(to_node, from_node).is_some()
+                || connection_exists(graph, from_node, to_node)
             {
                 continue;
             }
@@ -478,17 +495,19 @@ fn create_consecutive_edges(
     station_id_to_node: &HashMap<String, NodeIndex>,
     segment_map: &SegmentMap,
     handedness: TrackHandedness,
+    data: &NimbyImportData,
 ) -> usize {
     let mut created_edges: std::collections::HashSet<(NodeIndex, NodeIndex)> =
         std::collections::HashSet::new();
 
     for line in lines {
         // Get actual stations with their original indices (needed for distance calculation)
+        // Exclude waypoints and depots
         let stations: Vec<(usize, &NimbyStop)> = line
             .stops
             .iter()
             .enumerate()
-            .filter(|(_, s)| s.station_id != "0x0")
+            .filter(|(_, s)| s.station_id != "0x0" && !is_depot(data, &s.station_id))
             .collect();
 
         // Create edges for consecutive station pairs
@@ -511,11 +530,10 @@ fn create_consecutive_edges(
                 continue;
             };
 
-            // Skip if edge already exists (either direction)
+            // Skip if edge already exists (either direction, or through passing loops)
             if created_edges.contains(&(from_node, to_node))
                 || created_edges.contains(&(to_node, from_node))
-                || graph.graph.find_edge(from_node, to_node).is_some()
-                || graph.graph.find_edge(to_node, from_node).is_some()
+                || connection_exists(graph, from_node, to_node)
             {
                 continue;
             }
@@ -553,6 +571,296 @@ fn create_consecutive_edges(
     created_edges.len()
 }
 
+/// A passing loop candidate with its distance ratio normalized to canonical station ordering
+struct NormalizedCandidate<'a> {
+    candidate: &'a PassingLoopCandidate,
+    /// Distance ratio normalized to canonical ordering (from first to second station alphabetically)
+    normalized_ratio: f64,
+}
+
+/// Detect passing loops from segment map and create them in the graph.
+///
+/// A passing loop is detected when a segment A→B has waypoints at positions
+/// that match (within tolerance) the normalized waypoint positions of segment B→A.
+///
+/// Returns the number of passing loops created.
+#[allow(clippy::too_many_lines)]
+fn create_passing_loops_from_segment_map(
+    graph: &mut RailwayGraph,
+    segment_map: &SegmentMap,
+    station_id_to_node: &HashMap<String, NodeIndex>,
+    handedness: TrackHandedness,
+) -> usize {
+    // Find passing loop candidates by comparing A→B with B→A segments
+    let mut candidates: Vec<PassingLoopCandidate> = Vec::new();
+    let mut processed: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+
+    for ((from_id, to_id), forward_paths) in segment_map {
+        // Skip if already processed this pair
+        if processed.contains(&(from_id.clone(), to_id.clone()))
+            || processed.contains(&(to_id.clone(), from_id.clone()))
+        {
+            continue;
+        }
+
+        // Look for reverse segment B→A
+        let reverse_key = (to_id.clone(), from_id.clone());
+        let Some(reverse_paths) = segment_map.get(&reverse_key) else {
+            continue;
+        };
+
+        processed.insert((from_id.clone(), to_id.clone()));
+        processed.insert((to_id.clone(), from_id.clone()));
+
+        // Get the path with waypoints (consecutive pairs have waypoint data)
+        let forward_path = forward_paths.iter().find(|p| !p.waypoint_distances.is_empty());
+        let reverse_path = reverse_paths.iter().find(|p| !p.waypoint_distances.is_empty());
+
+        let (Some(fwd), Some(rev)) = (forward_path, reverse_path) else {
+            continue;
+        };
+
+        // Check distances match (same physical track)
+        if !distances_match(fwd.total_distance, rev.total_distance) {
+            continue;
+        }
+
+        let segment_distance = fwd.total_distance;
+
+        // Filter waypoints that are too close to either station (likely station throat routing)
+        let valid_fwd_waypoints: Vec<f64> = fwd
+            .waypoint_distances
+            .iter()
+            .filter(|&&d| {
+                d >= MIN_PASSING_LOOP_DISTANCE_FROM_STATION
+                    && (fwd.total_distance - d) >= MIN_PASSING_LOOP_DISTANCE_FROM_STATION
+            })
+            .copied()
+            .collect();
+
+        let valid_rev_waypoints: Vec<f64> = rev
+            .waypoint_distances
+            .iter()
+            .filter(|&&d| {
+                d >= MIN_PASSING_LOOP_DISTANCE_FROM_STATION
+                    && (rev.total_distance - d) >= MIN_PASSING_LOOP_DISTANCE_FROM_STATION
+            })
+            .copied()
+            .collect();
+
+        // Normalize reverse waypoint positions (B→A becomes distance from A)
+        let normalized_reverse: Vec<f64> = valid_rev_waypoints
+            .iter()
+            .map(|&d| rev.total_distance - d)
+            .collect();
+
+        // Match forward waypoints with normalized reverse waypoints
+        // Use a generous tolerance (700m) since waypoint positions can vary
+        for &fwd_dist in &valid_fwd_waypoints {
+            for &rev_normalized in &normalized_reverse {
+                let diff = (fwd_dist - rev_normalized).abs();
+                if diff < PASSING_LOOP_WAYPOINT_TOLERANCE {
+                    let distance_ratio = fwd_dist / segment_distance;
+                    candidates.push(PassingLoopCandidate {
+                        between_stations: (from_id.clone(), to_id.clone()),
+                        distance_ratio,
+                        segment_distance,
+                    });
+                    break; // One match per forward waypoint
+                }
+            }
+        }
+    }
+
+    if candidates.is_empty() {
+        return 0;
+    }
+
+    // Deduplicate: same segment + similar normalized distance ratio = same passing loop
+    let mut unique_loops: HashMap<(String, String, i32), PassingLoopCandidate> = HashMap::new();
+
+    for candidate in candidates {
+        // Use canonical ordering so A→B and B→A deduplicate to the same key
+        let (a, b) = &candidate.between_stations;
+        let (canonical_pair, needs_flip) = if a < b {
+            ((a.clone(), b.clone()), false)
+        } else {
+            ((b.clone(), a.clone()), true)
+        };
+        // Normalize the ratio to canonical ordering for deduplication
+        let normalized_ratio = if needs_flip {
+            1.0 - candidate.distance_ratio
+        } else {
+            candidate.distance_ratio
+        };
+        #[allow(clippy::cast_possible_truncation)]
+        let quantized_ratio = (normalized_ratio * 20.0).round() as i32;
+        let key = (canonical_pair.0, canonical_pair.1, quantized_ratio);
+        unique_loops.entry(key).or_insert(candidate);
+    }
+
+    leptos::logging::log!(
+        "Passing loop detection: found {} unique candidates",
+        unique_loops.len()
+    );
+
+    // Group loops by segment (canonical station pair) with normalized distance ratios
+    let mut loops_by_segment: HashMap<(String, String), Vec<NormalizedCandidate>> = HashMap::new();
+    for candidate in unique_loops.values() {
+        let (a, b) = &candidate.between_stations;
+        let (canonical, needs_flip) = if a < b {
+            ((a.clone(), b.clone()), false)
+        } else {
+            ((b.clone(), a.clone()), true)
+        };
+        // If the candidate was stored as B→A but canonical is A→B, flip the ratio
+        let normalized_ratio = if needs_flip {
+            1.0 - candidate.distance_ratio
+        } else {
+            candidate.distance_ratio
+        };
+        loops_by_segment.entry(canonical).or_default().push(NormalizedCandidate {
+            candidate,
+            normalized_ratio,
+        });
+    }
+
+    let mut loop_count = 0;
+
+    // Process each segment's loops together, sorted by normalized distance ratio
+    for ((station_a, station_b), mut segment_loops) in loops_by_segment {
+        // Sort by normalized distance ratio so we process loops in order along the segment
+        segment_loops.sort_by(|a, b| {
+            a.normalized_ratio
+                .partial_cmp(&b.normalized_ratio)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Get node indices for both stations
+        let (Some(&from_node), Some(&to_node)) = (
+            station_id_to_node.get(&station_a),
+            station_id_to_node.get(&station_b),
+        ) else {
+            continue;
+        };
+
+        // Check for existing passing loops and filter out candidates that already exist
+        let existing_loops = find_existing_passing_loops(graph, from_node, to_node);
+        if !existing_loops.is_empty() {
+            // Filter out candidates that match existing loops (within tolerance)
+            segment_loops.retain(|candidate| {
+                !existing_loops.iter().any(|(_, existing_ratio)| {
+                    (candidate.normalized_ratio - existing_ratio).abs() < 0.05
+                })
+            });
+
+            // If all candidates already exist, skip this segment
+            if segment_loops.is_empty() {
+                continue;
+            }
+
+            // There are new candidates to add, but we can't easily insert into existing chain
+            // For now, log a warning and skip - this handles the common case of duplicate imports
+            leptos::logging::log!(
+                "Warning: Cannot add new passing loops to segment with existing loops: {} -> {}",
+                station_a,
+                station_b
+            );
+            continue;
+        }
+
+        // Find the existing edge between these stations
+        let edge_to_split = graph
+            .graph
+            .find_edge(from_node, to_node)
+            .or_else(|| graph.graph.find_edge(to_node, from_node));
+
+        let Some(edge_idx) = edge_to_split else {
+            continue;
+        };
+
+        // Get total segment distance from edge or first candidate
+        let edge_weight = graph.graph.edge_weight(edge_idx).cloned();
+        let total_distance = edge_weight
+            .as_ref()
+            .and_then(|w| w.distance)
+            .unwrap_or(segment_loops[0].candidate.segment_distance);
+
+        // Check if edge direction matches our canonical from→to ordering
+        let edge_endpoints = graph.graph.edge_endpoints(edge_idx);
+        let edge_goes_from_to = edge_endpoints == Some((from_node, to_node));
+
+        // Remove the original edge
+        graph.graph.remove_edge(edge_idx);
+
+        // Determine chain direction based on original edge direction
+        // If edge was A→B, keep ratios as-is (from A)
+        // If edge was B→A, flip ratios (measure from B instead) and reverse order
+        let (chain_start, chain_end, flip_ratios) = if edge_goes_from_to {
+            (from_node, to_node, false)
+        } else {
+            (to_node, from_node, true)
+        };
+
+        // If we need to flip, reverse the iteration order so loops are created in the right sequence
+        // For edge A→B with ratios [0.3, 0.6]: A → Loop@0.3 → Loop@0.6 → B
+        // For edge B→A with ratios [0.3, 0.6]: B → Loop@(1-0.6) → Loop@(1-0.3) → A
+        //   which means iterate in reverse: [0.6, 0.3] → flip to [0.4, 0.7]
+        let loop_iter: Box<dyn Iterator<Item = &NormalizedCandidate>> = if flip_ratios {
+            Box::new(segment_loops.iter().rev())
+        } else {
+            Box::new(segment_loops.iter())
+        };
+
+        // Create all loops and edges for this segment
+        let mut prev_node = chain_start;
+        let mut prev_distance = 0.0;
+
+        for norm_candidate in loop_iter {
+            // If we're going in the opposite direction, flip the ratio
+            let effective_ratio = if flip_ratios {
+                1.0 - norm_candidate.normalized_ratio
+            } else {
+                norm_candidate.normalized_ratio
+            };
+            let loop_distance = total_distance * effective_ratio;
+
+            // Create the passing loop station
+            let loop_station = StationNode {
+                name: "Passing Loop".to_string(),
+                external_id: None,
+                position: None,
+                passing_loop: true,
+                platforms: vec![crate::models::Platform { name: "1".to_string() }],
+                label_position: None,
+            };
+            let loop_node = graph.graph.add_node(Node::Station(loop_station));
+
+            // Create edge from previous node to this loop
+            let edge_distance = loop_distance - prev_distance;
+            let tracks = super::shared::create_tracks_with_count(1, handedness);
+            let edge = graph.add_track(prev_node, loop_node, tracks);
+            if let Some(segment) = graph.graph.edge_weight_mut(edge) {
+                segment.distance = Some(edge_distance);
+            }
+
+            prev_node = loop_node;
+            prev_distance = loop_distance;
+            loop_count += 1;
+        }
+
+        // Create final edge from last loop to destination station
+        let final_distance = total_distance - prev_distance;
+        let tracks = super::shared::create_tracks_with_count(1, handedness);
+        let edge = graph.add_track(prev_node, chain_end, tracks);
+        if let Some(segment) = graph.graph.edge_weight_mut(edge) {
+            segment.distance = Some(final_distance);
+        }
+    }
+
+    loop_count
+}
+
 /// Import a single line from NIMBY data
 fn import_single_line(
     nimby_line: &NimbyLine,
@@ -579,7 +887,13 @@ fn import_single_line(
             continue;
         }
 
-        // Total leg distance includes any skipped waypoints
+        // Skip depots, but accumulate their distance
+        if is_depot(data, &stop.station_id) {
+            accumulated_distance += stop.leg_distance;
+            continue;
+        }
+
+        // Total leg distance includes any skipped waypoints and depots
         let total_leg_distance = accumulated_distance + stop.leg_distance;
         accumulated_distance = 0.0; // Reset for next segment
 
@@ -814,10 +1128,157 @@ fn find_or_create_station(
     Ok(idx)
 }
 
+/// Check if a station is a depot (should be excluded from infrastructure)
+fn is_depot(data: &NimbyImportData, station_id: &str) -> bool {
+    data.stations
+        .get(station_id)
+        .is_some_and(|s| s.name.contains("[DEP]"))
+}
+
+/// Check if a connection exists between two stations, either directly or through passing loops.
+fn connection_exists(graph: &RailwayGraph, from: NodeIndex, to: NodeIndex) -> bool {
+    // Direct edge
+    if graph.graph.find_edge(from, to).is_some() || graph.graph.find_edge(to, from).is_some() {
+        return true;
+    }
+
+    // Check for path through passing loops
+    !find_existing_passing_loops(graph, from, to).is_empty()
+}
+
+/// Find existing passing loops between two stations and their distance ratios.
+/// Returns a list of `(NodeIndex, f64)` tuples for all passing loops on the path.
+/// Uses BFS to find a path through passing loops.
+fn find_existing_passing_loops(
+    graph: &RailwayGraph,
+    from_node: NodeIndex,
+    to_node: NodeIndex,
+) -> Vec<(NodeIndex, f64)> {
+    use petgraph::Direction;
+
+    // If there's a direct edge, no passing loops exist yet
+    if graph.graph.find_edge(from_node, to_node).is_some()
+        || graph.graph.find_edge(to_node, from_node).is_some()
+    {
+        return Vec::new();
+    }
+
+    // BFS to find a path through passing loops
+    let mut visited = std::collections::HashSet::new();
+    let mut queue = std::collections::VecDeque::new();
+    let mut parent: std::collections::HashMap<NodeIndex, NodeIndex> = std::collections::HashMap::new();
+
+    visited.insert(from_node);
+    queue.push_back(from_node);
+
+    while let Some(current) = queue.pop_front() {
+        for neighbor in graph
+            .graph
+            .neighbors_directed(current, Direction::Outgoing)
+            .chain(graph.graph.neighbors_directed(current, Direction::Incoming))
+        {
+            if visited.contains(&neighbor) {
+                continue;
+            }
+
+            // We can traverse through passing loops or reach the destination
+            if neighbor == to_node {
+                // Found path! Reconstruct it
+                parent.insert(neighbor, current);
+                return reconstruct_loop_path(graph, from_node, to_node, &parent);
+            }
+
+            // Only traverse through passing loops
+            if graph.graph[neighbor]
+                .as_station()
+                .is_some_and(|s| s.passing_loop)
+            {
+                visited.insert(neighbor);
+                parent.insert(neighbor, current);
+                queue.push_back(neighbor);
+            }
+        }
+    }
+
+    // No path found through passing loops
+    Vec::new()
+}
+
+/// Reconstruct the path and calculate loop ratios.
+fn reconstruct_loop_path(
+    graph: &RailwayGraph,
+    from_node: NodeIndex,
+    to_node: NodeIndex,
+    parent: &std::collections::HashMap<NodeIndex, NodeIndex>,
+) -> Vec<(NodeIndex, f64)> {
+    // Reconstruct path from to_node back to from_node
+    let mut path = Vec::new();
+    let mut current = to_node;
+    while current != from_node {
+        path.push(current);
+        current = match parent.get(&current) {
+            Some(&p) => p,
+            None => return Vec::new(), // Shouldn't happen
+        };
+    }
+    path.push(from_node);
+    path.reverse();
+
+    // Calculate cumulative distances and collect loops
+    let mut loops_with_distances = Vec::new();
+    let mut cumulative_distance = 0.0;
+
+    for window in path.windows(2) {
+        let from = window[0];
+        let to = window[1];
+        cumulative_distance += get_edge_distance(graph, from, to);
+
+        if graph.graph[to]
+            .as_station()
+            .is_some_and(|s| s.passing_loop)
+        {
+            loops_with_distances.push((to, cumulative_distance));
+        }
+    }
+
+    convert_to_ratios(loops_with_distances, cumulative_distance)
+}
+
+/// Get the distance of the edge between two nodes (in either direction).
+fn get_edge_distance(graph: &RailwayGraph, a: NodeIndex, b: NodeIndex) -> f64 {
+    let edge = graph
+        .graph
+        .find_edge(a, b)
+        .or_else(|| graph.graph.find_edge(b, a));
+    edge.and_then(|e| graph.graph.edge_weight(e))
+        .and_then(|w| w.distance)
+        .unwrap_or(0.0)
+}
+
+/// Convert absolute distances to ratios of total distance.
+fn convert_to_ratios(
+    loops_with_distances: Vec<(NodeIndex, f64)>,
+    total_distance: f64,
+) -> Vec<(NodeIndex, f64)> {
+    if total_distance <= 0.0 {
+        return Vec::new();
+    }
+    loops_with_distances
+        .into_iter()
+        .map(|(node, dist)| (node, dist / total_distance))
+        .collect()
+}
+
 /// Distance matching tolerance (10%)
 const DISTANCE_TOLERANCE_PERCENT: f64 = 0.10;
 /// Minimum distance tolerance in meters
 const DISTANCE_TOLERANCE_MIN_METERS: f64 = 100.0;
+/// Minimum distance from station for passing loop waypoints (1km)
+/// Waypoints closer than this are likely station throat routing, not passing loops
+const MIN_PASSING_LOOP_DISTANCE_FROM_STATION: f64 = 1000.0;
+/// Maximum distance mismatch for passing loop waypoint matching (700m)
+/// Forward/return waypoints within this distance are considered the same passing loop
+const PASSING_LOOP_WAYPOINT_TOLERANCE: f64 = 700.0;
 
 /// Check if an edge exists between two nodes with distance matching the expected value
 fn edge_distance_matches(
@@ -847,6 +1308,9 @@ struct SegmentPath {
     intermediates: Vec<String>,
     /// Total distance for this segment (sum of `leg_distance` values)
     total_distance: f64,
+    /// Waypoint positions as cumulative distances from segment start
+    /// Each f64 is the distance from the first station to that waypoint
+    waypoint_distances: Vec<f64>,
 }
 
 /// Map from station ID pairs to different paths found across all lines
@@ -898,19 +1362,51 @@ fn add_path_to_segment_map(paths: &mut Vec<SegmentPath>, path: SegmentPath) {
 /// For each pair of stations (A, D) that appear across multiple lines, this records
 /// all the different paths found (with intermediates and distances). This allows us
 /// to later pick the "densest" path (most intermediate stations) for infrastructure.
-fn build_segment_map(lines: &[&NimbyLine]) -> SegmentMap {
+///
+/// Also captures waypoint positions for passing loop detection.
+fn build_segment_map(lines: &[&NimbyLine], data: &NimbyImportData) -> SegmentMap {
     let mut map = SegmentMap::new();
 
     for line in lines {
-        // Get all actual station stops (exclude waypoints with station_id "0x0")
+        // Get all actual station stops (exclude waypoints and depots)
         let stations: Vec<(usize, &NimbyStop)> = line.stops.iter()
             .enumerate()
-            .filter(|(_, s)| s.station_id != "0x0")
+            .filter(|(_, s)| s.station_id != "0x0" && !is_depot(data, &s.station_id))
             .collect();
 
-        // For each pair of stations in this line, record the path
+        // For each CONSECUTIVE pair of stations, record the path with waypoints
+        // (We only care about consecutive pairs for passing loop detection)
+        for window in stations.windows(2) {
+            let (from_idx, from_stop) = window[0];
+            let (to_idx, _to_stop) = window[1];
+            let from_id = &from_stop.station_id;
+            let to_id = &window[1].1.station_id;
+
+            // Calculate total distance and collect waypoint positions
+            let mut cumulative_dist = 0.0;
+            let mut waypoint_distances = Vec::new();
+
+            for stop in &line.stops[from_idx + 1..=to_idx] {
+                cumulative_dist += stop.leg_distance;
+                if stop.station_id == "0x0" {
+                    waypoint_distances.push(cumulative_dist);
+                }
+            }
+
+            let path = SegmentPath {
+                intermediates: Vec::new(), // No intermediates for consecutive pairs
+                total_distance: cumulative_dist,
+                waypoint_distances,
+            };
+            let key = (from_id.clone(), to_id.clone());
+            let paths = map.entry(key).or_default();
+            add_path_to_segment_map(paths, path);
+        }
+
+        // Also record non-consecutive pairs for express route analysis (without waypoints)
         for i in 0..stations.len() {
-            for j in (i + 1)..stations.len() {
+            for j in (i + 2)..stations.len() {
+                // Skip consecutive pairs (already handled above)
                 let (from_idx, from_stop) = &stations[i];
                 let (to_idx, _) = &stations[j];
                 let from_id = &from_stop.station_id;
@@ -923,7 +1419,6 @@ fn build_segment_map(lines: &[&NimbyLine]) -> SegmentMap {
                     .collect();
 
                 // Skip if this path crosses a turnaround (contains duplicate stations or the endpoints)
-                // This avoids creating nonsensical paths like "A via B,C,D,C,B to E"
                 let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
                 seen.insert(from_id.as_str());
                 seen.insert(to_id.as_str());
@@ -938,7 +1433,11 @@ fn build_segment_map(lines: &[&NimbyLine]) -> SegmentMap {
                     .map(|s| s.leg_distance)
                     .sum();
 
-                let path = SegmentPath { intermediates, total_distance };
+                let path = SegmentPath {
+                    intermediates,
+                    total_distance,
+                    waypoint_distances: Vec::new(), // No waypoint tracking for express paths
+                };
                 let key = (from_id.clone(), to_id.clone());
                 let paths = map.entry(key).or_default();
                 add_path_to_segment_map(paths, path);
@@ -1060,6 +1559,17 @@ fn detect_turnaround(stops: &[NimbyStop]) -> Option<usize> {
             None
         }
     })
+}
+
+/// A detected passing loop location between two stations
+#[derive(Debug, Clone)]
+struct PassingLoopCandidate {
+    /// Station IDs this loop is between (ordered: from, to on forward journey)
+    between_stations: (String, String),
+    /// Distance ratio from first station (0.0 to 1.0)
+    distance_ratio: f64,
+    /// Total distance of the segment between the two stations
+    segment_distance: f64,
 }
 
 /// Build return route from turnaround point back to start

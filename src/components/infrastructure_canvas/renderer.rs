@@ -13,7 +13,6 @@ type LabelPositionCache = HashMap<NodeIndex, station_renderer::CachedLabelPositi
 #[derive(Clone, Default)]
 pub struct TopologyCache {
     pub topology: (usize, usize, usize),
-    pub avoidance_offsets: HashMap<EdgeIndex, (f64, f64)>,
     pub edge_segments: HashMap<EdgeIndex, EdgeSegments>,
     /// Cached label positions (zoom level, positions)
     pub label_cache: Option<(f64, LabelPositionCache)>,
@@ -76,7 +75,7 @@ fn get_palette(theme: Theme) -> &'static Palette {
     }
 }
 
-/// Build topology cache with avoidance offsets and edge segments
+/// Build topology cache with edge segments
 #[must_use]
 pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
     use crate::models::Stations;
@@ -87,7 +86,6 @@ pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
         .sum();
 
     let topology = (graph.graph.node_count(), graph.graph.edge_count(), total_track_count);
-    let mut avoidance_offsets = HashMap::new();
     let mut edge_segments = HashMap::new();
     let mut junctions = HashSet::new();
     let mut stations = HashSet::new();
@@ -115,10 +113,6 @@ pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
         let Some(pos1) = graph.get_station_position(source) else { continue };
         let Some(pos2) = graph.get_station_position(target) else { continue };
 
-        // Calculate avoidance offset
-        let offset = track_renderer::calculate_avoidance_offset(graph, pos1, pos2, source, target);
-        avoidance_offsets.insert(edge_id, offset);
-
         // Calculate segments
         let segments = track_renderer::get_segments_for_edge(graph, source, target, pos1, pos2);
         edge_segments.insert(edge_id, segments);
@@ -128,15 +122,10 @@ pub fn build_topology_cache(graph: &RailwayGraph) -> TopologyCache {
     let orphaned_tracks = junction_renderer::get_orphaned_tracks_map(graph);
 
     // Calculate crossover intersection points for orphaned tracks
-    let crossover_intersections = junction_renderer::get_crossover_intersection_points(
-        graph,
-        &orphaned_tracks,
-        &avoidance_offsets,
-    );
+    let crossover_intersections = junction_renderer::get_crossover_intersection_points(graph, &orphaned_tracks);
 
     TopologyCache {
         topology,
-        avoidance_offsets,
         edge_segments,
         label_cache: None,
         junctions,
@@ -282,15 +271,15 @@ pub fn draw_infrastructure(
     if show_lines {
         if !hide_unscheduled_in_line_mode {
             // Mixed mode: draw unscheduled tracks (infrastructure style) and scheduled lines (line style)
-            track_renderer::draw_tracks_filtered(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, &cache.orphaned_tracks, &cache.crossover_intersections, &scheduled_edges);
+            track_renderer::draw_tracks_filtered(ctx, graph, zoom, highlighted_edges, viewport_bounds, &cache.junctions, theme, &cache.orphaned_tracks, &cache.crossover_intersections, &scheduled_edges);
         }
         // Draw lines (use zoom=1.0 for constant size scaling)
-        line_renderer::draw_lines(ctx, graph, lines, 1.0, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, highlighted_edges, line_gap_width);
+        line_renderer::draw_lines(ctx, graph, lines, 1.0, viewport_bounds, &cache.junctions, theme, highlighted_edges, line_gap_width);
         // Draw custom station markers for line mode (use zoom=1.0 for constant size scaling)
         line_station_renderer::draw_line_stations(ctx, graph, lines, 1.0, viewport_bounds, &cache.label_cache, selected_stations, theme, line_gap_width);
     } else {
         // Infrastructure mode: draw all tracks
-        track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, &cache.avoidance_offsets, viewport_bounds, &cache.junctions, theme, &cache.orphaned_tracks, &cache.crossover_intersections);
+        track_renderer::draw_tracks(ctx, graph, zoom, highlighted_edges, viewport_bounds, &cache.junctions, theme, &cache.orphaned_tracks, &cache.crossover_intersections);
     }
 
     // Draw stations and junctions on top (with label cache)

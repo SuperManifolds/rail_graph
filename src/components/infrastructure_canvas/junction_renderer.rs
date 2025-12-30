@@ -438,7 +438,6 @@ fn line_intersection(
 pub fn get_crossover_intersection_points(
     graph: &RailwayGraph,
     orphaned_tracks: &HashMap<(EdgeIndex, NodeIndex), HashSet<usize>>,
-    cached_avoidance: &HashMap<EdgeIndex, (f64, f64)>,
 ) -> HashMap<(EdgeIndex, NodeIndex, usize), (f64, f64)> {
     let mut intersections = HashMap::new();
 
@@ -502,20 +501,10 @@ pub fn get_crossover_intersection_points(
         }
         let away_from_junction_dir = (delta.0 / distance, delta.1 / distance);
 
-        let (avoid_x, avoid_y) = cached_avoidance.get(edge_idx).copied().unwrap_or((0.0, 0.0));
-        let has_avoidance = avoid_x.abs() > 0.1 || avoid_y.abs() > 0.1;
-
-        let base = if has_avoidance {
-            (
-                junction_pos.0 + away_from_junction_dir.0 * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_x,
-                junction_pos.1 + away_from_junction_dir.1 * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_y,
-            )
-        } else {
-            (
-                junction_pos.0 + away_from_junction_dir.0 * JUNCTION_TRACK_DISTANCE,
-                junction_pos.1 + away_from_junction_dir.1 * JUNCTION_TRACK_DISTANCE,
-            )
-        };
+        let base = (
+            junction_pos.0 + away_from_junction_dir.0 * JUNCTION_TRACK_DISTANCE,
+            junction_pos.1 + away_from_junction_dir.1 * JUNCTION_TRACK_DISTANCE,
+        );
 
         // Calculate crossover geometry (same as draw_crossover_switches)
         #[allow(clippy::cast_precision_loss)]
@@ -672,7 +661,6 @@ fn draw_crossover_switches(
     edge_pos: (f64, f64),
     zoom: f64,
     graph: &RailwayGraph,
-    cached_avoidance: &HashMap<EdgeIndex, (f64, f64)>,
     orphaned_tracks: &HashMap<(EdgeIndex, NodeIndex), HashSet<usize>>,
     crossover_intersections: &HashMap<(EdgeIndex, NodeIndex, usize), (f64, f64)>,
 ) {
@@ -704,20 +692,10 @@ fn draw_crossover_switches(
     // Direction away from junction (toward the other node)
     let away_from_junction_dir = (delta.0 / distance, delta.1 / distance);
 
-    let (avoid_x, avoid_y) = cached_avoidance.get(&edge_idx).copied().unwrap_or((0.0, 0.0));
-    let has_avoidance = avoid_x.abs() > 0.1 || avoid_y.abs() > 0.1;
-
-    let base = if has_avoidance {
-        (
-            junction_pos.0 + away_from_junction_dir.0 * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_x,
-            junction_pos.1 + away_from_junction_dir.1 * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_y,
-        )
-    } else {
-        (
-            junction_pos.0 + away_from_junction_dir.0 * JUNCTION_TRACK_DISTANCE,
-            junction_pos.1 + away_from_junction_dir.1 * JUNCTION_TRACK_DISTANCE,
-        )
-    };
+    let base = (
+        junction_pos.0 + away_from_junction_dir.0 * JUNCTION_TRACK_DISTANCE,
+        junction_pos.1 + away_from_junction_dir.1 * JUNCTION_TRACK_DISTANCE,
+    );
 
     // Calculate track spacing
     #[allow(clippy::cast_precision_loss)]
@@ -912,7 +890,6 @@ pub fn draw_junction(
     pos: (f64, f64),
     zoom: f64,
     highlighted_edges: &HashSet<EdgeIndex>,
-    cached_avoidance: &HashMap<EdgeIndex, (f64, f64)>,
     orphaned_tracks: &HashMap<(EdgeIndex, NodeIndex), HashSet<usize>>,
     crossover_intersections: &HashMap<(EdgeIndex, NodeIndex, usize), (f64, f64)>,
     selected_stations: &[NodeIndex],
@@ -980,7 +957,6 @@ pub fn draw_junction(
                     *edge_pos,
                     zoom,
                     graph,
-                    cached_avoidance,
                     orphaned_tracks,
                     crossover_intersections,
                 );
@@ -1047,9 +1023,6 @@ pub fn draw_junction(
             let entry_delta = (from_node_pos.0 - pos.0, from_node_pos.1 - pos.1);
             let entry_distance = (entry_delta.0 * entry_delta.0 + entry_delta.1 * entry_delta.1).sqrt();
 
-            // Use cached avoidance offset for this edge
-            let (avoid_from_x, avoid_from_y) = cached_avoidance.get(from_edge).copied().unwrap_or((0.0, 0.0));
-
             // Get the to edge node positions (source and target already extracted from edge_map)
             let to_source_pos = graph.get_station_position(to_source).unwrap_or(pos);
             let to_target_pos = graph.get_station_position(to_target).unwrap_or(pos);
@@ -1065,36 +1038,15 @@ pub fn draw_junction(
             let exit_delta = (to_node_pos.0 - pos.0, to_node_pos.1 - pos.1);
             let exit_distance = (exit_delta.0 * exit_delta.0 + exit_delta.1 * exit_delta.1).sqrt();
 
-            // Use cached avoidance offset for this edge
-            let (avoid_to_x, avoid_to_y) = cached_avoidance.get(to_edge).copied().unwrap_or((0.0, 0.0));
+            let entry_base = (
+                pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_TRACK_DISTANCE,
+                pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_TRACK_DISTANCE,
+            );
 
-            // For edges with avoidance offset, use half perimeter distance
-            let from_has_avoidance = avoid_from_x.abs() > 0.1 || avoid_from_y.abs() > 0.1;
-            let to_has_avoidance = avoid_to_x.abs() > 0.1 || avoid_to_y.abs() > 0.1;
-
-            let entry_base = if from_has_avoidance {
-                (
-                    pos.0 + (entry_delta.0 / entry_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_from_x,
-                    pos.1 + (entry_delta.1 / entry_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_from_y,
-                )
-            } else {
-                (
-                    pos.0 + (entry_delta.0 / entry_distance) * JUNCTION_TRACK_DISTANCE,
-                    pos.1 + (entry_delta.1 / entry_distance) * JUNCTION_TRACK_DISTANCE,
-                )
-            };
-
-            let exit_base = if to_has_avoidance {
-                (
-                    pos.0 + (exit_delta.0 / exit_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_to_x,
-                    pos.1 + (exit_delta.1 / exit_distance) * (JUNCTION_TRACK_DISTANCE * 0.5) + avoid_to_y,
-                )
-            } else {
-                (
-                    pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_TRACK_DISTANCE,
-                    pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_TRACK_DISTANCE,
-                )
-            };
+            let exit_base = (
+                pos.0 + (exit_delta.0 / exit_distance) * JUNCTION_TRACK_DISTANCE,
+                pos.1 + (exit_delta.1 / exit_distance) * JUNCTION_TRACK_DISTANCE,
+            );
 
             // Determine track color based on whether both edges are highlighted
             let is_highlighted = highlighted_edges.contains(from_edge) && highlighted_edges.contains(to_edge);
