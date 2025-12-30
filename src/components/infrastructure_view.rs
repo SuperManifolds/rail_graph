@@ -116,6 +116,7 @@ fn handle_segment_click_in_track_mode(
         position: Some(midpoint),
         routing_rules: vec![],
         label_position: None,
+        external_id: None,
     };
     let junction_idx = updated_graph.add_junction(junction);
 
@@ -406,6 +407,7 @@ fn handle_adding_junction(
         position: None,
         routing_rules: vec![],
         label_position: None,
+        external_id: None,
     };
     let junction_idx = updated_graph.add_junction(junction);
 
@@ -959,7 +961,7 @@ fn setup_auto_layout_effect(
                 let Some(canvas) = canvas_ref.get() else { return current_topology };
                 let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
                 let height = f64::from(canvas_elem.client_height());
-                auto_layout::apply_layout(&mut current_graph, height, &settings.get());
+                auto_layout::apply_layout(&mut current_graph, height, &settings.get(), None);
                 set_graph.set(current_graph);
             } else if has_positioned_nodes {
                 // Topology changed but all nodes positioned - smart adjustment
@@ -1875,7 +1877,7 @@ pub fn InfrastructureView(
             if let Some(canvas) = canvas_ref.get() {
                 let canvas_elem: &web_sys::HtmlCanvasElement = &canvas;
                 let height = f64::from(canvas_elem.client_height());
-                auto_layout::apply_layout(&mut current_graph, height, &settings.get());
+                auto_layout::apply_layout(&mut current_graph, height, &settings.get(), None);
             }
 
             set_graph.set(current_graph);

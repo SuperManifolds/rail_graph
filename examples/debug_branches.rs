@@ -37,7 +37,7 @@ fn main() {
     }
 
     let settings = ProjectSettings::default();
-    auto_layout::apply_layout(&mut project.graph, 1000.0, &settings);
+    auto_layout::apply_layout(&mut project.graph, 1000.0, &settings, None);
     println!();
 
     // Check where branches went after autolayout

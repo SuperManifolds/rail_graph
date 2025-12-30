@@ -42,7 +42,7 @@ fn main() {
     // Run autolayout with debug output
     println!("=== Running autolayout ===");
     let settings = ProjectSettings::default();
-    auto_layout::apply_layout(&mut project.graph, 1000.0, &settings);
+    auto_layout::apply_layout(&mut project.graph, 1000.0, &settings, None);
     println!();
 
     // Print positions after autolayout
