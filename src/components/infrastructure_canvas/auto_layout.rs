@@ -4,7 +4,7 @@ use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::collections::{HashMap, HashSet};
 
-const GRID_SIZE: f64 = 30.0;
+pub const GRID_SIZE: f64 = 30.0;
 
 /// Maximum bonus for continuing in the same direction as incoming
 const CONTINUITY_BONUS_MAX: f64 = 2000.0;

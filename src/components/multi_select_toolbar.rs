@@ -398,6 +398,50 @@ pub fn align_selected_stations(
     update_selection_bounds(&current_graph, &stations, set_selection_bounds);
 }
 
+/// Snap a point to the nearest grid point that lies along the given line.
+/// The line is defined by two endpoints (which should already be on-grid).
+fn snap_to_grid_along_line(
+    point_x: f64,
+    point_y: f64,
+    start: (f64, f64),
+    end: (f64, f64),
+) -> (f64, f64) {
+    use crate::components::infrastructure_canvas::auto_layout::{snap_to_grid, GRID_SIZE};
+
+    let dx = end.0 - start.0;
+    let dy = end.1 - start.1;
+    let line_length = (dx * dx + dy * dy).sqrt();
+
+    if line_length < 0.001 {
+        return snap_to_grid(point_x, point_y);
+    }
+
+    // Unit direction vector along the line
+    let dir_x = dx / line_length;
+    let dir_y = dy / line_length;
+
+    // Calculate grid spacing along this line direction.
+    // For axis-aligned (horizontal/vertical): spacing = GRID_SIZE
+    // For 45° diagonal: spacing = GRID_SIZE * sqrt(2)
+    // General: spacing = GRID_SIZE / max(|dir_x|, |dir_y|) for lines through grid points
+    let grid_spacing = if dir_x.abs() > dir_y.abs() {
+        GRID_SIZE / dir_x.abs()
+    } else {
+        GRID_SIZE / dir_y.abs()
+    };
+
+    // Project point onto line to get distance from line start
+    let px = point_x - start.0;
+    let py = point_y - start.1;
+    let t = px * dir_x + py * dir_y;
+
+    // Snap t to nearest multiple of grid_spacing
+    let snapped_t = (t / grid_spacing).round() * grid_spacing;
+
+    // Return the snapped position on the line
+    (start.0 + snapped_t * dir_x, start.1 + snapped_t * dir_y)
+}
+
 #[allow(clippy::cast_precision_loss)]
 fn rotate_stations_by_angle(
     stations: &[NodeIndex],
@@ -520,11 +564,17 @@ fn rotate_stations_by_angle(
             station_positions.push((idx, t));
         }
 
-        // Position stations along the snapped rotated line
+        // Position stations along the snapped rotated line, snapping each to grid
         for (idx, t) in station_positions {
-            let new_x = snapped_endpoint1_x + t * (snapped_endpoint2_x - snapped_endpoint1_x);
-            let new_y = snapped_endpoint1_y + t * (snapped_endpoint2_y - snapped_endpoint1_y);
-            graph.set_station_position(idx, (new_x, new_y));
+            let approx_x = snapped_endpoint1_x + t * (snapped_endpoint2_x - snapped_endpoint1_x);
+            let approx_y = snapped_endpoint1_y + t * (snapped_endpoint2_y - snapped_endpoint1_y);
+            let (snapped_x, snapped_y) = snap_to_grid_along_line(
+                approx_x,
+                approx_y,
+                (snapped_endpoint1_x, snapped_endpoint1_y),
+                (snapped_endpoint2_x, snapped_endpoint2_y),
+            );
+            graph.set_station_position(idx, (snapped_x, snapped_y));
         }
     } else {
         // Stations are not aligned - rotate and snap to maintain grid alignment
@@ -547,19 +597,11 @@ fn rotate_stations_by_angle(
             rotated_positions.push((*station_idx, new_x, new_y));
         }
 
-        // Second pass: snap first node to grid and calculate offset
-        if let Some((_first_idx, first_x, first_y)) = rotated_positions.first() {
-            let (snapped_first_x, snapped_first_y) =
-                crate::components::infrastructure_canvas::auto_layout::snap_to_grid(*first_x, *first_y);
-
-            // Calculate the offset from snapping
-            let snap_offset_x = snapped_first_x - first_x;
-            let snap_offset_y = snapped_first_y - first_y;
-
-            // Apply rotation with snap offset to all nodes
-            for (station_idx, x, y) in rotated_positions {
-                graph.set_station_position(station_idx, (x + snap_offset_x, y + snap_offset_y));
-            }
+        // Second pass: snap each station to grid individually
+        for (station_idx, x, y) in rotated_positions {
+            let (snapped_x, snapped_y) =
+                crate::components::infrastructure_canvas::auto_layout::snap_to_grid(x, y);
+            graph.set_station_position(station_idx, (snapped_x, snapped_y));
         }
     }
 }
