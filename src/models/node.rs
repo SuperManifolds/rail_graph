@@ -87,6 +87,7 @@ mod tests {
             passing_loop: false,
             platforms: default_platforms(),
             label_position: None,
+            external_id: None,
         };
         let node = Node::Station(station);
 
@@ -103,6 +104,7 @@ mod tests {
             position: Some((30.0, 40.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let node = Node::Junction(junction);
 
@@ -119,6 +121,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let node = Node::Junction(junction);
 
@@ -133,6 +136,7 @@ mod tests {
             passing_loop: false,
             platforms: default_platforms(),
             label_position: None,
+            external_id: None,
         };
         let mut node = Node::Station(station);
 
@@ -148,6 +152,7 @@ mod tests {
             passing_loop: false,
             platforms: default_platforms(),
             label_position: None,
+            external_id: None,
         };
         let node = Node::Station(station);
 
@@ -162,6 +167,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let node = Node::Junction(junction);
 

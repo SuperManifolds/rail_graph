@@ -1216,6 +1216,7 @@ fn build_routes(
                         position: None,
                         routing_rules: Vec::new(),
                         label_position: None,
+                        external_id: None,
                     })
                 }
             } else {

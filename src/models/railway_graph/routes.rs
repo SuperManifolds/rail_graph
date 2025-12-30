@@ -680,6 +680,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Create A -> J -> B
@@ -708,6 +709,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Create A -> J -> B
@@ -740,6 +742,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Create A -> J -> B
@@ -790,6 +793,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Create A -> J -> B and A -> J -> C
@@ -844,6 +848,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Create network: A -> J -> B and also A -> C -> B (alternate route)
@@ -886,6 +891,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Create network: A -> J -> B and J -> C

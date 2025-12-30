@@ -1318,6 +1318,7 @@ mod tests {
             position: Some((50.0, 50.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let idx_junction = graph.add_junction(junction);
         let idx_b = graph.add_or_get_station("Station B".to_string());

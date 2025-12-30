@@ -1583,6 +1583,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Direct path: A -> B -> C

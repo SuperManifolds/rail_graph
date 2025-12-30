@@ -24,6 +24,9 @@ pub struct StationNode {
     pub platforms: Vec<Platform>,
     #[serde(default)]
     pub label_position: Option<LabelPosition>,
+    /// External ID for imported stations (e.g., NIMBY Rails hex ID)
+    #[serde(default)]
+    pub external_id: Option<String>,
 }
 
 #[cfg(test)]
@@ -46,6 +49,7 @@ mod tests {
             passing_loop: true,
             platforms: vec![Platform { name: "A".to_string() }],
             label_position: None,
+            external_id: None,
         };
 
         assert_eq!(station.name, "Test Station");

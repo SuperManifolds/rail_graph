@@ -343,6 +343,7 @@ mod tests {
             position: Some((10.0, 20.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
 
         let idx = graph.add_junction(junction);
@@ -358,6 +359,7 @@ mod tests {
             position: Some((10.0, 20.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
 
         let idx = graph.add_junction(junction);
@@ -376,6 +378,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let j_idx = graph.add_junction(junction);
 
@@ -397,6 +400,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let j_idx = graph.add_junction(junction);
 
@@ -429,6 +433,7 @@ mod tests {
             position: Some((10.0, 20.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
 
         let idx = graph.add_junction(junction);
@@ -451,6 +456,7 @@ mod tests {
             position: Some((50.0, 60.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
 
         let idx = graph.add_junction(junction);
@@ -472,6 +478,7 @@ mod tests {
             position: Some((0.0, 0.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let j_idx = graph.add_junction(junction);
 
@@ -505,6 +512,7 @@ mod tests {
             position: Some((10.0, 20.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
 
         let idx = graph.add_junction(junction);
@@ -525,6 +533,7 @@ mod tests {
             position: Some((50.0, 50.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let j1 = graph.add_junction(junction);
         let s2 = graph.add_or_get_station("Station B".to_string());
@@ -563,6 +572,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
         let s_b = graph.add_or_get_station("B".to_string());
 
@@ -606,6 +616,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let j = graph.add_junction(junction.clone());
         let s_b = graph.add_or_get_station("B".to_string());
@@ -657,6 +668,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
         let s_b = graph.add_or_get_station("B".to_string());
         let s_c = graph.add_or_get_station("C".to_string());
@@ -681,6 +693,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         graph.add_track(s_a, j, vec![Track { direction: TrackDirection::Bidirectional }]);
@@ -715,6 +728,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let j = graph.add_junction(junction.clone());
         let s_b = graph.add_or_get_station("B".to_string());
@@ -754,6 +768,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let j = graph.add_junction(junction.clone());
 
@@ -790,6 +805,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
         let j = graph.add_junction(junction.clone());
         let s_b = graph.add_or_get_station("B".to_string());
@@ -870,6 +886,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Connect junction to both stations
@@ -903,6 +920,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Connect junction to all three stations
@@ -929,6 +947,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Should not interpolate (no connected nodes)
@@ -953,6 +972,7 @@ mod tests {
             position: Some((25.0, 75.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Connect junction to stations
@@ -984,6 +1004,7 @@ mod tests {
             position: Some((25.0, 75.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         });
 
         // Connect junction to stations

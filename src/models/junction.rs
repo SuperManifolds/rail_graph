@@ -11,6 +11,9 @@ pub struct Junction {
     pub routing_rules: Vec<RoutingRule>,
     #[serde(default)]
     pub label_position: Option<LabelPosition>,
+    /// External ID for imported junctions (e.g., NIMBY Rails hex ID)
+    #[serde(default)]
+    pub external_id: Option<String>,
 }
 
 impl Junction {
@@ -113,6 +116,7 @@ mod tests {
             position: Some((10.0, 20.0)),
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
 
         assert_eq!(junction.name, Some("Test Junction".to_string()));
@@ -140,6 +144,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
 
         // By default, all routings are allowed (except same edge)
@@ -157,6 +162,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
 
         // Add a rule forbidding 0->1
@@ -174,6 +180,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
 
         junction.set_routing_rule(EdgeIndex::new(0), EdgeIndex::new(1), false);
@@ -203,6 +210,7 @@ mod tests {
                 },
             ],
             label_position: None,
+            external_id: None,
         };
 
         assert_eq!(junction.routing_rules.len(), 1);
@@ -220,6 +228,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
 
         // Forbid 0->1 and 0->2
@@ -247,6 +256,7 @@ mod tests {
             position: None,
             routing_rules: vec![],
             label_position: None,
+            external_id: None,
         };
 
         // Allow 0->1 but forbid 1->0
