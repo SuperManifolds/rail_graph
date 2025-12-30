@@ -205,6 +205,47 @@ impl Default for NimbyImportConfig {
     }
 }
 
+/// Build a map of how many NIMBY lines use each edge in the graph.
+/// This is used to determine the "heaviest" path for spine layout.
+fn build_edge_usage_map(
+    data: &NimbyImportData,
+    station_id_to_node: &HashMap<String, NodeIndex>,
+    graph: &RailwayGraph,
+) -> HashMap<EdgeIndex, usize> {
+    let mut edge_usage: HashMap<EdgeIndex, usize> = HashMap::new();
+
+    // Count edge usage for ALL lines (not just selected) to get accurate spine
+    for nimby_line in &data.lines {
+        // Skip very short lines and deadhead runs
+        if nimby_line.stops.len() < 2 || nimby_line.code.starts_with("D-") {
+            continue;
+        }
+
+        // Get valid stops (non-null station IDs that exist in graph)
+        let valid_stops: Vec<_> = nimby_line
+            .stops
+            .iter()
+            .filter(|s| s.station_id != "0x0")
+            .filter_map(|s| station_id_to_node.get(&s.station_id).copied())
+            .collect();
+
+        // Count edges between consecutive stops
+        for window in valid_stops.windows(2) {
+            let from = window[0];
+            let to = window[1];
+
+            // Find edge between these nodes
+            if let Some(edge) = graph.graph.find_edge(from, to)
+                .or_else(|| graph.graph.find_edge(to, from))
+            {
+                *edge_usage.entry(edge).or_insert(0) += 1;
+            }
+        }
+    }
+
+    edge_usage
+}
+
 /// Import NIMBY Rails lines into the railway graph
 ///
 /// Uses a two-phase approach:
@@ -314,7 +355,18 @@ pub fn import_nimby_lines(
             ..Default::default()
         };
 
-        auto_layout::apply_layout_with_pinned(graph, 1000.0, &settings, Some(&geo_hints), &pinned_nodes);
+        // Build edge usage map for spine detection (uses ALL lines, not just selected)
+        let edge_usage = build_edge_usage_map(data, &station_id_to_node, graph);
+        leptos::logging::log!("NIMBY import: built edge usage map with {} edges", edge_usage.len());
+
+        auto_layout::apply_layout_with_edge_weights(
+            graph,
+            1000.0,
+            &settings,
+            Some(&geo_hints),
+            &pinned_nodes,
+            &edge_usage,
+        );
 
         // Infrastructure mode: return empty vec (no Line objects created)
         return Ok(Vec::new());
