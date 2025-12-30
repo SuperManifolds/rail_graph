@@ -893,6 +893,8 @@ pub fn draw_junction(
     orphaned_tracks: &HashMap<(EdgeIndex, NodeIndex), HashSet<usize>>,
     crossover_intersections: &HashMap<(EdgeIndex, NodeIndex, usize), (f64, f64)>,
     selected_stations: &[NodeIndex],
+    anchor_station: Option<NodeIndex>,
+    anchor_ring_color: &str,
 ) {
     // Collect all connected edges - we need ALL edges connected to the junction
     // because an edge can have tracks going in either direction
@@ -1107,5 +1109,14 @@ pub fn draw_junction(
         ctx.begin_path();
         let _ = ctx.arc(pos.0, pos.1, JUNCTION_TRACK_DISTANCE + SELECTION_RING_OFFSET, 0.0, std::f64::consts::PI * 2.0);
         ctx.stroke();
+
+        // Draw anchor ring if this is the anchor station
+        if anchor_station == Some(idx) {
+            ctx.set_stroke_style_str(anchor_ring_color);
+            ctx.set_line_width((SELECTION_RING_WIDTH + 2.0) / zoom);
+            ctx.begin_path();
+            let _ = ctx.arc(pos.0, pos.1, JUNCTION_TRACK_DISTANCE + SELECTION_RING_OFFSET + 6.0, 0.0, std::f64::consts::PI * 2.0);
+            ctx.stroke();
+        }
     }
 }

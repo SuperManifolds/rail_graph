@@ -354,6 +354,18 @@ fn get_all_shortcut_definitions() -> Vec<ShortcutEntry> {
             default_shortcut: KeyboardShortcut::key_only("Slash"),
         },
         ShortcutEntry {
+            id: "multi_select_increase_spacing",
+            description: "Increase Spacing Between Selected",
+            category: ShortcutCategory::Infrastructure,
+            default_shortcut: KeyboardShortcut::key_only("BracketRight"),
+        },
+        ShortcutEntry {
+            id: "multi_select_decrease_spacing",
+            description: "Decrease Spacing Between Selected",
+            category: ShortcutCategory::Infrastructure,
+            default_shortcut: KeyboardShortcut::key_only("BracketLeft"),
+        },
+        ShortcutEntry {
             id: "multi_select_delete",
             description: "Delete Selected Stations",
             category: ShortcutCategory::Infrastructure,

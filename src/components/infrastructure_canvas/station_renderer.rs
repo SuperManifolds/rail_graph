@@ -26,6 +26,7 @@ struct Palette {
     node_fill: &'static str,
     label: &'static str,
     selection_ring: &'static str,
+    anchor_ring: &'static str,
 }
 
 const DARK_PALETTE: Palette = Palette {
@@ -34,6 +35,7 @@ const DARK_PALETTE: Palette = Palette {
     node_fill: "#2a2a2a",
     label: "#fff",
     selection_ring: "#ffaa00",
+    anchor_ring: "#00ffaa",
 };
 
 const LIGHT_PALETTE: Palette = Palette {
@@ -42,6 +44,7 @@ const LIGHT_PALETTE: Palette = Palette {
     node_fill: "#f0f0f0",
     label: "#1a1a1a",
     selection_ring: "#ff8800",
+    anchor_ring: "#00cc88",
 };
 
 fn get_palette(theme: Theme) -> &'static Palette {
@@ -226,6 +229,7 @@ fn draw_station_nodes(
     graph: &RailwayGraph,
     zoom: f64,
     selected_stations: &[NodeIndex],
+    anchor_station: Option<NodeIndex>,
     highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
     viewport_bounds: (f64, f64, f64, f64),
     junctions: &HashSet<NodeIndex>,
@@ -270,12 +274,21 @@ fn draw_station_nodes(
                 ctx.fill();
                 ctx.stroke();
 
-                // Draw selection ring if this station is selected
-                if selected_stations.contains(&idx) {
+                // Draw selection and anchor rings if this station is selected
+                let is_selected = selected_stations.contains(&idx);
+                let is_anchor = anchor_station == Some(idx);
+                if is_selected {
                     ctx.set_stroke_style_str(palette.selection_ring);
                     ctx.set_line_width(SELECTION_RING_WIDTH / zoom);
                     ctx.begin_path();
                     let _ = ctx.arc(pos.0, pos.1, radius + SELECTION_RING_OFFSET, 0.0, std::f64::consts::PI * 2.0);
+                    ctx.stroke();
+                }
+                if is_selected && is_anchor {
+                    ctx.set_stroke_style_str(palette.anchor_ring);
+                    ctx.set_line_width((SELECTION_RING_WIDTH + 2.0) / zoom);
+                    ctx.begin_path();
+                    let _ = ctx.arc(pos.0, pos.1, radius + SELECTION_RING_OFFSET + 6.0, 0.0, std::f64::consts::PI * 2.0);
                     ctx.stroke();
                 }
             }
@@ -288,7 +301,7 @@ fn draw_station_nodes(
             let should_draw_junction = !show_lines || scheduled_stations.is_some_and(|set| !set.contains(&idx));
 
             if should_draw_junction {
-                junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, orphaned_tracks, crossover_intersections, selected_stations);
+                junction_renderer::draw_junction(ctx, graph, idx, pos, zoom, highlighted_edges, orphaned_tracks, crossover_intersections, selected_stations, anchor_station, palette.anchor_ring);
             }
             // Use larger radius for label overlap to account for junction connection lines
             node_positions.push((idx, pos, JUNCTION_LABEL_RADIUS));
@@ -1078,6 +1091,7 @@ pub fn draw_stations_with_cache(
     lines: &[crate::models::Line],
     zoom: f64,
     selected_stations: &[NodeIndex],
+    anchor_station: Option<NodeIndex>,
     highlighted_edges: &std::collections::HashSet<petgraph::stable_graph::EdgeIndex>,
     cache: &mut super::renderer::TopologyCache,
     is_zooming: bool,
@@ -1091,7 +1105,7 @@ pub fn draw_stations_with_cache(
     let palette = get_palette(theme);
     let font_size = (14.0 / zoom).clamp(MIN_LABEL_FONT_SIZE, MAX_LABEL_FONT_SIZE);
 
-    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, highlighted_edges, viewport_bounds, &cache.junctions, &cache.orphaned_tracks, &cache.crossover_intersections, show_lines, scheduled_stations, palette);
+    let node_positions = draw_station_nodes(ctx, graph, zoom, selected_stations, anchor_station, highlighted_edges, viewport_bounds, &cache.junctions, &cache.orphaned_tracks, &cache.crossover_intersections, show_lines, scheduled_stations, palette);
 
     // Calculate line extents in line mode for label positioning
     let line_extents = if show_lines {

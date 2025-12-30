@@ -990,6 +990,7 @@ fn setup_render_effect(
     set_render_requested: WriteSignal<bool>,
     station_dialog_clicked_position: ReadSignal<Option<(f64, f64)>>,
     selected_stations: ReadSignal<Vec<NodeIndex>>,
+    anchor_station: ReadSignal<Option<NodeIndex>>,
     selection_box_start: ReadSignal<Option<(f64, f64)>>,
     selection_box_end: ReadSignal<Option<(f64, f64)>>,
     theme: ReadSignal<Theme>,
@@ -1010,6 +1011,7 @@ fn setup_render_effect(
         let _ = preview_path.get();
         let _ = station_dialog_clicked_position.get();
         let _ = selected_stations.get();
+        let _ = anchor_station.get();
         let _ = selection_box_start.get();
         let _ = selection_box_end.get();
         let _ = theme.get();
@@ -1038,6 +1040,7 @@ fn setup_render_effect(
                 let zooming = is_zooming.get_untracked();
                 let preview_station_pos = station_dialog_clicked_position.get_untracked();
                 let current_selected_stations = selected_stations.get_untracked();
+                let current_anchor_station = anchor_station.get_untracked();
                 let current_theme = theme.get_untracked();
                 let current_selection_box = if let (Some(start), Some(end)) = (selection_box_start.get_untracked(), selection_box_end.get_untracked()) {
                     Some((start, end))
@@ -1089,7 +1092,7 @@ fn setup_render_effect(
                 // Pass cache to renderer (mutable to update label cache)
                 topology_cache.with_value(|cache| {
                     let mut cache_mut = cache.borrow_mut();
-                    renderer::draw_infrastructure(&ctx, &current_graph, &current_lines, current_show_lines, current_hide_unscheduled, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, &highlighted_edges, &mut cache_mut, zooming, preview_station_pos, current_selection_box, current_theme, current_line_gap_width);
+                    renderer::draw_infrastructure(&ctx, &current_graph, &current_lines, current_show_lines, current_hide_unscheduled, (f64::from(container_width), f64::from(container_height)), zoom, pan_x, pan_y, &selected_stations, current_anchor_station, &highlighted_edges, &mut cache_mut, zooming, preview_station_pos, current_selection_box, current_theme, current_line_gap_width);
                 });
             });
 
@@ -1174,6 +1177,7 @@ fn handle_multi_select_mouse_down(
     graph: ReadSignal<RailwayGraph>,
     selected_stations: ReadSignal<Vec<NodeIndex>>,
     set_selected_stations: WriteSignal<Vec<NodeIndex>>,
+    set_anchor_station: WriteSignal<Option<NodeIndex>>,
     set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
     set_dragging_selection: WriteSignal<bool>,
     set_drag_start_pos: WriteSignal<Option<(f64, f64)>>,
@@ -1181,7 +1185,18 @@ fn handle_multi_select_mouse_down(
     set_selection_box_end: WriteSignal<Option<(f64, f64)>>,
 ) {
     if let Some((min_x, max_x, min_y, max_y)) = selection_bounds.get() {
-        // We have bounds - check if click is inside
+        // We have bounds - check if clicking on a station within bounds to set anchor
+        let current_graph = graph.get();
+        if let Some(station_idx) = hit_detection::find_station_at_position(&current_graph, world_x, world_y) {
+            let current_selection = selected_stations.get();
+            if current_selection.contains(&station_idx) {
+                // Clicking on an already-selected station - make it the anchor
+                set_anchor_station.set(Some(station_idx));
+                return;
+            }
+        }
+
+        // Check if click is inside bounds
         let inside = world_x >= min_x && world_x <= max_x && world_y >= min_y && world_y <= max_y;
         if inside {
             // Start dragging selection
@@ -1190,6 +1205,7 @@ fn handle_multi_select_mouse_down(
         } else {
             // Clicked outside - clear and start new selection
             set_selected_stations.set(Vec::new());
+            set_anchor_station.set(None);
             set_selection_bounds.set(None);
             set_selection_box_start.set(Some((world_x, world_y)));
             set_selection_box_end.set(Some((world_x, world_y)));
@@ -1205,6 +1221,7 @@ fn handle_multi_select_mouse_down(
         } else {
             // Empty space - start new selection box
             set_selected_stations.set(Vec::new());
+            set_anchor_station.set(None);
             set_selection_box_start.set(Some((world_x, world_y)));
             set_selection_box_end.set(Some((world_x, world_y)));
         }
@@ -1244,6 +1261,8 @@ fn create_event_handlers(
     set_show_hint: WriteSignal<bool>,
     selected_stations: ReadSignal<Vec<NodeIndex>>,
     set_selected_stations: WriteSignal<Vec<NodeIndex>>,
+    anchor_station: ReadSignal<Option<NodeIndex>>,
+    set_anchor_station: WriteSignal<Option<NodeIndex>>,
     selection_box_start: ReadSignal<Option<(f64, f64)>>,
     set_selection_box_start: WriteSignal<Option<(f64, f64)>>,
     selection_box_end: ReadSignal<Option<(f64, f64)>>,
@@ -1342,7 +1361,7 @@ fn create_event_handlers(
                     handle_multi_select_mouse_down(
                         world_x, world_y,
                         selection_bounds, graph, selected_stations, set_selected_stations,
-                        set_selection_bounds, set_dragging_selection, set_drag_start_pos,
+                        set_anchor_station, set_selection_bounds, set_dragging_selection, set_drag_start_pos,
                         set_selection_box_start, set_selection_box_end
                     );
                 }
@@ -1439,6 +1458,10 @@ fn create_event_handlers(
                     })
                     .collect();
 
+                // Clear anchor if it's no longer in the new selection
+                if anchor_station.get().is_some_and(|anchor| !new_selection.contains(&anchor)) {
+                    set_anchor_station.set(None);
+                }
                 set_selected_stations.set(new_selection);
             } else {
                 // Check if hovering over selection bounds
@@ -1538,6 +1561,7 @@ fn create_event_handlers(
             if let Some(node) = clicked_node {
                 // Set selection to only the clicked node when double-clicking to edit
                 set_selected_stations.set(vec![node]);
+                set_anchor_station.set(None);
 
                 if current_graph.is_junction(node) {
                     set_editing_junction.set(Some(node));
@@ -1581,6 +1605,7 @@ fn create_event_handlers(
             if let Some(node) = clicked_node {
                 // Set selection to only the clicked node when right-clicking to edit
                 set_selected_stations.set(vec![node]);
+                set_anchor_station.set(None);
 
                 if current_graph.is_junction(node) {
                     set_editing_junction.set(Some(node));
@@ -1679,6 +1704,7 @@ pub fn InfrastructureView(
 
     // Multi-select state
     let (selected_stations, set_selected_stations) = create_signal(Vec::<NodeIndex>::new());
+    let (anchor_station, set_anchor_station) = create_signal(None::<NodeIndex>);
     let (selection_box_start, set_selection_box_start) = create_signal(None::<(f64, f64)>);
     let (selection_box_end, set_selection_box_end) = create_signal(None::<(f64, f64)>);
     let (selection_bounds, set_selection_bounds) = create_signal(None::<(f64, f64, f64, f64)>); // (min_x, max_x, min_y, max_y)
@@ -1882,7 +1908,7 @@ pub fn InfrastructureView(
     let (handle_add_station, handle_add_stations_batch, handle_edit_station, handle_delete_station, confirm_delete_station, handle_edit_track, handle_delete_track, handle_edit_junction, handle_delete_junction) =
         create_handler_callbacks(graph, set_graph, lines, set_lines, set_show_add_station, set_last_added_station, set_editing_station, set_editing_junction, set_editing_track, set_delete_affected_lines, set_station_to_delete, set_delete_station_name, set_delete_bypass_info, set_show_delete_confirmation, station_to_delete, station_dialog_clicked_position, station_dialog_clicked_segment, set_station_dialog_clicked_position, set_station_dialog_clicked_segment, settings, set_selected_stations, set_selection_bounds);
 
-    setup_render_effect(graph, lines, show_lines, hide_unscheduled_in_line_mode, line_gap_width, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position, selected_stations, selection_box_start, selection_box_end, theme);
+    setup_render_effect(graph, lines, show_lines, hide_unscheduled_in_line_mode, line_gap_width, zoom_level, pan_offset_x, pan_offset_y, canvas_ref, edit_mode, selected_station, view_creation.waypoints, view_creation.preview_path, topology_cache, is_zooming, render_requested, set_render_requested, station_dialog_clicked_position, selected_stations, anchor_station, selection_box_start, selection_box_end, theme);
 
     let (handle_mouse_down, handle_mouse_move, handle_mouse_up, handle_double_click, handle_context_menu, handle_wheel) = create_event_handlers(
         canvas_ref, edit_mode, set_edit_mode, selected_station, set_selected_station, view_creation_callbacks.on_add_waypoint.clone(), graph, set_graph,
@@ -1893,7 +1919,7 @@ pub fn InfrastructureView(
         show_add_station, station_dialog_clicked_position, set_station_dialog_clicked_position, set_station_dialog_clicked_segment,
         settings,
         set_show_hint,
-        selected_stations, set_selected_stations,
+        selected_stations, set_selected_stations, anchor_station, set_anchor_station,
         selection_box_start, set_selection_box_start,
         selection_box_end, set_selection_box_end,
         selection_bounds, set_selection_bounds,
@@ -1914,6 +1940,7 @@ pub fn InfrastructureView(
             "multi_select_rotate_cw" => {
                 crate::components::multi_select_toolbar::rotate_selected_stations_clockwise(
                     selected_stations,
+                    anchor_station,
                     graph,
                     set_graph,
                     set_selection_bounds,
@@ -1922,6 +1949,7 @@ pub fn InfrastructureView(
             "multi_select_rotate_ccw" => {
                 crate::components::multi_select_toolbar::rotate_selected_stations_counterclockwise(
                     selected_stations,
+                    anchor_station,
                     graph,
                     set_graph,
                     set_selection_bounds,
@@ -1934,6 +1962,24 @@ pub fn InfrastructureView(
                     set_graph,
                     set_selection_bounds,
                     settings,
+                );
+            }
+            "multi_select_increase_spacing" => {
+                crate::components::multi_select_toolbar::increase_station_spacing(
+                    selected_stations,
+                    anchor_station,
+                    graph,
+                    set_graph,
+                    set_selection_bounds,
+                );
+            }
+            "multi_select_decrease_spacing" => {
+                crate::components::multi_select_toolbar::decrease_station_spacing(
+                    selected_stations,
+                    anchor_station,
+                    graph,
+                    set_graph,
+                    set_selection_bounds,
                 );
             }
             "multi_select_delete" => {
@@ -2032,6 +2078,7 @@ pub fn InfrastructureView(
                     on_rotate_cw=leptos::Callback::new(move |()| {
                         crate::components::multi_select_toolbar::rotate_selected_stations_clockwise(
                             selected_stations,
+                            anchor_station,
                             graph,
                             set_graph,
                             set_selection_bounds,
@@ -2040,6 +2087,7 @@ pub fn InfrastructureView(
                     on_rotate_ccw=leptos::Callback::new(move |()| {
                         crate::components::multi_select_toolbar::rotate_selected_stations_counterclockwise(
                             selected_stations,
+                            anchor_station,
                             graph,
                             set_graph,
                             set_selection_bounds,
@@ -2052,6 +2100,24 @@ pub fn InfrastructureView(
                             set_graph,
                             set_selection_bounds,
                             settings,
+                        );
+                    })
+                    on_increase_spacing=leptos::Callback::new(move |()| {
+                        crate::components::multi_select_toolbar::increase_station_spacing(
+                            selected_stations,
+                            anchor_station,
+                            graph,
+                            set_graph,
+                            set_selection_bounds,
+                        );
+                    })
+                    on_decrease_spacing=leptos::Callback::new(move |()| {
+                        crate::components::multi_select_toolbar::decrease_station_spacing(
+                            selected_stations,
+                            anchor_station,
+                            graph,
+                            set_graph,
+                            set_selection_bounds,
                         );
                     })
                     on_add_platform=leptos::Callback::new(move |()| {

@@ -223,6 +223,7 @@ pub fn draw_infrastructure(
     pan_x: f64,
     pan_y: f64,
     selected_stations: &[NodeIndex],
+    anchor_station: Option<NodeIndex>,
     highlighted_edges: &HashSet<EdgeIndex>,
     cache: &mut TopologyCache,
     is_zooming: bool,
@@ -290,7 +291,7 @@ pub fn draw_infrastructure(
     } else {
         None
     };
-    station_renderer::draw_stations_with_cache(ctx, graph, lines, if show_lines { 1.0 } else { zoom }, selected_stations, highlighted_edges, cache, is_zooming, viewport_bounds, show_lines, hide_unscheduled_in_line_mode, scheduled_stations_ref, theme, line_gap_width);
+    station_renderer::draw_stations_with_cache(ctx, graph, lines, if show_lines { 1.0 } else { zoom }, selected_stations, anchor_station, highlighted_edges, cache, is_zooming, viewport_bounds, show_lines, hide_unscheduled_in_line_mode, scheduled_stations_ref, theme, line_gap_width);
 
     // Draw preview station if position is set
     if let Some((x, y)) = preview_station_position {

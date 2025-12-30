@@ -398,6 +398,193 @@ pub fn align_selected_stations(
     update_selection_bounds(&current_graph, &stations, set_selection_bounds);
 }
 
+/// Adjust spacing between selected stations by moving them along their current alignment.
+/// `delta_grid_squares` is positive to increase spacing, negative to decrease.
+/// The first station stays fixed as the anchor point.
+#[allow(clippy::cast_precision_loss)]
+pub fn adjust_station_spacing(
+    selected_stations: ReadSignal<Vec<NodeIndex>>,
+    anchor_station: ReadSignal<Option<NodeIndex>>,
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
+    delta_grid_squares: f64,
+) {
+    use std::collections::HashSet;
+
+    let stations = selected_stations.get();
+    if stations.len() < 2 {
+        return;
+    }
+
+    let mut current_graph = graph.get();
+    let station_set: HashSet<NodeIndex> = stations.iter().copied().collect();
+
+    // Find a starting node - prefer nodes with exactly one selected neighbor (true endpoint)
+    let start = stations.iter()
+        .find(|&&s| {
+            current_graph.graph.neighbors(s)
+                .filter(|n| station_set.contains(n))
+                .count() == 1
+        })
+        .or_else(|| {
+            stations.iter()
+                .min_by_key(|&&s| {
+                    current_graph.graph.neighbors(s)
+                        .filter(|n| station_set.contains(n))
+                        .count()
+                })
+        })
+        .copied();
+
+    let Some(start) = start else {
+        return;
+    };
+
+    // DFS traversal from the endpoint following the path
+    let mut ordered = Vec::new();
+    let mut seen = HashSet::new();
+    let mut current = start;
+
+    ordered.push(current);
+    seen.insert(current);
+
+    loop {
+        let next = current_graph.graph.neighbors(current)
+            .find(|n| station_set.contains(n) && !seen.contains(n));
+
+        let Some(next_node) = next else {
+            break;
+        };
+
+        ordered.push(next_node);
+        seen.insert(next_node);
+        current = next_node;
+    }
+
+    // Add any disconnected stations at the end
+    for &station in &stations {
+        if !seen.contains(&station) {
+            ordered.push(station);
+        }
+    }
+
+    // Get ordered positions with indices
+    let positions: Vec<(NodeIndex, f64, f64)> = ordered.iter()
+        .filter_map(|&idx| {
+            current_graph.get_station_position(idx).map(|(x, y)| (idx, x, y))
+        })
+        .collect();
+
+    if positions.len() < 2 {
+        return;
+    }
+
+    // Determine anchor index - use explicit anchor if set and in selection, otherwise use first
+    let anchor_idx = anchor_station.get()
+        .filter(|a| station_set.contains(a))
+        .unwrap_or(ordered[0]);
+
+    // Calculate current direction from first to last non-passing-loop station
+    let (_, first_x, first_y) = positions[0];
+    let (_, last_x, last_y) = positions[positions.len() - 1];
+
+    let dx = last_x - first_x;
+    let dy = last_y - first_y;
+    let total_dist = (dx * dx + dy * dy).sqrt();
+
+    if total_dist < 0.001 {
+        return;
+    }
+
+    // Unit direction vector
+    let dir_x = dx / total_dist;
+    let dir_y = dy / total_dist;
+
+    // Calculate spacing increment (grid square, adjusted for diagonal)
+    let grid_size = 30.0;
+    let spacing_increment = if dir_x.abs() > 0.9 || dir_y.abs() > 0.9 {
+        // Nearly horizontal or vertical
+        grid_size * delta_grid_squares
+    } else {
+        // Diagonal (45°)
+        grid_size * delta_grid_squares * 2.0_f64.sqrt()
+    };
+
+    // Get anchor position
+    let anchor_pos = positions.iter()
+        .find(|(idx, _, _)| *idx == anchor_idx)
+        .map_or((first_x, first_y), |(_, x, y)| (*x, *y));
+
+    // Count non-passing-loop stations before anchor to determine its index
+    let mut anchor_non_passing_idx: i32 = 0;
+    for &(idx, _, _) in &positions {
+        if idx == anchor_idx {
+            break;
+        }
+        let is_passing_loop = current_graph.graph.node_weight(idx)
+            .and_then(|n| n.as_station())
+            .is_some_and(|s| s.passing_loop);
+        if !is_passing_loop {
+            anchor_non_passing_idx += 1;
+        }
+    }
+
+    // Move each station relative to anchor position
+    let mut non_passing_idx: i32 = 0;
+    for &(idx, x, y) in &positions {
+        // Skip passing loops
+        let is_passing_loop = current_graph.graph.node_weight(idx)
+            .and_then(|n| n.as_station())
+            .is_some_and(|s| s.passing_loop);
+
+        if !is_passing_loop {
+            // Don't move the anchor itself
+            if idx != anchor_idx {
+                // Calculate offset relative to anchor
+                let relative_idx = non_passing_idx - anchor_non_passing_idx;
+                let offset = spacing_increment * f64::from(relative_idx);
+                let new_x = x + offset * dir_x;
+                let new_y = y + offset * dir_y;
+
+                // Snap to grid along the line direction
+                let (snapped_x, snapped_y) = snap_to_grid_along_line(
+                    new_x, new_y,
+                    (anchor_pos.0, anchor_pos.1),
+                    (anchor_pos.0 + dir_x * 1000.0, anchor_pos.1 + dir_y * 1000.0),
+                );
+                current_graph.set_station_position(idx, (snapped_x, snapped_y));
+            }
+            non_passing_idx += 1;
+        }
+    }
+
+    set_graph.set(current_graph.clone());
+    update_selection_bounds(&current_graph, &stations, set_selection_bounds);
+}
+
+/// Increase spacing between selected stations by one grid square
+pub fn increase_station_spacing(
+    selected_stations: ReadSignal<Vec<NodeIndex>>,
+    anchor_station: ReadSignal<Option<NodeIndex>>,
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
+) {
+    adjust_station_spacing(selected_stations, anchor_station, graph, set_graph, set_selection_bounds, 1.0);
+}
+
+/// Decrease spacing between selected stations by one grid square
+pub fn decrease_station_spacing(
+    selected_stations: ReadSignal<Vec<NodeIndex>>,
+    anchor_station: ReadSignal<Option<NodeIndex>>,
+    graph: ReadSignal<RailwayGraph>,
+    set_graph: WriteSignal<RailwayGraph>,
+    set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
+) {
+    adjust_station_spacing(selected_stations, anchor_station, graph, set_graph, set_selection_bounds, -1.0);
+}
+
 /// Snap a point to the nearest grid point that lies along the given line.
 /// The line is defined by two endpoints (which should already be on-grid).
 fn snap_to_grid_along_line(
@@ -447,6 +634,7 @@ fn rotate_stations_by_angle(
     stations: &[NodeIndex],
     graph: &mut RailwayGraph,
     angle_degrees: f64,
+    anchor: Option<NodeIndex>,
 ) {
     if stations.len() < 2 {
         return;
@@ -465,10 +653,16 @@ fn rotate_stations_by_angle(
         return;
     }
 
-    // Calculate centroid
-    let count = positions.len();
-    let center_x: f64 = positions.iter().map(|(_, x, _)| x).sum::<f64>() / count as f64;
-    let center_y: f64 = positions.iter().map(|(_, _, y)| y).sum::<f64>() / count as f64;
+    // Use anchor position as center if set and in selection, otherwise use centroid
+    let (center_x, center_y) = anchor
+        .filter(|a| stations.contains(a))
+        .and_then(|a| graph.get_station_position(a))
+        .unwrap_or_else(|| {
+            let count = positions.len();
+            let cx: f64 = positions.iter().map(|(_, x, _)| x).sum::<f64>() / count as f64;
+            let cy: f64 = positions.iter().map(|(_, _, y)| y).sum::<f64>() / count as f64;
+            (cx, cy)
+        });
 
     // Check if stations are aligned (collinear within tolerance)
     let collinearity_threshold: f64 = 0.1;
@@ -609,13 +803,15 @@ fn rotate_stations_by_angle(
 #[allow(clippy::cast_precision_loss)]
 pub fn rotate_selected_stations_clockwise(
     selected_stations: ReadSignal<Vec<NodeIndex>>,
+    anchor_station: ReadSignal<Option<NodeIndex>>,
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
 ) {
     let stations = selected_stations.get();
+    let anchor = anchor_station.get();
     let mut current_graph = graph.get();
-    rotate_stations_by_angle(&stations, &mut current_graph, 45.0);
+    rotate_stations_by_angle(&stations, &mut current_graph, 45.0, anchor);
 
     // Recalculate bounds after rotation
     update_selection_bounds(&current_graph, &stations, set_selection_bounds);
@@ -626,13 +822,15 @@ pub fn rotate_selected_stations_clockwise(
 #[allow(clippy::cast_precision_loss)]
 pub fn rotate_selected_stations_counterclockwise(
     selected_stations: ReadSignal<Vec<NodeIndex>>,
+    anchor_station: ReadSignal<Option<NodeIndex>>,
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     set_selection_bounds: WriteSignal<Option<(f64, f64, f64, f64)>>,
 ) {
     let stations = selected_stations.get();
+    let anchor = anchor_station.get();
     let mut current_graph = graph.get();
-    rotate_stations_by_angle(&stations, &mut current_graph, -45.0);
+    rotate_stations_by_angle(&stations, &mut current_graph, -45.0, anchor);
 
     // Recalculate bounds after rotation
     update_selection_bounds(&current_graph, &stations, set_selection_bounds);
@@ -706,6 +904,12 @@ pub fn MultiSelectToolbar(
     /// Callback for Align operation
     #[prop(optional)]
     on_align: Option<Callback<()>>,
+    /// Callback for Increase Spacing operation
+    #[prop(optional)]
+    on_increase_spacing: Option<Callback<()>>,
+    /// Callback for Decrease Spacing operation
+    #[prop(optional)]
+    on_decrease_spacing: Option<Callback<()>>,
     /// Callback for Add Platform operation
     #[prop(optional)]
     on_add_platform: Option<Callback<()>>,
@@ -884,6 +1088,34 @@ pub fn MultiSelectToolbar(
                         }
                     >
                         <i class="fa-solid fa-align-center"></i>
+                    </button>
+                    <button
+                        class="toolbar-button"
+                        title=format_title_with_shortcut(
+                            format!("Decrease spacing between {} station{}", count, if count == 1 { "" } else { "s" }),
+                            "multi_select_decrease_spacing"
+                        )
+                        on:click=move |_| {
+                            if let Some(callback) = on_decrease_spacing {
+                                callback.call(());
+                            }
+                        }
+                    >
+                        <i class="fa-solid fa-down-left-and-up-right-to-center"></i>
+                    </button>
+                    <button
+                        class="toolbar-button"
+                        title=format_title_with_shortcut(
+                            format!("Increase spacing between {} station{}", count, if count == 1 { "" } else { "s" }),
+                            "multi_select_increase_spacing"
+                        )
+                        on:click=move |_| {
+                            if let Some(callback) = on_increase_spacing {
+                                callback.call(());
+                            }
+                        }
+                    >
+                        <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
                     </button>
                     <div class="dropdown-wrapper">
                         <button
