@@ -76,12 +76,20 @@ body {
     display: flex;
     gap: 0;
     flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
 }
 
 .tab-button-container {
     position: relative;
     display: inline-flex;
     align-items: stretch;
+    flex-shrink: 0;
 
     &:hover .tab-close-button {
         opacity: 1;
@@ -97,6 +105,7 @@ body {
     cursor: pointer;
     border-bottom: 2px solid transparent;
     transition: all var(--transition-base) var(--transition-ease);
+    white-space: nowrap;
 
     .tab-button-container & {
         padding-right: calc(var(--spacing-lg) + 24px);
