@@ -258,7 +258,7 @@ pub fn align_selected_stations(
     // Find a starting node - prefer nodes with exactly one selected neighbor (true endpoint)
     let start = stations.iter()
         .find(|&&s| {
-            current_graph.graph.neighbors(s)
+            current_graph.graph.neighbors_undirected(s)
                 .filter(|n| station_set.contains(n))
                 .count() == 1
         })
@@ -266,7 +266,7 @@ pub fn align_selected_stations(
             // Fallback: pick node with fewest selected neighbors
             stations.iter()
                 .min_by_key(|&&s| {
-                    current_graph.graph.neighbors(s)
+                    current_graph.graph.neighbors_undirected(s)
                         .filter(|n| station_set.contains(n))
                         .count()
                 })
@@ -287,7 +287,7 @@ pub fn align_selected_stations(
 
     // Follow the path by always picking the next unvisited neighbor
     loop {
-        let next = current_graph.graph.neighbors(current)
+        let next = current_graph.graph.neighbors_undirected(current)
             .find(|n| station_set.contains(n) && !seen.contains(n));
 
         let Some(next_node) = next else {
@@ -307,7 +307,7 @@ pub fn align_selected_stations(
     }
 
     // Get positions in order
-    let positions: Vec<(f64, f64)> = ordered.iter()
+    let mut positions: Vec<(f64, f64)> = ordered.iter()
         .filter_map(|&idx| current_graph.get_station_position(idx))
         .collect();
 
@@ -359,8 +359,20 @@ pub fn align_selected_stations(
     let dir_x = line_angle_rad.cos();
     let dir_y = line_angle_rad.sin();
 
+    // Ensure consistent ordering: start from the station with smaller projection along direction
+    // This makes the sequence predictable (left-to-right, top-to-bottom, etc.)
+    let first_projection = first_pos.0 * dir_x + first_pos.1 * dir_y;
+    let last_projection = last_pos.0 * dir_x + last_pos.1 * dir_y;
+    if first_projection > last_projection {
+        ordered.reverse();
+        positions.reverse();
+    }
+
+    // Use the (potentially reversed) first position
+    let start_pos = positions[0];
+
     // Snap the first position to grid
-    let snapped_first = crate::components::infrastructure_canvas::auto_layout::snap_to_grid(first_pos.0, first_pos.1);
+    let snapped_first = crate::components::infrastructure_canvas::auto_layout::snap_to_grid(start_pos.0, start_pos.1);
 
     // Calculate required spacing based on project settings
     // For 0°/180° (horizontal) or 90°/270° (vertical): grid_squares * 30
@@ -423,14 +435,14 @@ pub fn adjust_station_spacing(
     // Find a starting node - prefer nodes with exactly one selected neighbor (true endpoint)
     let start = stations.iter()
         .find(|&&s| {
-            current_graph.graph.neighbors(s)
+            current_graph.graph.neighbors_undirected(s)
                 .filter(|n| station_set.contains(n))
                 .count() == 1
         })
         .or_else(|| {
             stations.iter()
                 .min_by_key(|&&s| {
-                    current_graph.graph.neighbors(s)
+                    current_graph.graph.neighbors_undirected(s)
                         .filter(|n| station_set.contains(n))
                         .count()
                 })
@@ -450,7 +462,7 @@ pub fn adjust_station_spacing(
     seen.insert(current);
 
     loop {
-        let next = current_graph.graph.neighbors(current)
+        let next = current_graph.graph.neighbors_undirected(current)
             .find(|n| station_set.contains(n) && !seen.contains(n));
 
         let Some(next_node) = next else {

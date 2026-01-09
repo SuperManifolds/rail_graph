@@ -1192,7 +1192,7 @@ fn handle_multi_select_mouse_down(
             if current_selection.contains(&station_idx) {
                 // Clicking on an already-selected station - make it the anchor
                 set_anchor_station.set(Some(station_idx));
-                return;
+                // Don't return - fall through to start drag
             }
         }
 
@@ -1501,13 +1501,15 @@ fn create_event_handlers(
         }
 
         // Finalize selection box (selection already updated during drag)
-        if let (Some(start), Some(end)) = (selection_box_start.get(), selection_box_end.get()) {
-            // Save the selection bounds for future drag detection
-            let min_x = start.0.min(end.0);
-            let max_x = start.0.max(end.0);
-            let min_y = start.1.min(end.1);
-            let max_y = start.1.max(end.1);
-            set_selection_bounds.set(Some((min_x, max_x, min_y, max_y)));
+        if selection_box_start.get().is_some() && selection_box_end.get().is_some() {
+            // Compute bounds from actual station positions, not the raw drag area
+            let current_graph = graph.get();
+            let stations = selected_stations.get();
+            crate::components::multi_select_toolbar::update_selection_bounds(
+                &current_graph,
+                &stations,
+                set_selection_bounds,
+            );
 
             // Clear selection box
             set_selection_box_start.set(None);

@@ -13,38 +13,17 @@ pub fn ManualDeparturesList(
 ) -> impl IntoView {
     let on_save_stored = store_value(on_save.clone());
 
-    // Derive station names from current line
+    // Derive station names from current line using get_station_path
     let station_names = Signal::derive(move || {
         let Some(line) = edited_line.get() else {
             return Vec::new();
         };
 
         let current_graph = graph.get();
-        let mut names = Vec::new();
-
-        // Add first station
-        if let Some(segment) = line.forward_route.first() {
-            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-            let Some((from, _)) = current_graph.get_track_endpoints(edge_idx) else {
-                return names;
-            };
-            if let Some(name) = current_graph.get_station_name(from) {
-                names.push(name.to_string());
-            }
-        }
-
-        // Add all destination stations
-        for segment in &line.forward_route {
-            let edge_idx = petgraph::graph::EdgeIndex::new(segment.edge_index);
-            let Some((_, to)) = current_graph.get_track_endpoints(edge_idx) else {
-                continue;
-            };
-            if let Some(name) = current_graph.get_station_name(to) {
-                names.push(name.to_string());
-            }
-        }
-
-        names
+        line.get_station_path(&current_graph)
+            .iter()
+            .filter_map(|&node_idx| current_graph.get_station_name(node_idx).map(String::from))
+            .collect()
     });
 
     view! {

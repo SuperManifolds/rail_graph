@@ -485,11 +485,14 @@ impl TrainJourney {
 
             // Apply first stop wait time to the first station
             let first_wait_time = line.first_stop_wait_time;
-            let mut cumulative_time = first_wait_time;
+            // cumulative_time tracks time elapsed since departure from first station
+            // It starts at 0, not first_wait_time (first_wait_time only affects first station arrival)
+            let mut cumulative_time = Duration::zero();
 
             // Add first node (station or junction) with wait time
+            // Wait time is retroactive: arrival = departure - wait_time
             if let Some(node_idx) = route_nodes[0] {
-                station_times.push((node_idx, departure_time, departure_time + first_wait_time));
+                station_times.push((node_idx, departure_time - first_wait_time, departure_time));
                 // First station has explicit timing (from first_departure)
                 timing_inherited.push(false);
             }
@@ -669,7 +672,7 @@ impl TrainJourney {
     ) -> bool {
         // Use custom train number if provided, otherwise generate one
         let train_number = custom_train_number.cloned()
-            .unwrap_or_else(|| generate_train_number(&line.auto_train_number_format, &line.name, *sequence));
+            .unwrap_or_else(|| generate_train_number(&line.auto_train_number_format, &line.code, *sequence));
 
         // Try forward route first
         if let Some(journey) = Self::generate_manual_journey_for_route(
@@ -718,11 +721,11 @@ impl TrainJourney {
     ) -> Option<TrainJourney> {
         // Use the same route node building logic as auto-generated journeys
         let route_nodes_opt = Self::build_route_nodes(route, graph);
-        let route_nodes: Vec<_> = route_nodes_opt.iter().filter_map(|&n| n).collect();
 
-        // Find positions of from and to stations
-        let from_pos = route_nodes.iter().position(|&idx| idx == from_idx)?;
-        let to_pos = route_nodes.iter().position(|&idx| idx == to_idx)?;
+        // Find positions of from and to stations in the ORIGINAL route_nodes array
+        // (before filtering out None values), so indices align with route segments
+        let from_pos = route_nodes_opt.iter().position(|&n| n == Some(from_idx))?;
+        let to_pos = route_nodes_opt.iter().position(|&n| n == Some(to_idx))?;
 
         // Check if this is a valid path (from before to in this route)
         if from_pos >= to_pos {
@@ -734,15 +737,16 @@ impl TrainJourney {
         let mut segments = Vec::new();
         let mut timing_inherited = Vec::new();
 
-        // Add first node (station or junction)
-        station_times.push((from_idx, departure_time, departure_time));
+        // Add first node (station or junction) with wait time
+        // Wait time is retroactive: arrival = departure - wait_time
+        let first_wait = if is_forward { line.first_stop_wait_time } else { line.return_first_stop_wait_time };
+        station_times.push((from_idx, departure_time - first_wait, departure_time));
         // First station has explicit timing (from departure_time)
         timing_inherited.push(false);
 
+        // cumulative_time tracks time elapsed since departure from first station
+        // It starts at 0, not first_wait (first_wait only affects first station arrival)
         let mut cumulative_time = Duration::zero();
-
-        // Convert route_nodes to Option<NodeIndex> for compatibility with helper functions
-        let route_nodes_opt: Vec<Option<petgraph::stable_graph::NodeIndex>> = route_nodes.iter().map(|&idx| Some(idx)).collect();
 
         let mut i = from_pos;
         while i < to_pos {
@@ -842,11 +846,14 @@ impl TrainJourney {
 
             // Apply first stop wait time to the first station
             let first_wait_time = line.return_first_stop_wait_time;
-            let mut cumulative_time = first_wait_time;
+            // cumulative_time tracks time elapsed since departure from first station
+            // It starts at 0, not first_wait_time (first_wait_time only affects first station arrival)
+            let mut cumulative_time = Duration::zero();
 
             // Add first node (station or junction) with wait time
+            // Wait time is retroactive: arrival = departure - wait_time
             if let Some(node_idx) = route_nodes[0] {
-                station_times.push((node_idx, return_departure_time, return_departure_time + first_wait_time));
+                station_times.push((node_idx, return_departure_time - first_wait_time, return_departure_time));
                 // First station has explicit timing (from return_first_departure)
                 timing_inherited.push(false);
             }
