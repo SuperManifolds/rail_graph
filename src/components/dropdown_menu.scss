@@ -7,39 +7,36 @@
         @extend .button-icon;
         font-size: var(--font-size-base);
     }
+}
 
-    .dropdown-menu-items {
-        position: absolute;
-        right: 0;
-        top: calc(100% + var(--spacing-xs));
-        @include liquid-glass;
-        border-radius: var(--radius-xxl);
-        min-width: 160px;
-        z-index: 1000;
-        overflow: hidden;
+// Rendered via Portal at document root level
+.dropdown-menu-items {
+    @include liquid-glass;
+    border-radius: var(--radius-xxl);
+    min-width: 160px;
+    overflow: hidden;
 
-        .dropdown-menu-item {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-sm);
-            width: 100%;
-            padding: var(--spacing-sm) var(--spacing-md);
-            background: none;
-            border: none;
-            color: var(--color-text-primary);
-            font-size: var(--font-size-sm);
-            text-align: left;
-            cursor: pointer;
-            transition: background-color 0.15s ease;
+    .dropdown-menu-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        width: 100%;
+        padding: var(--spacing-sm) var(--spacing-md);
+        background: none;
+        border: none;
+        color: var(--color-text-primary);
+        font-size: var(--font-size-sm);
+        text-align: left;
+        cursor: pointer;
+        transition: background-color 0.15s ease;
 
-            i {
-                width: 16px;
-                text-align: center;
-            }
+        i {
+            width: 16px;
+            text-align: center;
+        }
 
-            &:hover {
-                background-color: var(--color-bg-secondary);
-            }
+        &:hover {
+            background-color: var(--color-bg-secondary);
         }
     }
 }
