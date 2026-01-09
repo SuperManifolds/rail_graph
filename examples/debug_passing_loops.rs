@@ -30,9 +30,10 @@ fn main() {
         selected_line_ids: vec![r14_id],
         handedness: TrackHandedness::RightHand,
         station_spacing: 100.0,
+        ..Default::default()
     };
 
-    let _lines = import_nimby_lines(&data, &config, &mut graph, 0)
+    let _lines = import_nimby_lines(&data, &config, &mut graph, 0, None)
         .expect("Failed to import NIMBY lines");
 
     let nodes_after_first = graph.graph.node_count();
@@ -42,7 +43,7 @@ fn main() {
 
     // Import the same line again to test deduplication
     println!("Importing R14 again (should not create duplicate loops)...");
-    let _lines2 = import_nimby_lines(&data, &config, &mut graph, 0)
+    let _lines2 = import_nimby_lines(&data, &config, &mut graph, 0, None)
         .expect("Failed to import NIMBY lines second time");
 
     let nodes_after_second = graph.graph.node_count();

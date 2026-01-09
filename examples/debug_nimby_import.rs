@@ -222,6 +222,207 @@ fn check_lysaker_sandvika_edges(graph: &RailwayGraph) {
     }
 }
 
+fn test_fits_frequency_pattern() {
+    fn fits_frequency_pattern(departure: i64, first: i64, frequency_secs: i64) -> bool {
+        if frequency_secs <= 0 {
+            return false;
+        }
+        let offset = departure - first;
+        let remainder = offset.rem_euclid(frequency_secs);
+        println!("  dep={departure} ({}) first={first} offset={offset} remainder={remainder}",
+            format_secs(departure));
+        remainder < 120 || remainder > (frequency_secs - 120)
+    }
+
+    fn format_secs(secs: i64) -> String {
+        let h = secs / 3600;
+        let m = (secs % 3600) / 60;
+        let s = secs % 60;
+        format!("{h:02}:{m:02}:{s:02}")
+    }
+
+    println!("\n=== Testing fits_frequency_pattern with negative offsets ===\n");
+
+    // Test with return first departure at 06:30:53 and early morning runs
+    let first: i64 = 23453; // 06:30:53
+    let freq: i64 = 1800; // 30 min
+
+    println!("First departure: {} ({})", first, format_secs(first));
+    println!("Frequency: {} seconds ({} min)\n", freq, freq / 60);
+
+    // Early morning return departures (should NOT fit pattern)
+    let early_deps: Vec<i64> = vec![15941, 17741, 19541, 21341]; // 4:25, 4:55, 5:25, 5:55
+    println!("Early morning returns (should NOT fit pattern):");
+    for dep in early_deps {
+        let fits = fits_frequency_pattern(dep, first, freq);
+        println!("  fits = {fits}\n");
+    }
+
+    // Regular return departures (should fit pattern)
+    let regular_deps: Vec<i64> = vec![23453, 25253, 27053]; // 6:30, 7:00, 7:30
+    println!("Regular returns (should fit pattern):");
+    for dep in regular_deps {
+        let fits = fits_frequency_pattern(dep, first, freq);
+        println!("  fits = {fits}\n");
+    }
+}
+
+fn test_merged_import(data: &nimby_graph::import::nimby::NimbyImportData) {
+    println!("\n=== Merged Import Test (R12 + R13) ===\n");
+
+    let mut graph = RailwayGraph::default();
+
+    // Get both line IDs
+    let r12_id = data.lines.iter().find(|l| l.code == "R12").map(|l| l.id.clone());
+    let r13_id = data.lines.iter().find(|l| l.code == "R13").map(|l| l.id.clone());
+
+    let (Some(r12_id), Some(r13_id)) = (r12_id, r13_id) else {
+        println!("  Could not find R12 or R13");
+        return;
+    };
+
+    // Import infrastructure for both
+    let infra_config = NimbyImportConfig {
+        create_infrastructure: true,
+        selected_line_ids: vec![r12_id.clone(), r13_id.clone()],
+        handedness: TrackHandedness::RightHand,
+        station_spacing: 100.0,
+        ..Default::default()
+    };
+
+    let _ = import_nimby_lines(data, &infra_config, &mut graph, 0, None)
+        .expect("Failed to import infrastructure");
+
+    println!("  Infrastructure: {} nodes, {} edges", graph.graph.node_count(), graph.graph.edge_count());
+
+    // Import schedules for R13 only
+    let schedule_config = NimbyImportConfig {
+        create_infrastructure: false,
+        selected_line_ids: vec![r13_id],
+        handedness: TrackHandedness::RightHand,
+        station_spacing: 100.0,
+        ..Default::default()
+    };
+
+    let lines = import_nimby_lines(data, &schedule_config, &mut graph, 0, None)
+        .expect("Failed to import schedules");
+
+    println!("  Imported {} lines", lines.len());
+
+    for line in &lines {
+        println!("\n  Line: {} ({})", line.name, line.code);
+        println!("    Manual departures: {}", line.manual_departures.len());
+
+        if !line.manual_departures.is_empty() {
+            println!("\n    Manual departures (first 10):");
+            for dep in line.manual_departures.iter().take(10) {
+                let from_name = graph.graph[dep.from_station].display_name();
+                let to_name = graph.graph[dep.to_station].display_name();
+                let time = dep.time.format("%H:%M:%S");
+                println!("      {from_name} -> {to_name} at {time}");
+            }
+        }
+    }
+}
+
+fn test_line_schedule_import(data: &nimby_graph::import::nimby::NimbyImportData, line_code: &str) {
+    println!("\n=== {line_code} Schedule Import Test ===\n");
+
+    // First import infrastructure
+    let mut graph = RailwayGraph::default();
+    let line_id = data.lines.iter()
+        .find(|l| l.code == line_code)
+        .map(|l| l.id.clone());
+
+    let Some(line_id) = line_id else {
+        println!("  Could not find {line_code} line");
+        return;
+    };
+
+    // Import infrastructure first
+    let infra_config = NimbyImportConfig {
+        create_infrastructure: true,
+        selected_line_ids: vec![line_id.clone()],
+        handedness: TrackHandedness::RightHand,
+        station_spacing: 100.0,
+        ..Default::default()
+    };
+
+    let _ = import_nimby_lines(data, &infra_config, &mut graph, 0, None)
+        .expect("Failed to import infrastructure");
+
+    println!("  Infrastructure: {} nodes, {} edges", graph.graph.node_count(), graph.graph.edge_count());
+
+    // Now import schedules
+    let schedule_config = NimbyImportConfig {
+        create_infrastructure: false,
+        selected_line_ids: vec![line_id],
+        handedness: TrackHandedness::RightHand,
+        station_spacing: 100.0,
+        ..Default::default()
+    };
+
+    let lines = import_nimby_lines(data, &schedule_config, &mut graph, 0, None)
+        .expect("Failed to import schedules");
+
+    println!("  Imported {} lines", lines.len());
+
+    for line in &lines {
+        println!("\n  Line: {} ({})", line.name, line.code);
+        println!("    Schedule mode: {:?}", line.schedule_mode);
+        println!("    Frequency: {} min", line.frequency.num_minutes());
+        println!("    Forward first: {}", line.first_departure.format("%H:%M:%S"));
+        println!("    Forward last: {}", line.last_departure.format("%H:%M:%S"));
+        println!("    Return first: {}", line.return_first_departure.format("%H:%M:%S"));
+        println!("    Return last: {}", line.return_last_departure.format("%H:%M:%S"));
+        println!("    Forward route: {} segments", line.forward_route.len());
+        println!("    Return route: {} segments", line.return_route.len());
+        println!("    Manual departures: {}", line.manual_departures.len());
+
+        // Show station path
+        let station_path = line.get_station_path(&graph);
+        println!("\n    Station path ({} nodes):", station_path.len());
+        for (i, &idx) in station_path.iter().take(5).enumerate() {
+            let name = graph.graph[idx].display_name();
+            let pl = graph.graph[idx].as_station().is_some_and(|s| s.passing_loop);
+            println!("      [{i}] {name} (passing_loop={pl})");
+        }
+        if station_path.len() > 5 {
+            println!("      ...");
+            for (i, &idx) in station_path.iter().skip(station_path.len() - 3).enumerate() {
+                let name = graph.graph[idx].display_name();
+                let pl = graph.graph[idx].as_station().is_some_and(|s| s.passing_loop);
+                let idx_num = station_path.len() - 3 + i;
+                println!("      [{idx_num}] {name} (passing_loop={pl})");
+            }
+        }
+
+        // Show first edge of forward route
+        if let Some(first_seg) = line.forward_route.first() {
+            if let Some((from, to)) = graph.graph.edge_endpoints(petgraph::graph::EdgeIndex::new(first_seg.edge_index)) {
+                println!("\n    First forward edge: {} -> {}",
+                    graph.graph[from].display_name(),
+                    graph.graph[to].display_name());
+            }
+        }
+
+        if !line.manual_departures.is_empty() {
+            println!("\n    Manual departures (first 10):");
+            for dep in line.manual_departures.iter().take(10) {
+                let from_name = graph.graph[dep.from_station].display_name();
+                let to_name = graph.graph[dep.to_station].display_name();
+                let from_pl = graph.graph[dep.from_station].as_station().is_some_and(|s| s.passing_loop);
+                let to_pl = graph.graph[dep.to_station].as_station().is_some_and(|s| s.passing_loop);
+                let time = dep.time.format("%H:%M:%S");
+                println!("      {from_name} (pl={from_pl}) -> {to_name} (pl={to_pl}) at {time}");
+            }
+            if line.manual_departures.len() > 10 {
+                println!("      ... and {} more", line.manual_departures.len() - 10);
+            }
+        }
+    }
+}
+
 fn main() {
     let content = fs::read_to_string("timetable.json")
         .expect("Failed to read timetable.json - make sure it's in the current directory");
@@ -229,8 +430,18 @@ fn main() {
     let data = parse_nimby_json(&content).expect("Failed to parse NIMBY JSON");
     print_summary(&data);
 
+    // Test modulo behavior first
+    test_fits_frequency_pattern();
+
+    // Test line schedule imports (individual)
+    test_line_schedule_import(&data, "R12");
+    test_line_schedule_import(&data, "R13");
+
+    // Test R13 with merged infrastructure (multiple lines)
+    test_merged_import(&data);
+
     let oslo_lines = find_oslo_lines(&data);
-    println!("Found {} lines through Oslo:", oslo_lines.len());
+    println!("\n\nFound {} lines through Oslo:", oslo_lines.len());
     for id in &oslo_lines {
         if let Some(line) = data.lines.iter().find(|l| l.id == *id) {
             println!("  - {} ({})", line.name, line.code);
@@ -247,10 +458,11 @@ fn main() {
         selected_line_ids: oslo_lines.clone(),
         handedness: TrackHandedness::RightHand,
         station_spacing: 100.0,
+        ..Default::default()
     };
 
     println!("Importing {} lines through Oslo...", oslo_lines.len());
-    let lines = import_nimby_lines(&data, &config, &mut graph, 0)
+    let lines = import_nimby_lines(&data, &config, &mut graph, 0, None)
         .expect("Failed to import NIMBY lines");
 
     println!("Imported {} lines", lines.len());

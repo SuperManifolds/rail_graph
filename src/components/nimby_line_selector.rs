@@ -41,12 +41,16 @@ pub fn NimbyLineSelector(
         set_selected_ids.set(Vec::new());
     };
 
+    // Track update existing mode (only relevant in schedules mode)
+    let (update_existing, set_update_existing) = create_signal(false);
+
     let handle_import = move |_| {
         let config = NimbyImportConfig {
             create_infrastructure: create_infrastructure.get(),
             selected_line_ids: selected_ids.get(),
             handedness: handedness.get(),
             station_spacing: station_spacing.get(),
+            update_existing: update_existing.get(),
         };
         on_import.call(config);
     };
@@ -100,6 +104,21 @@ pub fn NimbyLineSelector(
                         </div>
                     </label>
                 </div>
+                <Show when=move || !create_infrastructure.get()>
+                    <label class="update-existing-option">
+                        <input
+                            type="checkbox"
+                            checked=move || update_existing.get()
+                            on:change=move |_| set_update_existing.set(!update_existing.get())
+                        />
+                        <div class="mode-content">
+                            <span class="mode-title">"Update existing lines"</span>
+                            <span class="mode-description">
+                                "Match by line code and update routes. Preserves wait times."
+                            </span>
+                        </div>
+                    </label>
+                </Show>
             </section>
 
             <section class="line-selection">

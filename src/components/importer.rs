@@ -223,20 +223,43 @@ pub fn Importer(
         let existing_line_count = lines.get().len();
         let mut current_graph = graph.get();
 
-        match import_nimby_lines(&data, &config, &mut current_graph, existing_line_count) {
-            Ok(imported_lines) => {
-                leptos::logging::log!("Imported {} lines from NIMBY JSON", imported_lines.len());
-                set_graph.set(current_graph);
-                set_lines.update(|existing| existing.extend(imported_lines));
-                set_show_nimby_selector.set(false);
-                set_nimby_data.set(None);
-                if let Some(input) = file_input_ref.get() {
-                    input.set_value("");
+        // If update_existing mode, pass existing lines for in-place modification
+        if config.update_existing {
+            let mut current_lines = lines.get();
+            match import_nimby_lines(&data, &config, &mut current_graph, existing_line_count, Some(&mut current_lines)) {
+                Ok(new_lines) => {
+                    leptos::logging::log!("Updated lines, {} new lines created", new_lines.len());
+                    set_graph.set(current_graph);
+                    // Replace all lines (updated ones are modified in place)
+                    current_lines.extend(new_lines);
+                    set_lines.set(current_lines);
+                    set_show_nimby_selector.set(false);
+                    set_nimby_data.set(None);
+                    if let Some(input) = file_input_ref.get() {
+                        input.set_value("");
+                    }
+                }
+                Err(e) => {
+                    leptos::logging::error!("NIMBY import failed: {}", e);
+                    set_import_error.set(Some(e));
                 }
             }
-            Err(e) => {
-                leptos::logging::error!("NIMBY import failed: {}", e);
-                set_import_error.set(Some(e));
+        } else {
+            match import_nimby_lines(&data, &config, &mut current_graph, existing_line_count, None) {
+                Ok(imported_lines) => {
+                    leptos::logging::log!("Imported {} lines from NIMBY JSON", imported_lines.len());
+                    set_graph.set(current_graph);
+                    set_lines.update(|existing| existing.extend(imported_lines));
+                    set_show_nimby_selector.set(false);
+                    set_nimby_data.set(None);
+                    if let Some(input) = file_input_ref.get() {
+                        input.set_value("");
+                    }
+                }
+                Err(e) => {
+                    leptos::logging::error!("NIMBY import failed: {}", e);
+                    set_import_error.set(Some(e));
+                }
             }
         }
     };

@@ -34,9 +34,10 @@ fn run_nimby_import() {
         selected_line_ids: oslo_lines,
         handedness: TrackHandedness::RightHand,
         station_spacing: 100.0,
+        ..Default::default()
     };
 
-    let _ = import_nimby_lines(&data, &config, &mut graph, 0)
+    let _ = import_nimby_lines(&data, &config, &mut graph, 0, None)
         .expect("Failed to import");
 
     // Build edge usage map to test find_heaviest_path

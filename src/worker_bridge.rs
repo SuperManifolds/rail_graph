@@ -8,30 +8,48 @@ use gloo_worker::Spawnable;
 use leptos::{create_signal, ReadSignal, WriteSignal, SignalSet};
 
 pub struct ConflictDetector {
-    worker: gloo_worker::WorkerBridge<ConflictWorker>,
+    worker: Option<gloo_worker::WorkerBridge<ConflictWorker>>,
+    set_conflicts: WriteSignal<Vec<Conflict>>,
 }
 
 impl ConflictDetector {
     pub fn new(set_conflicts: WriteSignal<Vec<Conflict>>) -> Self {
-        let worker = ConflictWorker::spawner()
-            .encoding::<BincodeCodec>()
-            .callback(move |response: ConflictResponse| {
-                let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
-                set_conflicts.set(response.conflicts.clone());
-                if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-                    log!("Set conflicts signal took {:.2}ms ({} conflicts)",
-                        elapsed, response.conflicts.len());
-                }
-            })
-            .spawn("conflict_worker.js");
+        Self {
+            worker: None,
+            set_conflicts,
+        }
+    }
 
-        Self { worker }
+    /// Spawns a fresh worker, terminating any existing one first.
+    /// This cancels any in-flight calculation.
+    fn spawn_worker(&mut self) -> &mut gloo_worker::WorkerBridge<ConflictWorker> {
+        let set_conflicts = self.set_conflicts;
+        self.worker = Some(
+            ConflictWorker::spawner()
+                .encoding::<BincodeCodec>()
+                .callback(move |response: ConflictResponse| {
+                    let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
+                    set_conflicts.set(response.conflicts.clone());
+                    if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
+                        log!("Set conflicts signal took {:.2}ms ({} conflicts)",
+                            elapsed, response.conflicts.len());
+                    }
+                })
+                .spawn("conflict_worker.js")
+        );
+        self.worker.as_mut().expect("worker should be Some after spawn")
     }
 
     pub fn detect(&mut self, journeys: Vec<TrainJourney>, graph: RailwayGraph, settings: ProjectSettings) {
         log!("Sending to worker: {} journeys, {} nodes",
             journeys.len(), graph.graph.node_count());
         let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
+
+        // Terminate any existing worker (cancels in-flight calculation)
+        self.worker = None;
+
+        // Spawn fresh worker for this request
+        let worker = self.spawn_worker();
 
         // Build serializable context from graph
         let station_indices = graph.graph.node_indices()
@@ -46,7 +64,7 @@ impl ConflictDetector {
             settings.ignore_same_direction_platform_conflicts,
         );
 
-        self.worker.send(ConflictRequest { journeys, context });
+        worker.send(ConflictRequest { journeys, context });
         if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
             log!("Worker.send() took {:.2}ms", elapsed);
         }
