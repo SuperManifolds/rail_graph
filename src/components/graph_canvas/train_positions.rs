@@ -9,26 +9,118 @@ use petgraph::stable_graph::NodeIndex;
 const CURRENT_TRAIN_RADIUS: f64 = 6.0;
 const CURRENT_TRAIN_OUTLINE_WIDTH: f64 = 2.0;
 const CURRENT_TRAIN_LABEL_FONT_SIZE: f64 = 10.0;
+const TRACK_LABEL_OFFSET_X: f64 = 10.0;
 
 struct Palette {
     train_outline: &'static str,
     train_label: &'static str,
+    track_label: &'static str,
 }
 
 const DARK_PALETTE: Palette = Palette {
     train_outline: "#fff",
     train_label: "#fff",
+    track_label: "#888",
 };
 
 const LIGHT_PALETTE: Palette = Palette {
     train_outline: "#000",
     train_label: "#000",
+    track_label: "#666",
 };
 
 fn get_palette(theme: Theme) -> &'static Palette {
     match theme {
         Theme::Dark => &DARK_PALETTE,
         Theme::Light => &LIGHT_PALETTE,
+    }
+}
+
+/// Get the platform label for a train at a station.
+/// For the first station, uses `origin_platform` from the first segment.
+/// For other stations, uses `destination_platform` from the arriving segment.
+fn get_platform_label(
+    journey: &TrainJourney,
+    station_index: usize,
+    display_station_idx: usize,
+    stations: &[(NodeIndex, Node)],
+) -> Option<String> {
+    let platform_idx = if station_index == 0 {
+        journey.segments.first().map(|seg| seg.origin_platform)
+    } else {
+        journey.segments.get(station_index - 1).map(|seg| seg.destination_platform)
+    }?;
+
+    stations.get(display_station_idx)
+        .and_then(|(_, node)| node.as_station())
+        .and_then(|s| s.platforms.get(platform_idx))
+        .map(|p| p.name.clone())
+}
+
+/// Draw a train dot at a station with its train number and platform label
+#[allow(clippy::too_many_arguments)]
+fn draw_train_at_station(
+    ctx: &CanvasRenderingContext2d,
+    x: f64,
+    y: f64,
+    journey: &TrainJourney,
+    station_index: usize,
+    display_station_idx: usize,
+    stations: &[(NodeIndex, Node)],
+    zoom_level: f64,
+    palette: &Palette,
+) {
+    // Draw train as a dot with an outline
+    ctx.set_fill_style_str(&journey.color);
+    ctx.set_stroke_style_str(palette.train_outline);
+    ctx.set_line_width(CURRENT_TRAIN_OUTLINE_WIDTH / zoom_level);
+    ctx.begin_path();
+    let _ = ctx.arc(x, y, CURRENT_TRAIN_RADIUS / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+    ctx.fill();
+    ctx.stroke();
+
+    // Draw train number label
+    ctx.set_fill_style_str(palette.train_label);
+    ctx.set_font(&format!("bold {}px monospace", CURRENT_TRAIN_LABEL_FONT_SIZE / zoom_level));
+    let _ = ctx.fill_text(&journey.train_number, x - 12.0 / zoom_level, y - 10.0 / zoom_level);
+
+    // Draw platform label to the right of the dot
+    if let Some(label) = get_platform_label(journey, station_index, display_station_idx, stations) {
+        ctx.set_fill_style_str(palette.track_label);
+        let _ = ctx.fill_text(&format!("P {label}"), x + TRACK_LABEL_OFFSET_X / zoom_level, y + 4.0 / zoom_level);
+    }
+}
+
+/// Draw a train dot traveling between stations with its train number and track label
+#[allow(clippy::too_many_arguments)]
+fn draw_train_traveling(
+    ctx: &CanvasRenderingContext2d,
+    x: f64,
+    y: f64,
+    journey: &TrainJourney,
+    segment_index: usize,
+    zoom_level: f64,
+    palette: &Palette,
+) {
+    // Draw train as a dot with an outline
+    ctx.set_fill_style_str(&journey.color);
+    ctx.set_stroke_style_str(palette.train_outline);
+    ctx.set_line_width(CURRENT_TRAIN_OUTLINE_WIDTH / zoom_level);
+    ctx.begin_path();
+    let _ = ctx.arc(x, y, CURRENT_TRAIN_RADIUS / zoom_level, 0.0, std::f64::consts::PI * 2.0);
+    ctx.fill();
+    ctx.stroke();
+
+    // Draw train number label
+    ctx.set_fill_style_str(palette.train_label);
+    ctx.set_font(&format!("bold {}px monospace", CURRENT_TRAIN_LABEL_FONT_SIZE / zoom_level));
+    let _ = ctx.fill_text(&journey.train_number, x - 12.0 / zoom_level, y - 10.0 / zoom_level);
+
+    // Draw track label to the right of the dot
+    if let Some(segment) = journey.segments.get(segment_index) {
+        ctx.set_fill_style_str(palette.track_label);
+        let track_label = format!("{}", segment.track_index + 1);
+        let _ = ctx.fill_text(&track_label, x + TRACK_LABEL_OFFSET_X / zoom_level, y + 4.0 / zoom_level);
     }
 }
 
@@ -64,24 +156,10 @@ pub fn draw_current_train_positions(
             if let Some(station_idx) = station_positions.get(i).and_then(|&opt| opt) {
                 // Check if train is currently waiting at this station
                 if *arrival_time <= visualization_time && visualization_time <= *departure_time {
-                    // Train is waiting at this station
                     let x = dims.left_margin + (time_to_fraction(visualization_time) * dims.hour_width);
                     // Note: station_y_positions include the original TOP_MARGIN, subtract it for transformed coords
                     let y = station_y_positions[station_idx] - super::canvas::TOP_MARGIN;
-
-                    // Draw train as a larger dot with an outline
-                    ctx.set_fill_style_str(&journey.color);
-                    ctx.set_stroke_style_str(palette.train_outline);
-                    ctx.set_line_width(CURRENT_TRAIN_OUTLINE_WIDTH / zoom_level);
-                    ctx.begin_path();
-                    let _ = ctx.arc(x, y, CURRENT_TRAIN_RADIUS / zoom_level, 0.0, std::f64::consts::PI * 2.0);
-                    ctx.fill();
-                    ctx.stroke();
-
-                    // Draw train number label
-                    ctx.set_fill_style_str(palette.train_label);
-                    ctx.set_font(&format!("bold {}px monospace", CURRENT_TRAIN_LABEL_FONT_SIZE / zoom_level));
-                    let _ = ctx.fill_text(&journey.train_number, x - 12.0 / zoom_level, y - 10.0 / zoom_level);
+                    draw_train_at_station(ctx, x, y, journey, i, station_idx, stations, zoom_level, palette);
                     break;
                 }
 
@@ -95,7 +173,7 @@ pub fn draw_current_train_positions(
         }
 
         // If train is traveling between two stations, interpolate its position
-        if let (Some((_, prev_time, prev_idx)), Some((_, next_time, next_idx))) =
+        if let (Some((prev_station_idx, prev_time, prev_idx)), Some((_, next_time, next_idx))) =
             (prev_departure, next_arrival)
         {
             let segment_duration = next_time.signed_duration_since(prev_time).num_seconds() as f64;
@@ -114,29 +192,7 @@ pub fn draw_current_train_positions(
             let current_x = prev_x + (next_x - prev_x) * progress;
             let current_y = prev_y + (next_y - prev_y) * progress;
 
-            // Draw train as a larger dot with an outline
-            ctx.set_fill_style_str(&journey.color);
-            ctx.set_stroke_style_str(palette.train_outline);
-            ctx.set_line_width(CURRENT_TRAIN_OUTLINE_WIDTH / zoom_level);
-            ctx.begin_path();
-            let _ = ctx.arc(
-                current_x,
-                current_y,
-                CURRENT_TRAIN_RADIUS / zoom_level,
-                0.0,
-                std::f64::consts::PI * 2.0,
-            );
-            ctx.fill();
-            ctx.stroke();
-
-            // Draw train number label with zoom-compensated font size
-            ctx.set_fill_style_str(palette.train_label);
-            ctx.set_font(&format!("bold {}px monospace", CURRENT_TRAIN_LABEL_FONT_SIZE / zoom_level));
-            let _ = ctx.fill_text(
-                &journey.train_number,
-                current_x - 12.0 / zoom_level,
-                current_y - 10.0 / zoom_level,
-            );
+            draw_train_traveling(ctx, current_x, current_y, journey, prev_station_idx, zoom_level, palette);
         }
     }
 }
