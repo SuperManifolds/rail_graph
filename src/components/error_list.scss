@@ -37,6 +37,11 @@
             border-color: var(--color-border-light);
         }
 
+        &.calculating {
+            cursor: default;
+            justify-content: center;
+        }
+
         .error-count {
             font-weight: var(--font-weight-semibold);
             font-family: var(--font-family-mono);
@@ -45,6 +50,15 @@
         .error-label {
             flex: 1;
             text-align: left;
+        }
+
+        .conflict-spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--color-border-dark);
+            border-top-color: var(--color-accent);
+            border-radius: var(--radius-full);
+            animation: spin 1s linear infinite;
         }
     }
 

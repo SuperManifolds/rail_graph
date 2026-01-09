@@ -148,6 +148,7 @@ pub fn ErrorList(
     on_conflict_click: impl Fn(f64, f64) + 'static + Copy,
     graph: ReadSignal<RailwayGraph>,
     station_idx_map: leptos::Memo<std::collections::HashMap<usize, usize>>,
+    is_calculating: Option<ReadSignal<bool>>,
 ) -> impl IntoView {
     let (is_open, set_is_open) = create_signal(false);
 
@@ -157,6 +158,7 @@ pub fn ErrorList(
 
     let conflict_count = move || conflicts.get().len();
     let has_errors = move || conflict_count() > 0;
+    let calculating = move || is_calculating.is_some_and(|s| s.get());
 
     // Close when clicking outside
     let container_ref = create_node_ref::<leptos::html::Div>();
@@ -181,7 +183,13 @@ pub fn ErrorList(
     view! {
         <div class="error-list-container" node_ref=container_ref>
             {move || {
-                if has_errors() {
+                if calculating() {
+                    view! {
+                        <div class="error-list-button calculating">
+                            <div class="conflict-spinner"></div>
+                        </div>
+                    }.into_view()
+                } else if has_errors() {
                     view! {
                         <button
                             class="error-list-button has-errors"

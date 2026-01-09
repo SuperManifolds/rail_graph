@@ -150,6 +150,7 @@ pub fn TimeGraph(
     selected_day: ReadSignal<Option<chrono::Weekday>>,
     set_selected_day: WriteSignal<Option<chrono::Weekday>>,
     raw_conflicts: Signal<Vec<Conflict>>,
+    #[prop(optional)] is_calculating_conflicts: Option<ReadSignal<bool>>,
     on_create_view: leptos::Callback<GraphView>,
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
     #[prop(optional)]
@@ -320,6 +321,7 @@ pub fn TimeGraph(
                             }
                             graph=graph
                             station_idx_map=station_idx_map
+                            is_calculating=is_calculating_conflicts
                         />
                     }.into_view().into()))
                     footer_children=Some(Box::new(move || view! {

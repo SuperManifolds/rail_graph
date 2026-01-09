@@ -438,8 +438,9 @@ pub fn App() -> impl IntoView {
 
     // Compute conflicts at app level using worker
     let (conflicts, set_conflicts) = create_signal(Vec::new());
+    let (is_calculating_conflicts, set_is_calculating_conflicts) = create_signal(false);
 
-    let detector = store_value(ConflictDetector::new(set_conflicts));
+    let detector = store_value(ConflictDetector::new(set_conflicts, set_is_calculating_conflicts));
 
     // Create debounced conflict detection to avoid excessive recomputation
     let debounced_detect_conflicts = store_value(leptos::leptos_dom::helpers::debounce(
@@ -933,6 +934,7 @@ pub fn App() -> impl IntoView {
                                     selected_day=selected_day
                                     set_selected_day=set_selected_day
                                     raw_conflicts=raw_conflicts
+                                    is_calculating_conflicts=is_calculating_conflicts
                                     on_create_view=on_create_view
                                     on_viewport_change=Callback::new(move |viewport_state: ViewportState| {
                                         on_viewport_change(view_id, viewport_state);

@@ -10,13 +10,15 @@ use leptos::{create_signal, ReadSignal, WriteSignal, SignalSet};
 pub struct ConflictDetector {
     worker: Option<gloo_worker::WorkerBridge<ConflictWorker>>,
     set_conflicts: WriteSignal<Vec<Conflict>>,
+    set_is_calculating: WriteSignal<bool>,
 }
 
 impl ConflictDetector {
-    pub fn new(set_conflicts: WriteSignal<Vec<Conflict>>) -> Self {
+    pub fn new(set_conflicts: WriteSignal<Vec<Conflict>>, set_is_calculating: WriteSignal<bool>) -> Self {
         Self {
             worker: None,
             set_conflicts,
+            set_is_calculating,
         }
     }
 
@@ -24,12 +26,14 @@ impl ConflictDetector {
     /// This cancels any in-flight calculation.
     fn spawn_worker(&mut self) -> &mut gloo_worker::WorkerBridge<ConflictWorker> {
         let set_conflicts = self.set_conflicts;
+        let set_is_calculating = self.set_is_calculating;
         self.worker = Some(
             ConflictWorker::spawner()
                 .encoding::<BincodeCodec>()
                 .callback(move |response: ConflictResponse| {
                     let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
                     set_conflicts.set(response.conflicts.clone());
+                    set_is_calculating.set(false);
                     if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
                         log!("Set conflicts signal took {:.2}ms ({} conflicts)",
                             elapsed, response.conflicts.len());
@@ -41,6 +45,7 @@ impl ConflictDetector {
     }
 
     pub fn detect(&mut self, journeys: Vec<TrainJourney>, graph: RailwayGraph, settings: ProjectSettings) {
+        self.set_is_calculating.set(true);
         log!("Sending to worker: {} journeys, {} nodes",
             journeys.len(), graph.graph.node_count());
         let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
@@ -72,8 +77,9 @@ impl ConflictDetector {
 }
 
 /// Creates signals and worker for async conflict detection
-pub fn create_conflict_detector() -> (ConflictDetector, ReadSignal<Vec<Conflict>>) {
+pub fn create_conflict_detector() -> (ConflictDetector, ReadSignal<Vec<Conflict>>, ReadSignal<bool>) {
     let (conflicts, set_conflicts) = create_signal(Vec::new());
-    let detector = ConflictDetector::new(set_conflicts);
-    (detector, conflicts)
+    let (is_calculating, set_is_calculating) = create_signal(false);
+    let detector = ConflictDetector::new(set_conflicts, set_is_calculating);
+    (detector, conflicts, is_calculating)
 }
