@@ -9,6 +9,8 @@ edition = "2021"
 [features]
 # Enable console logging in release builds (enabled by default in debug builds)
 console_logging = []
+# Enable detailed performance timing in hot paths (disabled by default for performance)
+perf_timing = []
 
 [lints.clippy]
 complexity = "warn"

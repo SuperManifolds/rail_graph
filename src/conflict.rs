@@ -14,34 +14,34 @@ const STATION_MARGIN: chrono::Duration = chrono::Duration::seconds(30);
 const PLATFORM_BUFFER: chrono::Duration = chrono::Duration::seconds(30);
 const MAX_CONFLICTS: usize = 9999;
 
-// Performance tracking for WASM builds
-#[cfg(target_arch = "wasm32")]
+// Performance tracking for WASM builds (enabled with perf_timing feature)
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 use std::sync::atomic::{AtomicU64, Ordering};
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static PLATFORM_CHECK_TIME: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static SEGMENT_CHECK_TIME: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static SEGMENT_PAIR_CALLS: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static SEGMENT_PAIR_TOTAL_TIME: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static REVERSE_EDGE_CHECK_TIME: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static SINGLE_TRACK_CHECK_TIME: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static BLOCK_VIOLATION_TIME: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static BLOCK_VIOLATION_COUNT: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static INTERSECTION_TIME: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static INTERSECTION_COUNT: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static SEGMENT_MAP_LOOKUP_TIME: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static LOOP_ITERATIONS: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 static TIME_OVERLAP_CHECKS: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -280,7 +280,7 @@ pub fn detect_line_conflicts(
         train_journeys.len(), serializable_ctx.station_indices.len());
 
     // Reset performance counters
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     {
         PLATFORM_CHECK_TIME.store(0, Ordering::Relaxed);
         SEGMENT_CHECK_TIME.store(0, Ordering::Relaxed);
@@ -475,7 +475,7 @@ fn detect_conflicts_sweep_line(
         log!("    Cache build time: {:.2}ms", elapsed);
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let loop_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
     // For each journey, only compare with journeys that could overlap in time
@@ -528,7 +528,7 @@ fn detect_conflicts_sweep_line(
         eprintln!("Made {comparisons} comparisons (vs {naive_comparisons} for naive O(n²))");
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = loop_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
         let platform_total_us = PLATFORM_CHECK_TIME.load(Ordering::Relaxed);
         let segment_total_us = SEGMENT_CHECK_TIME.load(Ordering::Relaxed);
@@ -574,7 +574,7 @@ fn check_journey_pair_with_all_cached(
     #[cfg(not(target_arch = "wasm32"))]
     let platform_start = std::time::Instant::now();
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let platform_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
     check_platform_conflicts_cached(journey1, journey2, results, plat_occ1, plat_occ2, ctx);
@@ -582,20 +582,18 @@ fn check_journey_pair_with_all_cached(
     #[cfg(not(target_arch = "wasm32"))]
     timing::add_duration(&timing::PLATFORM_TIME, platform_start.elapsed());
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = platform_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        // Store as microseconds to preserve decimal precision
         PLATFORM_CHECK_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let segment_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
     check_segments_for_pair_cached(journey1, journey2, ctx, results, seg_list1, seg_list2);
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = segment_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
-        // Store as microseconds to preserve decimal precision
         SEGMENT_CHECK_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
     }
 }
@@ -619,7 +617,7 @@ fn check_segments_for_pair_cached(
 
         // Iterate only through segments that could possibly overlap
         for cached2 in &segments2[start_idx..] {
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
             LOOP_ITERATIONS.fetch_add(1, Ordering::Relaxed);
 
             let seg2 = &cached2.segment;
@@ -755,10 +753,10 @@ fn check_segment_pair(
         timing::SEGMENT_PAIR_CALLS.fetch_add(1, Ordering::Relaxed);
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let pair_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     SEGMENT_PAIR_CALLS.fetch_add(1, Ordering::Relaxed);
 
     // Determine travel directions
@@ -766,12 +764,12 @@ fn check_segment_pair(
         && segment2.idx_start < segment2.idx_end)
         || (segment1.idx_start > segment1.idx_end && segment2.idx_start > segment2.idx_end);
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let single_track_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
     let is_single_track = is_single_track_bidirectional(ctx, edge_index);
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = single_track_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
         SINGLE_TRACK_CHECK_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
     }
@@ -783,7 +781,7 @@ fn check_segment_pair(
             segment1.time_start < segment2.time_end && segment2.time_start < segment1.time_end;
 
         if time_overlap {
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
             let block_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
             // Two trains on same single-track block at same time, same direction = block violation
             // Conflict occurs when the trailing train enters while leading train is still in block
@@ -791,7 +789,7 @@ fn check_segment_pair(
 
             // Skip conflicts that occur before the week start (day -1 Sunday)
             if conflict_time < BASE_MIDNIGHT {
-                #[cfg(target_arch = "wasm32")]
+                #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
                 if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
                     SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
                 }
@@ -855,14 +853,14 @@ fn check_segment_pair(
                 timing_uncertain,
             });
 
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
             if let Some(elapsed) = block_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
                 BLOCK_VIOLATION_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
                 BLOCK_VIOLATION_COUNT.fetch_add(1, Ordering::Relaxed);
             }
         }
 
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
         if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
             SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
         }
@@ -873,7 +871,7 @@ fn check_segment_pair(
     #[cfg(not(target_arch = "wasm32"))]
     let intersection_start = std::time::Instant::now();
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let intersection_start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
     let Some(intersection) = calculate_intersection(
@@ -886,7 +884,7 @@ fn check_segment_pair(
         segment2.idx_start,
         segment2.idx_end,
     ) else {
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
         if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
             SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
         }
@@ -910,7 +908,7 @@ fn check_segment_pair(
             });
         }
 
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
         if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
             SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
         }
@@ -919,7 +917,7 @@ fn check_segment_pair(
 
     // Skip conflicts that occur before the week start (day -1 Sunday)
     if intersection.time < BASE_MIDNIGHT {
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
         if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
             SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
         }
@@ -956,13 +954,13 @@ fn check_segment_pair(
         timing_uncertain,
     });
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = intersection_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
         INTERSECTION_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
         INTERSECTION_COUNT.fetch_add(1, Ordering::Relaxed);
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = pair_start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
         SEGMENT_PAIR_TOTAL_TIME.fetch_add((elapsed * 1000.0) as u64, Ordering::Relaxed);
     }
