@@ -310,10 +310,10 @@ pub fn detect_line_conflicts(
     #[cfg(not(target_arch = "wasm32"))]
     let total_start = std::time::Instant::now();
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let total_start = get_performance().map(|p| p.now());
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     log!("🔍 detect_line_conflicts START: {} journeys, {} stations",
         train_journeys.len(), serializable_ctx.station_indices.len());
 
@@ -333,7 +333,7 @@ pub fn detect_line_conflicts(
     #[cfg(not(target_arch = "wasm32"))]
     let setup_start = std::time::Instant::now();
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let setup_start = get_performance().map(|p| p.now());
 
     let station_indices: HashMap<petgraph::stable_graph::NodeIndex, usize> = serializable_ctx.station_indices
@@ -355,7 +355,7 @@ pub fn detect_line_conflicts(
         eprintln!("Setup time: {setup_time:?}");
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = setup_start.and_then(|s| get_performance().map(|p| p.now() - s)) {
         log!("  Setup (context conversion): {:.2}ms", elapsed);
     }
@@ -395,7 +395,7 @@ pub fn detect_line_conflicts(
         eprintln!("=================================");
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = total_start.and_then(|s| get_performance().map(|p| p.now() - s)) {
         log!("✅ detect_line_conflicts COMPLETE: {:.2}ms - Found {} conflicts, {} crossings",
             elapsed, results.conflicts.len(), results.station_crossings.len());
@@ -421,7 +421,7 @@ fn detect_conflicts_sweep_line(
     #[cfg(not(target_arch = "wasm32"))]
     let sort_start = std::time::Instant::now();
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let sort_start = get_performance().map(|p| p.now());
 
     // Create sorted index array with (start_time, end_time, index)
@@ -447,7 +447,7 @@ fn detect_conflicts_sweep_line(
         eprintln!("Sort time: {sort_time:?}");
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = sort_start.and_then(|s| get_performance().map(|p| p.now() - s)) {
         log!("    Sort time: {:.2}ms", elapsed);
     }
@@ -462,10 +462,10 @@ fn detect_conflicts_sweep_line(
     #[cfg(not(target_arch = "wasm32"))]
     let cache_start = std::time::Instant::now();
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let cache_start = get_performance().map(|p| p.now());
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let plat_occ_start = get_performance().map(|p| p.now());
 
     // Get max station index for bitmap sizing
@@ -487,12 +487,12 @@ fn detect_conflicts_sweep_line(
     let platform_occupancies: Vec<_> = platform_data.iter().map(|(occs, _)| occs).collect();
     let station_bitmaps: Vec<_> = platform_data.iter().map(|(_, bm)| bm).collect();
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = plat_occ_start.and_then(|s| get_performance().map(|p| p.now() - s)) {
         log!("      Platform occupancies: {:.2}ms", elapsed);
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     let seg_list_start = get_performance().map(|p| p.now());
 
     // Pre-build segment lists with resolved indices and pre-computed bounds for all journeys
@@ -516,7 +516,7 @@ fn detect_conflicts_sweep_line(
     let segment_lists: Vec<_> = segment_data.iter().map(|(segs, _)| segs).collect();
     let station_pair_sets: Vec<_> = segment_data.iter().map(|(_, pairs)| pairs).collect();
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = seg_list_start.and_then(|s| get_performance().map(|p| p.now() - s)) {
         log!("      Segment lists: {:.2}ms", elapsed);
     }
@@ -527,7 +527,7 @@ fn detect_conflicts_sweep_line(
         eprintln!("Segment map & platform cache build time: {cache_time:?}");
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
     if let Some(elapsed) = cache_start.and_then(|s| get_performance().map(|p| p.now() - s)) {
         log!("    Cache build time: {:.2}ms", elapsed);
     }

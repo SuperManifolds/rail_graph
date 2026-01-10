@@ -23,6 +23,15 @@ use leptos_meta::{provide_meta_context, Title};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+/// Args for conflict detection
+type ConflictDetectArgs = (
+    Vec<u8>,
+    Vec<crate::models::Line>,
+    crate::models::ProjectSettings,
+    Option<chrono::Weekday>,
+    Option<Vec<usize>>,
+);
+
 #[derive(Clone, PartialEq)]
 pub enum AppTab {
     Infrastructure,
@@ -443,12 +452,11 @@ pub fn App() -> impl IntoView {
     let detector = store_value(ConflictDetector::new(set_conflicts, set_is_calculating_conflicts));
 
     // Create debounced conflict detection to avoid excessive recomputation
-    // We pass (project_bytes, visible_lines, settings, day_filter) directly
     let debounced_detect_conflicts = store_value(leptos::leptos_dom::helpers::debounce(
         std::time::Duration::from_millis(300),
-        move |(project_bytes, visible_lines, current_settings, day_filter): (Vec<u8>, Vec<crate::models::Line>, crate::models::ProjectSettings, Option<chrono::Weekday>)| {
+        move |(project_bytes, visible_lines, current_settings, day_filter, view_edge_filter): ConflictDetectArgs| {
             detector.update_value(|d| {
-                d.detect(project_bytes, visible_lines, current_settings, day_filter);
+                d.detect(project_bytes, visible_lines, current_settings, day_filter, view_edge_filter);
             });
         },
     ));
@@ -461,8 +469,22 @@ pub fn App() -> impl IntoView {
 
         let current_lines = lines.get();
         let current_settings = settings.get();
-        let project_id = current_project.get().metadata.id;
+        // Use get_untracked - project ID doesn't change, and we don't want to
+        // re-run when auto-save updates current_project during pan/zoom
+        let project_id = current_project.get_untracked().metadata.id;
         let day_filter = selected_day.get();
+
+        // Get edge_path from current view if one is active
+        // Use get_untracked to avoid re-running when viewport state changes
+        let view_edge_filter = match active_tab.get() {
+            AppTab::GraphView(view_id) => {
+                views.get_untracked()
+                    .iter()
+                    .find(|v| v.id == view_id)
+                    .and_then(|v| v.edge_path.clone())
+            }
+            AppTab::Infrastructure => None,
+        };
 
         // Filter to only visible lines
         let visible_lines: Vec<_> = current_lines
@@ -481,7 +503,7 @@ pub fn App() -> impl IntoView {
             };
 
             debounced_detect_conflicts.update_value(|f| {
-                f((project_bytes, visible_lines, current_settings, day_filter));
+                f((project_bytes, visible_lines, current_settings, day_filter, view_edge_filter));
             });
         });
     });

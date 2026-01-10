@@ -1,5 +1,5 @@
 use crate::conflict::Conflict;
-use crate::conflict_worker::{ConflictWorker, ConflictRequest, ConflictResponse, BincodeCodec};
+use crate::conflict_worker::{ConflictWorker, ConflictRequest, ConflictResponse, BincodeCodec, ViewEdgeFilter};
 #[allow(unused_imports)]
 use crate::logging::log;
 use crate::models::{Line, ProjectSettings};
@@ -53,6 +53,7 @@ impl ConflictDetector {
         lines: Vec<Line>,
         settings: ProjectSettings,
         day_filter: Option<chrono::Weekday>,
+        view_edge_filter: Option<ViewEdgeFilter>,
     ) {
         // Extract visible line IDs
         let visible_line_ids: Vec<uuid::Uuid> = lines.iter().map(|l| l.id).collect();
@@ -83,6 +84,7 @@ impl ConflictDetector {
             minimum_separation_ms: settings.minimum_separation.num_milliseconds(),
             ignore_same_direction_platform_conflicts: settings.ignore_same_direction_platform_conflicts,
             day_filter,
+            view_edge_filter,
         };
 
         worker.send(request);

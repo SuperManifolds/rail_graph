@@ -7,6 +7,9 @@ use gloo_worker::{HandlerId, Worker, WorkerScope, Codec};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+/// Optional edge filter to restrict conflict detection to lines touching the view
+pub type ViewEdgeFilter = Vec<usize>;
+
 /// Request for conflict detection using raw project bytes from IndexedDB
 /// This avoids re-serializing the project data - we pass the msgpack bytes directly
 #[derive(Serialize, Deserialize)]
@@ -23,6 +26,8 @@ pub struct ConflictRequest {
     pub ignore_same_direction_platform_conflicts: bool,
     /// Optional day filter
     pub day_filter: Option<chrono::Weekday>,
+    /// Optional edge filter - exclude lines not touching these edges or their stations
+    pub view_edge_filter: Option<ViewEdgeFilter>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -64,12 +69,49 @@ fn process_conflict_request(request: ConflictRequest) -> ConflictResponse {
         }
     };
 
-    // Filter to only visible lines
+    // Filter to only visible lines, optionally filtering by view edges/stations
     let visible_line_set: HashSet<_> = request.visible_line_ids.iter().collect();
-    let visible_lines: Vec<_> = project.lines
-        .into_iter()
-        .filter(|line| visible_line_set.contains(&line.id))
-        .collect();
+    let visible_lines: Vec<_> = if let Some(view_edges) = &request.view_edge_filter {
+        // Build edge set and station set from view edges
+        let view_edge_set: HashSet<usize> = view_edges.iter().copied().collect();
+        let mut view_station_set: HashSet<petgraph::stable_graph::NodeIndex> = HashSet::new();
+        for &edge_idx in view_edges {
+            let edge_index = petgraph::stable_graph::EdgeIndex::new(edge_idx);
+            if let Some((a, b)) = project.graph.graph.edge_endpoints(edge_index) {
+                view_station_set.insert(a);
+                view_station_set.insert(b);
+            }
+        }
+
+        project.lines
+            .into_iter()
+            .filter(|line| visible_line_set.contains(&line.id))
+            .filter(|line| {
+                // Include line if route shares any edge with the view
+                let shares_edge = line.forward_route.iter().any(|seg| view_edge_set.contains(&seg.edge_index))
+                    || line.return_route.iter().any(|seg| view_edge_set.contains(&seg.edge_index));
+                if shares_edge {
+                    return true;
+                }
+                // Or if route visits any station in the view (for platform conflicts)
+                for seg in line.forward_route.iter().chain(line.return_route.iter()) {
+                    let edge_index = petgraph::stable_graph::EdgeIndex::new(seg.edge_index);
+                    if let Some((a, b)) = project.graph.graph.edge_endpoints(edge_index) {
+                        if view_station_set.contains(&a) || view_station_set.contains(&b) {
+                            return true;
+                        }
+                    }
+                }
+                false
+            })
+            .collect()
+    } else {
+        // No view filter - include all visible lines
+        project.lines
+            .into_iter()
+            .filter(|line| visible_line_set.contains(&line.id))
+            .collect()
+    };
 
     // Generate journeys
     let journeys = TrainJourney::generate_journeys(
