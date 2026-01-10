@@ -333,6 +333,36 @@ impl Project {
         Self::deserialize_from_bytes(&bytes)
     }
 
+    /// Get raw project bytes from `IndexedDB` by ID (without deserializing)
+    /// This is useful for passing to a web worker without re-serializing
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the project cannot be loaded
+    pub async fn get_raw_bytes_from_db(id: &str) -> Result<Vec<u8>, String> {
+        let db = idb::get_db().await?;
+        let store = idb::get_store_readonly(&db, PROJECTS_STORE)?;
+
+        let result = idb::get_value(&store, &JsValue::from_str(id)).await?;
+
+        if result.is_undefined() || result.is_null() {
+            return Err("Project not found".to_string());
+        }
+
+        let uint8_array: js_sys::Uint8Array =
+            result.dyn_into().map_err(|_| "Invalid project data".to_string())?;
+        Ok(uint8_array.to_vec())
+    }
+
+    /// Deserialize a project from raw bytes (public for worker use)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if deserialization fails
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        Self::deserialize_from_bytes(bytes)
+    }
+
     /// Delete a project from `IndexedDB` by ID
     ///
     /// # Errors

@@ -17,6 +17,28 @@ thread_local! {
     static DB_INSTANCE: RefCell<Option<IdbDatabase>> = const { RefCell::new(None) };
 }
 
+/// Get `IndexedDB` factory - works in both main thread (Window) and web workers (`WorkerGlobalScope`)
+fn get_indexed_db() -> Result<web_sys::IdbFactory, String> {
+    // Try window first (main thread)
+    if let Some(window) = web_sys::window() {
+        return window
+            .indexed_db()
+            .map_err(|_| "IndexedDB not supported")?
+            .ok_or_else(|| "IndexedDB not available".to_string());
+    }
+
+    // Fall back to worker global scope
+    let global = js_sys::global();
+    let worker_scope: web_sys::WorkerGlobalScope = global
+        .dyn_into()
+        .map_err(|_| "Not running in Window or WorkerGlobalScope")?;
+
+    worker_scope
+        .indexed_db()
+        .map_err(|_| "IndexedDB not supported in worker")?
+        .ok_or_else(|| "IndexedDB not available in worker".to_string())
+}
+
 /// Convert an IDB request to a promise
 pub fn request_to_promise(request: &IdbRequest) -> js_sys::Promise {
     let request = request.clone();
@@ -70,12 +92,8 @@ pub async fn get_db() -> Result<IdbDatabase, String> {
 
     log!("Opening new database connection");
 
-    // Open a new connection
-    let window = web_sys::window().ok_or("No window")?;
-    let idb = window
-        .indexed_db()
-        .map_err(|_| "IndexedDB not supported")?
-        .ok_or("IndexedDB not available")?;
+    // Open a new connection - works in both main thread and web workers
+    let idb = get_indexed_db()?;
 
     let open_request = idb
         .open_with_u32(DB_NAME, DB_VERSION)

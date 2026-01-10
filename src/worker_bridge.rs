@@ -1,9 +1,8 @@
-use crate::conflict::{Conflict, SerializableConflictContext};
+use crate::conflict::Conflict;
 use crate::conflict_worker::{ConflictWorker, ConflictRequest, ConflictResponse, BincodeCodec};
 #[allow(unused_imports)]
 use crate::logging::log;
-use crate::models::{RailwayGraph, ProjectSettings};
-use crate::train_journey::TrainJourney;
+use crate::models::{Line, ProjectSettings};
 use gloo_worker::Spawnable;
 use leptos::{create_signal, ReadSignal, WriteSignal, SignalSet};
 
@@ -14,6 +13,7 @@ pub struct ConflictDetector {
 }
 
 impl ConflictDetector {
+    #[must_use]
     pub fn new(set_conflicts: WriteSignal<Vec<Conflict>>, set_is_calculating: WriteSignal<bool>) -> Self {
         Self {
             worker: None,
@@ -44,10 +44,29 @@ impl ConflictDetector {
         self.worker.as_mut().expect("worker should be Some after spawn")
     }
 
-    pub fn detect(&mut self, journeys: Vec<TrainJourney>, graph: RailwayGraph, settings: ProjectSettings) {
+    /// Detect conflicts by sending raw project bytes to the worker.
+    /// The worker deserializes and generates journeys itself.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn detect(
+        &mut self,
+        project_bytes: Vec<u8>,
+        lines: Vec<Line>,
+        settings: ProjectSettings,
+        day_filter: Option<chrono::Weekday>,
+    ) {
+        // Extract visible line IDs
+        let visible_line_ids: Vec<uuid::Uuid> = lines.iter().map(|l| l.id).collect();
+
+        // Skip if no lines to check
+        if visible_line_ids.is_empty() {
+            self.set_conflicts.set(vec![]);
+            self.set_is_calculating.set(false);
+            return;
+        }
+
         self.set_is_calculating.set(true);
-        log!("Sending to worker: {} journeys, {} nodes",
-            journeys.len(), graph.graph.node_count());
+        log!("Sending to worker: {} bytes, {} visible lines",
+            project_bytes.len(), visible_line_ids.len());
         let start = web_sys::window().and_then(|w| w.performance()).map(|p| p.now());
 
         // Terminate any existing worker (cancels in-flight calculation)
@@ -56,20 +75,17 @@ impl ConflictDetector {
         // Spawn fresh worker for this request
         let worker = self.spawn_worker();
 
-        // Build serializable context from graph
-        let station_indices = graph.graph.node_indices()
-            .enumerate()
-            .map(|(idx, node_idx)| (node_idx, idx))
-            .collect();
-        let context = SerializableConflictContext::from_graph(
-            &graph,
-            station_indices,
-            settings.station_margin,
-            settings.minimum_separation,
-            settings.ignore_same_direction_platform_conflicts,
-        );
+        // Send request with raw project bytes
+        let request = ConflictRequest {
+            project_bytes,
+            visible_line_ids,
+            station_margin_ms: settings.station_margin.num_milliseconds(),
+            minimum_separation_ms: settings.minimum_separation.num_milliseconds(),
+            ignore_same_direction_platform_conflicts: settings.ignore_same_direction_platform_conflicts,
+            day_filter,
+        };
 
-        worker.send(ConflictRequest { journeys, context });
+        worker.send(request);
         if let Some(elapsed) = start.and_then(|s| web_sys::window()?.performance().map(|p| p.now() - s)) {
             log!("Worker.send() took {:.2}ms", elapsed);
         }
@@ -77,6 +93,7 @@ impl ConflictDetector {
 }
 
 /// Creates signals and worker for async conflict detection
+#[must_use]
 pub fn create_conflict_detector() -> (ConflictDetector, ReadSignal<Vec<Conflict>>, ReadSignal<bool>) {
     let (conflicts, set_conflicts) = create_signal(Vec::new());
     let (is_calculating, set_is_calculating) = create_signal(false);

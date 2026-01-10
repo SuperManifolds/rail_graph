@@ -443,23 +443,46 @@ pub fn App() -> impl IntoView {
     let detector = store_value(ConflictDetector::new(set_conflicts, set_is_calculating_conflicts));
 
     // Create debounced conflict detection to avoid excessive recomputation
+    // We pass (project_bytes, visible_lines, settings, day_filter) directly
     let debounced_detect_conflicts = store_value(leptos::leptos_dom::helpers::debounce(
         std::time::Duration::from_millis(300),
-        move |(journeys_vec, current_graph, current_settings): (Vec<TrainJourney>, RailwayGraph, crate::models::ProjectSettings)| {
+        move |(project_bytes, visible_lines, current_settings, day_filter): (Vec<u8>, Vec<crate::models::Line>, crate::models::ProjectSettings, Option<chrono::Weekday>)| {
             detector.update_value(|d| {
-                d.detect(journeys_vec, current_graph, current_settings);
+                d.detect(project_bytes, visible_lines, current_settings, day_filter);
             });
         },
     ));
 
     create_effect(move |_| {
-        let journeys = train_journeys.get();
-        let journeys_vec: Vec<_> = journeys.values().cloned().collect();
-        let current_graph = graph.get();
-        let current_settings = settings.get();
+        // Wait for initial project load before running conflict detection
+        if !initial_load_complete.get() {
+            return;
+        }
 
-        debounced_detect_conflicts.update_value(|f| {
-            f((journeys_vec, current_graph, current_settings));
+        let current_lines = lines.get();
+        let current_settings = settings.get();
+        let project_id = current_project.get().metadata.id;
+        let day_filter = selected_day.get();
+
+        // Filter to only visible lines
+        let visible_lines: Vec<_> = current_lines
+            .into_iter()
+            .filter(|line| line.visible)
+            .collect();
+
+        // Fetch raw project bytes and trigger conflict detection
+        spawn_local(async move {
+            let project_bytes = match Project::get_raw_bytes_from_db(&project_id).await {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    log!("Failed to get project bytes for conflict detection: {}", e);
+                    return;
+                }
+            };
+
+            debounced_detect_conflicts.update_value(|f| {
+                f((project_bytes, visible_lines, current_settings, day_filter));
+            });
         });
     });
 
