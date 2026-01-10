@@ -245,6 +245,14 @@ pub fn TimeGraph(
     // Signal for panning to conflicts
     let (pan_to_conflict, set_pan_to_conflict) = create_signal(None::<(f64, f64)>);
 
+    // Signal for opening editor from graph double-click
+    let (open_editor_request, set_open_editor_request) = create_signal(None::<(uuid::Uuid, String)>);
+
+    // Callback for double-clicking on a journey in the graph
+    let on_journey_double_click = leptos::Callback::new(move |line_id: uuid::Uuid| {
+        set_open_editor_request.set(Some((line_id, "schedule".to_string())));
+    });
+
     // Sidebar width state
     let initial_sidebar_width = view.as_ref().map_or(320.0, |v| v.viewport_state.sidebar_width);
     let (sidebar_width, set_sidebar_width) = create_signal(initial_sidebar_width);
@@ -289,6 +297,7 @@ pub fn TimeGraph(
                     on_viewport_change=wrapped_viewport_change
                     edited_line_ids=edited_line_ids
                     sidebar_width=sidebar_width
+                    on_journey_double_click=on_journey_double_click
                 />
             </div>
             {move || sidebar_visible.get().then(|| view! {
@@ -309,6 +318,7 @@ pub fn TimeGraph(
                     on_width_change=Some(on_sidebar_width_change)
                     on_open_changelog=on_open_changelog
                     on_open_project_manager=on_open_project_manager
+                    open_editor_request=Some(open_editor_request)
                     header_children=Some(Box::new(move || view! {
                         <DaySelector
                             selected_day=selected_day

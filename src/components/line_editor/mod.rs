@@ -47,6 +47,7 @@ pub fn LineEditor(
     graph: ReadSignal<RailwayGraph>,
     on_save: impl Fn(Line) + 'static,
     settings: ReadSignal<crate::models::ProjectSettings>,
+    #[prop(default = None)] initial_tab: Option<String>,
 ) -> impl IntoView {
     let (edited_line, set_edited_line) = create_signal(None::<Line>);
     let active_tab = create_rw_signal("general".to_string());
@@ -56,12 +57,19 @@ pub fn LineEditor(
     let route_direction = create_rw_signal(RouteDirection::Forward);
     let first_station = create_rw_signal(None::<String>);
 
+    // Store initial_tab for use in effect
+    let initial_tab_value = store_value(initial_tab);
+
     // Reset edited_line when dialog opens (not when initial_line changes)
     create_effect(move |prev_open| {
         let currently_open = is_open.get();
         if currently_open && prev_open != Some(true) {
             if let Some(line) = initial_line.get_untracked() {
                 set_edited_line.set(Some(line));
+            }
+            // Set initial tab when dialog opens
+            if let Some(tab) = initial_tab_value.get_value() {
+                active_tab.set(tab);
             }
         }
         currently_open

@@ -38,6 +38,8 @@ pub fn Sidebar(
     header_children: Option<ViewFn>,
     #[prop(default = None)]
     footer_children: Option<ViewFn>,
+    #[prop(default = None)]
+    open_editor_request: Option<ReadSignal<Option<(uuid::Uuid, String)>>>,
 ) -> impl IntoView {
     // Resize state
     let (is_resizing_sidebar, set_is_resizing_sidebar) = create_signal(false);
@@ -158,6 +160,7 @@ pub fn Sidebar(
                 set_settings=set_settings
                 on_line_editor_opened=on_line_editor_opened
                 on_line_editor_closed=on_line_editor_closed
+                open_editor_request=open_editor_request
             />
             <div class="sidebar-footer">
                 <Button

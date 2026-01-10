@@ -1,4 +1,4 @@
-use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, create_memo, SignalGet, SignalUpdate, SignalSet, For, Signal, Callback, Callable, SignalWith, SignalGetUntracked, event_target_value};
+use leptos::{component, view, ReadSignal, WriteSignal, IntoView, create_signal, create_memo, create_effect, SignalGet, SignalUpdate, SignalSet, For, Signal, Callback, Callable, SignalWith, SignalGetUntracked, event_target_value};
 use crate::models::{Line, LineFolder, RailwayGraph, GraphView, LineSortMode};
 use crate::components::line_editor::LineEditor;
 use crate::components::confirmation_dialog::ConfirmationDialog;
@@ -8,7 +8,7 @@ use crate::components::line_sort_selector::LineSortSelector;
 use crate::components::window::Window;
 use crate::components::button::Button;
 use crate::components::tree_item::{TreeItem, DraggedItem, DropZone, find_item_context, build_tree};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 fn initialize_sort_indices_recursive(
@@ -201,15 +201,29 @@ pub fn LineControls(
     set_settings: WriteSignal<crate::models::ProjectSettings>,
     on_line_editor_opened: Callback<uuid::Uuid>,
     on_line_editor_closed: Callback<uuid::Uuid>,
+    #[prop(default = None)] open_editor_request: Option<ReadSignal<Option<(uuid::Uuid, String)>>>,
 ) -> impl IntoView {
-    let (open_editors, set_open_editors) = create_signal(HashSet::<uuid::Uuid>::new());
+    // Map from line_id to initial_tab (None = general tab)
+    let (open_editors, set_open_editors) = create_signal(HashMap::<uuid::Uuid, Option<String>>::new());
     let (delete_pending, set_delete_pending) = create_signal(None::<uuid::Uuid>);
     let (folder_delete_pending, set_folder_delete_pending) = create_signal(None::<uuid::Uuid>);
     let (folder_edit_pending, set_folder_edit_pending) = create_signal(None::<uuid::Uuid>);
 
     let editors_list = move || {
-        open_editors.get().into_iter().collect::<Vec<_>>()
+        open_editors.get().keys().copied().collect::<Vec<_>>()
     };
+
+    // Watch for external requests to open an editor with a specific tab
+    if let Some(request_signal) = open_editor_request {
+        create_effect(move |_| {
+            if let Some((line_id, tab)) = request_signal.get() {
+                set_open_editors.update(|editors| {
+                    editors.insert(line_id, Some(tab));
+                });
+                on_line_editor_opened.call(line_id);
+            }
+        });
+    }
 
     let (drag_over_id, set_drag_over_id) = create_signal(None::<uuid::Uuid>);
     let (dragged_item, set_dragged_item) = create_signal(None::<DraggedItem>);
@@ -309,7 +323,7 @@ pub fn LineControls(
                                 set_drop_zone_hover=set_drop_zone_hover
                                 on_edit=move |id: uuid::Uuid| {
                                     set_open_editors.update(|editors| {
-                                        editors.insert(id);
+                                        editors.insert(id, None);
                                     });
                                     on_line_editor_opened.call(id);
                                 }
@@ -360,8 +374,12 @@ pub fn LineControls(
                 });
 
                 let is_open = Signal::derive({
-                    move || open_editors.get().contains(&line_id)
+                    move || open_editors.get().contains_key(&line_id)
                 });
+
+                // Get the initial tab for this editor (if any)
+                // The HashMap stores Option<String>, flatten() turns Option<Option<String>> into Option<String>
+                let initial_tab: Option<String> = open_editors.get_untracked().get(&line_id).cloned().flatten();
 
                 view! {
                     <LineEditor
@@ -388,6 +406,7 @@ pub fn LineControls(
                             }
                         }
                         settings=settings
+                        initial_tab=initial_tab
                     />
                 }
             }
@@ -408,7 +427,7 @@ pub fn LineControls(
                         lines_vec.retain(|l| l.id != id);
                     });
                     set_open_editors.update(|editors| {
-                        if editors.remove(&id) {
+                        if editors.remove(&id).is_some() {
                             // Editor was open, notify parent
                             on_line_editor_closed.call(id);
                         }

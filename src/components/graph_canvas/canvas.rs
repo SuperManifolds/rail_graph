@@ -266,6 +266,7 @@ pub fn GraphCanvas(
     on_viewport_change: leptos::Callback<crate::models::ViewportState>,
     edited_line_ids: ReadSignal<std::collections::HashSet<uuid::Uuid>>,
     #[prop(optional, into)] sidebar_width: MaybeSignal<f64>,
+    #[prop(optional)] on_journey_double_click: Option<leptos::Callback<uuid::Uuid>>,
 ) -> impl IntoView {
     // Get user settings from context
     let (user_settings, _) = use_context::<(ReadSignal<UserSettings>, WriteSignal<UserSettings>)>()
@@ -589,6 +590,54 @@ pub fn GraphCanvas(
         }
     };
 
+    let handle_double_click = move |ev: MouseEvent| {
+        let Some(callback) = on_journey_double_click else { return };
+        let Some(canvas_elem) = canvas_ref.get() else { return };
+
+        let canvas: &web_sys::HtmlCanvasElement = &canvas_elem;
+        let rect = canvas.get_bounding_client_rect();
+        let x = f64::from(ev.client_x()) - rect.left();
+        let y = f64::from(ev.client_y()) - rect.top();
+
+        let canvas_width = f64::from(canvas.width());
+        let canvas_height = f64::from(canvas.height());
+        let label_width = station_label_width.get();
+
+        let current_stations = display_stations.get();
+        let current_graph = graph.get();
+        let current_spacing_mode = spacing_mode.get();
+        let current_edge_path = view_edge_path.get();
+        let journeys = train_journeys.get();
+
+        let dimensions = GraphDimensions::new(canvas_width, canvas_height, label_width);
+        let station_y_positions = current_graph.calculate_station_positions(
+            &current_stations,
+            current_spacing_mode,
+            dimensions.graph_height,
+            dimensions.top_margin,
+        );
+
+        let viewport_state = ViewportState {
+            zoom_level: zoom_level.get(),
+            zoom_level_x: zoom_level_x.get(),
+            pan_offset_x: pan_offset_x.get(),
+            pan_offset_y: pan_offset_y.get(),
+        };
+
+        let mut journeys_vec: Vec<_> = journeys.values().collect();
+        journeys_vec.sort_by_key(|j| j.departure_time);
+
+        if let Some(journey_id) = train_journeys::check_journey_hover(
+            x, y, &journeys_vec, &current_stations, &station_y_positions,
+            &current_edge_path, &dimensions, &viewport_state
+        ) {
+            // Find the journey to get its line_id
+            if let Some(journey) = journeys.get(&journey_id) {
+                callback.call(journey.line_id);
+            }
+        }
+    };
+
     let cursor_style = move || {
         match () {
             () if is_resizing_station_labels.get() => "cursor: ew-resize;",
@@ -608,6 +657,7 @@ pub fn GraphCanvas(
                 on:mouseup=handle_mouse_up
                 on:mouseleave=handle_mouse_leave
                 on:wheel=handle_wheel
+                on:dblclick=handle_double_click
                 on:contextmenu=|ev| ev.prevent_default()
                 style=cursor_style
             ></canvas>
