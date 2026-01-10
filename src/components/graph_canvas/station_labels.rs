@@ -105,6 +105,10 @@ pub fn draw_station_labels(
             // Check if this is a junction or a station
             match station_node {
                 Node::Station(station) => {
+                    // Skip drawing label for passing loops with default name "Passing Loop"
+                    if station.passing_loop && station.name == "Passing Loop" {
+                        continue;
+                    }
                     if station.passing_loop {
                         draw_passing_loop_label(ctx, &station_node.display_name(), adjusted_y, station_label_width, palette);
                     } else if station.platforms.len() == 1 {
