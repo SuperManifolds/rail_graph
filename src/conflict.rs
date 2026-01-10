@@ -14,6 +14,44 @@ const STATION_MARGIN: chrono::Duration = chrono::Duration::seconds(30);
 const PLATFORM_BUFFER: chrono::Duration = chrono::Duration::seconds(30);
 const MAX_CONFLICTS: usize = 9999;
 
+/// Bitmap for fast station set intersection checks.
+/// Dynamically sized based on max station index.
+/// Intersection check is O(words) bitwise ops vs `HashSet`'s O(min(n,m)) iteration.
+#[derive(Clone)]
+struct StationBitmap {
+    words: Vec<u64>,
+}
+
+impl StationBitmap {
+    fn new(max_station_idx: usize) -> Self {
+        let num_words = (max_station_idx / 64) + 1;
+        Self {
+            words: vec![0; num_words],
+        }
+    }
+
+    #[inline]
+    fn insert(&mut self, station_idx: usize) {
+        let word = station_idx / 64;
+        let bit = station_idx % 64;
+        if word < self.words.len() {
+            self.words[word] |= 1 << bit;
+        }
+    }
+
+    /// Returns true if the two bitmaps share at least one station
+    #[inline]
+    fn intersects(&self, other: &Self) -> bool {
+        let len = self.words.len().min(other.words.len());
+        for i in 0..len {
+            if self.words[i] & other.words[i] != 0 {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 // Performance tracking for WASM builds (enabled with perf_timing feature)
 #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -430,21 +468,24 @@ fn detect_conflicts_sweep_line(
     #[cfg(target_arch = "wasm32")]
     let plat_occ_start = get_performance().map(|p| p.now());
 
-    // Build platform occupancies and station sets for each journey
+    // Get max station index for bitmap sizing
+    let max_station_idx = ctx.station_indices.len();
+
+    // Build platform occupancies and station bitmaps for each journey
     let platform_data: Vec<_> = train_journeys
         .iter()
         .map(|journey| {
             let occupancies = extract_platform_occupancies(journey, ctx);
-            // Build set of stations for fast intersection check
-            let stations: std::collections::HashSet<usize> = occupancies
-                .iter()
-                .map(|occ| occ.station_idx)
-                .collect();
+            // Build bitmap of stations for fast intersection check
+            let mut stations = StationBitmap::new(max_station_idx);
+            for occ in &occupancies {
+                stations.insert(occ.station_idx);
+            }
             (occupancies, stations)
         })
         .collect();
     let platform_occupancies: Vec<_> = platform_data.iter().map(|(occs, _)| occs).collect();
-    let station_sets: Vec<_> = platform_data.iter().map(|(_, stations)| stations).collect();
+    let station_bitmaps: Vec<_> = platform_data.iter().map(|(_, bm)| bm).collect();
 
     #[cfg(target_arch = "wasm32")]
     if let Some(elapsed) = plat_occ_start.and_then(|s| get_performance().map(|p| p.now() - s)) {
@@ -505,7 +546,7 @@ fn detect_conflicts_sweep_line(
         let plat_occ_i = &platform_occupancies[idx_i];
         let seg_list_i = segment_lists[idx_i];
         let station_pairs_i = station_pair_sets[idx_i];
-        let stations_i = station_sets[idx_i];
+        let stations_i = &station_bitmaps[idx_i];
 
         // Only check journeys that start before journey_i ends
         // Once we find a journey that starts after journey_i ends, we can stop
@@ -521,11 +562,11 @@ fn detect_conflicts_sweep_line(
                 continue;
             }
 
-            let stations_j = station_sets[*idx_j];
+            let stations_j = &station_bitmaps[*idx_j];
             let station_pairs_j = station_pair_sets[*idx_j];
 
             // Early skip: if no shared stations AND no shared station pairs, no conflicts possible
-            let shares_stations = !stations_i.is_disjoint(stations_j);
+            let shares_stations = stations_i.intersects(stations_j);
             let shares_station_pairs = !station_pairs_i.is_disjoint(station_pairs_j);
 
             if !shares_stations && !shares_station_pairs {
