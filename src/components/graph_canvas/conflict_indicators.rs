@@ -17,6 +17,12 @@ const BLOCK_FILL_OPACITY: &str = "33";
 const BLOCK_STROKE_OPACITY: &str = "99";
 const BLOCK_BORDER_WIDTH: f64 = 1.0;
 
+// Platform conflict visualization constants
+const PLATFORM_BAR_HEIGHT: f64 = 20.0;
+const PLATFORM_BAR_GAP: f64 = 2.0;
+const PLATFORM_ACTUAL_FILL_OPACITY: &str = "88";
+const PLATFORM_BUFFER_FILL_OPACITY: &str = "22";
+
 struct Palette {
     exclamation: &'static str,
     label: &'static str,
@@ -446,5 +452,142 @@ fn draw_block_rectangle(
     ctx.set_stroke_style_str(stroke_color);
     ctx.set_line_width(BLOCK_BORDER_WIDTH / zoom_level);
     ctx.stroke_rect(x1, y1, width, height);
+}
+
+/// Draw platform violation visualization showing overlapping platform occupancy
+/// Renders two horizontal bars centered on the station line (one above, one below),
+/// with solid fill for actual occupation and transparent fill with dotted border for buffer
+#[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
+pub fn draw_platform_violation_visualization(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    conflict: &Conflict,
+    train_journeys: &[&crate::train_journey::TrainJourney],
+    station_y_positions: &[f64],
+    zoom_level: f64,
+    time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
+    station_idx_map: &std::collections::HashMap<usize, usize>,
+) {
+    // Get display station index
+    let Some(&display_idx) = station_idx_map.get(&conflict.station1_idx) else {
+        return;
+    };
+
+    // Get segment times (with buffer) and actual times (without buffer)
+    let (Some((s1_start, s1_end)), Some((s2_start, s2_end))) =
+        (conflict.segment1_times, conflict.segment2_times) else {
+        return;
+    };
+    let (Some((a1_start, a1_end)), Some((a2_start, a2_end))) =
+        (conflict.actual1_times, conflict.actual2_times) else {
+        return;
+    };
+
+    // Find journeys to get their colors
+    let journey1 = train_journeys.iter().find(|j| j.train_number == conflict.journey1_id);
+    let journey2 = train_journeys.iter().find(|j| j.train_number == conflict.journey2_id);
+
+    let color1 = journey1.map_or("#FF0000", |j| j.color.as_str());
+    let color2 = journey2.map_or("#0000FF", |j| j.color.as_str());
+
+    // Calculate Y position (station line)
+    let station_y = station_y_positions[display_idx] - super::canvas::TOP_MARGIN;
+
+    // Bar dimensions adjusted for zoom
+    let bar_height = PLATFORM_BAR_HEIGHT / zoom_level;
+    let gap = PLATFORM_BAR_GAP / zoom_level;
+
+    // Determine which train starts earlier (leftmost) - that one goes on top
+    let y_top = station_y - gap - bar_height;
+    let y_bottom = station_y + gap;
+
+    if s1_start <= s2_start {
+        // Train 1 is leftmost, draw on top
+        draw_platform_bar(
+            ctx, dims, y_top, bar_height,
+            (s1_start, s1_end), (a1_start, a1_end),
+            color1, zoom_level, time_to_fraction,
+        );
+        draw_platform_bar(
+            ctx, dims, y_bottom, bar_height,
+            (s2_start, s2_end), (a2_start, a2_end),
+            color2, zoom_level, time_to_fraction,
+        );
+    } else {
+        // Train 2 is leftmost, draw on top
+        draw_platform_bar(
+            ctx, dims, y_top, bar_height,
+            (s2_start, s2_end), (a2_start, a2_end),
+            color2, zoom_level, time_to_fraction,
+        );
+        draw_platform_bar(
+            ctx, dims, y_bottom, bar_height,
+            (s1_start, s1_end), (a1_start, a1_end),
+            color1, zoom_level, time_to_fraction,
+        );
+    }
+}
+
+/// Draw a single platform occupancy bar with solid fill for actual time
+/// and transparent fill with dotted border for buffer time
+#[allow(clippy::cast_precision_loss, clippy::too_many_arguments)]
+fn draw_platform_bar(
+    ctx: &CanvasRenderingContext2d,
+    dims: &GraphDimensions,
+    y: f64,
+    height: f64,
+    segment_times: (chrono::NaiveDateTime, chrono::NaiveDateTime),
+    actual_times: (chrono::NaiveDateTime, chrono::NaiveDateTime),
+    color: &str,
+    zoom_level: f64,
+    time_to_fraction: fn(chrono::NaiveDateTime) -> f64,
+) {
+    let (seg_start, seg_end) = segment_times;
+    let (actual_start, actual_end) = actual_times;
+
+    let actual_fill = format!("{color}{PLATFORM_ACTUAL_FILL_OPACITY}");
+    let buffer_fill = format!("{color}{PLATFORM_BUFFER_FILL_OPACITY}");
+    let stroke_color = format!("{color}{BLOCK_STROKE_OPACITY}");
+
+    // Actual occupation (solid fill with solid border)
+    {
+        let x1 = dims.left_margin + (time_to_fraction(actual_start) * dims.hour_width);
+        let x2 = dims.left_margin + (time_to_fraction(actual_end) * dims.hour_width);
+        ctx.set_fill_style_str(&actual_fill);
+        ctx.fill_rect(x1, y, x2 - x1, height);
+        ctx.set_stroke_style_str(&stroke_color);
+        ctx.set_line_width(BLOCK_BORDER_WIDTH / zoom_level);
+        ctx.stroke_rect(x1, y, x2 - x1, height);
+    }
+
+    // Pre-buffer (transparent fill with dotted border)
+    if seg_start < actual_start {
+        let x1 = dims.left_margin + (time_to_fraction(seg_start) * dims.hour_width);
+        let x2 = dims.left_margin + (time_to_fraction(actual_start) * dims.hour_width);
+        ctx.set_fill_style_str(&buffer_fill);
+        ctx.fill_rect(x1, y, x2 - x1, height);
+        // Dotted border
+        ctx.set_stroke_style_str(&stroke_color);
+        ctx.set_line_width(BLOCK_BORDER_WIDTH / zoom_level);
+        let dash_size = 3.0 / zoom_level;
+        ctx.set_line_dash(&js_sys::Array::of2(&dash_size.into(), &dash_size.into())).ok();
+        ctx.stroke_rect(x1, y, x2 - x1, height);
+        ctx.set_line_dash(&js_sys::Array::new()).ok();
+    }
+
+    // Post-buffer (transparent fill with dotted border)
+    if actual_end < seg_end {
+        let x1 = dims.left_margin + (time_to_fraction(actual_end) * dims.hour_width);
+        let x2 = dims.left_margin + (time_to_fraction(seg_end) * dims.hour_width);
+        ctx.set_fill_style_str(&buffer_fill);
+        ctx.fill_rect(x1, y, x2 - x1, height);
+        // Dotted border
+        ctx.set_stroke_style_str(&stroke_color);
+        ctx.set_line_width(BLOCK_BORDER_WIDTH / zoom_level);
+        let dash_size = 3.0 / zoom_level;
+        ctx.set_line_dash(&js_sys::Array::of2(&dash_size.into(), &dash_size.into())).ok();
+        ctx.stroke_rect(x1, y, x2 - x1, height);
+        ctx.set_line_dash(&js_sys::Array::new()).ok();
+    }
 }
 

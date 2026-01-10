@@ -70,6 +70,9 @@ pub struct Conflict {
     pub edge_index: Option<usize>,
     // Whether at least one train has inherited timing (uncertain exact time)
     pub timing_uncertain: bool,
+    // For platform violations: actual arrival/departure times without buffer (for visualization)
+    pub actual1_times: Option<(NaiveDateTime, NaiveDateTime)>,
+    pub actual2_times: Option<(NaiveDateTime, NaiveDateTime)>,
 }
 
 impl Conflict {
@@ -242,6 +245,9 @@ struct PlatformOccupancy {
     time_end: NaiveDateTime,
     timing_uncertain: bool,
     arrival_edge_index: Option<usize>,
+    // Actual arrival/departure without buffer (for visualization)
+    actual_arrival: NaiveDateTime,
+    actual_departure: NaiveDateTime,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -851,6 +857,8 @@ fn check_segment_pair(
                 platform_idx: None,
                 edge_index: Some(edge_index),
                 timing_uncertain,
+                actual1_times: None,
+                actual2_times: None,
             });
 
             #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
@@ -952,6 +960,8 @@ fn check_segment_pair(
         platform_idx: None,
         edge_index: Some(edge_index),
         timing_uncertain,
+        actual1_times: None,
+        actual2_times: None,
     });
 
     #[cfg(all(target_arch = "wasm32", feature = "perf_timing"))]
@@ -1193,6 +1203,8 @@ fn extract_platform_occupancies(
             time_end,
             timing_uncertain: journey.timing_inherited.get(i).copied().unwrap_or(false),
             arrival_edge_index,
+            actual_arrival: *arrival_time,
+            actual_departure: *departure_time,
         });
     }
 
@@ -1249,6 +1261,8 @@ fn check_platform_conflicts_cached(
                     platform_idx: Some(occ1.platform_idx),
                     edge_index: None, // Platform conflicts don't involve edges
                     timing_uncertain,
+                    actual1_times: Some((occ1.actual_arrival, occ1.actual_departure)),
+                    actual2_times: Some((occ2.actual_arrival, occ2.actual_departure)),
                 });
 
                 if results.conflicts.len() >= MAX_CONFLICTS {
@@ -1286,6 +1300,8 @@ mod tests {
             platform_idx: None,
             edge_index: Some(0),
             timing_uncertain: false,
+            actual1_times: None,
+            actual2_times: None,
         };
 
         assert_eq!(conflict.type_name(), "Head-on Conflict");
@@ -1310,6 +1326,8 @@ mod tests {
             platform_idx: None,
             edge_index: Some(0),
             timing_uncertain: false,
+            actual1_times: None,
+            actual2_times: None,
         };
 
         let message = conflict.format_message("Station 1", "Station 2");
@@ -1344,6 +1362,8 @@ mod tests {
             platform_idx: Some(1),
             edge_index: None,
             timing_uncertain: false,
+            actual1_times: None,
+            actual2_times: None,
         };
 
         let message = conflict.format_message("Central Station", "Central Station");
@@ -1369,6 +1389,8 @@ mod tests {
             platform_idx: None,
             edge_index: Some(0),
             timing_uncertain: false,
+            actual1_times: None,
+            actual2_times: None,
         };
 
         let message = conflict.format_message("A", "B");

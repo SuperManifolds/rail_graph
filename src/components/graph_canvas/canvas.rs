@@ -7,7 +7,7 @@ use chrono::NaiveDateTime;
 use web_sys::{MouseEvent, WheelEvent, CanvasRenderingContext2d};
 use wasm_bindgen::{JsCast, closure::Closure};
 use crate::models::{RailwayGraph, UserSettings};
-use crate::conflict::Conflict;
+use crate::conflict::{Conflict, ConflictType};
 use crate::train_journey::TrainJourney;
 use crate::components::conflict_tooltip::ConflictTooltip;
 use crate::components::station_label_tooltip::StationLabelTooltip;
@@ -792,21 +792,35 @@ fn render_graph(
             theme,
         );
 
-        // Draw block visualization for hovered conflicts (BlockViolation, HeadOn, Overtaking)
+        // Draw visualization for hovered conflicts
         if let Some(conflict) = hover_state.hovered_conflict {
-            // Show blocks for any conflict type that has segment timing information
             if conflict.segment1_times.is_some() && conflict.segment2_times.is_some() {
-                conflict_indicators::draw_block_violation_visualization(
-                    &ctx,
-                    &zoomed_dimensions,
-                    conflict,
-                    &journeys_vec,
-                    &station_y_positions,
-                    view_edge_path,
-                    viewport.zoom_level,
-                    time_to_fraction,
-                    station_idx_map,
-                );
+                if conflict.conflict_type == ConflictType::PlatformViolation {
+                    // Platform conflicts get specialized visualization
+                    conflict_indicators::draw_platform_violation_visualization(
+                        &ctx,
+                        &zoomed_dimensions,
+                        conflict,
+                        &journeys_vec,
+                        &station_y_positions,
+                        viewport.zoom_level,
+                        time_to_fraction,
+                        station_idx_map,
+                    );
+                } else {
+                    // Track conflicts (BlockViolation, HeadOn, Overtaking)
+                    conflict_indicators::draw_block_violation_visualization(
+                        &ctx,
+                        &zoomed_dimensions,
+                        conflict,
+                        &journeys_vec,
+                        &station_y_positions,
+                        view_edge_path,
+                        viewport.zoom_level,
+                        time_to_fraction,
+                        station_idx_map,
+                    );
+                }
             }
         }
     }
