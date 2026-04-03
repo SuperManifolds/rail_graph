@@ -71,8 +71,20 @@ fn generate_svg(graph: &RailwayGraph) -> String {
         );
     }
 
+    // Determine which stations sit on horizontal edges (for label rotation)
+    let mut on_horizontal: std::collections::HashSet<petgraph::stable_graph::NodeIndex> =
+        std::collections::HashSet::new();
+    for edge in graph.graph.edge_references() {
+        let Some(sp) = graph.get_station_position(edge.source()) else { continue };
+        let Some(tp) = graph.get_station_position(edge.target()) else { continue };
+        if (sp.1 - tp.1).abs() < 1.0 && (sp.0 - tp.0).abs() > 1.0 {
+            on_horizontal.insert(edge.source());
+            on_horizontal.insert(edge.target());
+        }
+    }
+
     // Draw stations
-    for (_, name, (x, y), is_passing_loop) in &stations {
+    for (idx, name, (x, y), is_passing_loop) in &stations {
         let cx = (x - min_x + padding) * scale;
         let cy = (y - min_y + padding) * scale;
 
@@ -86,12 +98,21 @@ fn generate_svg(graph: &RailwayGraph) -> String {
                 svg,
                 r##"<circle cx="{cx}" cy="{cy}" r="8" fill="#e94560" stroke="white" stroke-width="1.5"/>"##
             );
-            let _ = writeln!(
-                svg,
-                r##"<text x="{}" y="{}" font-size="14" fill="#ccc" font-family="sans-serif">{name}</text>"##,
-                cx + 10.0,
-                cy + 5.0
-            );
+            if on_horizontal.contains(idx) {
+                // Rotate label -45° for stations on horizontal edges
+                let _ = writeln!(
+                    svg,
+                    r##"<text x="{}" y="{}" font-size="14" fill="#ccc" font-family="sans-serif" transform="rotate(-45 {} {})">{name}</text>"##,
+                    cx + 10.0, cy - 5.0, cx + 10.0, cy - 5.0
+                );
+            } else {
+                let _ = writeln!(
+                    svg,
+                    r##"<text x="{}" y="{}" font-size="14" fill="#ccc" font-family="sans-serif">{name}</text>"##,
+                    cx + 10.0,
+                    cy + 5.0
+                );
+            }
         }
     }
 

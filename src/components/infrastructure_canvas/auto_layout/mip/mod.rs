@@ -47,6 +47,103 @@ fn build_edge_min_lengths(
     lengths
 }
 
+/// Detect chains whose interpolation path overlaps a MIP edge geometrically.
+/// A chain is parallel if its two endpoints lie on the same line (horizontal,
+/// vertical, or diagonal) as another MIP edge that the chain is NOT part of.
+fn detect_geometric_parallels(
+    collapsed: &collapse::CollapsedGraph,
+    positions: &HashMap<NodeIndex, (f64, f64)>,
+) -> std::collections::HashSet<(NodeIndex, NodeIndex)> {
+    type Segment = ((f64, f64), (f64, f64), NodeIndex, NodeIndex);
+
+    let mut parallel = std::collections::HashSet::new();
+
+    // Collect MIP edge segments as (pos_a, pos_b) with their node pairs
+    let mip_segments: Vec<Segment> = collapsed
+        .kept_edges
+        .iter()
+        .filter(|&&(a, b)| a != b)
+        .filter_map(|&(a, b)| {
+            let pa = positions.get(&a)?;
+            let pb = positions.get(&b)?;
+            Some((*pa, *pb, a, b))
+        })
+        .collect();
+
+    for chain in &collapsed.chains {
+        if chain.endpoints.0 == chain.endpoints.1 || chain.intermediates.is_empty() {
+            continue;
+        }
+        let Some(&ca) = positions.get(&chain.endpoints.0) else { continue };
+        let Some(&cb) = positions.get(&chain.endpoints.1) else { continue };
+
+        // Check if any MIP edge overlaps this chain's interpolation line
+        for &(sa, sb, na, nb) in &mip_segments {
+            // Skip if this edge IS the chain's own edge
+            if normalize_pair(na, nb) == normalize_pair(chain.endpoints.0, chain.endpoints.1) {
+                continue;
+            }
+
+            // Check if the chain segment and MIP edge are collinear
+            // (same horizontal line, vertical line, or diagonal)
+            if segments_collinear((ca, cb), (sa, sb)) {
+                parallel.insert(normalize_pair(chain.endpoints.0, chain.endpoints.1));
+                break;
+            }
+        }
+    }
+
+    parallel
+}
+
+/// Check if two line segments are collinear (on the same horizontal, vertical, or 45° line)
+/// and overlapping in extent.
+fn segments_collinear(
+    seg_a: ((f64, f64), (f64, f64)),
+    seg_b: ((f64, f64), (f64, f64)),
+) -> bool {
+    let tolerance = 5.0;
+    let (pa1, pa2) = seg_a;
+    let (pb1, pb2) = seg_b;
+
+    // Same horizontal line
+    if (pa1.1 - pa2.1).abs() < tolerance
+        && (pb1.1 - pb2.1).abs() < tolerance
+        && (pa1.1 - pb1.1).abs() < tolerance
+    {
+        return ranges_overlap(pa1.0, pa2.0, pb1.0, pb2.0);
+    }
+
+    // Same vertical line
+    if (pa1.0 - pa2.0).abs() < tolerance
+        && (pb1.0 - pb2.0).abs() < tolerance
+        && (pa1.0 - pb1.0).abs() < tolerance
+    {
+        return ranges_overlap(pa1.1, pa2.1, pb1.1, pb2.1);
+    }
+
+    // Same 45° diagonal
+    let (dxa, dya) = (pa2.0 - pa1.0, pa2.1 - pa1.1);
+    let (dxb, dyb) = (pb2.0 - pb1.0, pb2.1 - pb1.1);
+    if (dxa.abs() - dya.abs()).abs() < tolerance && (dxb.abs() - dyb.abs()).abs() < tolerance {
+        let sum_a = pa1.0 + pa1.1;
+        let sum_b = pb1.0 + pb1.1;
+        let diff_a = pa1.0 - pa1.1;
+        let diff_b = pb1.0 - pb1.1;
+        if (sum_a - sum_b).abs() < tolerance || (diff_a - diff_b).abs() < tolerance {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn ranges_overlap(a1: f64, a2: f64, b1: f64, b2: f64) -> bool {
+    let (lo_a, hi_a) = if a1 < a2 { (a1, a2) } else { (a2, a1) };
+    let (lo_b, hi_b) = if b1 < b2 { (b1, b2) } else { (b2, b1) };
+    lo_a < hi_b && lo_b < hi_a
+}
+
 fn normalize_pair(a: NodeIndex, b: NodeIndex) -> (NodeIndex, NodeIndex) {
     if a < b { (a, b) } else { (b, a) }
 }
@@ -268,19 +365,9 @@ pub fn run_mip_layout(
         .map(|(node, (x, y))| (node, (x * GRID_SIZE, y * GRID_SIZE)))
         .collect();
 
-    // Detect parallel chains: chain endpoints directly adjacent in original graph
-    // (express edge alongside local chain through intermediates)
-    let parallel_pairs: std::collections::HashSet<(NodeIndex, NodeIndex)> = collapsed
-        .chains
-        .iter()
-        .filter(|c| c.endpoints.0 != c.endpoints.1)
-        .filter(|c| {
-            let (a, b) = c.endpoints;
-            graph.graph.edges_connecting(a, b).next().is_some()
-                || graph.graph.edges_connecting(b, a).next().is_some()
-        })
-        .map(|c| normalize_pair(c.endpoints.0, c.endpoints.1))
-        .collect();
+    // Detect parallel chains geometrically: a chain should be offset if its
+    // interpolation path overlaps with a MIP edge (same horizontal/vertical line).
+    let parallel_pairs = detect_geometric_parallels(&collapsed, &positions);
 
     for chain in &collapsed.chains {
         if chain.endpoints.0 == chain.endpoints.1 { continue; }
@@ -333,6 +420,9 @@ pub fn run_mip_layout(
             positions.insert(node, pos);
         }
     }
+
+    // Re-run cluster merge to catch nodes positioned by fallback
+    merge_station_clusters(graph, &geo_positions, &mut positions);
 
     // Log position bounds
     if let (Some(min_x), Some(max_x), Some(min_y), Some(max_y)) = (
