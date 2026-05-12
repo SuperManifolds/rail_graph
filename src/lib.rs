@@ -15,15 +15,6 @@ pub mod train_journey;
 pub mod theme;
 pub mod logging;
 
-#[cfg(target_arch = "wasm32")]
-pub mod conflict_worker;
-
-#[cfg(target_arch = "wasm32")]
-#[path = "worker_bridge.rs"]
-pub mod worker_bridge;
-
-#[cfg(not(target_arch = "wasm32"))]
-#[path = "worker_bridge_sync.rs"]
-pub mod worker_bridge;
+pub mod tauri_bridge;
 
 pub use components::app::App;

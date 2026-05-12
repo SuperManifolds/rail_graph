@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "server"]
+members = [".", "core", "src-tauri", "server"]
 
 [package]
 name = "nimby_graph"
@@ -38,6 +38,7 @@ csv = "1.3"
 quick-xml = { version = "0.37", features = ["serialize"] }
 petgraph = { version = "0.6", features = ["serde-1"] }
 good_lp = { version = "1", features = ["highs"], default-features = false }
+serde-wasm-bindgen = "0.6"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"

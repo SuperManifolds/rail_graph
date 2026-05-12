@@ -12,7 +12,7 @@ use crate::logging::log;
 use crate::models::{GraphView, Legend, Project, RailwayGraph, Routes, ViewportState, UndoManager, UndoSnapshot};
 use crate::storage::{IndexedDbStorage, Storage};
 use crate::train_journey::TrainJourney;
-use crate::worker_bridge::ConflictDetector;
+use crate::tauri_bridge::ConflictDetector;
 use leptos::{
     component, create_effect, create_signal, event_target_value, provide_context, spawn_local,
     store_value, view, Callback, IntoView, Show, Signal, SignalGet, SignalGetUntracked, SignalSet,
