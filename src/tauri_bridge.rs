@@ -251,14 +251,14 @@ pub type ViewEdgeFilter = Vec<usize>;
 /// Returns an error if the Tauri command fails or deserialization fails.
 pub async fn compute_auto_layout(
     graph: &crate::models::RailwayGraph,
-    geo_hints: Option<&crate::components::infrastructure_canvas::auto_layout::GeographicHints>,
+    geo_hints: Option<&railgraph_core::auto_layout::GeographicHints>,
     settings: &crate::models::ProjectSettings,
     height: f64,
 ) -> Result<std::collections::HashMap<usize, (f64, f64)>, String> {
     #[derive(serde::Serialize)]
     struct LayoutRequest<'a> {
         graph: &'a crate::models::RailwayGraph,
-        geo_hints: Option<&'a crate::components::infrastructure_canvas::auto_layout::GeographicHints>,
+        geo_hints: Option<&'a railgraph_core::auto_layout::GeographicHints>,
         settings: &'a crate::models::ProjectSettings,
         height: f64,
     }

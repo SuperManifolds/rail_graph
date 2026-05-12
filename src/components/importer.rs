@@ -1,12 +1,49 @@
 use crate::import::jtraingraph::{parse_jtraingraph, import_jtraingraph};
 use crate::import::nimby::{parse_nimby_json, import_nimby_lines, NimbyImportData, NimbyImportConfig};
-use crate::models::{Line, RailwayGraph};
+use crate::models::{Line, RailwayGraph, Stations};
 use crate::components::button::Button;
 use crate::components::csv_column_mapper::CsvColumnMapper;
 use crate::components::nimby_line_selector::NimbyLineSelector;
 use crate::components::window::Window;
 use crate::import::csv::{analyze_csv, parse_csv_with_mapping, parse_csv_with_existing_infrastructure, CsvImportConfig};
 use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, SignalGetUntracked, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback, Show};
+
+/// Trigger MIP layout on the Tauri backend after a Nimby import.
+fn trigger_mip_layout(
+    graph: &RailwayGraph,
+    data: &NimbyImportData,
+    settings: crate::models::ProjectSettings,
+    set_graph: WriteSignal<RailwayGraph>,
+) {
+    let geo_hints = crate::import::nimby::build_geographic_hints(graph, data);
+    if geo_hints.is_empty() {
+        return;
+    }
+    let graph_snapshot = graph.clone();
+    spawn_local(async move {
+        match crate::tauri_bridge::compute_auto_layout(
+            &graph_snapshot,
+            Some(&geo_hints),
+            &settings,
+            1000.0,
+        )
+        .await
+        {
+            Ok(positions) => {
+                set_graph.update(|g| {
+                    for (idx, (x, y)) in &positions {
+                        let node_idx = petgraph::stable_graph::NodeIndex::new(*idx);
+                        g.set_station_position(node_idx, (*x, *y));
+                    }
+                });
+                leptos::logging::log!("MIP layout applied: {} positions", positions.len());
+            }
+            Err(e) => {
+                leptos::logging::warn!("MIP layout failed (using BFS fallback): {}", e);
+            }
+        }
+    });
+}
 
 fn handle_fpl_import(
     text: &str,
@@ -229,8 +266,9 @@ pub fn Importer(
             match import_nimby_lines(&data, &config, &mut current_graph, existing_line_count, Some(&mut current_lines)) {
                 Ok(new_lines) => {
                     leptos::logging::log!("Updated lines, {} new lines created", new_lines.len());
+
+                    trigger_mip_layout(&current_graph, &data, settings.get(), set_graph);
                     set_graph.set(current_graph);
-                    // Replace all lines (updated ones are modified in place)
                     current_lines.extend(new_lines);
                     set_lines.set(current_lines);
                     set_show_nimby_selector.set(false);
@@ -248,6 +286,8 @@ pub fn Importer(
             match import_nimby_lines(&data, &config, &mut current_graph, existing_line_count, None) {
                 Ok(imported_lines) => {
                     leptos::logging::log!("Imported {} lines from NIMBY JSON", imported_lines.len());
+
+                    trigger_mip_layout(&current_graph, &data, settings.get(), set_graph);
                     set_graph.set(current_graph);
                     set_lines.update(|existing| existing.extend(imported_lines));
                     set_show_nimby_selector.set(false);

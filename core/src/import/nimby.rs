@@ -1816,7 +1816,8 @@ fn build_segment_map(lines: &[&NimbyLine], data: &NimbyImportData) -> SegmentMap
 }
 
 /// Build geographic hints from NIMBY lonlat data for use with `auto_layout`
-fn build_geographic_hints(
+#[must_use]
+pub fn build_geographic_hints(
     graph: &RailwayGraph,
     data: &NimbyImportData,
 ) -> GeographicHints {
