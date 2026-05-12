@@ -33,11 +33,9 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.12", features = ["json"] }
 rmp-serde = "1.3"
-bincode = "1.3"
 csv = "1.3"
 quick-xml = { version = "0.37", features = ["serialize"] }
 petgraph = { version = "0.6", features = ["serde-1"] }
-good_lp = { version = "1", features = ["highs"], default-features = false }
 serde-wasm-bindgen = "0.6"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
@@ -52,15 +50,6 @@ web-sys = { version = "0.3", features = [
     "DomRect",
     "MouseEvent",
     "KeyboardEvent",
-    "IdbFactory",
-    "IdbDatabase",
-    "IdbObjectStore",
-    "IdbRequest",
-    "IdbTransaction",
-    "IdbTransactionMode",
-    "IdbVersionChangeEvent",
-    "IdbOpenDbRequest",
-    "DomStringList",
     "HtmlInputElement",
     "File",
     "FileList",
@@ -76,24 +65,8 @@ web-sys = { version = "0.3", features = [
     "Url",
     "HtmlAnchorElement",
     "Storage",
-    "ServiceWorkerGlobalScope",
-    "ExtendableEvent",
-    "FetchEvent",
-    "Cache",
-    "CacheStorage",
-    "Request",
-    "RequestInit",
-    "RequestMode",
-    "Response",
-    "ResponseInit",
-    "ResponseType",
-    "ServiceWorkerRegistration",
-    "ServiceWorkerContainer",
-    "Clients",
-    "Headers",
 ] }
 gloo-timers = { version = "0.3", features = ["futures"] }
-gloo-worker = "0.5"
 console_error_panic_hook = "0.1"
 uuid = { version = "1.0", features = ["v4", "js", "serde"] }
 bitflags = { version = "2.4", features = ["serde"] }

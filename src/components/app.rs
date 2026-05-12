@@ -10,7 +10,7 @@ use crate::conflict::Conflict;
 #[allow(unused_imports)]
 use crate::logging::log;
 use crate::models::{GraphView, Legend, Project, RailwayGraph, Routes, ViewportState, UndoManager, UndoSnapshot};
-use crate::storage::{IndexedDbStorage, Storage};
+use crate::storage::serialize_project_to_bytes;
 use crate::train_journey::TrainJourney;
 use crate::tauri_bridge::ConflictDetector;
 use leptos::{
@@ -96,32 +96,7 @@ fn update_view(
 pub fn App() -> impl IntoView {
     provide_meta_context();
 
-    // Register service worker for PWA functionality
-    create_effect(move |_| {
-        if let Some(window) = web_sys::window() {
-            let navigator = window.navigator().service_worker();
-            spawn_local(async move {
-                match wasm_bindgen_futures::JsFuture::from(
-                    navigator.register("/service_worker.js")
-                ).await {
-                    Ok(_) => {
-                        log!("[PWA] Service worker registered");
-                    }
-                    Err(e) => {
-                        web_sys::console::error_2(
-                            &"[PWA] Service worker registration failed:".into(),
-                            &e,
-                        );
-                    }
-                }
-            });
-        }
-    });
-
     let (active_tab, set_active_tab) = create_signal(AppTab::Infrastructure);
-
-    // Storage implementation
-    let storage = IndexedDbStorage;
 
     // Shared graph, lines, and views state
     let (lines, set_lines) = create_signal(Vec::new());
@@ -221,27 +196,27 @@ pub fn App() -> impl IntoView {
 
     // Load user settings on mount
     create_effect(move |_| {
-        spawn_local(async move {
-            match crate::models::UserSettings::load().await {
-                Ok(settings) => {
-                    set_user_settings.set(settings);
-                }
-                Err(e) => {
-                    leptos::logging::warn!("Failed to load user settings: {}", e);
-                    // Use defaults
-                }
+        match crate::models::UserSettings::load() {
+            Ok(settings) => {
+                set_user_settings.set(settings);
             }
-        });
+            Err(e) => {
+                leptos::logging::warn!("Failed to load user settings: {}", e);
+                // Use defaults
+            }
+        }
     });
 
     // Auto-load saved project on component mount
     create_effect(move |_| {
         spawn_local(async move {
             // Try to load the last used project
-            let project_id = storage.get_current_project_id().await.ok().flatten();
+            let project_id = crate::tauri_bridge::get_current_project_id().await.ok().flatten();
 
             let project = if let Some(id) = project_id {
-                match storage.load_project(&id).await {
+                match crate::tauri_bridge::load_project(&id).await
+                    .and_then(|bytes| crate::models::Project::from_bytes(&bytes))
+                {
                     Ok(p) => {
                         log!("Project loaded successfully");
                         Some(p)
@@ -407,11 +382,18 @@ pub fn App() -> impl IntoView {
 
             let project_id = proj.metadata.id.clone();
             spawn_local(async move {
-                if let Err(e) = storage.save_project(&proj).await {
+                let bytes = match serialize_project_to_bytes(&proj) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        web_sys::console::error_1(&format!("Auto-save serialization failed: {e}").into());
+                        return;
+                    }
+                };
+                if let Err(e) = crate::tauri_bridge::save_project(&bytes, &project_id).await {
                     web_sys::console::error_1(&format!("Auto-save failed: {e}").into());
                     return;
                 }
-                if let Err(e) = storage.set_current_project_id(&project_id).await {
+                if let Err(e) = crate::tauri_bridge::set_current_project_id(&project_id).await {
                     web_sys::console::error_1(
                         &format!("Failed to set current project ID: {e}").into(),
                     );
@@ -462,20 +444,14 @@ pub fn App() -> impl IntoView {
     ));
 
     create_effect(move |_| {
-        // Wait for initial project load before running conflict detection
         if !initial_load_complete.get() {
             return;
         }
 
         let current_lines = lines.get();
         let current_settings = settings.get();
-        // Use get_untracked - project ID doesn't change, and we don't want to
-        // re-run when auto-save updates current_project during pan/zoom
-        let project_id = current_project.get_untracked().metadata.id;
         let day_filter = selected_day.get();
 
-        // Get edge_path from current view if one is active
-        // Use get_untracked to avoid re-running when viewport state changes
         let view_edge_filter = match active_tab.get() {
             AppTab::GraphView(view_id) => {
                 views.get_untracked()
@@ -486,25 +462,23 @@ pub fn App() -> impl IntoView {
             AppTab::Infrastructure => None,
         };
 
-        // Filter to only visible lines
         let visible_lines: Vec<_> = current_lines
             .into_iter()
             .filter(|line| line.visible)
             .collect();
 
-        // Fetch raw project bytes and trigger conflict detection
-        spawn_local(async move {
-            let project_bytes = match Project::get_raw_bytes_from_db(&project_id).await {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    log!("Failed to get project bytes for conflict detection: {}", e);
-                    return;
-                }
-            };
+        // Serialize project to bytes for conflict detection
+        let proj = current_project.get_untracked();
+        let project_bytes = match serialize_project_to_bytes(&proj) {
+            Ok(b) => b,
+            Err(e) => {
+                log!("Failed to serialize project for conflict detection: {}", e);
+                return;
+            }
+        };
 
-            debounced_detect_conflicts.update_value(|f| {
-                f((project_bytes, visible_lines, current_settings, day_filter, view_edge_filter));
-            });
+        debounced_detect_conflicts.update_value(|f| {
+            f((project_bytes, visible_lines, current_settings, day_filter, view_edge_filter));
         });
     });
 
@@ -613,7 +587,7 @@ pub fn App() -> impl IntoView {
 
         // Set this as the current project
         spawn_local(async move {
-            if let Err(e) = storage.set_current_project_id(&project_id).await {
+            if let Err(e) = crate::tauri_bridge::set_current_project_id(&project_id).await {
                 web_sys::console::error_1(&format!("Failed to set current project ID: {e}").into());
             }
         });

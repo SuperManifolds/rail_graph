@@ -2,10 +2,10 @@ use petgraph::stable_graph::NodeIndex;
 use std::collections::HashMap;
 
 /// Geographic hints for layout - provides preferred directions based on real-world coordinates
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct GeographicHints {
     /// Map from `NodeIndex` to (longitude, latitude) coordinates
-    pub(crate) lonlat_map: HashMap<NodeIndex, (f64, f64)>,
+    pub lonlat_map: HashMap<NodeIndex, (f64, f64)>,
 }
 
 impl GeographicHints {

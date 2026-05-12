@@ -368,6 +368,7 @@ impl Stations for RailwayGraph {
 
     fn calculate_passing_loop_position(&self, passing_loop_idx: NodeIndex) -> Option<(f64, f64)> {
         use petgraph::Direction;
+        use std::collections::HashSet;
 
         // Find adjacent non-passing-loop stations
         let (prev_idx, next_idx) = self.find_adjacent_stations_for_passing_loop(passing_loop_idx)?;
@@ -379,11 +380,14 @@ impl Stations for RailwayGraph {
         // Count how many passing loops are in sequence between prev and next
         // and determine this passing loop's index in that sequence
         let mut passing_loops_in_sequence = Vec::new();
+        let mut visited = HashSet::new();
         let mut current = prev_idx;
         let mut found_self = false;
 
         // Traverse from prev to next, collecting all passing loops
         loop {
+            visited.insert(current);
+
             // Get next node in the direction of next_idx
             let neighbors: Vec<NodeIndex> = self.graph.edges(current)
                 .map(|e| e.target())
@@ -392,7 +396,7 @@ impl Stations for RailwayGraph {
 
             // Find the neighbor that's on the path to next_idx
             let next_node = neighbors.into_iter().find(|&n| {
-                n != current && (n == next_idx || {
+                !visited.contains(&n) && (n == next_idx || {
                     // Check if this node is between current and next_idx
                     let is_passing = self.graph.node_weight(n)
                         .and_then(|node| node.as_station())

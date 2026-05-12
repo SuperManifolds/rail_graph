@@ -1,11 +1,6 @@
-mod indexeddb;
 mod file;
-pub mod idb;
 
-pub use indexeddb::IndexedDbStorage;
 pub use file::{serialize_project_to_bytes, deserialize_project_from_bytes, create_export_filename, trigger_download, regenerate_project_ids};
-
-use crate::models::{Project, ProjectMetadata};
 
 /// Current project file format version
 pub const CURRENT_PROJECT_VERSION: u32 = 1;
@@ -28,34 +23,5 @@ pub fn format_bytes(bytes: u64) -> String {
         format!("{:.1} KB", bytes_f / KB)
     } else {
         format!("{bytes} B")
-    }
-}
-
-/// Storage trait for project persistence
-#[allow(async_fn_in_trait)]
-pub trait Storage {
-    /// Save a project by its ID
-    async fn save_project(&self, project: &Project) -> Result<(), String>;
-
-    /// Load a specific project by ID
-    async fn load_project(&self, id: &str) -> Result<Project, String>;
-
-    /// Delete a project by ID
-    async fn delete_project(&self, id: &str) -> Result<(), String>;
-
-    /// List all saved projects (returns only metadata, not full projects)
-    async fn list_projects(&self) -> Result<Vec<ProjectMetadata>, String>;
-
-    /// Set the current project ID (last used project for auto-load)
-    async fn set_current_project_id(&self, id: &str) -> Result<(), String>;
-
-    /// Get the current project ID (last used project)
-    async fn get_current_project_id(&self) -> Result<Option<String>, String>;
-
-    /// Get storage quota information if available
-    /// Returns None if the storage backend doesn't support quota checks
-    /// Returns (`used_bytes`, `total_bytes`) tuple if quota is available
-    async fn get_storage_quota(&self) -> Result<Option<(u64, u64)>, String> {
-        Ok(None)
     }
 }

@@ -1,7 +1,7 @@
 use leptos::{component, view, IntoView, create_signal, SignalGet, SignalSet, create_resource, create_effect, Signal, use_context, WriteSignal, SignalUpdate};
 use crate::components::modal_overlay::ModalOverlay;
 use crate::components::window::Window;
-use crate::storage::{Storage, IndexedDbStorage};
+use crate::tauri_bridge;
 use crate::api::{ChangelogRelease, fetch_all_releases};
 use pulldown_cmark::{Parser, Options, html};
 
@@ -21,8 +21,7 @@ pub fn ChangelogPopup(
         || (),
         move |()| async move {
             // Check if user has project data
-            let storage = IndexedDbStorage;
-            let Ok(projects) = storage.list_projects().await else {
+            let Ok(projects) = tauri_bridge::list_projects().await else {
                 return false;
             };
 

@@ -8,7 +8,6 @@ mod constants;
 mod constraints;
 mod geographic_hints;
 mod init;
-mod mip;
 mod scenario;
 mod solver;
 mod types;

@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use super::{Line, LineFolder, RailwayGraph, GraphView, ViewportState};
-use crate::storage::{CURRENT_PROJECT_VERSION, idb};
-use wasm_bindgen::prelude::*;
+use crate::storage::CURRENT_PROJECT_VERSION;
 use chrono::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,14 +202,13 @@ impl Project {
     }
 }
 
-// Storage constants
-const PROJECTS_STORE: &str = "projects";
-const CURRENT_PROJECT_ID_KEY: &str = "current_project_id";
-
-// Project storage implementation
 impl Project {
     /// Serialize project to bytes with version header
-    fn serialize_to_bytes(&self) -> Result<Vec<u8>, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization fails
+    pub fn serialize_to_bytes(&self) -> Result<Vec<u8>, String> {
         let project_bytes =
             rmp_serde::to_vec(self).map_err(|e| format!("Failed to serialize project: {e}"))?;
 
@@ -223,7 +221,11 @@ impl Project {
     }
 
     /// Deserialize project from bytes with version header
-    fn deserialize_from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if deserialization fails
+    pub fn deserialize_from_bytes(bytes: &[u8]) -> Result<Self, String> {
         // Check if this is versioned data (has at least 4 bytes for version)
         if bytes.len() >= 4 {
             // Read version from first 4 bytes
@@ -290,70 +292,6 @@ impl Project {
         }
     }
 
-    /// Save this project to `IndexedDB`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the project cannot be saved
-    pub async fn save_to_db(&self) -> Result<(), String> {
-        let db = idb::get_db().await?;
-        let store = idb::get_store_readwrite(&db, PROJECTS_STORE)?;
-
-        let bytes = self.serialize_to_bytes()?;
-
-        // Convert to Uint8Array for IndexedDB
-        let uint8_array = js_sys::Uint8Array::from(&bytes[..]);
-        let js_value: JsValue = uint8_array.into();
-
-        idb::put_value(&store, &js_value, &JsValue::from_str(&self.metadata.id)).await?;
-
-        Ok(())
-    }
-
-    /// Load a project from `IndexedDB` by ID
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the project cannot be loaded
-    pub async fn load_from_db(id: &str) -> Result<Self, String> {
-        let db = idb::get_db().await?;
-        let store = idb::get_store_readonly(&db, PROJECTS_STORE)?;
-
-        let result = idb::get_value(&store, &JsValue::from_str(id)).await?;
-
-        if result.is_undefined() || result.is_null() {
-            return Err("Project not found".to_string());
-        }
-
-        // Convert from Uint8Array back to bytes
-        let uint8_array: js_sys::Uint8Array =
-            result.dyn_into().map_err(|_| "Invalid project data".to_string())?;
-        let bytes = uint8_array.to_vec();
-
-        Self::deserialize_from_bytes(&bytes)
-    }
-
-    /// Get raw project bytes from `IndexedDB` by ID (without deserializing)
-    /// This is useful for passing to a web worker without re-serializing
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the project cannot be loaded
-    pub async fn get_raw_bytes_from_db(id: &str) -> Result<Vec<u8>, String> {
-        let db = idb::get_db().await?;
-        let store = idb::get_store_readonly(&db, PROJECTS_STORE)?;
-
-        let result = idb::get_value(&store, &JsValue::from_str(id)).await?;
-
-        if result.is_undefined() || result.is_null() {
-            return Err("Project not found".to_string());
-        }
-
-        let uint8_array: js_sys::Uint8Array =
-            result.dyn_into().map_err(|_| "Invalid project data".to_string())?;
-        Ok(uint8_array.to_vec())
-    }
-
     /// Deserialize a project from raw bytes (public for worker use)
     ///
     /// # Errors
@@ -361,143 +299,6 @@ impl Project {
     /// Returns an error if deserialization fails
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         Self::deserialize_from_bytes(bytes)
-    }
-
-    /// Delete a project from `IndexedDB` by ID
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the project cannot be deleted
-    pub async fn delete_from_db(id: &str) -> Result<(), String> {
-        let db = idb::get_db().await?;
-        let store = idb::get_store_readwrite(&db, PROJECTS_STORE)?;
-
-        idb::delete_value(&store, &JsValue::from_str(id)).await?;
-
-        Ok(())
-    }
-
-    /// List all project metadata from `IndexedDB`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the metadata cannot be loaded
-    pub async fn list_all_metadata() -> Result<Vec<ProjectMetadata>, String> {
-        let db = idb::get_db().await?;
-        let store = idb::get_store_readonly(&db, PROJECTS_STORE)?;
-
-        // Get all keys and values
-        let keys_array = idb::get_all_keys(&store).await?;
-        let values_array = idb::get_all_values(&store).await?;
-
-        let mut projects = Vec::new();
-
-        for i in 0..keys_array.length() {
-            let key = keys_array.get(i);
-            let value = values_array.get(i);
-
-            // Skip the current_project_id key
-            if let Some(key_str) = key.as_string() {
-                if key_str == CURRENT_PROJECT_ID_KEY {
-                    continue;
-                }
-            }
-
-            if !value.is_undefined() && !value.is_null() {
-                let uint8_array: js_sys::Uint8Array =
-                    value.dyn_into().map_err(|_| "Invalid project data".to_string())?;
-                let bytes = uint8_array.to_vec();
-
-                // Skip version bytes and deserialize only metadata
-                let project_bytes = &bytes[4..];
-                let metadata: ProjectMetadata = rmp_serde::from_slice(project_bytes)
-                    .map_err(|e| format!("Failed to parse project metadata: {e}"))?;
-                projects.push(metadata);
-            }
-        }
-
-        // Sort by updated_at descending (most recent first)
-        projects.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-
-        Ok(projects)
-    }
-
-    /// Set the current project ID in `IndexedDB`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the ID cannot be saved
-    pub async fn set_current_id(id: &str) -> Result<(), String> {
-        let db = idb::get_db().await?;
-        let store = idb::get_store_readwrite(&db, PROJECTS_STORE)?;
-
-        idb::put_value(
-            &store,
-            &JsValue::from_str(id),
-            &JsValue::from_str(CURRENT_PROJECT_ID_KEY),
-        )
-        .await?;
-
-        Ok(())
-    }
-
-    /// Get the current project ID from `IndexedDB`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the ID cannot be loaded
-    pub async fn get_current_id() -> Result<Option<String>, String> {
-        let db = idb::get_db().await?;
-        let store = idb::get_store_readonly(&db, PROJECTS_STORE)?;
-
-        let result = idb::get_value(&store, &JsValue::from_str(CURRENT_PROJECT_ID_KEY)).await?;
-
-        if result.is_undefined() || result.is_null() {
-            return Ok(None);
-        }
-
-        let id_str = result.as_string().ok_or("Invalid project ID format".to_string())?;
-        Ok(Some(id_str))
-    }
-
-    /// Get storage quota information
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the storage quota cannot be retrieved
-    pub async fn get_storage_quota() -> Result<Option<(u64, u64)>, String> {
-        let window = web_sys::window().ok_or("No window".to_string())?;
-        let navigator = window.navigator();
-        let storage_manager = navigator.storage();
-
-        // Get quota estimate
-        let estimate_promise = storage_manager
-            .estimate()
-            .map_err(|_| "Failed to get storage estimate".to_string())?;
-
-        let estimate_result = wasm_bindgen_futures::JsFuture::from(estimate_promise)
-            .await
-            .map_err(|_| "Failed to await storage estimate".to_string())?;
-
-        // Parse the estimate object
-        let estimate_obj = js_sys::Object::from(estimate_result);
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let usage = js_sys::Reflect::get(&estimate_obj, &JsValue::from_str("usage"))
-            .ok()
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0) as u64;
-
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let quota = js_sys::Reflect::get(&estimate_obj, &JsValue::from_str("quota"))
-            .ok()
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0) as u64;
-
-        if quota == 0 {
-            Ok(None)
-        } else {
-            Ok(Some((usage, quota)))
-        }
     }
 }
 

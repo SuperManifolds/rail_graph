@@ -243,3 +243,38 @@ pub fn create_conflict_detector() -> (
 
 /// Edge filter type for view-based line filtering
 pub type ViewEdgeFilter = Vec<usize>;
+
+/// Compute auto-layout on the Tauri backend (runs MIP solver natively).
+/// Returns a map of node index → (x, y) positions.
+///
+/// # Errors
+/// Returns an error if the Tauri command fails or deserialization fails.
+pub async fn compute_auto_layout(
+    graph: &crate::models::RailwayGraph,
+    geo_hints: Option<&crate::components::infrastructure_canvas::auto_layout::GeographicHints>,
+    settings: &crate::models::ProjectSettings,
+    height: f64,
+) -> Result<std::collections::HashMap<usize, (f64, f64)>, String> {
+    #[derive(serde::Serialize)]
+    struct LayoutRequest<'a> {
+        graph: &'a crate::models::RailwayGraph,
+        geo_hints: Option<&'a crate::components::infrastructure_canvas::auto_layout::GeographicHints>,
+        settings: &'a crate::models::ProjectSettings,
+        height: f64,
+    }
+
+    let req = LayoutRequest {
+        graph,
+        geo_hints,
+        settings,
+        height,
+    };
+
+    let req_bytes = rmp_serde::to_vec(&req)
+        .map_err(|e| format!("Failed to serialize layout request: {e}"))?;
+
+    let result_bytes = invoke_binary("compute_auto_layout", &req_bytes, &[]).await?;
+
+    rmp_serde::from_slice(&result_bytes)
+        .map_err(|e| format!("Failed to deserialize layout positions: {e}"))
+}

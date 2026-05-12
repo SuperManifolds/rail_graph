@@ -3,20 +3,22 @@ use crate::components::window::Window;
 use crate::components::confirmation_dialog::ConfirmationDialog;
 use crate::components::text_input_dialog::TextInputDialog;
 use crate::models::{Project, ProjectMetadata};
-use crate::storage::{self, Storage, IndexedDbStorage, format_bytes};
+use crate::{storage, storage::format_bytes, tauri_bridge};
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
 fn load_project_action(
     project_id: String,
-    storage: IndexedDbStorage,
     on_load_project: Callback<Project>,
     on_close: Rc<impl Fn() + 'static>,
     set_error: WriteSignal<Option<String>>,
 ) {
     spawn_local(async move {
-        match storage.load_project(&project_id).await {
+        match tauri_bridge::load_project(&project_id)
+            .await
+            .and_then(|bytes| Project::from_bytes(&bytes))
+        {
             Ok(project) => {
                 on_load_project.call(project);
                 on_close();
@@ -28,18 +30,27 @@ fn load_project_action(
 
 fn duplicate_project_action(
     project_id: String,
-    storage: IndexedDbStorage,
     load_projects: impl Fn() + 'static,
     set_error: WriteSignal<Option<String>>,
 ) {
     spawn_local(async move {
-        match storage.load_project(&project_id).await {
+        match tauri_bridge::load_project(&project_id)
+            .await
+            .and_then(|bytes| Project::from_bytes(&bytes))
+        {
             Ok(project) => {
                 let new_name = format!("{} (Copy)", project.metadata.name);
                 let duplicated = project.duplicate_with_name(new_name);
-                match storage.save_project(&duplicated).await {
-                    Ok(()) => load_projects(),
-                    Err(e) => set_error.set(Some(format!("Failed to duplicate project: {e}"))),
+                match duplicated.serialize_to_bytes()
+                    .map(|bytes| (bytes, duplicated.metadata.id.clone()))
+                {
+                    Ok((bytes, id)) => {
+                        match tauri_bridge::save_project(&bytes, &id).await {
+                            Ok(()) => load_projects(),
+                            Err(e) => set_error.set(Some(format!("Failed to duplicate project: {e}"))),
+                        }
+                    }
+                    Err(e) => set_error.set(Some(format!("Failed to serialize project: {e}"))),
                 }
             }
             Err(e) => set_error.set(Some(format!("Failed to load project for duplication: {e}"))),
@@ -50,11 +61,13 @@ fn duplicate_project_action(
 fn export_project_action(
     project_id: String,
     project_name: String,
-    storage_backend: IndexedDbStorage,
     set_error: WriteSignal<Option<String>>,
 ) {
     spawn_local(async move {
-        let project = match storage_backend.load_project(&project_id).await {
+        let project = match tauri_bridge::load_project(&project_id)
+            .await
+            .and_then(|bytes| Project::from_bytes(&bytes))
+        {
             Ok(p) => p,
             Err(e) => {
                 set_error.set(Some(format!("Failed to load project for export: {e}")));
@@ -82,7 +95,6 @@ fn export_project_action(
 fn render_project_row(
     metadata: ProjectMetadata,
     current_project_id: String,
-    storage: IndexedDbStorage,
     on_load_project: Callback<Project>,
     on_close: Rc<impl Fn() + 'static>,
     load_projects: impl Fn() + 'static + Clone,
@@ -121,7 +133,6 @@ fn render_project_row(
                         move |_| {
                             load_project_action(
                                 (*project_id).clone(),
-                                storage,
                                 on_load_project,
                                 Rc::clone(&on_close),
                                 set_error_message,
@@ -141,7 +152,6 @@ fn render_project_row(
                         move |_| {
                             duplicate_project_action(
                                 (*project_id_for_dup).clone(),
-                                storage,
                                 load_projects.clone(),
                                 set_error_message,
                             );
@@ -160,7 +170,6 @@ fn render_project_row(
                             export_project_action(
                                 (*project_id).clone(),
                                 (*project_name).clone(),
-                                storage,
                                 set_error_message,
                             );
                         }
@@ -198,7 +207,6 @@ pub fn ProjectManager(
     on_load_project: Callback<Project>,
     current_project: Signal<Project>,
 ) -> impl IntoView {
-    let storage = IndexedDbStorage;
     let on_close = Rc::new(on_close);
 
     let (projects, set_projects) = create_signal(Vec::<ProjectMetadata>::new());
@@ -230,40 +238,17 @@ pub fn ProjectManager(
     // Load projects when dialog opens
     let load_projects = move || {
         spawn_local(async move {
-            match storage.list_projects().await {
+            match tauri_bridge::list_projects().await {
                 Ok(loaded) => set_projects.set(loaded),
                 Err(e) => set_error_message.set(Some(format!("Failed to load projects: {e}"))),
             }
         });
     };
 
-    // Check storage quota
+    // Storage quota not available in Tauri backend yet
     let check_storage_quota = move || {
-        spawn_local(async move {
-            if let Ok(Some((used, total))) = storage.get_storage_quota().await {
-                set_storage_quota.set(Some((used, total)));
-                #[allow(clippy::cast_precision_loss)]
-                let usage_percent = (used as f64 / total as f64) * 100.0;
-                if usage_percent > 90.0 {
-                    let used_str = format_bytes(used);
-                    let total_str = format_bytes(total);
-                    set_storage_warning.set(Some(format!(
-                        "Storage critically low: {used_str} / {total_str} ({usage_percent:.0}% used)"
-                    )));
-                } else if usage_percent > 75.0 {
-                    let used_str = format_bytes(used);
-                    let total_str = format_bytes(total);
-                    set_storage_warning.set(Some(format!(
-                        "Storage usage warning: {used_str} / {total_str} ({usage_percent:.0}% used)"
-                    )));
-                } else {
-                    set_storage_warning.set(None);
-                }
-            } else {
-                set_storage_quota.set(None);
-                set_storage_warning.set(None);
-            }
-        });
+        set_storage_quota.set(None);
+        set_storage_warning.set(None);
     };
 
     // Auto-load projects and check quota when dialog opens
@@ -295,12 +280,20 @@ pub fn ProjectManager(
 
             let project_id = project.metadata.id.clone();
 
-            match storage.save_project(&project).await {
+            let bytes = match project.serialize_to_bytes() {
+                Ok(b) => b,
+                Err(e) => {
+                    set_error_message.set(Some(format!("Failed to serialize project: {e}")));
+                    return;
+                }
+            };
+
+            match tauri_bridge::save_project(&bytes, &project_id).await {
                 Ok(()) => {
                     // Switch to the newly saved project
                     on_load_project.call(project);
 
-                    if let Err(e) = storage.set_current_project_id(&project_id).await {
+                    if let Err(e) = tauri_bridge::set_current_project_id(&project_id).await {
                         set_error_message.set(Some(format!("Failed to set current project: {e}")));
                         return;
                     }
@@ -361,7 +354,7 @@ pub fn ProjectManager(
     let confirm_delete = Rc::new(move || {
         if let Some(id) = delete_target_id.get() {
             spawn_local(async move {
-                match storage.delete_project(&id).await {
+                match tauri_bridge::delete_project(&id).await {
                     Ok(()) => {
                         set_show_delete_confirm.set(false);
                         load_projects();
@@ -413,8 +406,17 @@ pub fn ProjectManager(
 
         let project = storage::regenerate_project_ids(project, filename);
 
+        let save_bytes = match project.serialize_to_bytes() {
+            Ok(b) => b,
+            Err(e) => {
+                set_error_message.set(Some(format!("Failed to serialize imported project: {e}")));
+                return;
+            }
+        };
+        let project_id = project.metadata.id.clone();
+
         spawn_local(async move {
-            if let Err(e) = storage.save_project(&project).await {
+            if let Err(e) = tauri_bridge::save_project(&save_bytes, &project_id).await {
                 set_error_message.set(Some(format!("Failed to save imported project: {e}")));
                 return;
             }
@@ -570,7 +572,6 @@ pub fn ProjectManager(
                                 render_project_row(
                                     project,
                                     current_id.clone(),
-                                    storage,
                                     on_load_project,
                                     Rc::clone(&on_close),
                                     load_projects,

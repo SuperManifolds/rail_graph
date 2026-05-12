@@ -457,6 +457,9 @@ impl TrainJourney {
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
     ) {
+        // Safety limit: maximum total iterations to prevent infinite loops
+        const MAX_ITERATIONS: usize = 10000;
+
         if line.forward_route.is_empty() {
             return;
         }
@@ -478,7 +481,25 @@ impl TrainJourney {
         // Detect if last departure should roll over to next day
         let last_departure_needs_rollover = line.last_departure.time() < line.first_departure.time();
 
+        // Guard against zero frequency which would cause infinite loop
+        if line.frequency.num_milliseconds() == 0 {
+            return;
+        }
+
+        // Safety limit: maximum total iterations to prevent infinite loops
+        let mut total_iterations = 0;
+
         while journey_count < MAX_JOURNEYS_PER_LINE {
+            total_iterations += 1;
+            if total_iterations > MAX_ITERATIONS {
+                #[cfg(target_arch = "wasm32")]
+                web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&format!(
+                    "⚠️ Forward journey generation for line '{}' exceeded {} iterations, stopping",
+                    line.code, MAX_ITERATIONS
+                )));
+                break;
+            }
+
             let mut station_times = Vec::with_capacity(route_nodes.len());
             let mut segments = Vec::with_capacity(line.forward_route.len());
             let mut timing_inherited = Vec::with_capacity(route_nodes.len());
@@ -817,6 +838,9 @@ impl TrainJourney {
         graph: &RailwayGraph,
         current_date: chrono::NaiveDate,
     ) {
+        // Safety limit: maximum total iterations to prevent infinite loops
+        const MAX_ITERATIONS: usize = 10000;
+
         if line.return_route.is_empty() {
             return;
         }
@@ -839,7 +863,25 @@ impl TrainJourney {
         // Detect if last departure should roll over to next day
         let return_last_departure_needs_rollover = line.return_last_departure.time() < line.return_first_departure.time();
 
+        // Guard against zero frequency which would cause infinite loop
+        if line.frequency.num_milliseconds() == 0 {
+            return;
+        }
+
+        // Safety limit: maximum total iterations to prevent infinite loops
+        let mut total_iterations = 0;
+
         while return_journey_count < MAX_JOURNEYS_PER_LINE {
+            total_iterations += 1;
+            if total_iterations > MAX_ITERATIONS {
+                #[cfg(target_arch = "wasm32")]
+                web_sys::console::warn_1(&wasm_bindgen::JsValue::from_str(&format!(
+                    "⚠️ Return journey generation for line '{}' exceeded {} iterations, stopping",
+                    line.code, MAX_ITERATIONS
+                )));
+                break;
+            }
+
             let mut station_times = Vec::with_capacity(route_nodes.len());
             let mut segments = Vec::with_capacity(line.return_route.len());
             let mut timing_inherited = Vec::with_capacity(route_nodes.len());

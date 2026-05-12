@@ -1,4 +1,4 @@
-use leptos::{component, view, IntoView, create_signal, SignalGet, SignalSet, use_context, spawn_local, SignalUpdate, ReadSignal, WriteSignal};
+use leptos::{component, view, IntoView, create_signal, SignalGet, SignalSet, use_context, SignalUpdate, ReadSignal, WriteSignal};
 use crate::models::{UserSettings, KeyboardShortcut, KeyboardShortcuts, ShortcutCategory};
 use std::collections::HashMap;
 
@@ -103,14 +103,12 @@ pub fn KeyboardShortcutsEditor() -> impl IntoView {
                 settings.clone()
             }).expect("Failed to update settings");
 
-            // Save to IndexedDB
-            spawn_local(async move {
-                if let Err(e) = settings_to_save.save().await {
-                    leptos::logging::error!("Failed to save shortcuts: {}", e);
-                } else {
-                    leptos::logging::log!("Successfully saved shortcut");
-                }
-            });
+            // Save to localStorage
+            if let Err(e) = settings_to_save.save() {
+                leptos::logging::error!("Failed to save shortcuts: {}", e);
+            } else {
+                leptos::logging::log!("Successfully saved shortcut");
+            }
 
             set_capturing_for.set(None);
             set_browser_warning.set(false);
@@ -130,14 +128,12 @@ pub fn KeyboardShortcutsEditor() -> impl IntoView {
             settings.clone()
         }).expect("Failed to update settings");
 
-        // Save to IndexedDB
-        spawn_local(async move {
-            if let Err(e) = settings_to_save.save().await {
-                leptos::logging::error!("Failed to save shortcuts: {}", e);
-            } else {
-                leptos::logging::log!("Successfully cleared shortcut");
-            }
-        });
+        // Save to localStorage
+        if let Err(e) = settings_to_save.save() {
+            leptos::logging::error!("Failed to save shortcuts: {}", e);
+        } else {
+            leptos::logging::log!("Successfully cleared shortcut");
+        }
     };
 
     // Reset single shortcut to default
@@ -149,14 +145,12 @@ pub fn KeyboardShortcutsEditor() -> impl IntoView {
                 settings.clone()
             }).expect("Failed to update settings");
 
-            // Save to IndexedDB
-            spawn_local(async move {
-                if let Err(e) = settings_to_save.save().await {
-                    leptos::logging::error!("Failed to save shortcuts: {}", e);
-                } else {
-                    leptos::logging::log!("Successfully saved shortcut reset");
-                }
-            });
+            // Save to localStorage
+            if let Err(e) = settings_to_save.save() {
+                leptos::logging::error!("Failed to save shortcuts: {}", e);
+            } else {
+                leptos::logging::log!("Successfully saved shortcut reset");
+            }
         }
     };
 
@@ -167,14 +161,12 @@ pub fn KeyboardShortcutsEditor() -> impl IntoView {
             settings.clone()
         }).expect("Failed to update settings");
 
-        // Save to IndexedDB
-        spawn_local(async move {
-            if let Err(e) = settings_to_save.save().await {
-                leptos::logging::error!("Failed to save shortcuts: {}", e);
-            } else {
-                leptos::logging::log!("Successfully reset all shortcuts");
-            }
-        });
+        // Save to localStorage
+        if let Err(e) = settings_to_save.save() {
+            leptos::logging::error!("Failed to save shortcuts: {}", e);
+        } else {
+            leptos::logging::log!("Successfully reset all shortcuts");
+        }
     };
 
     // Group shortcuts by category in the order they were defined
