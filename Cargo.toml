@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "core", "src-tauri", "server"]
+members = [".", "core", "src-tauri"]
 
 [package]
 name = "nimby_graph"
