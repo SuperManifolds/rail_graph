@@ -532,10 +532,13 @@ fn create_infrastructure_from_segments(
             // This prevents creating express-skip edges when a denser local path exists
             let pair_key = (seg_from.to_string(), seg_to.to_string());
             let reverse_pair_key = (seg_to.to_string(), seg_from.to_string());
+            // Check both key directions (lines may be stored in either direction)
             let pair_has_denser_path = segment_map
                 .get(&pair_key)
-                .or_else(|| segment_map.get(&reverse_pair_key))
-                .is_some_and(|paths| paths.iter().any(|p| !p.intermediates.is_empty()));
+                .into_iter()
+                .chain(segment_map.get(&reverse_pair_key))
+                .flatten()
+                .any(|p| !p.intermediates.is_empty());
 
             if pair_has_denser_path {
                 // Skip - this pair has its own denser path that will be processed separately
@@ -624,12 +627,24 @@ fn create_consecutive_edges(
                 let key = (from_id.clone(), to_id.clone());
                 let reverse_key = (to_id.clone(), from_id.clone());
 
-                let has_matching_intermediate_path = segment_map
+                // Check both key directions (lines may be stored in either direction)
+                let all_paths: Vec<&SegmentPath> = segment_map
                     .get(&key)
-                    .or_else(|| segment_map.get(&reverse_key))
-                    .is_some_and(|paths| {
-                        paths.iter().any(|p| is_same_track_path(p, total_distance))
-                    });
+                    .into_iter()
+                    .chain(segment_map.get(&reverse_key))
+                    .flatten()
+                    .collect();
+
+                // If a direct (consecutive) path exists at matching distance, any intermediate
+                // path at that distance is from the same corridor, not a different local route
+                let has_direct_at_distance = all_paths
+                    .iter()
+                    .any(|p| p.intermediates.is_empty() && distances_match(p.total_distance, total_distance));
+
+                let has_matching_intermediate_path = !has_direct_at_distance
+                    && all_paths
+                        .iter()
+                        .any(|p| is_same_track_path(p, total_distance));
 
                 if has_matching_intermediate_path {
                     continue;
@@ -1686,11 +1701,16 @@ fn is_same_track_path(path: &SegmentPath, direct_distance: f64) -> bool {
 
 /// Add a path to the segment map if it's not dominated by an existing path.
 /// A path is dominated if there's another with same distance but more intermediates.
+/// Direct paths (empty intermediates) are never dominated by intermediate paths,
+/// since they represent express routes that may need their own edges.
 fn add_path_to_segment_map(paths: &mut Vec<SegmentPath>, path: SegmentPath) {
     // Check if dominated by an existing path
+    // Direct (consecutive) paths can only be dominated by other direct paths,
+    // not by intermediate paths — they serve a different purpose
     let dominated = paths.iter().any(|existing| {
         distances_match(existing.total_distance, path.total_distance)
             && existing.intermediates.len() >= path.intermediates.len()
+            && (!path.intermediates.is_empty() || existing.intermediates.is_empty())
     });
 
     if dominated {
@@ -1698,10 +1718,12 @@ fn add_path_to_segment_map(paths: &mut Vec<SegmentPath>, path: SegmentPath) {
     }
 
     // Remove any paths this one dominates (same distance, fewer intermediates)
+    // Never remove direct (consecutive) paths — they represent express routes
     let path_dist = path.total_distance;
     let path_len = path.intermediates.len();
     paths.retain(|existing| {
-        !distances_match(existing.total_distance, path_dist)
+        existing.intermediates.is_empty()
+            || !distances_match(existing.total_distance, path_dist)
             || existing.intermediates.len() >= path_len
     });
     paths.push(path);
