@@ -3462,6 +3462,7 @@ dependencies = [
  "petgraph",
  "pulldown-cmark",
  "quick-xml 0.37.5",
+ "railgraph-core",
  "reqwest 0.12.24",
  "rmp-serde",
  "serde",

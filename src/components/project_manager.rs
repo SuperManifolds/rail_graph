@@ -108,7 +108,7 @@ fn render_project_row(
     let project_name = Rc::new(metadata.name.clone());
     let project_id_for_dup = Rc::new(metadata.id.clone());
 
-    let date_str = crate::time::format_rfc3339_local(&metadata.updated_at);
+    let date_str = crate::time_ext::format_rfc3339_local(&metadata.updated_at);
 
     let row_class = if is_active {
         "project-list-row active"

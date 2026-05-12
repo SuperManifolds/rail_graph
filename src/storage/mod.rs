@@ -2,8 +2,8 @@ mod file;
 
 pub use file::{serialize_project_to_bytes, deserialize_project_from_bytes, create_export_filename, trigger_download, regenerate_project_ids};
 
-/// Current project file format version
-pub const CURRENT_PROJECT_VERSION: u32 = 1;
+/// Current project file format version (re-exported from core)
+pub use railgraph_core::models::CURRENT_PROJECT_VERSION;
 
 const GB: f64 = 1_073_741_824.0;
 const MB: f64 = 1_048_576.0;

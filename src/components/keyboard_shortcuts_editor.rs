@@ -1,26 +1,8 @@
 use leptos::{component, view, IntoView, create_signal, SignalGet, SignalSet, use_context, SignalUpdate, ReadSignal, WriteSignal};
-use crate::models::{UserSettings, KeyboardShortcut, KeyboardShortcuts, ShortcutCategory};
+use crate::models::{UserSettings, KeyboardShortcut, ShortcutCategory};
+use crate::keyboard_shortcuts_ext;
+use crate::user_settings_ext::UserSettingsStorage;
 use std::collections::HashMap;
-
-fn is_mac_platform() -> bool {
-    let Some(window) = web_sys::window() else {
-        return false;
-    };
-    let Ok(platform) = window.navigator().platform() else {
-        return false;
-    };
-    platform.contains("Mac") || platform.contains("iPhone") || platform.contains("iPad")
-}
-
-fn is_windows_platform() -> bool {
-    let Some(window) = web_sys::window() else {
-        return false;
-    };
-    let Ok(platform) = window.navigator().platform() else {
-        return false;
-    };
-    platform.contains("Win")
-}
 
 #[component]
 #[must_use]
@@ -39,8 +21,8 @@ pub fn KeyboardShortcutsEditor() -> impl IntoView {
     let (conflict_warning, set_conflict_warning) = create_signal(None::<String>);
     let (browser_warning, set_browser_warning) = create_signal(false);
 
-    let is_mac = is_mac_platform();
-    let is_windows = is_windows_platform();
+    let is_mac = keyboard_shortcuts_ext::is_mac_platform();
+    let is_windows = keyboard_shortcuts_ext::is_windows_platform();
 
     // Handle keyboard shortcut capture
     let handle_keydown = move |ev: web_sys::KeyboardEvent| {
@@ -84,7 +66,7 @@ pub fn KeyboardShortcutsEditor() -> impl IntoView {
             let conflicts = shortcuts.check_conflicts(&new_shortcut, Some(&shortcut_id));
 
             if !conflicts.is_empty() {
-                let metadata = KeyboardShortcuts::get_all_metadata();
+                let metadata = keyboard_shortcuts_ext::get_all_metadata();
                 let conflict_names: Vec<String> = conflicts.iter()
                     .filter_map(|id| metadata.get(id).map(|m| m.description.to_string()))
                     .collect();
@@ -138,7 +120,7 @@ pub fn KeyboardShortcutsEditor() -> impl IntoView {
 
     // Reset single shortcut to default
     let reset_shortcut = move |shortcut_id: String| {
-        let defaults = KeyboardShortcuts::default_shortcuts();
+        let defaults = keyboard_shortcuts_ext::default_shortcuts();
         if let Some(default_shortcut) = defaults.get(&shortcut_id) {
             let settings_to_save = set_user_settings.try_update(|settings| {
                 settings.keyboard_shortcuts.set(&shortcut_id, Some(default_shortcut.clone()));
@@ -157,7 +139,7 @@ pub fn KeyboardShortcutsEditor() -> impl IntoView {
     // Reset all shortcuts to defaults
     let reset_all_shortcuts = move |_| {
         let settings_to_save = set_user_settings.try_update(|settings| {
-            settings.keyboard_shortcuts = KeyboardShortcuts::default_shortcuts();
+            settings.keyboard_shortcuts = keyboard_shortcuts_ext::default_shortcuts();
             settings.clone()
         }).expect("Failed to update settings");
 
@@ -171,7 +153,7 @@ pub fn KeyboardShortcutsEditor() -> impl IntoView {
 
     // Group shortcuts by category in the order they were defined
     let shortcuts_by_category = move || {
-        let ordered_metadata = KeyboardShortcuts::get_all_ordered();
+        let ordered_metadata = keyboard_shortcuts_ext::get_all_ordered();
         let shortcuts = user_settings.get().keyboard_shortcuts.clone();
 
         let mut grouped: HashMap<ShortcutCategory, Vec<(String, String, Option<KeyboardShortcut>)>> = HashMap::new();

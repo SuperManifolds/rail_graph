@@ -854,7 +854,7 @@ pub fn set_label_position_for_selected(
     selected_nodes: ReadSignal<Vec<NodeIndex>>,
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
-    label_position: Option<crate::components::infrastructure_canvas::station_renderer::LabelPosition>,
+    label_position: Option<crate::models::LabelPosition>,
     topology_cache: leptos::StoredValue<std::cell::RefCell<crate::components::infrastructure_canvas::renderer::TopologyCache>>,
 ) {
     let nodes = selected_nodes.get();
@@ -939,7 +939,7 @@ pub fn MultiSelectToolbar(
     on_delete: Option<Callback<()>>,
     /// Callback for Set Label Position operation
     #[prop(optional)]
-    on_set_label_position: Option<Callback<Option<crate::components::infrastructure_canvas::station_renderer::LabelPosition>>>,
+    on_set_label_position: Option<Callback<Option<crate::models::LabelPosition>>>,
 ) -> impl IntoView {
     // Calculate toolbar position based on selected stations centroid
     let toolbar_position = move || {
@@ -1011,7 +1011,7 @@ pub fn MultiSelectToolbar(
         }
 
         let current_graph = graph.get();
-        let mut positions: Vec<Option<crate::components::infrastructure_canvas::station_renderer::LabelPosition>> = Vec::new();
+        let mut positions: Vec<Option<crate::models::LabelPosition>> = Vec::new();
 
         for &idx in &stations {
             if let Some(node) = current_graph.graph.node_weight(idx) {
@@ -1144,7 +1144,7 @@ pub fn MultiSelectToolbar(
                                 use crate::components::label_position_grid::LabelPositionState;
                                 match label_position_state() {
                                     LabelPositionState::Single(pos) => {
-                                        use crate::components::infrastructure_canvas::station_renderer::LabelPosition;
+                                        use crate::models::LabelPosition;
                                         match pos {
                                             LabelPosition::TopLeft => view! { <span>"↖"</span> }.into_view(),
                                             LabelPosition::Top => view! { <span>"↑"</span> }.into_view(),
@@ -1164,7 +1164,7 @@ pub fn MultiSelectToolbar(
 
                         <LabelPositionGrid
                             is_open=Signal::derive(move || label_grid_open.get())
-                            on_select=Callback::new(move |pos: Option<crate::components::infrastructure_canvas::station_renderer::LabelPosition>| {
+                            on_select=Callback::new(move |pos: Option<crate::models::LabelPosition>| {
                                 if let Some(callback) = on_set_label_position {
                                     callback.call(pos);
                                 }

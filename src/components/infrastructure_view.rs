@@ -2161,7 +2161,7 @@ pub fn InfrastructureView(
                             set_show_multi_delete_confirmation.set(true);
                         }
                     })
-                    on_set_label_position=leptos::Callback::new(move |pos: Option<crate::components::infrastructure_canvas::station_renderer::LabelPosition>| {
+                    on_set_label_position=leptos::Callback::new(move |pos: Option<crate::models::LabelPosition>| {
                         crate::components::multi_select_toolbar::set_label_position_for_selected(
                             selected_stations,
                             graph,

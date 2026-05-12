@@ -10,6 +10,7 @@ use crate::conflict::Conflict;
 #[allow(unused_imports)]
 use crate::logging::log;
 use crate::models::{GraphView, Legend, Project, RailwayGraph, Routes, ViewportState, UndoManager, UndoSnapshot};
+use crate::user_settings_ext::UserSettingsStorage;
 use crate::storage::serialize_project_to_bytes;
 use crate::train_journey::TrainJourney;
 use crate::tauri_bridge::ConflictDetector;

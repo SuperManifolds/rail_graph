@@ -1,5 +1,4 @@
 use crate::models::Project;
-use crate::storage::CURRENT_PROJECT_VERSION;
 use wasm_bindgen::JsCast;
 use web_sys;
 
@@ -8,15 +7,7 @@ use web_sys;
 /// # Errors
 /// Returns an error if `MessagePack` serialization fails
 pub fn serialize_project_to_bytes(project: &Project) -> Result<Vec<u8>, String> {
-    let project_bytes =
-        rmp_serde::to_vec(project).map_err(|e| format!("Failed to serialize project: {e}"))?;
-
-    // Create versioned format: [4 bytes u32 version][`MessagePack` data]
-    let mut bytes = Vec::with_capacity(4 + project_bytes.len());
-    bytes.extend_from_slice(&CURRENT_PROJECT_VERSION.to_le_bytes());
-    bytes.extend_from_slice(&project_bytes);
-
-    Ok(bytes)
+    project.serialize_to_bytes()
 }
 
 /// Deserialize a project from bytes with version header validation
@@ -24,33 +15,7 @@ pub fn serialize_project_to_bytes(project: &Project) -> Result<Vec<u8>, String> 
 /// # Errors
 /// Returns an error if the file is invalid, version is unsupported, or deserialization fails
 pub fn deserialize_project_from_bytes(bytes: &[u8]) -> Result<Project, String> {
-    // Validate minimum size
-    if bytes.len() < 4 {
-        return Err("Invalid .rgproject file: too small".to_string());
-    }
-
-    // Validate version header
-    let version_bytes: [u8; 4] = bytes[0..4]
-        .try_into()
-        .map_err(|_| "Invalid version header")?;
-    let version = u32::from_le_bytes(version_bytes);
-
-    if version != CURRENT_PROJECT_VERSION {
-        return Err(format!("Unsupported project version: {version}"));
-    }
-
-    // Deserialize project
-    let project_bytes = &bytes[4..];
-    let mut project: Project = rmp_serde::from_slice(project_bytes)
-        .map_err(|e| format!("Failed to parse project: {e}"))?;
-
-    // Validate and fix any invalid track indices in all lines
-    project.fix_invalid_track_indices();
-
-    // Populate missing line codes from line names
-    project.populate_missing_line_codes();
-
-    Ok(project)
+    Project::from_bytes(bytes)
 }
 
 /// Create a download filename for a project
@@ -130,7 +95,7 @@ mod tests {
         let bytes = vec![0u8, 1u8, 2u8];
         let result = deserialize_project_from_bytes(&bytes);
         assert!(result.is_err());
-        assert!(result.expect_err("Expected error").contains("too small"));
+        assert!(result.expect_err("Expected error").contains("Legacy project format"));
     }
 
     #[test]

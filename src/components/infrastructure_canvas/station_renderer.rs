@@ -1,4 +1,4 @@
-use crate::models::{RailwayGraph, Stations, Junctions, Line};
+use crate::models::{RailwayGraph, Stations, Junctions, Line, LabelPosition};
 use crate::theme::Theme;
 use crate::components::infrastructure_canvas::{track_renderer, junction_renderer, line_renderer, line_station_renderer};
 use crate::geometry::line_segments_intersect;
@@ -89,82 +89,68 @@ pub fn calculate_readable_text_color(hex_color: &str) -> &'static str {
     "#ffffff"
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum LabelPosition {
-    Right,
-    Left,
-    Top,
-    Bottom,
-    TopRight,
-    TopLeft,
-    BottomRight,
-    BottomLeft,
-}
-
 #[derive(Clone, Copy)]
 pub struct CachedLabelPosition {
     pub position: LabelPosition,
     pub bounds: LabelBounds,
 }
 
-impl LabelPosition {
-    fn all() -> Vec<LabelPosition> {
-        vec![
-            LabelPosition::Right,
-            LabelPosition::Left,
-            LabelPosition::Top,
-            LabelPosition::Bottom,
-            LabelPosition::TopRight,
-            LabelPosition::TopLeft,
-            LabelPosition::BottomRight,
-            LabelPosition::BottomLeft,
-        ]
-    }
+fn all_label_positions() -> Vec<LabelPosition> {
+    vec![
+        LabelPosition::Right,
+        LabelPosition::Left,
+        LabelPosition::Top,
+        LabelPosition::Bottom,
+        LabelPosition::TopRight,
+        LabelPosition::TopLeft,
+        LabelPosition::BottomRight,
+        LabelPosition::BottomLeft,
+    ]
+}
 
-    fn calculate_label_pos_with_offset(self, node_pos: (f64, f64), text_width: f64, font_size: f64, offset: f64) -> (f64, f64) {
-        let (x, y) = node_pos;
-        match self {
-            LabelPosition::Right => (x + offset, y + font_size / 3.0),
-            LabelPosition::Left => (x - offset - text_width, y + font_size / 3.0),
-            LabelPosition::Top => (x - text_width / 2.0, y - offset),
-            LabelPosition::Bottom => (x - text_width / 2.0, y + offset + font_size),
-            LabelPosition::TopRight => (x + offset * 0.7, y - offset * 0.7),
-            LabelPosition::TopLeft => (x - offset * 0.7 - text_width, y - offset * 0.7),
-            LabelPosition::BottomRight => (x + offset * 0.7, y + offset * 0.7 + font_size),
-            LabelPosition::BottomLeft => (x - offset * 0.7 - text_width, y + offset * 0.7 + font_size),
-        }
+fn calculate_label_pos_with_offset(position: LabelPosition, node_pos: (f64, f64), text_width: f64, font_size: f64, offset: f64) -> (f64, f64) {
+    let (x, y) = node_pos;
+    match position {
+        LabelPosition::Right => (x + offset, y + font_size / 3.0),
+        LabelPosition::Left => (x - offset - text_width, y + font_size / 3.0),
+        LabelPosition::Top => (x - text_width / 2.0, y - offset),
+        LabelPosition::Bottom => (x - text_width / 2.0, y + offset + font_size),
+        LabelPosition::TopRight => (x + offset * 0.7, y - offset * 0.7),
+        LabelPosition::TopLeft => (x - offset * 0.7 - text_width, y - offset * 0.7),
+        LabelPosition::BottomRight => (x + offset * 0.7, y + offset * 0.7 + font_size),
+        LabelPosition::BottomLeft => (x - offset * 0.7 - text_width, y + offset * 0.7 + font_size),
     }
+}
 
-    fn rotation_angle(self) -> f64 {
-        match self {
-            LabelPosition::Top | LabelPosition::TopRight | LabelPosition::BottomLeft => -std::f64::consts::PI / 4.0,
-            LabelPosition::Bottom | LabelPosition::BottomRight | LabelPosition::TopLeft => std::f64::consts::PI / 4.0,
-            _ => 0.0,
-        }
+fn rotation_angle(position: LabelPosition) -> f64 {
+    match position {
+        LabelPosition::Top | LabelPosition::TopRight | LabelPosition::BottomLeft => -std::f64::consts::PI / 4.0,
+        LabelPosition::Bottom | LabelPosition::BottomRight | LabelPosition::TopLeft => std::f64::consts::PI / 4.0,
+        _ => 0.0,
     }
+}
 
-    fn is_diagonal(self) -> bool {
-        matches!(self,
-            LabelPosition::Top |
-            LabelPosition::Bottom |
-            LabelPosition::TopRight |
-            LabelPosition::TopLeft |
-            LabelPosition::BottomRight |
-            LabelPosition::BottomLeft
-        )
-    }
+fn is_diagonal(position: LabelPosition) -> bool {
+    matches!(position,
+        LabelPosition::Top |
+        LabelPosition::Bottom |
+        LabelPosition::TopRight |
+        LabelPosition::TopLeft |
+        LabelPosition::BottomRight |
+        LabelPosition::BottomLeft
+    )
+}
 
-    fn text_align(self) -> &'static str {
-        match self {
-            LabelPosition::Left | LabelPosition::TopLeft | LabelPosition::BottomLeft => "right",
-            LabelPosition::Right | LabelPosition::TopRight | LabelPosition::BottomRight
-                | LabelPosition::Top | LabelPosition::Bottom => "left",
-        }
+fn text_align(position: LabelPosition) -> &'static str {
+    match position {
+        LabelPosition::Left | LabelPosition::TopLeft | LabelPosition::BottomLeft => "right",
+        LabelPosition::Right | LabelPosition::TopRight | LabelPosition::BottomRight
+            | LabelPosition::Top | LabelPosition::Bottom => "left",
     }
+}
 
-    fn text_baseline() -> &'static str {
-        "middle"
-    }
+fn label_text_baseline() -> &'static str {
+    "middle"
 }
 
 #[derive(Clone, Copy)]
@@ -318,15 +304,15 @@ fn calculate_label_bounds(
     font_size: f64,
     offset: f64,
 ) -> LabelBounds {
-    let label_pos = position.calculate_label_pos_with_offset(pos, text_width, font_size, offset);
+    let label_pos = calculate_label_pos_with_offset(position,pos, text_width, font_size, offset);
 
-    if position.is_diagonal() {
+    if is_diagonal(position) {
         let cos45 = std::f64::consts::FRAC_1_SQRT_2;
         let text_height = font_size * 1.2;
         let rotated_width = text_width * cos45 + text_height * cos45;
         let rotated_height = text_width * cos45 + text_height * cos45;
 
-        let angle = position.rotation_angle();
+        let angle = rotation_angle(position);
 
         let (x_offset_rotated, y_offset_rotated) = match position {
             LabelPosition::Top => (offset * cos45, -offset * cos45),
@@ -436,14 +422,14 @@ fn draw_station_label(
     scale: f64,
 ) {
     ctx.save();
-    ctx.set_text_align(position.text_align());
-    ctx.set_text_baseline(LabelPosition::text_baseline());
+    ctx.set_text_align(text_align(position));
+    ctx.set_text_baseline(label_text_baseline());
 
     let total_offset = (radius + offset) * scale;
 
-    if position.is_diagonal() {
+    if is_diagonal(position) {
         let _ = ctx.translate(pos.0, pos.1);
-        let _ = ctx.rotate(position.rotation_angle());
+        let _ = ctx.rotate(rotation_angle(position));
 
         let cos45 = std::f64::consts::FRAC_1_SQRT_2;
 
@@ -704,7 +690,7 @@ fn process_node_group(
 
     let mut best_conflict_count = usize::MAX;
 
-    for orientation in LabelPosition::all() {
+    for orientation in all_label_positions() {
         let mut total_overlaps = 0;
         let mut conflict_count = 0;
 

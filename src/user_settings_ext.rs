@@ -1,28 +1,27 @@
-use serde::{Deserialize, Serialize};
-use super::keyboard_shortcuts::KeyboardShortcuts;
+use railgraph_core::models::UserSettings;
+use crate::keyboard_shortcuts_ext;
 
 const LOCAL_STORAGE_KEY: &str = "nimby_user_settings";
 
-/// User settings that persist across projects
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct UserSettings {
-    #[serde(default)]
-    pub keyboard_shortcuts: KeyboardShortcuts,
-}
-
-impl UserSettings {
-    /// Create new settings with defaults
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
+/// Extension trait for `UserSettings` to add frontend-specific load/save functionality
+pub trait UserSettingsStorage {
     /// Load user settings from `localStorage`
     ///
     /// # Errors
     ///
     /// Returns an error if the settings cannot be loaded
-    pub fn load() -> Result<Self, String> {
+    fn load() -> Result<UserSettings, String>;
+
+    /// Save user settings to `localStorage`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the settings cannot be saved
+    fn save(&self) -> Result<(), String>;
+}
+
+impl UserSettingsStorage for UserSettings {
+    fn load() -> Result<UserSettings, String> {
         let window = web_sys::window().ok_or("No window")?;
         let storage = window
             .local_storage()
@@ -33,23 +32,18 @@ impl UserSettings {
             .get_item(LOCAL_STORAGE_KEY)
             .map_err(|_| "Failed to read from localStorage")?
         else {
-            return Ok(Self::default());
+            return Ok(UserSettings::default());
         };
 
-        let mut settings: Self = serde_json::from_str(&json_str)
+        let mut settings: UserSettings = serde_json::from_str(&json_str)
             .map_err(|e| format!("Failed to parse settings: {e}"))?;
 
-        settings.keyboard_shortcuts.merge_with_defaults();
+        keyboard_shortcuts_ext::merge_with_defaults(&mut settings.keyboard_shortcuts);
 
         Ok(settings)
     }
 
-    /// Save user settings to `localStorage`
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the settings cannot be saved
-    pub fn save(&self) -> Result<(), String> {
+    fn save(&self) -> Result<(), String> {
         let window = web_sys::window().ok_or("No window")?;
         let storage = window
             .local_storage()

@@ -1,5 +1,5 @@
-use super::station_renderer::{CachedLabelPosition, LabelPosition};
-use crate::models::{Junctions, Line, RailwayGraph, Stations};
+use super::station_renderer::CachedLabelPosition;
+use crate::models::{Junctions, LabelPosition, Line, RailwayGraph, Stations};
 use crate::theme::Theme;
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use std::collections::{HashMap, HashSet};
@@ -595,7 +595,7 @@ fn draw_line_name_label(
     line_name: &str,
     line_color: &str,
     pos: (f64, f64),
-    label_position: super::station_renderer::LabelPosition,
+    label_position: crate::models::LabelPosition,
     station_name: &str,
     zoom: f64,
     label_index: usize, // For stacking multiple labels
@@ -631,17 +631,17 @@ fn draw_line_name_label(
         let perp_y = angle.cos();
 
         let extent_offset = match label_position {
-            super::station_renderer::LabelPosition::Right
-            | super::station_renderer::LabelPosition::TopRight
-            | super::station_renderer::LabelPosition::BottomRight => {
+            crate::models::LabelPosition::Right
+            | crate::models::LabelPosition::TopRight
+            | crate::models::LabelPosition::BottomRight => {
                 if max_offset > 0.0 { max_offset } else { 0.0 }
             }
-            super::station_renderer::LabelPosition::Left
-            | super::station_renderer::LabelPosition::TopLeft
-            | super::station_renderer::LabelPosition::BottomLeft => {
+            crate::models::LabelPosition::Left
+            | crate::models::LabelPosition::TopLeft
+            | crate::models::LabelPosition::BottomLeft => {
                 if min_offset < 0.0 { min_offset } else { 0.0 }
             }
-            super::station_renderer::LabelPosition::Top | super::station_renderer::LabelPosition::Bottom => {
+            crate::models::LabelPosition::Top | crate::models::LabelPosition::Bottom => {
                 if max_offset.abs() > min_offset.abs() { max_offset } else { min_offset }
             }
         };
@@ -660,21 +660,21 @@ fn draw_line_name_label(
 
     // Calculate station label endpoint and badge stacking direction
     let (endpoint_x, endpoint_y, stack_dir_x, stack_dir_y, is_vertical) = match label_position {
-        super::station_renderer::LabelPosition::Right => {
+        crate::models::LabelPosition::Right => {
             // Horizontal label extending right
             let endpoint_x = adjusted_pos.0 + station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
             let endpoint_y = adjusted_pos.1;
             // Stack horizontally to the right
             (endpoint_x, endpoint_y, 1.0, 0.0, false)
         }
-        super::station_renderer::LabelPosition::Left => {
+        crate::models::LabelPosition::Left => {
             // Horizontal label extending left
             let endpoint_x = adjusted_pos.0 - station_node_radius - station_label_offset - station_name_width - LINE_LABEL_SPACING;
             let endpoint_y = adjusted_pos.1;
             // Stack horizontally to the left
             (endpoint_x, endpoint_y, -1.0, 0.0, false)
         }
-        super::station_renderer::LabelPosition::Top => {
+        crate::models::LabelPosition::Top => {
             // Diagonal label extending top-left at -45°
             let distance = station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
             let endpoint_x = adjusted_pos.0 - distance * cos45;
@@ -682,7 +682,7 @@ fn draw_line_name_label(
             // Badges are horizontal, stack horizontally to the right
             (endpoint_x, endpoint_y, 1.0, 0.0, false)
         }
-        super::station_renderer::LabelPosition::Bottom => {
+        crate::models::LabelPosition::Bottom => {
             // Diagonal label extending bottom-right at +45°
             let distance = station_node_radius + station_label_offset + station_name_width + LINE_LABEL_SPACING;
             let endpoint_x = adjusted_pos.0 + distance * cos45;
@@ -690,7 +690,7 @@ fn draw_line_name_label(
             // Badges are horizontal, stack horizontally to the right
             (endpoint_x, endpoint_y, 1.0, 0.0, false)
         }
-        super::station_renderer::LabelPosition::TopRight => {
+        crate::models::LabelPosition::TopRight => {
             // Diagonal position, then horizontal text extending right
             let diagonal_dist = (station_node_radius + station_label_offset) * cos45;
             let endpoint_x = adjusted_pos.0 + diagonal_dist + station_name_width + LINE_LABEL_SPACING;
@@ -698,7 +698,7 @@ fn draw_line_name_label(
             // Badges are vertical, stack vertically downward
             (endpoint_x, endpoint_y, 0.0, 1.0, true)
         }
-        super::station_renderer::LabelPosition::TopLeft => {
+        crate::models::LabelPosition::TopLeft => {
             // Diagonal position, then horizontal text extending left
             let diagonal_dist = (station_node_radius + station_label_offset) * cos45;
             let endpoint_x = adjusted_pos.0 - diagonal_dist - LINE_LABEL_SPACING;
@@ -706,7 +706,7 @@ fn draw_line_name_label(
             // Badges are vertical, stack vertically downward
             (endpoint_x, endpoint_y, 0.0, 1.0, true)
         }
-        super::station_renderer::LabelPosition::BottomRight => {
+        crate::models::LabelPosition::BottomRight => {
             // Diagonal position, then horizontal text extending right
             let diagonal_dist = (station_node_radius + station_label_offset) * cos45;
             let endpoint_x = adjusted_pos.0 + diagonal_dist + station_name_width + LINE_LABEL_SPACING;
@@ -714,7 +714,7 @@ fn draw_line_name_label(
             // Badges are vertical, stack vertically downward
             (endpoint_x, endpoint_y, 0.0, 1.0, true)
         }
-        super::station_renderer::LabelPosition::BottomLeft => {
+        crate::models::LabelPosition::BottomLeft => {
             // Diagonal position, then horizontal text extending left
             let diagonal_dist = (station_node_radius + station_label_offset) * cos45;
             let endpoint_x = adjusted_pos.0 - diagonal_dist - LINE_LABEL_SPACING;

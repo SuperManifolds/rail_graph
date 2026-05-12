@@ -1,5 +1,5 @@
 use leptos::{component, view, IntoView, Signal, Callback, SignalGet, Callable};
-use crate::components::infrastructure_canvas::station_renderer::LabelPosition;
+use crate::models::LabelPosition;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LabelPositionState {

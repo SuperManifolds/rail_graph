@@ -24,6 +24,7 @@ manual_midpoint = { level = "allow", priority = 1 }
 float_cmp = { level = "allow", priority = 1 }
 
 [dependencies]
+railgraph-core = { path = "core" }
 leptos = { version = "0.6", features = ["csr"] }
 leptos_meta = { version = "0.6", features = ["csr"] }
 leptos_router = { version = "0.6", features = ["csr"] }
