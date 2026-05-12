@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.railgraph.app",
   "build": {
-    "beforeDevCommand": "trunk serve --port 1420",
-    "beforeBuildCommand": "trunk build --release",
+    "beforeDevCommand": { "script": "trunk serve --port 1420", "cwd": ".." },
+    "beforeBuildCommand": { "script": "trunk build --release", "cwd": ".." },
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
