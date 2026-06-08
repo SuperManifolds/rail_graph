@@ -745,16 +745,16 @@ fn delete_track_handler(
 fn edit_junction_handler(
     junction_idx: NodeIndex,
     new_name: Option<String>,
+    routing_rules: Vec<crate::models::RoutingRule>,
     graph: ReadSignal<RailwayGraph>,
     set_graph: WriteSignal<RailwayGraph>,
     set_editing_junction: WriteSignal<Option<NodeIndex>>,
 ) {
     let mut current_graph = graph.get();
 
-    if let Some(node) = current_graph.graph.node_weight_mut(junction_idx) {
-        if let Some(junction) = node.as_junction_mut() {
-            junction.name = new_name;
-        }
+    if let Some(junction) = current_graph.get_junction_mut(junction_idx) {
+        junction.name = new_name;
+        junction.routing_rules = routing_rules;
     }
 
     set_graph.set(current_graph);
@@ -815,7 +815,7 @@ fn create_handler_callbacks(
     Rc<dyn Fn()>,
     Rc<dyn Fn(EdgeIndex, Vec<Track>, Option<f64>)>,
     Rc<dyn Fn(EdgeIndex)>,
-    Rc<dyn Fn(NodeIndex, Option<String>)>,
+    Rc<dyn Fn(NodeIndex, Option<String>, Vec<crate::models::RoutingRule>)>,
     Rc<dyn Fn(NodeIndex)>,
 ) {
     let handle_add_station = Rc::new(move |name: String, passing_loop: bool, connect_to: Option<NodeIndex>, platforms: Vec<crate::models::Platform>| {
@@ -847,8 +847,8 @@ fn create_handler_callbacks(
         delete_track_handler(edge_idx, graph, set_graph, lines, set_lines, set_editing_track);
     });
 
-    let handle_edit_junction = Rc::new(move |junction_idx: NodeIndex, new_name: Option<String>| {
-        edit_junction_handler(junction_idx, new_name, graph, set_graph, set_editing_junction);
+    let handle_edit_junction = Rc::new(move |junction_idx: NodeIndex, new_name: Option<String>, routing_rules: Vec<crate::models::RoutingRule>| {
+        edit_junction_handler(junction_idx, new_name, routing_rules, graph, set_graph, set_editing_junction);
     });
 
     let handle_delete_junction = Rc::new(move |junction_idx: NodeIndex| {
@@ -2219,7 +2219,6 @@ pub fn InfrastructureView(
                 on_save=handle_edit_junction
                 on_delete=handle_delete_junction
                 graph=graph
-                set_graph=set_graph
             />
 
             <EditTrack

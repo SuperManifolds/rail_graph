@@ -66,16 +66,35 @@ pub fn ChildWindowRouter(window_type: String, session: String) -> impl IntoView 
 }
 
 fn render_child_content(window_type: &str, session: &str, init_data: &str) -> leptos::View {
+    use crate::components::child::edit_junction_child::EditJunctionChild;
+    use crate::components::child::edit_station_child::EditStationChild;
     use crate::components::child::edit_track_child::EditTrackChild;
 
-    if window_type == "edit-track" {
-        let Ok(init) = serde_json::from_str::<crate::window_protocol::EditTrackInit>(init_data) else {
-            leptos::logging::error!("Failed to deserialize EditTrackInit");
-            return leptos::view! { <div>"Failed to load data"</div> }.into_view();
-        };
-        leptos::view! { <EditTrackChild init=init session=session.to_string() /> }.into_view()
-    } else {
-        leptos::logging::error!("Unknown child window type: {}", window_type);
-        leptos::view! { <div>"Unknown window type"</div> }.into_view()
+    match window_type {
+        "edit-track" => {
+            let Ok(init) = serde_json::from_str::<crate::window_protocol::EditTrackInit>(init_data) else {
+                leptos::logging::error!("Failed to deserialize EditTrackInit");
+                return leptos::view! { <div>"Failed to load data"</div> }.into_view();
+            };
+            leptos::view! { <EditTrackChild init=init session=session.to_string() /> }.into_view()
+        }
+        "edit-junction" => {
+            let Ok(init) = serde_json::from_str::<crate::window_protocol::EditJunctionInit>(init_data) else {
+                leptos::logging::error!("Failed to deserialize EditJunctionInit");
+                return leptos::view! { <div>"Failed to load data"</div> }.into_view();
+            };
+            leptos::view! { <EditJunctionChild init=init session=session.to_string() /> }.into_view()
+        }
+        "edit-station" => {
+            let Ok(init) = serde_json::from_str::<crate::window_protocol::EditStationInit>(init_data) else {
+                leptos::logging::error!("Failed to deserialize EditStationInit");
+                return leptos::view! { <div>"Failed to load data"</div> }.into_view();
+            };
+            leptos::view! { <EditStationChild init=init session=session.to_string() /> }.into_view()
+        }
+        _ => {
+            leptos::logging::error!("Unknown child window type: {}", window_type);
+            leptos::view! { <div>"Unknown window type"</div> }.into_view()
+        }
     }
 }

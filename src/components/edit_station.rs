@@ -1,25 +1,23 @@
-use crate::components::window::Window;
-use crate::components::platform_editor::PlatformEditor;
-use crate::components::connect_to_station::ConnectToStation;
-use crate::models::{RailwayGraph, Platform};
-use leptos::{component, create_effect, create_signal, event_target_checked, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalGetUntracked, view, For};
-use petgraph::stable_graph::{NodeIndex, EdgeIndex};
+use crate::components::native_window::NativeWindow;
+use crate::models::{Platform, RailwayGraph};
+use crate::window_protocol::{EditStationInit, EditStationResult};
+use leptos::{component, event_target_value, view, IntoView, ReadSignal, Signal, SignalGet, SignalGetUntracked, SignalSet, WriteSignal};
+use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::rc::Rc;
 
-type TrackDefaultsCallback = Rc<dyn Fn(EdgeIndex, Option<usize>, Option<usize>)>;
-type AddConnectionCallback = Rc<dyn Fn(NodeIndex, NodeIndex)>;
+pub type TrackDefaultsCallback = Rc<dyn Fn(EdgeIndex, Option<usize>, Option<usize>)>;
 
 #[derive(Clone, Debug)]
-struct ConnectedTrack {
-    edge_index: EdgeIndex,
-    other_station_name: String,
-    is_incoming: bool, // true if arriving at this station, false if departing
-    current_default_platform: Option<usize>,
+pub struct ConnectedTrack {
+    pub edge_index: EdgeIndex,
+    pub other_station_name: String,
+    pub is_incoming: bool,
+    pub current_default_platform: Option<usize>,
 }
 
 #[component]
-fn TrackPlatformSelect(
+pub fn TrackPlatformSelect(
     edge_index: EdgeIndex,
     other_station_name: String,
     is_incoming: bool,
@@ -28,7 +26,7 @@ fn TrackPlatformSelect(
     on_update: TrackDefaultsCallback,
     editing_station: ReadSignal<Option<NodeIndex>>,
     graph: ReadSignal<RailwayGraph>,
-    set_connected_tracks: leptos::WriteSignal<Vec<ConnectedTrack>>,
+    set_connected_tracks: WriteSignal<Vec<ConnectedTrack>>,
 ) -> impl IntoView {
     view! {
         <div class="track-default-platform">
@@ -98,7 +96,8 @@ fn TrackPlatformSelect(
     }
 }
 
-fn load_connected_tracks(station_idx: NodeIndex, graph: &RailwayGraph) -> Vec<ConnectedTrack> {
+#[must_use]
+pub fn load_connected_tracks(station_idx: NodeIndex, graph: &RailwayGraph) -> Vec<ConnectedTrack> {
     let mut tracks = Vec::new();
 
     // Outgoing edges (departing from this station)
@@ -144,125 +143,87 @@ pub fn EditStation(
     on_delete: Rc<dyn Fn(NodeIndex)>,
     graph: ReadSignal<RailwayGraph>,
     on_update_track_defaults: TrackDefaultsCallback,
-    on_add_connection: AddConnectionCallback,
+    on_add_connection: Rc<dyn Fn(NodeIndex, NodeIndex)>,
 ) -> impl IntoView {
-    let (station_name, set_station_name) = create_signal(String::new());
-    let (is_passing_loop, set_is_passing_loop) = create_signal(false);
-    let (platforms, set_platforms) = create_signal(Vec::<Platform>::new());
-    let (connected_tracks, set_connected_tracks) = create_signal(Vec::<ConnectedTrack>::new());
-
-    // Load current station data when dialog opens
-    create_effect(move |_| {
-        if let Some(idx) = editing_station.get() {
-            let current_graph = graph.get_untracked();
-            if let Some(node) = current_graph.graph.node_weight(idx) {
-                if let Some(station) = node.as_station() {
-                    set_station_name.set(station.name.clone());
-                    set_is_passing_loop.set(station.passing_loop);
-                    set_platforms.set(station.platforms.clone());
-                    set_connected_tracks.set(load_connected_tracks(idx, &current_graph));
-                }
-            }
-        }
-    });
-
-    let on_close_clone = on_close.clone();
-    let handle_save = move |_| {
-        if let Some(idx) = editing_station.get() {
-            let name = station_name.get();
-            let current_platforms = platforms.get();
-            if !name.is_empty() && !current_platforms.is_empty() {
-                on_save(idx, name, is_passing_loop.get(), current_platforms);
-            }
-        }
-    };
-
-    let handle_delete = move |_| {
-        if let Some(idx) = editing_station.get() {
-            on_delete(idx);
-        }
-    };
-
-    let handle_add_connection = Rc::new(move |connect_idx: NodeIndex| {
-        if let Some(station_idx) = editing_station.get_untracked() {
-            on_add_connection(station_idx, connect_idx);
-            // Reload connected tracks to show new connection
-            let current_graph = graph.get_untracked();
-            set_connected_tracks.set(load_connected_tracks(station_idx, &current_graph));
-        }
-    });
-
     let is_open = Signal::derive(move || editing_station.get().is_some());
 
+    let on_close_for_window = on_close.clone();
+    let on_close_for_result = on_close.clone();
+
+    let result_handler: Box<dyn Fn(String)> = Box::new(move |json: String| {
+        match serde_json::from_str::<EditStationResult>(&json) {
+            Ok(EditStationResult::Save {
+                station_idx,
+                name,
+                is_passing_loop,
+                platforms,
+                track_defaults,
+                new_connections,
+            }) => {
+                let station_node_idx = NodeIndex::new(station_idx);
+
+                // Apply track default changes
+                for change in &track_defaults {
+                    on_update_track_defaults(
+                        EdgeIndex::new(change.edge_idx),
+                        change.default_platform_source,
+                        change.default_platform_target,
+                    );
+                }
+
+                // Apply new connections
+                for &connect_idx in &new_connections {
+                    on_add_connection(station_node_idx, NodeIndex::new(connect_idx));
+                }
+
+                on_save(station_node_idx, name, is_passing_loop, platforms);
+            }
+            Ok(EditStationResult::Delete { station_idx }) => {
+                on_delete(NodeIndex::new(station_idx));
+            }
+            Err(e) => {
+                leptos::logging::error!("Failed to parse EditStationResult: {}", e);
+            }
+        }
+        on_close_for_result();
+    });
+
     view! {
-        <Window
+        <NativeWindow
             is_open=is_open
             title=Signal::derive(|| "Edit Station".to_string())
-            on_close=move || on_close_clone()
+            on_close=move || on_close_for_window()
+            window_type="edit-station"
+            init_data=Signal::derive(move || {
+                let Some(station_idx) = editing_station.get() else {
+                    return String::new();
+                };
+                let current_graph = graph.get();
+
+                let (station_name, is_passing_loop, platforms) = current_graph
+                    .graph
+                    .node_weight(station_idx)
+                    .and_then(|node| node.as_station())
+                    .map(|station| {
+                        (
+                            station.name.clone(),
+                            station.passing_loop,
+                            station.platforms.clone(),
+                        )
+                    })
+                    .unwrap_or_default();
+
+                serde_json::to_string(&EditStationInit {
+                    station_idx: station_idx.index(),
+                    station_name,
+                    is_passing_loop,
+                    platforms,
+                    graph: current_graph,
+                }).unwrap_or_default()
+            })
+            on_result=result_handler
+            size=(500, 550)
             position_key="edit-station"
-        >
-            <div class="add-station-form">
-                <div class="form-field">
-                    <label>"Station Name"</label>
-                    <input
-                        type="text"
-                        prop:value=move || station_name.get()
-                        on:input=move |ev| set_station_name.set(event_target_value(&ev))
-                    />
-                </div>
-                <div class="form-field">
-                    <label>
-                        <input
-                            type="checkbox"
-                            checked=move || is_passing_loop.get()
-                            on:change=move |ev| set_is_passing_loop.set(event_target_checked(&ev))
-                        />
-                        " Passing Loop"
-                    </label>
-                </div>
-                <PlatformEditor
-                    platforms=platforms
-                    set_platforms=set_platforms
-                    is_passing_loop=is_passing_loop
-                />
-
-                <ConnectToStation
-                    current_station=editing_station
-                    graph=graph
-                    on_add_connection=handle_add_connection
-                />
-
-                <div class="form-section">
-                    <h3>"Default Platforms for Tracks"</h3>
-                    <p class="help-text">"Set which platform trains use by default when arriving from each direction"</p>
-                    <For
-                        each=move || connected_tracks.get()
-                        key=|track| track.edge_index.index()
-                        children=move |track: ConnectedTrack| {
-                            view! {
-                                <TrackPlatformSelect
-                                    edge_index=track.edge_index
-                                    other_station_name=track.other_station_name
-                                    is_incoming=track.is_incoming
-                                    platforms=platforms
-                                    connected_tracks=connected_tracks
-                                    on_update=on_update_track_defaults.clone()
-                                    editing_station=editing_station
-                                    graph=graph
-                                    set_connected_tracks=set_connected_tracks
-                                />
-                            }
-                        }
-                    />
-                </div>
-
-                <div class="form-buttons">
-                    <button class="danger" on:click=handle_delete>"Delete"</button>
-                    <div class="flex-spacer"></div>
-                    <button on:click=move |_| on_close()>"Cancel"</button>
-                    <button class="primary" on:click=handle_save>"Save"</button>
-                </div>
-            </div>
-        </Window>
+        />
     }
 }
