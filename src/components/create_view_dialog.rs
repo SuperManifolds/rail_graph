@@ -2,11 +2,10 @@ use leptos::{component, view, IntoView, ReadSignal, Signal, SignalGet, SignalSet
 use petgraph::stable_graph::NodeIndex;
 use std::rc::Rc;
 use crate::models::RailwayGraph;
-use crate::components::window::Window;
 
 #[component]
 #[allow(clippy::too_many_lines)]
-fn CreateViewDialogContent(
+pub fn CreateViewDialogContent(
     waypoints: ReadSignal<Vec<NodeIndex>>,
     graph: ReadSignal<RailwayGraph>,
     validation_error: ReadSignal<Option<String>>,
@@ -199,28 +198,42 @@ pub fn CreateViewDialog(
     on_add_waypoint: Rc<dyn Fn(NodeIndex)>,
     on_remove_waypoint: Rc<dyn Fn(usize)>,
 ) -> impl IntoView {
+    let _ = (waypoints, validation_error, on_add_waypoint, on_remove_waypoint);
+
     let on_close_for_window = on_close.clone();
-    let on_close_for_content = on_close.clone();
-    let on_create_for_content = on_create.clone();
-    let on_add_waypoint_for_content = on_add_waypoint.clone();
-    let on_remove_waypoint_for_content = on_remove_waypoint.clone();
+    let on_close_for_result = on_close.clone();
+
+    let result_handler: Box<dyn Fn(String)> = Box::new(move |json: String| {
+        match serde_json::from_str::<crate::window_protocol::CreateViewResult>(&json) {
+            Ok(crate::window_protocol::CreateViewResult::Create { name, waypoints }) => {
+                let node_indices: Vec<NodeIndex> =
+                    waypoints.into_iter().map(NodeIndex::new).collect();
+                on_create(name, node_indices);
+            }
+            Err(e) => {
+                leptos::logging::error!("Failed to parse CreateViewResult: {}", e);
+            }
+        }
+        on_close_for_result();
+    });
 
     view! {
-        <Window
-            is_open=leptos::MaybeSignal::Dynamic(is_open.into())
+        <crate::components::native_window::NativeWindow
+            is_open=is_open
             title=Signal::derive(|| "Create View".to_string())
             on_close=move || on_close_for_window()
+            window_type="create-view"
+            init_data=Signal::derive(move || {
+                if !is_open.get() {
+                    return String::new();
+                }
+                serde_json::to_string(&crate::window_protocol::CreateViewInit {
+                    graph: graph.get(),
+                }).unwrap_or_default()
+            })
+            on_result=result_handler
+            size=(500, 450)
             position_key="create-view"
-        >
-            <CreateViewDialogContent
-                waypoints=waypoints
-                graph=graph
-                validation_error=validation_error
-                on_close=on_close_for_content
-                on_create=on_create_for_content
-                on_add_waypoint=on_add_waypoint_for_content
-                on_remove_waypoint=on_remove_waypoint_for_content
-            />
-        </Window>
+        />
     }
 }

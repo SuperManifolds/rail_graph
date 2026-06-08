@@ -8,7 +8,7 @@ use petgraph::stable_graph::NodeIndex;
 use std::rc::Rc;
 use web_sys::KeyboardEvent;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct QuickEntryStation {
     pub name: String,
     pub distance_from_previous: f64,

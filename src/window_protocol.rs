@@ -140,3 +140,58 @@ pub enum ImporterNimbyResult {
     Import(NimbyImportConfig),
     Cancel,
 }
+
+// --- Add Station ---
+
+#[derive(Serialize, Deserialize)]
+pub struct AddStationInit {
+    pub graph: RailwayGraph,
+    pub suggested_name: String,
+    pub last_added_station: Option<usize>,
+    pub track_handedness: TrackHandedness,
+    pub default_node_distance_grid_squares: f64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum AddStationResult {
+    Add {
+        name: String,
+        is_passing_loop: bool,
+        connect_to: Option<usize>,
+        platforms: Vec<Platform>,
+    },
+    AddBatch {
+        entries: Vec<crate::components::add_station_quick::QuickEntryStation>,
+        connect_to: Option<usize>,
+        platforms: Vec<Platform>,
+        tracks: Vec<Track>,
+    },
+}
+
+// --- Create View ---
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateViewInit {
+    pub graph: RailwayGraph,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum CreateViewResult {
+    Create {
+        name: String,
+        waypoints: Vec<usize>,
+    },
+}
+
+// --- Project Manager ---
+
+#[derive(Serialize, Deserialize)]
+pub struct ProjectManagerInit {
+    pub current_project_id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum ProjectManagerResult {
+    LoadProject(Vec<u8>),
+    CreateProject(Vec<u8>),
+}

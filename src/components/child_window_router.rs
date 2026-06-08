@@ -66,12 +66,15 @@ pub fn ChildWindowRouter(window_type: String, session: String) -> impl IntoView 
 }
 
 fn render_child_content(window_type: &str, session: &str, init_data: &str) -> leptos::View {
+    use crate::components::child::add_station_child::AddStationChild;
+    use crate::components::child::create_view_child::CreateViewChild;
     use crate::components::child::csv_mapper_child::CsvMapperChild;
     use crate::components::child::edit_junction_child::EditJunctionChild;
     use crate::components::child::edit_station_child::EditStationChild;
     use crate::components::child::edit_track_child::EditTrackChild;
     use crate::components::child::line_editor_child::LineEditorChild;
     use crate::components::child::nimby_selector_child::NimbySelectorChild;
+    use crate::components::child::project_manager_child::ProjectManagerChild;
     use crate::components::child::settings_child::SettingsChild;
 
     match window_type {
@@ -123,6 +126,27 @@ fn render_child_content(window_type: &str, session: &str, init_data: &str) -> le
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
             leptos::view! { <NimbySelectorChild init=init session=session.to_string() /> }.into_view()
+        }
+        "add-station" => {
+            let Ok(init) = serde_json::from_str::<crate::window_protocol::AddStationInit>(init_data) else {
+                leptos::logging::error!("Failed to deserialize AddStationInit");
+                return leptos::view! { <div>"Failed to load data"</div> }.into_view();
+            };
+            leptos::view! { <AddStationChild init=init session=session.to_string() /> }.into_view()
+        }
+        "create-view" => {
+            let Ok(init) = serde_json::from_str::<crate::window_protocol::CreateViewInit>(init_data) else {
+                leptos::logging::error!("Failed to deserialize CreateViewInit");
+                return leptos::view! { <div>"Failed to load data"</div> }.into_view();
+            };
+            leptos::view! { <CreateViewChild init=init session=session.to_string() /> }.into_view()
+        }
+        "project-manager" => {
+            let Ok(init) = serde_json::from_str::<crate::window_protocol::ProjectManagerInit>(init_data) else {
+                leptos::logging::error!("Failed to deserialize ProjectManagerInit");
+                return leptos::view! { <div>"Failed to load data"</div> }.into_view();
+            };
+            leptos::view! { <ProjectManagerChild init=init session=session.to_string() /> }.into_view()
         }
         _ => {
             leptos::logging::error!("Unknown child window type: {}", window_type);
