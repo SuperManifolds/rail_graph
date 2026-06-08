@@ -160,6 +160,42 @@ pub fn set_current_project_id(app: tauri::AppHandle, id: String) -> Result<(), S
     save_config(&app, &config)
 }
 
+// --- Project State Cache (for multi-window sync) ---
+
+/// Cache the current project state in memory so secondary windows can read it on startup.
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn cache_project_state(
+    state: tauri::State<'_, crate::AppState>,
+    request: Request<'_>,
+) -> Result<(), String> {
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Expected raw binary body".into());
+    };
+    let mut cache = state
+        .project_cache
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {e}"))?;
+    *cache = Some(bytes.clone());
+    Ok(())
+}
+
+/// Get the cached project state. Returns None if no state has been cached yet.
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn get_cached_project_state(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<Response, String> {
+    let cache = state
+        .project_cache
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {e}"))?;
+    match cache.as_ref() {
+        Some(bytes) => Ok(Response::new(bytes.clone())),
+        None => Err("No cached project state".into()),
+    }
+}
+
 // --- Compute Commands ---
 
 /// Detect conflicts in the project.

@@ -12,6 +12,7 @@ use crate::logging::log;
 use crate::models::{GraphView, Legend, Project, RailwayGraph, Routes, ViewportState, UndoManager, UndoSnapshot};
 use crate::user_settings_ext::UserSettingsStorage;
 use crate::storage::serialize_project_to_bytes;
+use crate::sync::{self, SyncEnvelope, SyncKind};
 use crate::train_journey::TrainJourney;
 use crate::tauri_bridge::ConflictDetector;
 use leptos::{
@@ -56,6 +57,147 @@ fn restore_active_tab(tab_id: &str, views: &[GraphView], set_active_tab: WriteSi
     }
 }
 
+/// Load a project from disk via the Tauri backend.
+async fn load_project_from_disk() -> Project {
+    let project_id = crate::tauri_bridge::get_current_project_id().await.ok().flatten();
+
+    if let Some(id) = project_id {
+        match crate::tauri_bridge::load_project(&id).await
+            .and_then(|bytes| Project::from_bytes(&bytes))
+        {
+            Ok(p) => return p,
+            Err(e) => {
+                web_sys::console::error_1(&format!("Failed to load project: {e}").into());
+            }
+        }
+    }
+
+    Project::empty()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_sync_event(
+    envelope: SyncEnvelope,
+    set_is_applying_remote: WriteSignal<bool>,
+    shared: SharedWriteSignals,
+    set_incoming_drag_tab: WriteSignal<Option<(String, String)>>,
+    set_window_tabs: WriteSignal<Vec<String>>,
+    set_active_tab: WriteSignal<AppTab>,
+    views: leptos::ReadSignal<Vec<GraphView>>,
+    set_is_primary: WriteSignal<bool>,
+) {
+    match envelope.kind {
+        SyncKind::ProjectSync(bytes) => {
+            apply_remote_project(&bytes, set_is_applying_remote, shared);
+        }
+        SyncKind::TabDragStart { tab_id } => {
+            set_incoming_drag_tab.set(Some((tab_id, envelope.source_window.clone())));
+        }
+        SyncKind::TabDragCancel => {
+            set_incoming_drag_tab.set(None);
+        }
+        SyncKind::TabDrop { tab_id, target_window, insert_index } => {
+            let my = crate::tauri_bridge::get_current_window_label().unwrap_or_default();
+            if target_window == my {
+                set_window_tabs.update(|tabs| {
+                    if !tabs.contains(&tab_id) {
+                        let idx = insert_index.min(tabs.len());
+                        tabs.insert(idx, tab_id.clone());
+                    }
+                });
+                restore_active_tab(&tab_id, &views.get_untracked(), set_active_tab);
+            }
+            set_incoming_drag_tab.set(None);
+        }
+        SyncKind::WindowClosing { is_primary: true } => {
+            claim_primary_after_delay(set_is_primary);
+        }
+        SyncKind::PrimaryClaim => {
+            set_is_primary.set(false);
+        }
+        SyncKind::WindowClosing { is_primary: false }
+        | SyncKind::LayoutUpdate { .. }
+        | SyncKind::UndoRequest
+        | SyncKind::RedoRequest => {}
+    }
+}
+
+#[derive(Clone, Copy)]
+#[allow(clippy::struct_field_names)]
+struct SharedWriteSignals {
+    set_lines: WriteSignal<Vec<crate::models::Line>>,
+    set_folders: WriteSignal<Vec<crate::models::LineFolder>>,
+    set_graph: WriteSignal<RailwayGraph>,
+    set_legend: WriteSignal<Legend>,
+    set_settings: WriteSignal<crate::models::ProjectSettings>,
+    set_viewport_states: WriteSignal<HashMap<Uuid, ViewportState>>,
+    set_views: WriteSignal<Vec<GraphView>>,
+    set_current_project: WriteSignal<Project>,
+}
+
+fn apply_remote_project(
+    bytes: &[u8],
+    set_is_applying_remote: WriteSignal<bool>,
+    s: SharedWriteSignals,
+) {
+    let Ok(project) = Project::from_bytes(bytes) else {
+        leptos::logging::error!("Failed to deserialize sync payload");
+        return;
+    };
+
+    set_is_applying_remote.set(true);
+    leptos::batch(move || {
+        s.set_lines.set(project.lines.clone());
+        s.set_folders.set(project.folders.clone());
+        s.set_graph.set(project.graph.clone());
+        s.set_legend.set(project.legend.clone());
+        s.set_settings.set(project.settings.clone());
+
+        let mut project_views = project.views.clone();
+        if project_views.is_empty() {
+            project_views.push(GraphView::default_main_line(&project.graph));
+        }
+        let viewports: HashMap<Uuid, ViewportState> = project_views
+            .iter()
+            .map(|v| (v.id, v.viewport_state.clone()))
+            .collect();
+        s.set_viewport_states.set(viewports);
+        s.set_views.set(project_views);
+        s.set_current_project.set(project);
+    });
+    set_is_applying_remote.set(false);
+}
+
+async fn save_and_cache_project(bytes: Vec<u8>, project_id: String) {
+    let _ = crate::tauri_bridge::cache_project_state(&bytes).await;
+    if let Err(e) = crate::tauri_bridge::save_project(&bytes, &project_id).await {
+        web_sys::console::error_1(&format!("Auto-save failed: {e}").into());
+        return;
+    }
+    if let Err(e) = crate::tauri_bridge::set_current_project_id(&project_id).await {
+        web_sys::console::error_1(
+            &format!("Failed to set current project ID: {e}").into(),
+        );
+    }
+}
+
+fn claim_primary_after_delay(set_is_primary: WriteSignal<bool>) {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let delay = (js_sys::Math::random() * 100.0) as i32;
+    let label = crate::tauri_bridge::get_current_window_label().unwrap_or_default();
+    let closure = wasm_bindgen::closure::Closure::once(move || {
+        sync::broadcast_primary_claim(&label);
+        set_is_primary.set(true);
+    });
+    let _ = web_sys::window()
+        .expect("window")
+        .set_timeout_with_callback_and_timeout_and_arguments_0(
+            closure.as_ref().unchecked_ref(),
+            delay,
+        );
+    closure.forget();
+}
+
 /// Update a single view based on its type and current state
 fn update_view(
     view: &mut GraphView,
@@ -94,8 +236,23 @@ fn update_view(
 #[component]
 #[must_use]
 #[allow(clippy::too_many_lines)]
-pub fn App() -> impl IntoView {
+pub fn App(
+    #[prop(optional)] window_id: Option<String>,
+    #[prop(default = false)] is_secondary: bool,
+    #[prop(optional)] initial_tab: Option<String>,
+) -> impl IntoView {
     provide_meta_context();
+
+    let window_label = crate::tauri_bridge::get_current_window_label()
+        .unwrap_or_else(|| "main".to_string());
+    let _window_id = store_value(window_id.unwrap_or_else(|| Uuid::new_v4().to_string()));
+
+    let (is_primary, set_is_primary) = create_signal(!is_secondary);
+    let (is_applying_remote, set_is_applying_remote) = create_signal(false);
+    // Per-window tab list: "infrastructure" or view UUID strings
+    let (window_tabs, set_window_tabs) = create_signal(Vec::<String>::new());
+    // Cross-window tab drag state (tab_id, source_window_label)
+    let (incoming_drag_tab, set_incoming_drag_tab) = create_signal(None::<(String, String)>);
 
     let (active_tab, set_active_tab) = create_signal(AppTab::Infrastructure);
 
@@ -166,7 +323,7 @@ pub fn App() -> impl IntoView {
         move |snapshot: UndoSnapshot| {
             // Check flag again when the debounced callback actually fires
             // in case an undo/redo happened while we were waiting
-            if is_performing_undo_redo.get_untracked() {
+            if is_performing_undo_redo.get_untracked() || is_applying_remote.get_untracked() {
                 return;
             }
 
@@ -186,8 +343,8 @@ pub fn App() -> impl IntoView {
             return;
         }
 
-        // Skip during undo/redo operations (use untracked to avoid re-running when flag changes)
-        if is_performing_undo_redo.get_untracked() {
+        // Skip during undo/redo operations or remote state application
+        if is_performing_undo_redo.get_untracked() || is_applying_remote.get_untracked() {
             return;
         }
 
@@ -209,63 +366,87 @@ pub fn App() -> impl IntoView {
     });
 
     // Auto-load saved project on component mount
+    let is_secondary_mount = is_secondary;
+    let initial_tab_mount = initial_tab.clone();
     create_effect(move |_| {
+        let initial_tab_val = initial_tab_mount.clone();
         spawn_local(async move {
-            // Try to load the last used project
-            let project_id = crate::tauri_bridge::get_current_project_id().await.ok().flatten();
-
-            let project = if let Some(id) = project_id {
-                match crate::tauri_bridge::load_project(&id).await
-                    .and_then(|bytes| crate::models::Project::from_bytes(&bytes))
+            let project = if is_secondary_mount {
+                // Secondary window: load from backend cache
+                match crate::tauri_bridge::get_cached_project_state().await
+                    .and_then(|bytes| Project::from_bytes(&bytes))
                 {
-                    Ok(p) => {
-                        log!("Project loaded successfully");
-                        Some(p)
-                    }
+                    Ok(p) => p,
                     Err(e) => {
-                        web_sys::console::error_1(&format!("Failed to load project: {e}").into());
-                        None
+                        log!("Failed to load cached state, falling back to disk: {}", e);
+                        load_project_from_disk().await
                     }
                 }
             } else {
-                log!("No previous project found");
-                None
+                load_project_from_disk().await
             };
 
-            let project = project.unwrap_or_else(|| {
-                log!("Creating empty project");
-                Project::empty()
-            });
             let empty_graph = project.graph.clone();
 
             set_current_project.set(project.clone());
             set_lines.set(project.lines.clone());
             set_folders.set(project.folders.clone());
             set_graph.set(project.graph.clone());
-            set_legend.set(project.legend);
-            set_settings.set(project.settings);
+            set_legend.set(project.legend.clone());
+            set_settings.set(project.settings.clone());
 
             // Ensure we have at least one view (create default "Main Line" view)
-            let mut views = project.views.clone();
-            if views.is_empty() {
-                views.push(GraphView::default_main_line(&empty_graph));
+            let mut project_views = project.views.clone();
+            if project_views.is_empty() {
+                project_views.push(GraphView::default_main_line(&empty_graph));
             }
 
             // Extract viewport states into separate signal
-            let viewports: HashMap<Uuid, ViewportState> = views
+            let viewports: HashMap<Uuid, ViewportState> = project_views
                 .iter()
                 .map(|v| (v.id, v.viewport_state.clone()))
                 .collect();
             set_viewport_states.set(viewports);
             set_infrastructure_viewport.set(project.infrastructure_viewport.clone());
 
-            set_views.set(views.clone());
+            set_views.set(project_views.clone());
 
-            // Restore active tab, or default to first view
-            if let Some(tab_id) = &project.active_tab_id {
-                restore_active_tab(tab_id, &views, set_active_tab);
-            } else if let Some(first_view) = views.first() {
-                set_active_tab.set(AppTab::GraphView(first_view.id));
+            // Populate per-window tabs
+            let tabs = if is_secondary_mount {
+                // Secondary window: show only the initial_tab (or Infrastructure)
+                if let Some(ref tab_id) = initial_tab_val {
+                    vec![tab_id.clone()]
+                } else {
+                    vec!["infrastructure".to_string()]
+                }
+            } else {
+                // Primary window: restore from saved window_layouts or default to all tabs
+                let saved_layout = project.window_layouts.first();
+                if let Some(layout) = saved_layout {
+                    layout.tab_ids.clone()
+                } else {
+                    // Legacy: build tab list from active_tab_id + all views
+                    let mut tabs: Vec<String> = vec!["infrastructure".to_string()];
+                    tabs.extend(project_views.iter().map(|v| v.id.to_string()));
+                    tabs
+                }
+            };
+            set_window_tabs.set(tabs);
+
+            // Restore active tab
+            if is_secondary_mount {
+                if let Some(ref tab_id) = initial_tab_val {
+                    restore_active_tab(tab_id, &project_views, set_active_tab);
+                }
+            } else {
+                let saved_active = project.window_layouts.first()
+                    .and_then(|l| l.active_tab_id.clone())
+                    .or(project.active_tab_id.clone());
+                if let Some(tab_id) = saved_active {
+                    restore_active_tab(&tab_id, &project_views, set_active_tab);
+                } else if let Some(first_view) = project_views.first() {
+                    set_active_tab.set(AppTab::GraphView(first_view.id));
+                }
             }
 
             set_initial_load_complete.set(true);
@@ -336,7 +517,16 @@ pub fn App() -> impl IntoView {
         (node_count, edge_count)
     });
 
-    // Auto-save project whenever lines, folders, graph, legend, settings, views, viewport states, or active tab change
+    // Broadcast shared state to other windows when it changes (debounced)
+    let sync_window_label = window_label.clone();
+    let debounced_broadcast_sync = store_value(leptos::leptos_dom::helpers::debounce(
+        std::time::Duration::from_millis(50),
+        move |bytes: Vec<u8>| {
+            sync::broadcast_project_sync(&sync_window_label, bytes);
+        },
+    ));
+
+    // Auto-save project whenever shared state changes (primary only) + broadcast sync
     create_effect(move |_| {
         let current_lines = lines.get();
         let current_folders = folders.get();
@@ -348,6 +538,11 @@ pub fn App() -> impl IntoView {
         let current_infrastructure_viewport = infrastructure_viewport.get();
         let current_tab = active_tab.get();
         let mut proj = current_project.get();
+
+        // Skip during remote state application to avoid re-broadcast loops
+        if is_applying_remote.get_untracked() {
+            return;
+        }
 
         if !current_lines.is_empty() || current_graph.graph.node_count() > 0 {
             // Convert active tab to string ID
@@ -381,26 +576,44 @@ pub fn App() -> impl IntoView {
             // Update current_project signal to keep it synchronized
             set_current_project.set(proj.clone());
 
-            let project_id = proj.metadata.id.clone();
-            spawn_local(async move {
-                let bytes = match serialize_project_to_bytes(&proj) {
-                    Ok(b) => b,
-                    Err(e) => {
-                        web_sys::console::error_1(&format!("Auto-save serialization failed: {e}").into());
-                        return;
-                    }
-                };
-                if let Err(e) = crate::tauri_bridge::save_project(&bytes, &project_id).await {
-                    web_sys::console::error_1(&format!("Auto-save failed: {e}").into());
+            // Serialize for saving and syncing
+            let bytes = match serialize_project_to_bytes(&proj) {
+                Ok(b) => b,
+                Err(e) => {
+                    web_sys::console::error_1(&format!("Serialization failed: {e}").into());
                     return;
                 }
-                if let Err(e) = crate::tauri_bridge::set_current_project_id(&project_id).await {
-                    web_sys::console::error_1(
-                        &format!("Failed to set current project ID: {e}").into(),
-                    );
-                }
-            });
+            };
+
+            // Broadcast to other windows
+            let sync_bytes = bytes.clone();
+            debounced_broadcast_sync.update_value(|f| f(sync_bytes));
+
+            if is_primary.get_untracked() {
+                let project_id = proj.metadata.id.clone();
+                spawn_local(save_and_cache_project(bytes, project_id));
+            }
         }
+    });
+
+    // Listen for sync events from other windows
+    let sync_my_label = window_label.clone();
+    spawn_local(async move {
+        let my_label = sync_my_label;
+        let _ = sync::listen(move |envelope: SyncEnvelope| {
+            if envelope.source_window == my_label {
+                return;
+            }
+            let shared = SharedWriteSignals {
+                set_lines, set_folders, set_graph, set_legend, set_settings,
+                set_viewport_states, set_views, set_current_project,
+            };
+            handle_sync_event(
+                envelope, set_is_applying_remote, shared,
+                set_incoming_drag_tab, set_window_tabs, set_active_tab,
+                views, set_is_primary,
+            );
+        }).await;
     });
 
     // Mark loading complete once initial data is loaded
@@ -493,28 +706,31 @@ pub fn App() -> impl IntoView {
             vs.insert(view_id, viewport);
         });
         set_views.update(|v| v.push(new_view));
+        // Add to this window's tabs and activate
+        let tab_id = view_id.to_string();
+        set_window_tabs.update(|tabs| {
+            if !tabs.contains(&tab_id) {
+                tabs.push(tab_id);
+            }
+        });
         set_active_tab.set(AppTab::GraphView(view_id));
     });
 
-    // Callback for closing a view
-    let on_close_view = move |view_id: Uuid| {
-        // Check if we're closing the active tab
+    // Close a tab from this window (does NOT delete the view)
+    let on_close_tab = move |tab_id: String| {
         let is_active = match active_tab.get() {
-            AppTab::GraphView(id) => id == view_id,
-            AppTab::Infrastructure => false,
+            AppTab::Infrastructure => tab_id == "infrastructure",
+            AppTab::GraphView(id) => tab_id == id.to_string(),
         };
 
-        // Remove the view and its viewport state
-        set_views.update(|v| v.retain(|view| view.id != view_id));
-        set_viewport_states.update(|vs| {
-            vs.remove(&view_id);
+        set_window_tabs.update(|tabs| {
+            tabs.retain(|t| *t != tab_id);
         });
 
-        // If we closed the active tab, switch to another tab
         if is_active {
-            let remaining_views = views.get();
-            if let Some(first_view) = remaining_views.first() {
-                set_active_tab.set(AppTab::GraphView(first_view.id));
+            let remaining_tabs = window_tabs.get();
+            if let Some(first_tab) = remaining_tabs.first() {
+                restore_active_tab(first_tab, &views.get(), set_active_tab);
             } else {
                 set_active_tab.set(AppTab::Infrastructure);
             }
@@ -525,7 +741,7 @@ pub fn App() -> impl IntoView {
     let (editing_view_id, set_editing_view_id) = create_signal(None::<Uuid>);
     let (edit_name_value, set_edit_name_value) = create_signal(String::new());
 
-    // State for drag-and-drop reordering
+    // State for drag-and-drop reordering (within same window)
     let (dragged_view_id, set_dragged_view_id) = create_signal(None::<Uuid>);
     let (drag_over_view_id, set_drag_over_view_id) = create_signal(None::<Uuid>);
     let (drag_timer_id, set_drag_timer_id) = create_signal(None::<i32>);
@@ -577,6 +793,11 @@ pub fn App() -> impl IntoView {
             set_viewport_states.set(viewports);
             set_infrastructure_viewport.set(project.infrastructure_viewport.clone());
             set_views.set(project_views.clone());
+
+            // Set window tabs to all views + infrastructure
+            let mut tabs: Vec<String> = vec!["infrastructure".to_string()];
+            tabs.extend(project_views.iter().map(|v| v.id.to_string()));
+            set_window_tabs.set(tabs);
 
             // Set active tab
             if let Some(tab_id) = &project.active_tab_id {
@@ -645,6 +866,13 @@ pub fn App() -> impl IntoView {
             Some("undo") => {
                 ev.prevent_default();
 
+                if !is_primary.get_untracked() {
+                    let label = crate::tauri_bridge::get_current_window_label()
+                        .unwrap_or_default();
+                    sync::broadcast_undo_request(&label);
+                    return;
+                }
+
                 if !undo_manager.get_value().can_undo() {
                     show_toast("Nothing to undo".to_string());
                     return;
@@ -667,8 +895,6 @@ pub fn App() -> impl IntoView {
                         restore_snapshot(snapshot);
                         show_toast("Undoing last change".to_string());
 
-                        // Wait longer than the debounce delay to ensure pending debounced
-                        // calls don't record the restored state
                         gloo_timers::future::TimeoutFuture::new(400).await;
                     }
 
@@ -677,6 +903,13 @@ pub fn App() -> impl IntoView {
             }
             Some("redo") => {
                 ev.prevent_default();
+
+                if !is_primary.get_untracked() {
+                    let label = crate::tauri_bridge::get_current_window_label()
+                        .unwrap_or_default();
+                    sync::broadcast_redo_request(&label);
+                    return;
+                }
 
                 if !undo_manager.get_value().can_redo() {
                     show_toast("Nothing to redo".to_string());
@@ -700,8 +933,6 @@ pub fn App() -> impl IntoView {
                         restore_snapshot(snapshot);
                         show_toast("Redoing last change".to_string());
 
-                        // Wait longer than the debounce delay to ensure pending debounced
-                        // calls don't record the restored state
                         gloo_timers::future::TimeoutFuture::new(400).await;
                     }
                     set_is_performing_undo_redo.set(false);
@@ -717,174 +948,234 @@ pub fn App() -> impl IntoView {
         <div class="app">
             <div class="app-header">
                 <div class="app-header-content">
-                    <div class="app-tabs">
-                    <button
-                        class=move || if active_tab.get() == AppTab::Infrastructure { "tab-button active" } else { "tab-button" }
-                        on:click=move |_| set_active_tab.set(AppTab::Infrastructure)
+                    <div class="app-tabs"
+                        on:dragover=move |ev| {
+                            // Accept drops from cross-window tab drags
+                            if incoming_drag_tab.get().is_some() {
+                                ev.prevent_default();
+                            }
+                        }
+                        on:drop=move |ev| {
+                            ev.prevent_default();
+                            if let Some((tab_id, _source)) = incoming_drag_tab.get() {
+                                let my_label = crate::tauri_bridge::get_current_window_label()
+                                    .unwrap_or_default();
+                                let tabs = window_tabs.get();
+                                let insert_idx = tabs.len();
+                                sync::broadcast_tab_drop(&my_label, &tab_id, &my_label, insert_idx);
+                                // Add the tab to this window
+                                set_window_tabs.update(|tabs| {
+                                    if !tabs.contains(&tab_id) {
+                                        tabs.push(tab_id.clone());
+                                    }
+                                });
+                                restore_active_tab(&tab_id, &views.get_untracked(), set_active_tab);
+                                set_incoming_drag_tab.set(None);
+                            }
+                        }
                     >
-                        "Infrastructure"
-                    </button>
                     {move || {
+                        let tabs = window_tabs.get();
                         let current_views = views.get();
-                        current_views.iter().map(|view| {
-                            let view_id = view.id;
-                            view! {
-                                <div class="tab-button-container">
-                                    {move || {
-                                        if editing_view_id.get() == Some(view_id) {
-                                            view! {
-                                                <input
-                                                    type="text"
-                                                    class="tab-rename-input"
-                                                    value=edit_name_value
-                                                    on:input=move |ev| set_edit_name_value.set(event_target_value(&ev))
-                                                    on:keydown=move |ev| {
-                                                        if ev.key() == "Enter" {
-                                                            on_rename_view(view_id, edit_name_value.get());
-                                                        } else if ev.key() == "Escape" {
-                                                            set_editing_view_id.set(None);
-                                                        }
-                                                    }
-                                                    on:blur=move |_| on_rename_view(view_id, edit_name_value.get())
-                                                    prop:autofocus=true
-                                                />
-                                            }.into_view()
-                                        } else {
-                                            let current_name = views.get().iter()
-                                                .find(|v| v.id == view_id)
-                                                .map(|v| v.name.clone())
-                                                .unwrap_or_default();
-                                            let is_dragging = move || dragged_view_id.get() == Some(view_id);
-                                            let is_drag_over = move || drag_over_view_id.get() == Some(view_id);
+                        tabs.iter().map(|tab_id| {
+                            let tab_id = tab_id.clone();
+                            if tab_id == "infrastructure" {
+                                view! {
+                                    <div class="tab-button-container">
+                                        <button
+                                            class=move || if active_tab.get() == AppTab::Infrastructure { "tab-button active" } else { "tab-button" }
+                                            on:click=move |_| set_active_tab.set(AppTab::Infrastructure)
+                                        >
+                                            "Infrastructure"
+                                        </button>
+                                        <button
+                                            class="tab-close-button"
+                                            on:click=move |e| {
+                                                e.stop_propagation();
+                                                on_close_tab("infrastructure".to_string());
+                                            }
+                                            title="Close tab"
+                                        >
+                                            <i class="fa-solid fa-times"></i>
+                                        </button>
+                                    </div>
+                                }.into_view()
+                            } else {
+                                let Ok(view_uuid) = Uuid::parse_str(&tab_id) else {
+                                    return view! { <div /> }.into_view();
+                                };
+                                let view_id = view_uuid;
+                                let tab_id_for_close = tab_id.clone();
+                                let tab_id_for_drag = tab_id.clone();
 
-                                            view! {
-                                                <button
-                                                    class=move || {
-                                                        let mut classes = vec!["tab-button"];
-                                                        if active_tab.get() == AppTab::GraphView(view_id) {
-                                                            classes.push("active");
+                                // Check if this view exists
+                                if !current_views.iter().any(|v| v.id == view_id) {
+                                    return view! { <div /> }.into_view();
+                                }
+
+                                view! {
+                                    <div class="tab-button-container">
+                                        {move || {
+                                            if editing_view_id.get() == Some(view_id) {
+                                                view! {
+                                                    <input
+                                                        type="text"
+                                                        class="tab-rename-input"
+                                                        value=edit_name_value
+                                                        on:input=move |ev| set_edit_name_value.set(event_target_value(&ev))
+                                                        on:keydown=move |ev| {
+                                                            if ev.key() == "Enter" {
+                                                                on_rename_view(view_id, edit_name_value.get());
+                                                            } else if ev.key() == "Escape" {
+                                                                set_editing_view_id.set(None);
+                                                            }
                                                         }
-                                                        if is_dragging() {
-                                                            classes.push("dragging");
+                                                        on:blur=move |_| on_rename_view(view_id, edit_name_value.get())
+                                                        prop:autofocus=true
+                                                    />
+                                                }.into_view()
+                                            } else {
+                                                let current_name = views.get().iter()
+                                                    .find(|v| v.id == view_id)
+                                                    .map(|v| v.name.clone())
+                                                    .unwrap_or_default();
+                                                let is_dragging = move || dragged_view_id.get() == Some(view_id);
+                                                let is_drag_over = move || drag_over_view_id.get() == Some(view_id);
+                                                let tab_id_for_tearoff = tab_id_for_drag.clone();
+
+                                                view! {
+                                                    <button
+                                                        class=move || {
+                                                            let mut classes = vec!["tab-button"];
+                                                            if active_tab.get() == AppTab::GraphView(view_id) {
+                                                                classes.push("active");
+                                                            }
+                                                            if is_dragging() {
+                                                                classes.push("dragging");
+                                                            }
+                                                            if is_drag_over() {
+                                                                classes.push("drag-over");
+                                                            }
+                                                            classes.join(" ")
                                                         }
-                                                        if is_drag_over() {
-                                                            classes.push("drag-over");
+                                                        draggable="false"
+                                                        on:mousedown=move |_| {
+                                                            let window = web_sys::window().expect("window");
+                                                            let set_draggable = move || {
+                                                                set_dragged_view_id.set(Some(view_id));
+                                                            };
+                                                            let closure = wasm_bindgen::closure::Closure::wrap(Box::new(set_draggable) as Box<dyn FnMut()>);
+                                                            let timer_id = window.set_timeout_with_callback_and_timeout_and_arguments_0(
+                                                                closure.as_ref().unchecked_ref(),
+                                                                300
+                                                            ).expect("set_timeout");
+                                                            closure.forget();
+                                                            set_drag_timer_id.set(Some(timer_id));
                                                         }
-                                                        classes.join(" ")
-                                                    }
-                                                    draggable="false"
-                                                    on:mousedown=move |_| {
-                                                        // Start a timer to enable dragging after 300ms
-                                                        let window = web_sys::window().expect("window");
-                                                        let set_draggable = move || {
-                                                            set_dragged_view_id.set(Some(view_id));
-                                                        };
-                                                        let closure = wasm_bindgen::closure::Closure::wrap(Box::new(set_draggable) as Box<dyn FnMut()>);
-                                                        let timer_id = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                                                            closure.as_ref().unchecked_ref(),
-                                                            300
-                                                        ).expect("set_timeout");
-                                                        closure.forget();
-                                                        set_drag_timer_id.set(Some(timer_id));
-                                                    }
-                                                    on:mouseup=move |_| {
-                                                        // Cancel the timer if mouse is released before 300ms
-                                                        if let Some(timer_id) = drag_timer_id.get() {
-                                                            web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
-                                                            set_drag_timer_id.set(None);
+                                                        on:mouseup=move |_| {
+                                                            if let Some(timer_id) = drag_timer_id.get() {
+                                                                web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
+                                                                set_drag_timer_id.set(None);
+                                                            }
+                                                            set_dragged_view_id.set(None);
+                                                            set_drag_over_view_id.set(None);
                                                         }
-                                                        // Clear drag state if released without dragging
-                                                        set_dragged_view_id.set(None);
-                                                        set_drag_over_view_id.set(None);
-                                                    }
-                                                    on:mouseleave=move |_| {
-                                                        // Cancel the timer if mouse leaves before 300ms
-                                                        if let Some(timer_id) = drag_timer_id.get() {
-                                                            web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
-                                                            set_drag_timer_id.set(None);
+                                                        on:mouseleave=move |_| {
+                                                            if let Some(timer_id) = drag_timer_id.get() {
+                                                                web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
+                                                                set_drag_timer_id.set(None);
+                                                            }
                                                         }
-                                                    }
-                                                    on:click=move |_| {
-                                                        // Only handle click if not dragging
-                                                        if dragged_view_id.get().is_none() {
-                                                            set_active_tab.set(AppTab::GraphView(view_id));
+                                                        on:click=move |_| {
+                                                            if dragged_view_id.get().is_none() {
+                                                                set_active_tab.set(AppTab::GraphView(view_id));
+                                                            }
                                                         }
-                                                    }
-                                                    on:dragstart=move |ev| {
-                                                        if let Some(dt) = ev.data_transfer() {
-                                                            let _ = dt.set_data("text/plain", &view_id.to_string());
-                                                            dt.set_effect_allowed("move");
-                                                        }
-                                                    }
-                                                    on:dragover=move |ev| {
-                                                        if dragged_view_id.get().is_some() {
-                                                            ev.prevent_default();
+                                                        on:dragstart=move |ev| {
                                                             if let Some(dt) = ev.data_transfer() {
-                                                                dt.set_drop_effect("move");
+                                                                let _ = dt.set_data("text/plain", &view_id.to_string());
+                                                                dt.set_effect_allowed("move");
                                                             }
-                                                            set_drag_over_view_id.set(Some(view_id));
+                                                            // Broadcast to other windows
+                                                            let my_label = crate::tauri_bridge::get_current_window_label()
+                                                                .unwrap_or_default();
+                                                            sync::broadcast_tab_drag_start(&my_label, &tab_id_for_tearoff);
                                                         }
-                                                    }
-                                                    on:dragleave=move |_| {
-                                                        set_drag_over_view_id.set(None);
-                                                    }
-                                                    on:drop=move |ev| {
-                                                        ev.prevent_default();
-                                                        ev.stop_propagation();
-
-                                                        if let Some(dragged_id) = dragged_view_id.get() {
-                                                            if dragged_id != view_id {
-                                                                // Reorder the views array
-                                                                set_views.update(|views_vec| {
-                                                                    let dragged_idx = views_vec.iter().position(|v| v.id == dragged_id);
-                                                                    let target_idx = views_vec.iter().position(|v| v.id == view_id);
-
-                                                                    if let (Some(from), Some(to)) = (dragged_idx, target_idx) {
-                                                                        let item = views_vec.remove(from);
-                                                                        views_vec.insert(to, item);
-                                                                    }
-                                                                });
+                                                        on:dragover=move |ev| {
+                                                            if dragged_view_id.get().is_some() {
+                                                                ev.prevent_default();
+                                                                if let Some(dt) = ev.data_transfer() {
+                                                                    dt.set_drop_effect("move");
+                                                                }
+                                                                set_drag_over_view_id.set(Some(view_id));
                                                             }
                                                         }
-
-                                                        set_dragged_view_id.set(None);
-                                                        set_drag_over_view_id.set(None);
-                                                    }
-                                                    on:dragend=move |_| {
-                                                        set_dragged_view_id.set(None);
-                                                        set_drag_over_view_id.set(None);
-                                                        if let Some(timer_id) = drag_timer_id.get() {
-                                                            web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
-                                                            set_drag_timer_id.set(None);
+                                                        on:dragleave=move |_| {
+                                                            set_drag_over_view_id.set(None);
                                                         }
-                                                    }
-                                                    on:dblclick=move |e| {
-                                                        e.stop_propagation();
-                                                        let name = views.get().iter()
-                                                            .find(|v| v.id == view_id)
-                                                            .map(|v| v.name.clone())
-                                                            .unwrap_or_default();
-                                                        set_edit_name_value.set(name);
-                                                        set_editing_view_id.set(Some(view_id));
-                                                    }
-                                                    prop:draggable=move || dragged_view_id.get() == Some(view_id)
-                                                >
-                                                    {current_name}
-                                                </button>
-                                                <button
-                                                    class="tab-close-button"
-                                                    on:click=move |e| {
-                                                        e.stop_propagation();
-                                                        on_close_view(view_id);
-                                                    }
-                                                    title="Close view"
-                                                >
-                                                    <i class="fa-solid fa-times"></i>
-                                                </button>
-                                            }.into_view()
-                                        }
-                                    }}
-                                </div>
+                                                        on:drop=move |ev| {
+                                                            ev.prevent_default();
+                                                            ev.stop_propagation();
+
+                                                            if let Some(dragged_id) = dragged_view_id.get() {
+                                                                if dragged_id != view_id {
+                                                                    set_window_tabs.update(|tabs| {
+                                                                        let dragged_str = dragged_id.to_string();
+                                                                        let target_str = view_id.to_string();
+                                                                        let dragged_idx = tabs.iter().position(|t| *t == dragged_str);
+                                                                        let target_idx = tabs.iter().position(|t| *t == target_str);
+                                                                        if let (Some(from), Some(to)) = (dragged_idx, target_idx) {
+                                                                            let item = tabs.remove(from);
+                                                                            tabs.insert(to, item);
+                                                                        }
+                                                                    });
+                                                                }
+                                                            }
+
+                                                            set_dragged_view_id.set(None);
+                                                            set_drag_over_view_id.set(None);
+                                                        }
+                                                        on:dragend=move |ev| {
+                                                            let _ = ev;
+                                                            set_dragged_view_id.set(None);
+                                                            set_drag_over_view_id.set(None);
+                                                            if let Some(timer_id) = drag_timer_id.get() {
+                                                                web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
+                                                                set_drag_timer_id.set(None);
+                                                            }
+                                                            // Broadcast drag cancel in case other windows are showing drop indicators
+                                                            let my_label = crate::tauri_bridge::get_current_window_label()
+                                                                .unwrap_or_default();
+                                                            sync::broadcast_tab_drag_cancel(&my_label);
+                                                        }
+                                                        on:dblclick=move |e| {
+                                                            e.stop_propagation();
+                                                            let name = views.get().iter()
+                                                                .find(|v| v.id == view_id)
+                                                                .map(|v| v.name.clone())
+                                                                .unwrap_or_default();
+                                                            set_edit_name_value.set(name);
+                                                            set_editing_view_id.set(Some(view_id));
+                                                        }
+                                                        prop:draggable=move || dragged_view_id.get() == Some(view_id)
+                                                    >
+                                                        {current_name}
+                                                    </button>
+                                                }.into_view()
+                                            }
+                                        }}
+                                        <button
+                                            class="tab-close-button"
+                                            on:click=move |e| {
+                                                e.stop_propagation();
+                                                on_close_tab(tab_id_for_close.clone());
+                                            }
+                                            title="Close tab"
+                                        >
+                                            <i class="fa-solid fa-times"></i>
+                                        </button>
+                                    </div>
+                                }.into_view()
                             }
                         }).collect::<Vec<_>>()
                     }}

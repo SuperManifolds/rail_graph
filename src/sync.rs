@@ -1,0 +1,172 @@
+use crate::tauri_bridge;
+use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
+
+/// Envelope wrapping sync payloads with source window identification.
+#[derive(Serialize, Deserialize)]
+pub struct SyncEnvelope {
+    pub source_window: String,
+    pub kind: SyncKind,
+}
+
+/// The kind of sync message being broadcast.
+#[derive(Serialize, Deserialize)]
+pub enum SyncKind {
+    /// Full shared state snapshot (project bytes excluding per-window state).
+    ProjectSync(Vec<u8>),
+    /// Tab drag started in a window.
+    TabDragStart {
+        tab_id: String,
+    },
+    /// Tab drag cancelled.
+    TabDragCancel,
+    /// Tab was dropped on a window's tab bar.
+    TabDrop {
+        tab_id: String,
+        target_window: String,
+        insert_index: usize,
+    },
+    /// A window is closing.
+    WindowClosing {
+        is_primary: bool,
+    },
+    /// A window is claiming primary status.
+    PrimaryClaim,
+    /// Undo/redo request from a non-primary window.
+    UndoRequest,
+    RedoRequest,
+    /// Window layout update (tab assignments for this window).
+    LayoutUpdate {
+        window_id: String,
+        tab_ids: Vec<String>,
+        active_tab_id: Option<String>,
+    },
+}
+
+const SYNC_EVENT: &str = "railgraph-sync";
+
+/// Broadcast a sync message to all windows.
+pub fn broadcast(envelope: &SyncEnvelope) {
+    let json = match serde_json::to_string(envelope) {
+        Ok(j) => j,
+        Err(e) => {
+            leptos::logging::error!("Failed to serialize sync envelope: {e}");
+            return;
+        }
+    };
+    leptos::spawn_local(async move {
+        if let Err(e) = tauri_bridge::emit_event(SYNC_EVENT, &json).await {
+            leptos::logging::error!("Failed to broadcast sync: {e}");
+        }
+    });
+}
+
+/// Listen for sync messages from other windows.
+/// The callback receives the deserialized envelope.
+/// Returns the unlisten handle.
+///
+/// # Errors
+/// Returns an error if the listener cannot be registered.
+pub async fn listen(
+    callback: impl Fn(SyncEnvelope) + 'static,
+) -> Result<JsValue, String> {
+    tauri_bridge::listen_event(SYNC_EVENT, move |payload| {
+        match serde_json::from_str::<SyncEnvelope>(&payload) {
+            Ok(envelope) => callback(envelope),
+            Err(e) => leptos::logging::error!("Failed to deserialize sync envelope: {e}"),
+        }
+    })
+    .await
+}
+
+/// Broadcast a project state sync.
+pub fn broadcast_project_sync(source_window: &str, project_bytes: Vec<u8>) {
+    broadcast(&SyncEnvelope {
+        source_window: source_window.to_string(),
+        kind: SyncKind::ProjectSync(project_bytes),
+    });
+}
+
+/// Broadcast a tab drag start event.
+pub fn broadcast_tab_drag_start(source_window: &str, tab_id: &str) {
+    broadcast(&SyncEnvelope {
+        source_window: source_window.to_string(),
+        kind: SyncKind::TabDragStart {
+            tab_id: tab_id.to_string(),
+        },
+    });
+}
+
+/// Broadcast a tab drag cancel event.
+pub fn broadcast_tab_drag_cancel(source_window: &str) {
+    broadcast(&SyncEnvelope {
+        source_window: source_window.to_string(),
+        kind: SyncKind::TabDragCancel,
+    });
+}
+
+/// Broadcast a tab drop event.
+pub fn broadcast_tab_drop(
+    source_window: &str,
+    tab_id: &str,
+    target_window: &str,
+    insert_index: usize,
+) {
+    broadcast(&SyncEnvelope {
+        source_window: source_window.to_string(),
+        kind: SyncKind::TabDrop {
+            tab_id: tab_id.to_string(),
+            target_window: target_window.to_string(),
+            insert_index,
+        },
+    });
+}
+
+/// Broadcast a window closing event.
+pub fn broadcast_window_closing(source_window: &str, is_primary: bool) {
+    broadcast(&SyncEnvelope {
+        source_window: source_window.to_string(),
+        kind: SyncKind::WindowClosing { is_primary },
+    });
+}
+
+/// Broadcast a primary claim event.
+pub fn broadcast_primary_claim(source_window: &str) {
+    broadcast(&SyncEnvelope {
+        source_window: source_window.to_string(),
+        kind: SyncKind::PrimaryClaim,
+    });
+}
+
+/// Broadcast an undo request from a non-primary window.
+pub fn broadcast_undo_request(source_window: &str) {
+    broadcast(&SyncEnvelope {
+        source_window: source_window.to_string(),
+        kind: SyncKind::UndoRequest,
+    });
+}
+
+/// Broadcast a redo request from a non-primary window.
+pub fn broadcast_redo_request(source_window: &str) {
+    broadcast(&SyncEnvelope {
+        source_window: source_window.to_string(),
+        kind: SyncKind::RedoRequest,
+    });
+}
+
+/// Broadcast a layout update for this window.
+pub fn broadcast_layout_update(
+    source_window: &str,
+    window_id: &str,
+    tab_ids: &[String],
+    active_tab_id: Option<&str>,
+) {
+    broadcast(&SyncEnvelope {
+        source_window: source_window.to_string(),
+        kind: SyncKind::LayoutUpdate {
+            window_id: window_id.to_string(),
+            tab_ids: tab_ids.to_vec(),
+            active_tab_id: active_tab_id.map(String::from),
+        },
+    });
+}

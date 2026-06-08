@@ -279,6 +279,41 @@ pub async fn compute_auto_layout(
         .map_err(|e| format!("Failed to deserialize layout positions: {e}"))
 }
 
+// --- Project State Cache (multi-window sync) ---
+
+/// Cache the project state in the Tauri backend for secondary windows to read.
+///
+/// # Errors
+/// Returns an error if the Tauri command fails.
+pub async fn cache_project_state(bytes: &[u8]) -> Result<(), String> {
+    invoke_binary("cache_project_state", bytes, &[]).await?;
+    Ok(())
+}
+
+/// Get the cached project state from the Tauri backend.
+/// Returns None if no state has been cached yet.
+///
+/// # Errors
+/// Returns an error if the Tauri command fails.
+pub async fn get_cached_project_state() -> Result<Vec<u8>, String> {
+    let result = invoke_json("get_cached_project_state", &JsValue::UNDEFINED).await?;
+    let array = js_sys::Uint8Array::new(&result);
+    Ok(array.to_vec())
+}
+
+/// Get the current Tauri window's label.
+#[must_use]
+pub fn get_current_window_label() -> Option<String> {
+    let window = web_sys::window()?;
+    let tauri = js_sys::Reflect::get(&window, &"__TAURI__".into()).ok()?;
+    let ww_module = js_sys::Reflect::get(&tauri, &"webviewWindow".into()).ok()?;
+    let get_current = js_sys::Reflect::get(&ww_module, &"getCurrentWebviewWindow".into()).ok()?;
+    let get_current: js_sys::Function = get_current.dyn_into().ok()?;
+    let current = get_current.call0(&JsValue::NULL).ok()?;
+    let label = js_sys::Reflect::get(&current, &"label".into()).ok()?;
+    label.as_string()
+}
+
 // --- Native Window Management ---
 
 fn get_tauri_module(module: &str) -> Result<JsValue, String> {

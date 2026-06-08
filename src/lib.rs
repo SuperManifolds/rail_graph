@@ -14,6 +14,7 @@ pub mod time_ext;
 
 pub mod tauri_bridge;
 pub mod window_protocol;
+pub mod sync;
 
 // Re-export core modules
 pub use railgraph_core::conflict;

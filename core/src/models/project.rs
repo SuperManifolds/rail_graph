@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use super::{Line, LineFolder, RailwayGraph, GraphView, ViewportState};
 use chrono::Duration;
+use uuid::Uuid;
 
 pub const CURRENT_PROJECT_VERSION: u32 = 1;
 
@@ -94,6 +95,23 @@ impl Default for Legend {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowLayout {
+    pub window_id: Uuid,
+    pub tab_ids: Vec<String>,
+    pub active_tab_id: Option<String>,
+    #[serde(default)]
+    pub bounds: Option<WindowBounds>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
     #[serde(flatten)]
     pub metadata: ProjectMetadata,
@@ -111,6 +129,8 @@ pub struct Project {
     pub infrastructure_viewport: ViewportState,
     #[serde(default)]
     pub folders: Vec<LineFolder>,
+    #[serde(default)]
+    pub window_layouts: Vec<WindowLayout>,
 }
 
 impl Project {
@@ -132,6 +152,7 @@ impl Project {
             active_tab_id: None,
             infrastructure_viewport: ViewportState::default(),
             folders: Vec::new(),
+            window_layouts: Vec::new(),
         }
     }
 
@@ -153,6 +174,7 @@ impl Project {
             active_tab_id: None,
             infrastructure_viewport: ViewportState::default(),
             folders: Vec::new(),
+            window_layouts: Vec::new(),
         }
     }
 
@@ -174,6 +196,7 @@ impl Project {
             active_tab_id: None,
             infrastructure_viewport: ViewportState::default(),
             folders: Vec::new(),
+            window_layouts: Vec::new(),
         }
     }
 
@@ -199,6 +222,7 @@ impl Project {
             active_tab_id: self.active_tab_id.clone(),
             infrastructure_viewport: self.infrastructure_viewport.clone(),
             folders: self.folders.clone(),
+            window_layouts: Vec::new(),
         }
     }
 }
