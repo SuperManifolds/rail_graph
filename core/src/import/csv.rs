@@ -1,9 +1,10 @@
 use chrono::{Duration, NaiveDateTime};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use crate::models::{Line, RailwayGraph, RouteSegment, Stations, Tracks};
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ColumnType {
     StationName,
     Platform,
@@ -37,7 +38,7 @@ impl ColumnType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnMapping {
     pub column_index: usize,
     pub column_type: ColumnType,
@@ -48,7 +49,7 @@ pub struct ColumnMapping {
     pub group_index: Option<usize>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportDefaults {
     pub default_wait_time: Duration,
     pub per_line_wait_times: HashMap<String, Duration>,
@@ -63,7 +64,7 @@ impl Default for ImportDefaults {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CsvImportConfig {
     pub columns: Vec<ColumnMapping>,
     pub has_headers: bool,

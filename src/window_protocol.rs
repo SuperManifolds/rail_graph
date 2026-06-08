@@ -2,6 +2,8 @@
 //! Each window type has a pair of structs: one for initialization data
 //! sent from the main window, and one for results sent back.
 
+use crate::import::csv::CsvImportConfig;
+use crate::import::nimby::{NimbyImportConfig, NimbyImportData};
 use crate::models::{Line, Platform, ProjectSettings, RailwayGraph, RoutingRule, Track, TrackHandedness};
 use serde::{Deserialize, Serialize};
 
@@ -109,4 +111,32 @@ pub struct SettingsInit {
 #[derive(Serialize, Deserialize)]
 pub struct SettingsResult {
     pub settings: ProjectSettings,
+}
+
+// --- CSV Column Mapper ---
+
+#[derive(Serialize, Deserialize)]
+pub struct ImporterCsvInit {
+    pub config: CsvImportConfig,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum ImporterCsvResult {
+    Import(CsvImportConfig),
+    Cancel,
+}
+
+// --- NIMBY Line Selector ---
+
+#[derive(Serialize, Deserialize)]
+pub struct ImporterNimbyInit {
+    pub data: NimbyImportData,
+    pub handedness: TrackHandedness,
+    pub station_spacing: f64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum ImporterNimbyResult {
+    Import(NimbyImportConfig),
+    Cancel,
 }

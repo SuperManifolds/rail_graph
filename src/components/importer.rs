@@ -2,11 +2,12 @@ use crate::import::jtraingraph::{parse_jtraingraph, import_jtraingraph};
 use crate::import::nimby::{parse_nimby_json, import_nimby_lines, NimbyImportData, NimbyImportConfig};
 use crate::models::{Line, RailwayGraph, Stations};
 use crate::components::button::Button;
-use crate::components::csv_column_mapper::CsvColumnMapper;
-use crate::components::nimby_line_selector::NimbyLineSelector;
-use crate::components::window::Window;
+use crate::components::native_window::NativeWindow;
 use crate::import::csv::{analyze_csv, parse_csv_with_mapping, parse_csv_with_existing_infrastructure, CsvImportConfig};
-use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, SignalGetUntracked, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback, Show};
+use crate::window_protocol::{ImporterCsvInit, ImporterCsvResult, ImporterNimbyInit, ImporterNimbyResult};
+use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, SignalGetUntracked, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback};
+
+const GRID_SIZE: f64 = 30.0;
 
 /// Trigger MIP layout on the Tauri backend after a Nimby import.
 fn trigger_mip_layout(
@@ -129,7 +130,7 @@ pub fn Importer(
     let (show_mapper, set_show_mapper) = create_signal(false);
     let (file_content, set_file_content) = create_signal(String::new());
     let (csv_config, set_csv_config) = create_signal(None::<CsvImportConfig>);
-    let (import_error, set_import_error) = create_signal(None::<String>);
+    let (_, set_import_error) = create_signal(None::<String>);
 
     // NIMBY Rails import state
     let (nimby_data, set_nimby_data) = create_signal(None::<NimbyImportData>);
@@ -304,6 +305,37 @@ pub fn Importer(
         }
     };
 
+    let csv_result_handler: Box<dyn Fn(String)> = Box::new(move |json: String| {
+        match serde_json::from_str::<ImporterCsvResult>(&json) {
+            Ok(ImporterCsvResult::Import(config)) => {
+                handle_import(config);
+            }
+            Ok(ImporterCsvResult::Cancel) => {
+                set_show_mapper.set(false);
+                set_import_error.set(None);
+            }
+            Err(e) => {
+                leptos::logging::error!("Failed to parse ImporterCsvResult: {}", e);
+            }
+        }
+    });
+
+    let nimby_result_handler: Box<dyn Fn(String)> = Box::new(move |json: String| {
+        match serde_json::from_str::<ImporterNimbyResult>(&json) {
+            Ok(ImporterNimbyResult::Import(config)) => {
+                handle_nimby_import(config);
+            }
+            Ok(ImporterNimbyResult::Cancel) => {
+                set_show_nimby_selector.set(false);
+                set_nimby_data.set(None);
+                set_import_error.set(None);
+            }
+            Err(e) => {
+                leptos::logging::error!("Failed to parse ImporterNimbyResult: {}", e);
+            }
+        }
+    });
+
     view! {
         <input
             type="file"
@@ -328,63 +360,49 @@ pub fn Importer(
             <i class="fa-solid fa-file-import"></i>
         </Button>
 
-        <Show when=move || csv_config.get().is_some()>
-            <Window
-                is_open=show_mapper
-                title=Signal::derive(|| "CSV Column Mapping".to_string())
-                on_close=move || set_show_mapper.set(false)
-                position_key="importer"
-            >
-                <CsvColumnMapper
-                    config=Signal::derive(move || csv_config.get().unwrap_or_else(|| {
-                        use std::collections::HashMap;
-                        CsvImportConfig {
-                            columns: Vec::new(),
-                            has_headers: false,
-                            defaults: crate::import::csv::ImportDefaults::default(),
-                            pattern_repeat: None,
-                            group_line_names: HashMap::new(),
-                            filename: None,
-                            disable_infrastructure: false,
-                        }
-                    }))
-                    on_cancel=Callback::new(move |()| {
-                        set_show_mapper.set(false);
-                        set_import_error.set(None);
-                    })
-                    on_import=Callback::new(handle_import)
-                    import_error=import_error
-                />
-            </Window>
-        </Show>
+        <NativeWindow
+            is_open=Signal::derive(move || show_mapper.get() && csv_config.get().is_some())
+            title=Signal::derive(|| "CSV Column Mapping".to_string())
+            on_close=move || {
+                set_show_mapper.set(false);
+                set_import_error.set(None);
+            }
+            window_type="importer-csv"
+            init_data=Signal::derive(move || {
+                let Some(config) = csv_config.get() else {
+                    return String::new();
+                };
+                serde_json::to_string(&ImporterCsvInit { config }).unwrap_or_default()
+            })
+            on_result=csv_result_handler
+            size=(700, 500)
+            position_key="importer-csv"
+        />
 
-        <Show when=move || nimby_data.get().is_some()>
-            <Window
-                is_open=show_nimby_selector
-                title=Signal::derive(|| "Import NIMBY Rails Schedules".to_string())
-                on_close=move || {
-                    set_show_nimby_selector.set(false);
-                    set_nimby_data.set(None);
-                    set_import_error.set(None);
-                }
-                position_key="nimby_importer"
-            >
-                <NimbyLineSelector
-                    data=Signal::derive(move || nimby_data.get().unwrap_or_default())
-                    handedness=Signal::derive(move || settings.get().track_handedness)
-                    station_spacing=Signal::derive(move || {
-                        const GRID_SIZE: f64 = 30.0;
-                        settings.get().default_node_distance_grid_squares * GRID_SIZE
-                    })
-                    on_cancel=Callback::new(move |()| {
-                        set_show_nimby_selector.set(false);
-                        set_nimby_data.set(None);
-                        set_import_error.set(None);
-                    })
-                    on_import=Callback::new(handle_nimby_import)
-                    import_error=import_error
-                />
-            </Window>
-        </Show>
+        <NativeWindow
+            is_open=Signal::derive(move || show_nimby_selector.get() && nimby_data.get().is_some())
+            title=Signal::derive(|| "Import NIMBY Rails Schedules".to_string())
+            on_close=move || {
+                set_show_nimby_selector.set(false);
+                set_nimby_data.set(None);
+                set_import_error.set(None);
+            }
+            window_type="importer-nimby"
+            init_data=Signal::derive(move || {
+                let Some(data) = nimby_data.get() else {
+                    return String::new();
+                };
+                let handedness = settings.get().track_handedness;
+                let station_spacing = settings.get().default_node_distance_grid_squares * GRID_SIZE;
+                serde_json::to_string(&ImporterNimbyInit {
+                    data,
+                    handedness,
+                    station_spacing,
+                }).unwrap_or_default()
+            })
+            on_result=nimby_result_handler
+            size=(600, 500)
+            position_key="importer-nimby"
+        />
     }
 }

@@ -4,7 +4,7 @@
 
 use chrono::Duration;
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::auto_layout::{self, GeographicHints};
@@ -15,7 +15,7 @@ use crate::models::{
 };
 
 /// Raw NIMBY Rails station from JSON
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NimbyStation {
     pub id: String,
     pub name: String,
@@ -23,13 +23,13 @@ pub struct NimbyStation {
 }
 
 /// Track area within a stop (contains platform info)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NimbyTrackArea {
     pub platform_name: String,
 }
 
 /// Raw NIMBY Rails stop within a line
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NimbyStop {
     pub idx: usize,
     pub leg_distance: f64,
@@ -41,7 +41,7 @@ pub struct NimbyStop {
 }
 
 /// Raw NIMBY Rails line from JSON
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NimbyLine {
     pub id: String,
     pub name: String,
@@ -52,7 +52,7 @@ pub struct NimbyLine {
 }
 
 /// A single run (trip) within a shift
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NimbyRun {
     pub line_id: String,
     pub enter_stop_idx: usize,
@@ -62,7 +62,7 @@ pub struct NimbyRun {
 }
 
 /// A shift containing multiple runs (operated by one train)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NimbyShift {
     pub id: String,
     pub name: String,
@@ -70,7 +70,7 @@ pub struct NimbyShift {
 }
 
 /// A schedule containing shifts
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NimbySchedule {
     pub id: String,
     pub name: String,
@@ -78,7 +78,7 @@ pub struct NimbySchedule {
 }
 
 /// Tagged enum for parsing any NIMBY JSON record
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "class")]
 pub enum NimbyRecord {
     ExportMeta {
@@ -109,7 +109,7 @@ pub enum NimbyRecord {
 }
 
 /// Parsed and categorized import data
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct NimbyImportData {
     pub company_name: String,
     pub stations: HashMap<String, NimbyStation>,
@@ -224,7 +224,7 @@ pub fn parse_nimby_color(color: &str) -> String {
 }
 
 /// Configuration for NIMBY Rails import
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NimbyImportConfig {
     /// Create new stations/tracks vs use existing infrastructure
     pub create_infrastructure: bool,
