@@ -2,7 +2,7 @@
 //! Each window type has a pair of structs: one for initialization data
 //! sent from the main window, and one for results sent back.
 
-use crate::models::{Platform, RailwayGraph, RoutingRule, Track, TrackHandedness};
+use crate::models::{Line, Platform, ProjectSettings, RailwayGraph, RoutingRule, Track, TrackHandedness};
 use serde::{Deserialize, Serialize};
 
 // --- Edit Track ---
@@ -82,4 +82,31 @@ pub enum EditStationResult {
     Delete {
         station_idx: usize,
     },
+}
+
+// --- Line Editor ---
+
+#[derive(Serialize, Deserialize)]
+pub struct LineEditorInit {
+    pub line: Line,
+    pub graph: RailwayGraph,
+    pub settings: ProjectSettings,
+    pub initial_tab: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum LineEditorResult {
+    Save(Line),
+}
+
+// --- Settings ---
+
+#[derive(Serialize, Deserialize)]
+pub struct SettingsInit {
+    pub settings: ProjectSettings,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SettingsResult {
+    pub settings: ProjectSettings,
 }

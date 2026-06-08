@@ -27,17 +27,12 @@ pub use track_column::TrackColumn;
 pub use wait_time_column::WaitTimeColumn;
 pub use crate::models::StationPosition;
 
-use crate::components::{
-    tab_view::{Tab, TabView},
-    window::Window,
-};
-use crate::models::{Line, RailwayGraph, RouteDirection};
+use crate::components::native_window::NativeWindow;
+use crate::models::{Line, RailwayGraph};
+use crate::window_protocol::{LineEditorInit, LineEditorResult};
 use leptos::{
-    component, create_effect, create_memo, create_rw_signal, create_signal, store_value, view,
-    IntoView, MaybeSignal, ReadSignal, Show, Signal, SignalGet, SignalGetUntracked, SignalSet,
-    SignalWith,
+    component, store_value, view, IntoView, MaybeSignal, ReadSignal, Signal, SignalGet,
 };
-use std::rc::Rc;
 
 #[component]
 pub fn LineEditor(
@@ -49,104 +44,55 @@ pub fn LineEditor(
     settings: ReadSignal<crate::models::ProjectSettings>,
     #[prop(default = None)] initial_tab: Option<String>,
 ) -> impl IntoView {
-    let (edited_line, set_edited_line) = create_signal(None::<Line>);
-    let active_tab = create_rw_signal("general".to_string());
-
-    // Persistent UI state for StopsTab to avoid resets on save
-    let time_mode = create_rw_signal(TimeDisplayMode::Difference);
-    let route_direction = create_rw_signal(RouteDirection::Forward);
-    let first_station = create_rw_signal(None::<String>);
-
-    // Store initial_tab for use in effect
-    let initial_tab_value = store_value(initial_tab);
-
-    // Reset edited_line when dialog opens (not when initial_line changes)
-    create_effect(move |prev_open| {
-        let currently_open = is_open.get();
-        if currently_open && prev_open != Some(true) {
-            if let Some(line) = initial_line.get_untracked() {
-                set_edited_line.set(Some(line));
-            }
-            // Set initial tab when dialog opens
-            if let Some(tab) = initial_tab_value.get_value() {
-                active_tab.set(tab);
-            }
-        }
-        currently_open
-    });
-
-    // Wrap on_save to also update local edited_line state
-    let on_save_wrapped = Rc::new(move |line: Line| {
-        set_edited_line.set(Some(line.clone()));
-        on_save(line);
-    });
     let set_is_open = store_value(set_is_open);
+    let initial_tab = store_value(initial_tab);
 
-    let close_dialog = move || {
+    let on_close_for_window = move || {
         set_is_open.with_value(|f| f(false));
     };
 
+    let on_close_for_result = on_close_for_window;
+
+    let result_handler: Box<dyn Fn(String)> = Box::new(move |json: String| {
+        match serde_json::from_str::<LineEditorResult>(&json) {
+            Ok(LineEditorResult::Save(line)) => {
+                on_save(line);
+            }
+            Err(e) => {
+                leptos::logging::error!("Failed to parse LineEditorResult: {}", e);
+            }
+        }
+        on_close_for_result();
+    });
+
+    let initial_line_for_init = initial_line.clone();
     let window_title = Signal::derive(move || {
-        edited_line.get().map_or_else(
+        initial_line.get().map_or_else(
             || "Edit Line".to_string(),
             |line| format!("Edit Line: {}", line.name),
         )
     });
 
-    let has_line = create_memo(move |_| edited_line.with(Option::is_some));
-    let is_window_open = Signal::derive(move || is_open.get() && has_line.get());
-
-    let on_save_stored = store_value(on_save_wrapped);
-    let tabs = store_value(vec![
-        Tab {
-            id: "general".to_string(),
-            label: "General".to_string(),
-        },
-        Tab {
-            id: "stops".to_string(),
-            label: "Stops".to_string(),
-        },
-        Tab {
-            id: "schedule".to_string(),
-            label: "Schedule".to_string(),
-        },
-    ]);
-
     view! {
-        <Window
-            is_open=is_window_open
+        <NativeWindow
+            is_open=is_open
             title=window_title
-            on_close=close_dialog
-            max_size=(900.0, 1200.0)
-            transparent_content=true
-        >
-            <Show when=move || edited_line.get().is_some()>
-                <TabView tabs=tabs.get_value() active_tab=active_tab>
-                    <GeneralTab
-                        edited_line=edited_line
-                        set_edited_line=set_edited_line
-                        on_save=on_save_stored.get_value()
-                        active_tab=active_tab
-                    />
-                    <StopsTab
-                        edited_line=edited_line
-                        graph=graph
-                        active_tab=active_tab
-                        on_save=on_save_stored.get_value()
-                        time_mode=time_mode
-                        route_direction=route_direction
-                        first_station=first_station
-                        settings=settings
-                    />
-                    <ScheduleTab
-                        edited_line=edited_line
-                        set_edited_line=set_edited_line
-                        graph=graph
-                        on_save=on_save_stored.get_value()
-                        active_tab=active_tab
-                    />
-                </TabView>
-            </Show>
-        </Window>
+            on_close=move || on_close_for_window()
+            window_type="line-editor"
+            init_data=Signal::derive(move || {
+                let Some(line) = initial_line_for_init.get() else {
+                    return String::new();
+                };
+                serde_json::to_string(&LineEditorInit {
+                    line,
+                    graph: graph.get(),
+                    settings: settings.get(),
+                    initial_tab: initial_tab.get_value(),
+                }).unwrap_or_default()
+            })
+            on_result=result_handler
+            size=(900, 700)
+            position_key="line-editor"
+        />
     }
 }

@@ -69,6 +69,8 @@ fn render_child_content(window_type: &str, session: &str, init_data: &str) -> le
     use crate::components::child::edit_junction_child::EditJunctionChild;
     use crate::components::child::edit_station_child::EditStationChild;
     use crate::components::child::edit_track_child::EditTrackChild;
+    use crate::components::child::line_editor_child::LineEditorChild;
+    use crate::components::child::settings_child::SettingsChild;
 
     match window_type {
         "edit-track" => {
@@ -91,6 +93,20 @@ fn render_child_content(window_type: &str, session: &str, init_data: &str) -> le
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
             leptos::view! { <EditStationChild init=init session=session.to_string() /> }.into_view()
+        }
+        "line-editor" => {
+            let Ok(init) = serde_json::from_str::<crate::window_protocol::LineEditorInit>(init_data) else {
+                leptos::logging::error!("Failed to deserialize LineEditorInit");
+                return leptos::view! { <div>"Failed to load data"</div> }.into_view();
+            };
+            leptos::view! { <LineEditorChild init=init session=session.to_string() /> }.into_view()
+        }
+        "settings" => {
+            let Ok(init) = serde_json::from_str::<crate::window_protocol::SettingsInit>(init_data) else {
+                leptos::logging::error!("Failed to deserialize SettingsInit");
+                return leptos::view! { <div>"Failed to load data"</div> }.into_view();
+            };
+            leptos::view! { <SettingsChild init=init session=session.to_string() /> }.into_view()
         }
         _ => {
             leptos::logging::error!("Unknown child window type: {}", window_type);
