@@ -80,17 +80,22 @@ pub fn SettingsChild(init: SettingsInit, session: String) -> impl IntoView {
         });
     };
 
-    let session_save = session;
-    let handle_save = move |_| {
-        let result = SettingsResult {
-            settings: settings.get(),
-        };
-        let json = serde_json::to_string(&result).unwrap_or_default();
-        let event_name = format!("result:{session_save}");
-        leptos::spawn_local(async move {
-            let _ = crate::tauri_bridge::emit_event(&event_name, &json).await;
-        });
-    };
+    // Emit settings on every change for live updates
+    let session_for_effect = session.clone();
+    leptos::create_effect(move |prev: Option<ProjectSettings>| {
+        let current = settings.get();
+        if prev.is_some() {
+            let result = SettingsResult {
+                settings: current.clone(),
+            };
+            let json = serde_json::to_string(&result).unwrap_or_default();
+            let event_name = format!("result:{session_for_effect}");
+            leptos::spawn_local(async move {
+                let _ = crate::tauri_bridge::emit_event(&event_name, &json).await;
+            });
+        }
+        current
+    });
 
     let tabs = vec![
         Tab {
@@ -233,15 +238,7 @@ pub fn SettingsChild(init: SettingsInit, session: String) -> impl IntoView {
                             </div>
                         </div>
 
-                        <div class="form-buttons">
-                            <div class="flex-spacer"></div>
-                            <button on:click=move |_| {
-                                leptos::spawn_local(async move {
-                                    let _ = crate::tauri_bridge::close_native_window("child-settings").await;
-                                });
-                            }>"Cancel"</button>
-                            <button class="primary" on:click=handle_save>"Save"</button>
-                        </div>
+                        <p class="help-text settings-live-note">"Changes apply immediately."</p>
                     </div>
                 </TabPanel>
 

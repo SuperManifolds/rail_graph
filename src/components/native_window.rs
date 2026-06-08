@@ -37,7 +37,7 @@ async fn open_native_window(
     }
 
     let result_event = format!("result:{session}");
-    if let Err(e) = tauri_bridge::listen_event_once(&result_event, move |payload| {
+    if let Err(e) = tauri_bridge::listen_event(&result_event, move |payload| {
         on_result.with_value(|r| {
             if let Some(callback) = r {
                 callback(payload);
