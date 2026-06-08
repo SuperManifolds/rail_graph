@@ -1,8 +1,7 @@
-use crate::components::window::Window;
-use crate::components::track_editor::TrackEditor;
-use crate::models::{RailwayGraph, Track, TrackDirection, Line};
-use crate::import::shared::create_tracks_with_count;
-use leptos::{component, create_effect, create_signal, event_target_value, IntoView, ReadSignal, Signal, SignalGet, SignalSet, SignalUpdate, view};
+use crate::components::native_window::NativeWindow;
+use crate::models::{RailwayGraph, Track, Line};
+use crate::window_protocol::{EditTrackInit, EditTrackResult};
+use leptos::{component, IntoView, ReadSignal, Signal, SignalGet, view};
 use petgraph::stable_graph::EdgeIndex;
 use std::rc::Rc;
 
@@ -18,168 +17,75 @@ pub fn EditTrack(
     lines: ReadSignal<Vec<Line>>,
     settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
-    let (tracks, set_tracks) = create_signal(Vec::<Track>::new());
-    let (distance, set_distance) = create_signal(String::new());
-    let (from_station_name, set_from_station_name) = create_signal(String::new());
-    let (to_station_name, set_to_station_name) = create_signal(String::new());
-    let (affected_lines, set_affected_lines) = create_signal(Vec::<String>::new());
-
-    // Load current track data when dialog opens
-    create_effect(move |_| {
-        if let Some(edge_idx) = editing_track.get() {
-            let current_graph = graph.get();
-            let current_lines = lines.get();
-
-            if let Some(track_segment) = current_graph.graph.edge_weight(edge_idx) {
-                set_tracks.set(track_segment.tracks.clone());
-
-                // Load distance if available
-                set_distance.set(track_segment.distance.map(|d| d.to_string()).unwrap_or_default());
-            }
-
-            // Get station/junction names
-            if let Some((from, to)) = current_graph.graph.edge_endpoints(edge_idx) {
-                if let Some(from_node) = current_graph.graph.node_weight(from) {
-                    set_from_station_name.set(from_node.display_name());
-                }
-                if let Some(to_node) = current_graph.graph.node_weight(to) {
-                    set_to_station_name.set(to_node.display_name());
-                }
-            }
-
-            // Find lines using this edge
-            let edge_index = edge_idx.index();
-            let affected: Vec<String> = current_lines
-                .iter()
-                .filter(|line| line.uses_edge(edge_index))
-                .map(|line| line.name.clone())
-                .collect();
-            set_affected_lines.set(affected);
-        } else {
-            // Reset signals when dialog closes to prevent stale values
-            set_tracks.set(Vec::new());
-            set_distance.set(String::new());
-            set_from_station_name.set(String::new());
-            set_to_station_name.set(String::new());
-            set_affected_lines.set(Vec::new());
-        }
-    });
-
-    let on_close_clone = on_close.clone();
-    let handle_save = move |_| {
-        if let Some(edge_idx) = editing_track.get() {
-            let current_tracks = tracks.get();
-            if !current_tracks.is_empty() {
-                // Parse distance, treating empty string as None
-                let parsed_distance = distance.get()
-                    .trim()
-                    .parse::<f64>()
-                    .ok()
-                    .filter(|d| *d > 0.0); // Only accept positive distances
-
-                on_save(edge_idx, current_tracks, parsed_distance);
-            }
-        }
-    };
-
-    let handle_delete = move |_| {
-        if let Some(edge_idx) = editing_track.get() {
-            on_delete(edge_idx);
-        }
-    };
-
-    let handle_add_track = move || {
-        set_tracks.update(|t| {
-            let new_count = t.len() + 1;
-            let handedness = settings.get().track_handedness;
-            *t = create_tracks_with_count(new_count, handedness);
-        });
-    };
-
-    let handle_remove_track = move |_index: usize| {
-        set_tracks.update(|t| {
-            if t.len() > 1 {
-                let new_count = t.len() - 1;
-                let handedness = settings.get().track_handedness;
-                *t = create_tracks_with_count(new_count, handedness);
-            }
-        });
-    };
-
-    let handle_change_direction = move |index: usize, new_direction: TrackDirection| {
-        set_tracks.update(|t| {
-            if index < t.len() {
-                t[index].direction = new_direction;
-            }
-        });
-    };
-
     let is_open = Signal::derive(move || editing_track.get().is_some());
 
+    let on_close_for_window = on_close.clone();
+    let on_close_for_result = on_close.clone();
+
+    let result_handler: Box<dyn Fn(String)> = Box::new(move |json: String| {
+        match serde_json::from_str::<EditTrackResult>(&json) {
+            Ok(EditTrackResult::Save { edge_idx, tracks, distance }) => {
+                on_save(EdgeIndex::new(edge_idx), tracks, distance);
+            }
+            Ok(EditTrackResult::Delete { edge_idx }) => {
+                on_delete(EdgeIndex::new(edge_idx));
+            }
+            Err(e) => {
+                leptos::logging::error!("Failed to parse EditTrackResult: {}", e);
+            }
+        }
+        on_close_for_result();
+    });
+
     view! {
-        <Window
+        <NativeWindow
             is_open=is_open
             title=Signal::derive(|| "Edit Track".to_string())
-            on_close=move || on_close_clone()
+            on_close=move || on_close_for_window()
+            window_type="edit-track"
+            init_data=Signal::derive(move || {
+                let Some(edge_idx) = editing_track.get() else {
+                    return String::new();
+                };
+                let current_graph = graph.get();
+                let current_lines = lines.get();
+
+                let (tracks, distance) = current_graph
+                    .graph
+                    .edge_weight(edge_idx)
+                    .map(|ts| (ts.tracks.clone(), ts.distance))
+                    .unwrap_or_default();
+
+                let (from_name, to_name) = current_graph
+                    .graph
+                    .edge_endpoints(edge_idx)
+                    .map(|(from, to)| {
+                        let f = current_graph.graph.node_weight(from).map_or_else(String::new, railgraph_core::models::Node::display_name);
+                        let t = current_graph.graph.node_weight(to).map_or_else(String::new, railgraph_core::models::Node::display_name);
+                        (f, t)
+                    })
+                    .unwrap_or_default();
+
+                let edge_index = edge_idx.index();
+                let affected: Vec<String> = current_lines
+                    .iter()
+                    .filter(|line| line.uses_edge(edge_index))
+                    .map(|line| line.name.clone())
+                    .collect();
+
+                serde_json::to_string(&EditTrackInit {
+                    edge_idx: edge_idx.index(),
+                    tracks,
+                    distance,
+                    from_station_name: from_name,
+                    to_station_name: to_name,
+                    affected_lines: affected,
+                    track_handedness: settings.get().track_handedness,
+                }).unwrap_or_default()
+            })
+            on_result=result_handler
+            size=(500, 450)
             position_key="edit-track"
-        >
-            <div class="add-station-form">
-                <div class="track-stations">
-                    <strong>{move || from_station_name.get()}</strong>
-                    " ↔ "
-                    <strong>{move || to_station_name.get()}</strong>
-                </div>
-
-                {move || {
-                    let affected = affected_lines.get();
-                    if affected.is_empty() {
-                        view! {}.into_view()
-                    } else {
-                        view! {
-                            <div class="track-warning">
-                                <i class="fa-solid fa-triangle-exclamation"></i>
-                                <div class="warning-content">
-                                    <strong>"Warning:"</strong>
-                                    " Changes to this track will affect the following lines: "
-                                    <span class="affected-lines">{affected.join(", ")}</span>
-                                    <div class="warning-note">
-                                        "These lines may need to be updated if track directions no longer match their routes."
-                                    </div>
-                                </div>
-                            </div>
-                        }.into_view()
-                    }
-                }}
-
-                <div class="form-field">
-                    <label>"Distance (km, optional)"</label>
-                    <input
-                        type="text"
-                        placeholder="e.g., 5.2"
-                        prop:value=move || distance.get()
-                        on:input=move |ev| set_distance.set(event_target_value(&ev))
-                    />
-                </div>
-
-                <div class="form-field">
-                    <label>"Tracks"</label>
-                    <TrackEditor
-                        tracks=tracks
-                        from_station_name=from_station_name
-                        to_station_name=to_station_name
-                        on_add_track=handle_add_track
-                        on_remove_track=handle_remove_track
-                        on_change_direction=handle_change_direction
-                    />
-                </div>
-
-                <div class="form-buttons">
-                    <button class="danger" on:click=handle_delete>"Delete Track"</button>
-                    <div class="flex-spacer"></div>
-                    <button on:click=move |_| on_close()>"Cancel"</button>
-                    <button class="primary" on:click=handle_save>"Save"</button>
-                </div>
-            </div>
-        </Window>
+        />
     }
 }
