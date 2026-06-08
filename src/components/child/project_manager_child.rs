@@ -24,6 +24,7 @@ fn emit_result(session: &str, result: &ProjectManagerResult) {
 #[must_use]
 pub fn ProjectManagerChild(init: ProjectManagerInit, session: String) -> impl IntoView {
     let current_project_id = init.current_project_id;
+    let current_project_bytes = init.current_project_bytes;
 
     let (projects, set_projects) = create_signal(Vec::<ProjectMetadata>::new());
     let (error_message, set_error_message) = create_signal(None::<String>);
@@ -34,6 +35,10 @@ pub fn ProjectManagerChild(init: ProjectManagerInit, session: String) -> impl In
     let (show_delete_confirm, set_show_delete_confirm) = create_signal(false);
     let (delete_target_id, set_delete_target_id) = create_signal(None::<String>);
     let (delete_target_name, set_delete_target_name) = create_signal(String::new());
+
+    // Save As dialog state
+    let (show_save_as_dialog, set_show_save_as_dialog) = create_signal(false);
+    let (save_as_name, set_save_as_name) = create_signal(String::new());
 
     // New Project dialog state
     let (show_new_project_dialog, set_show_new_project_dialog) = create_signal(false);
@@ -192,6 +197,51 @@ pub fn ProjectManagerChild(init: ProjectManagerInit, session: String) -> impl In
         set_new_project_name.set(String::new());
     });
 
+    // Save As: duplicate current project with a new name
+    let session_for_save_as = session.clone();
+    let handle_save_as = Rc::new(move || {
+        let name = save_as_name.get().trim().to_string();
+        if name.is_empty() {
+            set_error_message.set(Some("Project name cannot be empty".to_string()));
+            return;
+        }
+        let Ok(mut project) = Project::from_bytes(&current_project_bytes) else {
+            set_error_message.set(Some("Failed to read current project".to_string()));
+            return;
+        };
+        project.metadata.name = name;
+        project.metadata.id = uuid::Uuid::new_v4().to_string();
+        project.metadata.created_at = chrono::Utc::now().to_rfc3339();
+        project.metadata.updated_at.clone_from(&project.metadata.created_at);
+
+        match project.serialize_to_bytes() {
+            Ok(bytes) => {
+                let project_id = project.metadata.id.clone();
+                let session = session_for_save_as.clone();
+                leptos::spawn_local(async move {
+                    match tauri_bridge::save_project(&bytes, &project_id).await {
+                        Ok(()) => {
+                            emit_result(&session, &ProjectManagerResult::LoadProject(bytes));
+                        }
+                        Err(e) => {
+                            set_error_message.set(Some(format!("Failed to save project: {e}")));
+                        }
+                    }
+                });
+            }
+            Err(e) => {
+                set_error_message.set(Some(format!("Failed to serialize project: {e}")));
+            }
+        }
+        set_show_save_as_dialog.set(false);
+        set_save_as_name.set(String::new());
+    });
+
+    let cancel_save_as = Rc::new(move || {
+        set_show_save_as_dialog.set(false);
+        set_save_as_name.set(String::new());
+    });
+
     // Process imported project file
     let process_import = move |bytes: Vec<u8>, filename: Option<String>| {
         let project = match storage::deserialize_project_from_bytes(&bytes) {
@@ -326,6 +376,12 @@ pub fn ProjectManagerChild(init: ProjectManagerInit, session: String) -> impl In
                     on:change=handle_import_file
                     style="display: none;"
                 />
+                <button
+                    on:click=move |_| set_show_save_as_dialog.set(true)
+                >
+                    <i class="fa-solid fa-floppy-disk"></i>
+                    " Save As"
+                </button>
                 <button
                     on:click=move |_| {
                         if let Some(input) = import_file_input_ref.get() {
@@ -472,6 +528,19 @@ pub fn ProjectManagerChild(init: ProjectManagerInit, session: String) -> impl In
             on_confirm=handle_new_project
             on_cancel=cancel_new_project
             confirm_text="Create".to_string()
+            cancel_text="Cancel".to_string()
+        />
+
+        // Save As Dialog (HTML overlay within child window)
+        <TextInputDialog
+            is_open=show_save_as_dialog.into()
+            title=Signal::derive(|| "Save Project As".to_string())
+            label="Project Name:".to_string()
+            value=save_as_name
+            set_value=set_save_as_name
+            on_confirm=handle_save_as
+            on_cancel=cancel_save_as
+            confirm_text="Save".to_string()
             cancel_text="Cancel".to_string()
         />
 

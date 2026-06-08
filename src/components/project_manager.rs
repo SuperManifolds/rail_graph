@@ -52,8 +52,11 @@ pub fn ProjectManager(
                 if !is_open.get() {
                     return String::new();
                 }
+                let proj = current_project.get();
+                let bytes = proj.serialize_to_bytes().unwrap_or_default();
                 serde_json::to_string(&ProjectManagerInit {
-                    current_project_id: current_project.get().metadata.id,
+                    current_project_id: proj.metadata.id.clone(),
+                    current_project_bytes: bytes,
                 }).unwrap_or_default()
             })
             on_result=result_handler

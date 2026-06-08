@@ -204,6 +204,7 @@ pub struct CreateViewUpdate {
 #[derive(Serialize, Deserialize)]
 pub struct ProjectManagerInit {
     pub current_project_id: String,
+    pub current_project_bytes: Vec<u8>,
 }
 
 #[derive(Serialize, Deserialize)]
