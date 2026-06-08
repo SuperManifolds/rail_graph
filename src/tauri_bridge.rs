@@ -455,6 +455,40 @@ pub async fn listen_event_once(
     Ok(())
 }
 
+/// Listen for a Tauri event continuously. Calls the callback each time.
+/// Returns an unlisten function ID (the JS promise resolves to an unlisten callback).
+///
+/// # Errors
+/// Returns an error if the listener cannot be registered.
+pub async fn listen_event(
+    event_name: &str,
+    callback: impl Fn(String) + 'static,
+) -> Result<JsValue, String> {
+    let event_module = get_tauri_module("event")?;
+    let listen_fn = js_sys::Reflect::get(&event_module, &"listen".into())
+        .map_err(|_| "listen not found")?;
+    let listen_fn: js_sys::Function = listen_fn.dyn_into()
+        .map_err(|_| "listen is not a function")?;
+
+    let closure = Closure::wrap(Box::new(move |event: JsValue| {
+        let payload = js_sys::Reflect::get(&event, &"payload".into())
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
+        callback(payload);
+    }) as Box<dyn FnMut(JsValue)>);
+
+    let promise = listen_fn.call2(&JsValue::NULL, &event_name.into(), closure.as_ref().unchecked_ref())
+        .map_err(|e| format!("listen failed: {e:?}"))?;
+    closure.forget();
+
+    let unlisten = JsFuture::from(js_sys::Promise::from(promise))
+        .await
+        .map_err(|e| format!("listen promise rejected: {e:?}"))?;
+
+    Ok(unlisten)
+}
+
 /// Listen for a native window close event.
 ///
 /// # Errors

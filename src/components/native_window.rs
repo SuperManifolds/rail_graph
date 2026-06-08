@@ -1,6 +1,6 @@
 use leptos::{
-    component, create_effect, view, IntoView, MaybeSignal, Signal,
-    SignalGet, StoredValue, store_value,
+    component, create_effect, create_signal, view, IntoView, MaybeSignal, Signal,
+    SignalGet, SignalSet, StoredValue, store_value,
 };
 
 use crate::tauri_bridge;
@@ -17,7 +17,6 @@ async fn open_native_window(
     title: String,
     size: (u32, u32),
 ) {
-    // Listen for child-ready, then send init data
     let session_for_ready = session.clone();
     let init_data_for_send = init_data;
     let ready_event = format!("child-ready:{session_for_ready}");
@@ -37,7 +36,6 @@ async fn open_native_window(
         return;
     }
 
-    // Listen for result events from child
     let result_event = format!("result:{session}");
     if let Err(e) = tauri_bridge::listen_event_once(&result_event, move |payload| {
         on_result.with_value(|r| {
@@ -51,7 +49,6 @@ async fn open_native_window(
         leptos::logging::error!("Failed to listen for result: {}", e);
     }
 
-    // Create the native window
     let url = format!("index.html?window={window_type_str}&session={session}");
     if let Err(e) = tauri_bridge::create_native_window(&label, &url, &title, size).await {
         leptos::logging::error!("Failed to create window: {}", e);
@@ -59,7 +56,6 @@ async fn open_native_window(
         return;
     }
 
-    // Listen for window close
     if let Err(e) =
         tauri_bridge::listen_window_close(&label, move || on_close.with_value(|f| f()))
     {
@@ -80,6 +76,7 @@ pub fn NativeWindow(
     #[prop(optional)] on_result: Option<Box<dyn Fn(String)>>,
     #[prop(default = (600, 400))] size: (u32, u32),
     #[prop(optional, into)] position_key: Option<String>,
+    #[prop(optional, into)] update_data: Option<Signal<String>>,
 ) -> impl IntoView {
     let on_close = store_value(on_close);
     let on_result = store_value(on_result);
@@ -89,13 +86,16 @@ pub fn NativeWindow(
         .unwrap_or(window_type)
         .to_string();
 
+    // Track current session nonce so update_data effect can emit to the right child
+    let (current_session, set_current_session) = create_signal(Option::<String>::None);
+
     create_effect(move |prev_open: Option<bool>| {
         let currently_open = is_open.get();
         let was_open = prev_open.unwrap_or(false);
 
         if currently_open && !was_open {
-            // Opening: create the native window
             let session = uuid::Uuid::new_v4().to_string();
+            set_current_session.set(Some(session.clone()));
             let label = format!("child-{label_base}");
             let current_title = title.get();
             let current_init_data = init_data.get();
@@ -111,7 +111,7 @@ pub fn NativeWindow(
                 size,
             ));
         } else if !currently_open && was_open {
-            // Closing: destroy the native window
+            set_current_session.set(None);
             let label = format!("child-{label_base}");
             leptos::spawn_local(async move {
                 let _ = tauri_bridge::close_native_window(&label).await;
@@ -120,6 +120,25 @@ pub fn NativeWindow(
 
         currently_open
     });
+
+    // Push update-data events to child when update_data signal changes
+    if let Some(update_signal) = update_data {
+        create_effect(move |prev: Option<String>| {
+            let data = update_signal.get();
+            let Some(session) = current_session.get() else {
+                return data;
+            };
+            // Skip the initial value (only send on subsequent changes)
+            if prev.is_some() && !data.is_empty() {
+                let event_name = format!("update-data:{session}");
+                let data_for_emit = data.clone();
+                leptos::spawn_local(async move {
+                    let _ = tauri_bridge::emit_event(&event_name, &data_for_emit).await;
+                });
+            }
+            data
+        });
+    }
 
     view! {}
 }

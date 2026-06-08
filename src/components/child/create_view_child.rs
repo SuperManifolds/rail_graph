@@ -1,6 +1,6 @@
 use crate::components::create_view_dialog::CreateViewDialogContent;
 use crate::models::{RailwayGraph, Routes};
-use crate::window_protocol::{CreateViewInit, CreateViewResult};
+use crate::window_protocol::{CreateViewInit, CreateViewResult, CreateViewUpdate};
 use leptos::{component, create_signal, view, IntoView, SignalGet, SignalGetUntracked, SignalSet};
 use petgraph::stable_graph::NodeIndex;
 use std::rc::Rc;
@@ -30,6 +30,33 @@ pub fn CreateViewChild(init: CreateViewInit, session: String) -> impl IntoView {
     let (graph, _) = create_signal(graph_snapshot.clone());
     let (waypoints, set_waypoints) = create_signal(Vec::<NodeIndex>::new());
     let (validation_error, set_validation_error) = create_signal(None::<String>);
+
+    // Listen for update-data events from the main window (map clicks adding waypoints)
+    {
+        let graph_for_update = graph_snapshot.clone();
+        let session_for_listen = session.clone();
+        leptos::spawn_local(async move {
+            let event_name = format!("update-data:{session_for_listen}");
+            match crate::tauri_bridge::listen_event(&event_name, move |payload| {
+                if let Ok(update) = serde_json::from_str::<CreateViewUpdate>(&payload) {
+                    let new_waypoints: Vec<NodeIndex> =
+                        update.waypoints.into_iter().map(NodeIndex::new).collect();
+                    validate_waypoints(&new_waypoints, &graph_for_update, set_validation_error);
+                    set_waypoints.set(new_waypoints);
+                }
+            })
+            .await
+            {
+                Ok(unlisten) => {
+                    // Store unlisten handle to prevent GC; window close cleans up
+                    std::mem::forget(unlisten);
+                }
+                Err(e) => {
+                    leptos::logging::error!("Failed to listen for update-data: {}", e);
+                }
+            }
+        });
+    }
 
     let session_create = session.clone();
     let on_create = Rc::new(move |name: String, wps: Vec<NodeIndex>| {

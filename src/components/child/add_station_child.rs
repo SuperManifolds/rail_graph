@@ -1,12 +1,12 @@
 use crate::components::add_station_quick::{AddStationQuick, QuickEntryStation};
 use crate::components::platform_editor::PlatformEditor;
 use crate::models::{Platform, Track, TrackDirection};
-use crate::window_protocol::{AddStationInit, AddStationResult};
+use crate::window_protocol::{AddStationInit, AddStationResult, AddStationUpdate};
 use leptos::{
     component, create_signal, event_target_checked, event_target_value, view, IntoView, SignalGet,
     SignalSet,
 };
-use petgraph::stable_graph::NodeIndex;
+use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use std::rc::Rc;
 
 #[component]
@@ -38,8 +38,30 @@ pub fn AddStationChild(init: AddStationInit, session: String) -> impl IntoView {
         direction: TrackDirection::Bidirectional,
     }]);
 
-    // clicked_segment is always None in native window (no map interaction)
-    let (clicked_segment, _) = create_signal(None);
+    let (clicked_segment, set_clicked_segment) = create_signal(None::<EdgeIndex>);
+
+    // Listen for update-data events from the main window (map clicks)
+    {
+        let session_for_listen = session.clone();
+        leptos::spawn_local(async move {
+            let event_name = format!("update-data:{session_for_listen}");
+            match crate::tauri_bridge::listen_event(&event_name, move |payload| {
+                if let Ok(update) = serde_json::from_str::<AddStationUpdate>(&payload) {
+                    set_clicked_segment.set(update.clicked_edge_idx.map(EdgeIndex::new));
+                }
+            })
+            .await
+            {
+                Ok(unlisten) => {
+                    // Store unlisten handle to prevent GC; window close cleans up
+                    std::mem::forget(unlisten);
+                }
+                Err(e) => {
+                    leptos::logging::error!("Failed to listen for update-data: {}", e);
+                }
+            }
+        });
+    }
 
     // Settings signal for quick entry
     let (settings, _) = create_signal(crate::models::ProjectSettings {

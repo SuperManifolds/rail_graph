@@ -168,6 +168,15 @@ pub enum AddStationResult {
     },
 }
 
+// --- Add Station Update (from map click) ---
+
+#[derive(Serialize, Deserialize)]
+pub struct AddStationUpdate {
+    pub clicked_edge_idx: Option<usize>,
+    pub from_station_name: Option<String>,
+    pub to_station_name: Option<String>,
+}
+
 // --- Create View ---
 
 #[derive(Serialize, Deserialize)]
@@ -181,6 +190,13 @@ pub enum CreateViewResult {
         name: String,
         waypoints: Vec<usize>,
     },
+}
+
+// --- Create View Update (from map click) ---
+
+#[derive(Serialize, Deserialize)]
+pub struct CreateViewUpdate {
+    pub waypoints: Vec<usize>,
 }
 
 // --- Project Manager ---

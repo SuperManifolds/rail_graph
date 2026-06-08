@@ -198,7 +198,15 @@ pub fn CreateViewDialog(
     on_add_waypoint: Rc<dyn Fn(NodeIndex)>,
     on_remove_waypoint: Rc<dyn Fn(usize)>,
 ) -> impl IntoView {
-    let _ = (waypoints, validation_error, on_add_waypoint, on_remove_waypoint);
+    let _ = (validation_error, on_add_waypoint, on_remove_waypoint);
+
+    let update_data = Signal::derive(move || {
+        let wps = waypoints.get();
+        serde_json::to_string(&crate::window_protocol::CreateViewUpdate {
+            waypoints: wps.iter().map(|n| n.index()).collect(),
+        })
+        .unwrap_or_default()
+    });
 
     let on_close_for_window = on_close.clone();
     let on_close_for_result = on_close.clone();
@@ -234,6 +242,7 @@ pub fn CreateViewDialog(
             on_result=result_handler
             size=(500, 450)
             position_key="create-view"
+            update_data=update_data
         />
     }
 }

@@ -1,7 +1,7 @@
 use crate::components::add_station_quick::QuickEntryStation;
 use crate::components::native_window::NativeWindow;
-use crate::models::{Platform, RailwayGraph, Track};
-use crate::window_protocol::{AddStationInit, AddStationResult};
+use crate::models::{Node, Platform, RailwayGraph, Track};
+use crate::window_protocol::{AddStationInit, AddStationResult, AddStationUpdate};
 use leptos::{component, IntoView, ReadSignal, Signal, SignalGet, view};
 use petgraph::stable_graph::NodeIndex;
 use std::rc::Rc;
@@ -20,7 +20,30 @@ pub fn AddStation(
     clicked_segment: ReadSignal<Option<petgraph::stable_graph::EdgeIndex>>,
     settings: ReadSignal<crate::models::ProjectSettings>,
 ) -> impl IntoView {
-    let _ = clicked_segment; // Not used in native window (no map interaction)
+    let update_data = Signal::derive(move || {
+        let seg = clicked_segment.get();
+        let g = graph.get();
+        let (edge_idx, from_name, to_name) = match seg {
+            Some(edge) => {
+                let (from, to) = g
+                    .graph
+                    .edge_endpoints(edge)
+                    .map_or((None, None), |(a, b)| {
+                        let a_name = g.graph.node_weight(a).map(Node::display_name);
+                        let b_name = g.graph.node_weight(b).map(Node::display_name);
+                        (a_name, b_name)
+                    });
+                (Some(edge.index()), from, to)
+            }
+            None => (None, None, None),
+        };
+        serde_json::to_string(&AddStationUpdate {
+            clicked_edge_idx: edge_idx,
+            from_station_name: from_name,
+            to_station_name: to_name,
+        })
+        .unwrap_or_default()
+    });
 
     let on_close_for_window = on_close.clone();
     let on_close_for_result = on_close.clone();
@@ -85,6 +108,7 @@ pub fn AddStation(
             on_result=result_handler
             size=(500, 500)
             position_key="add-station"
+            update_data=update_data
         />
     }
 }
