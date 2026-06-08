@@ -1,19 +1,26 @@
 use leptos::{
-    component, create_signal, view, IntoView, SignalGet, SignalSet,
-    provide_context, create_effect,
+    component, create_signal, view, IntoView,
+    provide_context,
 };
 
 use crate::models::UserSettings;
 use crate::user_settings_ext::UserSettingsStorage;
-use crate::tauri_bridge;
+
+/// Read init data from localStorage (written by the main window before creating this window).
+fn read_init_data(session: &str) -> Option<String> {
+    let window = web_sys::window()?;
+    let storage = window.local_storage().ok()??;
+    let key = format!("__tauri_init_{session}");
+    let data = storage.get_item(&key).ok()??;
+    let _ = storage.remove_item(&key);
+    Some(data)
+}
 
 /// Router for child windows. Reads `window_type` and `session` from URL params,
-/// waits for init data from the main window via Tauri events, then renders
-/// the appropriate child component.
+/// loads init data from localStorage, then renders the appropriate child component.
 #[component]
 #[must_use]
 pub fn ChildWindowRouter(window_type: String, session: String) -> impl IntoView {
-    let (init_data, set_init_data) = create_signal(None::<String>);
     let (is_capturing_shortcut, set_is_capturing_shortcut) = create_signal(false);
 
     // Load user settings (from localStorage, same as main window)
@@ -23,45 +30,19 @@ pub fn ChildWindowRouter(window_type: String, session: String) -> impl IntoView 
     provide_context((is_capturing_shortcut, set_is_capturing_shortcut));
 
     // Provide a no-op resize trigger (native windows handle their own sizing)
-    let (resize_trigger, set_resize_trigger) = create_signal(0u32);
-    let _ = resize_trigger;
+    let set_resize_trigger = create_signal(0u32).1;
     provide_context(set_resize_trigger);
 
-    // Register init-data listener BEFORE emitting child-ready to avoid race condition.
-    // The main window responds to child-ready by emitting init-data — if we register
-    // the listener after emitting child-ready, we might miss the response.
-    let session_clone = session.clone();
-    create_effect(move |_| {
-        let session = session_clone.clone();
-        leptos::spawn_local(async move {
-            // Register init-data listener FIRST
-            let init_event = format!("init-data:{session}");
-            let set_init = set_init_data;
-            if let Err(e) = tauri_bridge::listen_event_once(&init_event, move |payload| {
-                set_init.set(Some(payload));
-            }).await {
-                leptos::logging::error!("Failed to listen for init-data: {}", e);
-                return;
-            }
-
-            // THEN signal that we're ready
-            let ready_event = format!("child-ready:{session}");
-            if let Err(e) = tauri_bridge::emit_event(&ready_event, "").await {
-                leptos::logging::error!("Failed to emit child-ready: {}", e);
-            }
-        });
-    });
-
-    let window_type_owned = window_type.clone();
-    let session_owned = session.clone();
+    // Read init data synchronously from localStorage (written by main window)
+    let init_data = read_init_data(&session);
 
     view! {
         <div class="child-window-root">
-            {move || {
-                let Some(data) = init_data.get() else {
-                    return view! { <div class="child-window-loading">"Loading..."</div> }.into_view();
-                };
-                render_child_content(&window_type_owned, &session_owned, &data)
+            {if let Some(data) = init_data {
+                render_child_content(&window_type, &session, &data)
+            } else {
+                leptos::logging::error!("No init data found for session {}", session);
+                leptos::view! { <div class="child-window-loading">"Failed to load window data"</div> }.into_view()
             }}
         </div>
     }

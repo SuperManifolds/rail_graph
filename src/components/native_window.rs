@@ -7,9 +7,22 @@ use crate::tauri_bridge;
 
 type ResultCallback = StoredValue<Option<Box<dyn Fn(String)>>>;
 
+fn store_init_data(session: &str, data: &str) {
+    let Some(window) = web_sys::window() else { return };
+    let Ok(Some(storage)) = window.local_storage() else { return };
+    let key = format!("__tauri_init_{session}");
+    let _ = storage.set_item(&key, data);
+}
+
+fn clear_init_data(session: &str) {
+    let Some(window) = web_sys::window() else { return };
+    let Ok(Some(storage)) = window.local_storage() else { return };
+    let key = format!("__tauri_init_{session}");
+    let _ = storage.remove_item(&key);
+}
+
 async fn open_native_window(
     session: String,
-    init_data: String,
     on_result: ResultCallback,
     on_close: StoredValue<impl Fn() + 'static>,
     label: String,
@@ -17,25 +30,7 @@ async fn open_native_window(
     title: String,
     size: (u32, u32),
 ) {
-    let session_for_ready = session.clone();
-    let init_data_for_send = init_data;
-    let ready_event = format!("child-ready:{session_for_ready}");
-    if let Err(e) = tauri_bridge::listen_event_once(&ready_event, move |_| {
-        let session = session_for_ready.clone();
-        let data = init_data_for_send.clone();
-        leptos::spawn_local(async move {
-            let init_event = format!("init-data:{session}");
-            if let Err(e) = tauri_bridge::emit_event(&init_event, &data).await {
-                leptos::logging::error!("Failed to emit init-data: {}", e);
-            }
-        });
-    })
-    .await
-    {
-        leptos::logging::error!("Failed to listen for child-ready: {}", e);
-        return;
-    }
-
+    // Register result listener (continuous — supports live updates like settings)
     let result_event = format!("result:{session}");
     if let Err(e) = tauri_bridge::listen_event(&result_event, move |payload| {
         on_result.with_value(|r| {
@@ -46,12 +41,13 @@ async fn open_native_window(
     })
     .await
     {
-        leptos::logging::error!("Failed to listen for result: {}", e);
+        leptos::logging::error!("Failed to listen for result: {e}");
     }
 
+    // Create the native window — init data is already in localStorage
     let url = format!("index.html?window={window_type_str}&session={session}");
     if let Err(e) = tauri_bridge::create_native_window(&label, &url, &title, size).await {
-        leptos::logging::error!("Failed to create window: {}", e);
+        leptos::logging::error!("Failed to create window: {e}");
         on_close.with_value(|f| f());
         return;
     }
@@ -59,13 +55,16 @@ async fn open_native_window(
     if let Err(e) =
         tauri_bridge::listen_window_close(&label, move || on_close.with_value(|f| f()))
     {
-        leptos::logging::error!("Failed to listen for window close: {}", e);
+        leptos::logging::error!("Failed to listen for window close: {e}");
     }
 }
 
 /// A component that manages a native Tauri window instead of an HTML overlay.
 /// When `is_open` becomes true, creates a native OS window. When false, closes it.
 /// Renders nothing in the DOM.
+///
+/// Init data is passed via localStorage (keyed by session nonce) to avoid
+/// event-based handshake race conditions.
 #[component]
 pub fn NativeWindow(
     #[prop(into)] is_open: MaybeSignal<bool>,
@@ -86,7 +85,6 @@ pub fn NativeWindow(
         .unwrap_or(window_type)
         .to_string();
 
-    // Track current session nonce so update_data effect can emit to the right child
     let (current_session, set_current_session) = create_signal(Option::<String>::None);
 
     create_effect(move |prev_open: Option<bool>| {
@@ -100,9 +98,11 @@ pub fn NativeWindow(
             let current_title = title.get();
             let current_init_data = init_data.get();
 
+            // Write init data to localStorage — child will read it on startup
+            store_init_data(&session, &current_init_data);
+
             leptos::spawn_local(open_native_window(
                 session,
-                current_init_data,
                 on_result,
                 on_close,
                 label,
@@ -111,6 +111,9 @@ pub fn NativeWindow(
                 size,
             ));
         } else if !currently_open && was_open {
+            if let Some(session) = current_session.get() {
+                clear_init_data(&session);
+            }
             set_current_session.set(None);
             let label = format!("child-{label_base}");
             leptos::spawn_local(async move {
@@ -128,7 +131,6 @@ pub fn NativeWindow(
             let Some(session) = current_session.get() else {
                 return data;
             };
-            // Skip the initial value (only send on subsequent changes)
             if prev.is_some() && !data.is_empty() {
                 let event_name = format!("update-data:{session}");
                 let data_for_emit = data.clone();
