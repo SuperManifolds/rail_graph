@@ -24,7 +24,7 @@ pub fn ChildWindowRouter(window_type: String, session: String) -> impl IntoView 
     let (is_capturing_shortcut, set_is_capturing_shortcut) = create_signal(false);
 
     // Load user settings (from localStorage, same as main window)
-    let user_settings = UserSettings::load();
+    let user_settings = UserSettings::load().unwrap_or_default();
     let (user_settings_sig, set_user_settings_sig) = create_signal(user_settings);
     provide_context((user_settings_sig, set_user_settings_sig));
     provide_context((is_capturing_shortcut, set_is_capturing_shortcut));
