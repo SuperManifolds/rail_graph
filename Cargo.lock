@@ -3125,6 +3125,8 @@ dependencies = [
  "console_error_panic_hook",
  "criterion",
  "csv",
+ "futures-channel",
+ "futures-lite",
  "gloo-timers",
  "indexmap 2.11.4",
  "js-sys",

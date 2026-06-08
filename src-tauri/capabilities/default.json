@@ -2,9 +2,17 @@
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-utils/schema.json",
   "identifier": "default",
   "description": "Default capabilities for RailGraph",
-  "windows": ["main"],
+  "windows": ["main", "child-*"],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-set-title",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-center",
+    "core:event:default",
     "dialog:default",
     "opener:default"
   ]

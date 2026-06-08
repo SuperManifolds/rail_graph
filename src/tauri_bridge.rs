@@ -278,3 +278,219 @@ pub async fn compute_auto_layout(
     rmp_serde::from_slice(&result_bytes)
         .map_err(|e| format!("Failed to deserialize layout positions: {e}"))
 }
+
+// --- Native Window Management ---
+
+fn get_tauri_module(module: &str) -> Result<JsValue, String> {
+    let window = web_sys::window().ok_or("No window")?;
+    let tauri = js_sys::Reflect::get(&window, &"__TAURI__".into())
+        .map_err(|_| "Tauri not available")?;
+    js_sys::Reflect::get(&tauri, &module.into())
+        .map_err(|e| format!("Tauri module '{module}' not available: {e:?}"))
+}
+
+/// Create a new native Tauri window.
+///
+/// # Errors
+/// Returns an error if window creation fails.
+pub async fn create_native_window(
+    label: &str,
+    url: &str,
+    title: &str,
+    size: (u32, u32),
+) -> Result<(), String> {
+    let ww_module = get_tauri_module("webviewWindow")?;
+    let ww_class = js_sys::Reflect::get(&ww_module, &"WebviewWindow".into())
+        .map_err(|_| "WebviewWindow class not found")?;
+
+    let options = js_sys::Object::new();
+    js_sys::Reflect::set(&options, &"url".into(), &url.into())
+        .map_err(|_| "Failed to set url")?;
+    js_sys::Reflect::set(&options, &"title".into(), &title.into())
+        .map_err(|_| "Failed to set title")?;
+    js_sys::Reflect::set(&options, &"width".into(), &JsValue::from_f64(f64::from(size.0)))
+        .map_err(|_| "Failed to set width")?;
+    js_sys::Reflect::set(&options, &"height".into(), &JsValue::from_f64(f64::from(size.1)))
+        .map_err(|_| "Failed to set height")?;
+    js_sys::Reflect::set(&options, &"resizable".into(), &JsValue::TRUE)
+        .map_err(|_| "Failed to set resizable")?;
+    js_sys::Reflect::set(&options, &"center".into(), &JsValue::TRUE)
+        .map_err(|_| "Failed to set center")?;
+
+    // new WebviewWindow(label, options)
+    let constructor: js_sys::Function = ww_class.dyn_into()
+        .map_err(|_| "WebviewWindow is not a constructor")?;
+    let args = js_sys::Array::new();
+    args.push(&label.into());
+    args.push(&options);
+    let instance = js_sys::Reflect::construct(&constructor, &args)
+        .map_err(|e| format!("Failed to construct WebviewWindow: {e:?}"))?;
+
+    // Wait for tauri://created event
+    let once_fn = js_sys::Reflect::get(&instance, &"once".into())
+        .map_err(|_| "once method not found")?;
+    let once_fn: js_sys::Function = once_fn.dyn_into()
+        .map_err(|_| "once is not a function")?;
+
+    let (tx, rx) = futures_channel::oneshot::channel::<Result<(), String>>();
+    let tx = std::cell::RefCell::new(Some(tx));
+
+    let on_created = Closure::once(move |_: JsValue| {
+        if let Some(tx) = tx.borrow_mut().take() {
+            let _ = tx.send(Ok(()));
+        }
+    });
+
+    once_fn.call2(&instance, &"tauri://created".into(), on_created.as_ref().unchecked_ref())
+        .map_err(|e| format!("Failed to register created listener: {e:?}"))?;
+    on_created.forget();
+
+    // Also handle error
+    let (err_tx, err_rx) = futures_channel::oneshot::channel::<String>();
+    let err_tx = std::cell::RefCell::new(Some(err_tx));
+
+    let on_error = Closure::once(move |e: JsValue| {
+        if let Some(tx) = err_tx.borrow_mut().take() {
+            let _ = tx.send(format!("Window creation error: {e:?}"));
+        }
+    });
+
+    once_fn.call2(&instance, &"tauri://error".into(), on_error.as_ref().unchecked_ref())
+        .map_err(|e| format!("Failed to register error listener: {e:?}"))?;
+    on_error.forget();
+
+    // Wait for either created or error
+    futures_lite::future::or(
+        async { rx.await.unwrap_or(Err("Channel dropped".into())) },
+        async { Err(err_rx.await.unwrap_or_else(|_| "Channel dropped".into())) },
+    ).await
+}
+
+/// Close a native Tauri window by label.
+///
+/// # Errors
+/// Returns an error if the window cannot be found or closed.
+pub async fn close_native_window(label: &str) -> Result<(), String> {
+    let ww_module = get_tauri_module("webviewWindow")?;
+    let ww_class = js_sys::Reflect::get(&ww_module, &"WebviewWindow".into())
+        .map_err(|_| "WebviewWindow class not found")?;
+
+    // WebviewWindow.getByLabel(label)
+    let get_by_label = js_sys::Reflect::get(&ww_class, &"getByLabel".into())
+        .map_err(|_| "getByLabel not found")?;
+    let get_by_label: js_sys::Function = get_by_label.dyn_into()
+        .map_err(|_| "getByLabel is not a function")?;
+
+    let instance = get_by_label.call1(&ww_class, &label.into())
+        .map_err(|e| format!("getByLabel failed: {e:?}"))?;
+
+    if instance.is_null() || instance.is_undefined() {
+        return Ok(());
+    }
+
+    let close_fn = js_sys::Reflect::get(&instance, &"close".into())
+        .map_err(|_| "close method not found")?;
+    let close_fn: js_sys::Function = close_fn.dyn_into()
+        .map_err(|_| "close is not a function")?;
+
+    let promise = close_fn.call0(&instance)
+        .map_err(|e| format!("close() failed: {e:?}"))?;
+    JsFuture::from(js_sys::Promise::from(promise))
+        .await
+        .map_err(|e| format!("close() promise rejected: {e:?}"))?;
+
+    Ok(())
+}
+
+/// Emit a Tauri event with a string payload.
+///
+/// # Errors
+/// Returns an error if the event cannot be emitted.
+pub async fn emit_event(event_name: &str, payload: &str) -> Result<(), String> {
+    let event_module = get_tauri_module("event")?;
+    let emit_fn = js_sys::Reflect::get(&event_module, &"emit".into())
+        .map_err(|_| "emit not found")?;
+    let emit_fn: js_sys::Function = emit_fn.dyn_into()
+        .map_err(|_| "emit is not a function")?;
+
+    let promise = emit_fn.call2(&JsValue::NULL, &event_name.into(), &payload.into())
+        .map_err(|e| format!("emit failed: {e:?}"))?;
+    JsFuture::from(js_sys::Promise::from(promise))
+        .await
+        .map_err(|e| format!("emit promise rejected: {e:?}"))?;
+
+    Ok(())
+}
+
+/// Listen for a Tauri event once. Calls the callback with the payload string.
+///
+/// # Errors
+/// Returns an error if the listener cannot be registered.
+pub async fn listen_event_once(
+    event_name: &str,
+    callback: impl Fn(String) + 'static,
+) -> Result<(), String> {
+    let event_module = get_tauri_module("event")?;
+    let once_fn = js_sys::Reflect::get(&event_module, &"once".into())
+        .map_err(|_| "once not found")?;
+    let once_fn: js_sys::Function = once_fn.dyn_into()
+        .map_err(|_| "once is not a function")?;
+
+    let closure = Closure::wrap(Box::new(move |event: JsValue| {
+        let payload = js_sys::Reflect::get(&event, &"payload".into())
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_default();
+        callback(payload);
+    }) as Box<dyn FnMut(JsValue)>);
+
+    let promise = once_fn.call2(&JsValue::NULL, &event_name.into(), closure.as_ref().unchecked_ref())
+        .map_err(|e| format!("once failed: {e:?}"))?;
+    closure.forget();
+
+    JsFuture::from(js_sys::Promise::from(promise))
+        .await
+        .map_err(|e| format!("once promise rejected: {e:?}"))?;
+
+    Ok(())
+}
+
+/// Listen for a native window close event.
+///
+/// # Errors
+/// Returns an error if the listener cannot be registered.
+pub fn listen_window_close(
+    label: &str,
+    callback: impl Fn() + 'static,
+) -> Result<(), String> {
+    let ww_module = get_tauri_module("webviewWindow")?;
+    let ww_class = js_sys::Reflect::get(&ww_module, &"WebviewWindow".into())
+        .map_err(|_| "WebviewWindow class not found")?;
+
+    let get_by_label = js_sys::Reflect::get(&ww_class, &"getByLabel".into())
+        .map_err(|_| "getByLabel not found")?;
+    let get_by_label: js_sys::Function = get_by_label.dyn_into()
+        .map_err(|_| "getByLabel is not a function")?;
+
+    let instance = get_by_label.call1(&ww_class, &label.into())
+        .map_err(|e| format!("getByLabel failed: {e:?}"))?;
+
+    if instance.is_null() || instance.is_undefined() {
+        return Err("Window not found".into());
+    }
+
+    let once_fn = js_sys::Reflect::get(&instance, &"once".into())
+        .map_err(|_| "once not found")?;
+    let once_fn: js_sys::Function = once_fn.dyn_into()
+        .map_err(|_| "once is not a function")?;
+
+    let closure = Closure::wrap(Box::new(move |_: JsValue| {
+        callback();
+    }) as Box<dyn FnMut(JsValue)>);
+
+    once_fn.call2(&instance, &"tauri://close-requested".into(), closure.as_ref().unchecked_ref())
+        .map_err(|e| format!("once failed: {e:?}"))?;
+    closure.forget();
+
+    Ok(())
+}
