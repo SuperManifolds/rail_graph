@@ -27,25 +27,27 @@ pub fn ChildWindowRouter(window_type: String, session: String) -> impl IntoView 
     let _ = resize_trigger;
     provide_context(set_resize_trigger);
 
-    // Signal the main window that we're ready, then listen for init data
+    // Register init-data listener BEFORE emitting child-ready to avoid race condition.
+    // The main window responds to child-ready by emitting init-data — if we register
+    // the listener after emitting child-ready, we might miss the response.
     let session_clone = session.clone();
     create_effect(move |_| {
         let session = session_clone.clone();
         leptos::spawn_local(async move {
-            // Emit child-ready event
-            let ready_event = format!("child-ready:{session}");
-            if let Err(e) = tauri_bridge::emit_event(&ready_event, "").await {
-                leptos::logging::error!("Failed to emit child-ready: {}", e);
-                return;
-            }
-
-            // Listen for init-data event
+            // Register init-data listener FIRST
             let init_event = format!("init-data:{session}");
             let set_init = set_init_data;
             if let Err(e) = tauri_bridge::listen_event_once(&init_event, move |payload| {
                 set_init.set(Some(payload));
             }).await {
                 leptos::logging::error!("Failed to listen for init-data: {}", e);
+                return;
+            }
+
+            // THEN signal that we're ready
+            let ready_event = format!("child-ready:{session}");
+            if let Err(e) = tauri_bridge::emit_event(&ready_event, "").await {
+                leptos::logging::error!("Failed to emit child-ready: {}", e);
             }
         });
     });
