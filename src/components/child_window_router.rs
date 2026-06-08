@@ -35,6 +35,7 @@ pub fn ChildWindowRouter(window_type: String, session: String) -> impl IntoView 
 
     // Read init data synchronously from localStorage (written by main window)
     let init_data = read_init_data(&session);
+    leptos::logging::log!("ChildWindowRouter: type={}, session={}, has_data={}", window_type, session, init_data.is_some());
 
     view! {
         <div class="child-window-root">
