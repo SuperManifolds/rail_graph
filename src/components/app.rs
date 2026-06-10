@@ -84,7 +84,10 @@ fn handle_sync_event(
     set_window_tabs: WriteSignal<Vec<String>>,
     set_active_tab: WriteSignal<AppTab>,
     views: leptos::ReadSignal<Vec<GraphView>>,
+    is_primary: leptos::ReadSignal<bool>,
     set_is_primary: WriteSignal<bool>,
+    on_remote_undo: impl Fn(),
+    on_remote_redo: impl Fn(),
 ) {
     match envelope.kind {
         SyncKind::ProjectSync(bytes) => {
@@ -115,10 +118,18 @@ fn handle_sync_event(
         SyncKind::PrimaryClaim => {
             set_is_primary.set(false);
         }
+        SyncKind::UndoRequest => {
+            if is_primary.get_untracked() {
+                on_remote_undo();
+            }
+        }
+        SyncKind::RedoRequest => {
+            if is_primary.get_untracked() {
+                on_remote_redo();
+            }
+        }
         SyncKind::WindowClosing { is_primary: false }
-        | SyncKind::LayoutUpdate { .. }
-        | SyncKind::UndoRequest
-        | SyncKind::RedoRequest => {}
+        | SyncKind::LayoutUpdate { .. } => {}
     }
 }
 
@@ -245,7 +256,7 @@ pub fn App(
 
     let window_label = crate::tauri_bridge::get_current_window_label()
         .unwrap_or_else(|| "main".to_string());
-    let _window_id = store_value(window_id.unwrap_or_else(|| Uuid::new_v4().to_string()));
+    let window_id_stored = store_value(window_id.unwrap_or_else(|| Uuid::new_v4().to_string()));
 
     let (is_primary, set_is_primary) = create_signal(!is_secondary);
     let (is_applying_remote, set_is_applying_remote) = create_signal(false);
@@ -569,8 +580,19 @@ pub fn App(
             proj.legend = current_legend;
             proj.settings = current_settings;
             proj.views = views_with_viewports;
-            proj.active_tab_id = active_tab_id;
+            proj.active_tab_id.clone_from(&active_tab_id);
             proj.infrastructure_viewport = current_infrastructure_viewport;
+
+            // Persist this window's tab layout
+            let current_tabs = window_tabs.get_untracked();
+            let layout = crate::models::WindowLayout {
+                window_id: Uuid::parse_str(&window_id_stored.get_value()).unwrap_or_else(|_| Uuid::new_v4()),
+                tab_ids: current_tabs,
+                active_tab_id,
+                bounds: None,
+            };
+            proj.window_layouts = vec![layout];
+
             proj.touch_updated_at();
 
             // Update current_project signal to keep it synchronized
@@ -596,24 +618,12 @@ pub fn App(
         }
     });
 
-    // Listen for sync events from other windows
-    let sync_my_label = window_label.clone();
-    spawn_local(async move {
-        let my_label = sync_my_label;
-        let _ = sync::listen(move |envelope: SyncEnvelope| {
-            if envelope.source_window == my_label {
-                return;
-            }
-            let shared = SharedWriteSignals {
-                set_lines, set_folders, set_graph, set_legend, set_settings,
-                set_viewport_states, set_views, set_current_project,
-            };
-            handle_sync_event(
-                envelope, set_is_applying_remote, shared,
-                set_incoming_drag_tab, set_window_tabs, set_active_tab,
-                views, set_is_primary,
-            );
-        }).await;
+    // Sync listener is set up below, after undo_manager is available
+
+    // Broadcast window-closing when this window is about to close
+    let close_label = window_label.clone();
+    leptos::leptos_dom::helpers::window_event_listener(leptos::ev::beforeunload, move |_| {
+        sync::broadcast_window_closing(&close_label, is_primary.get_untracked());
     });
 
     // Mark loading complete once initial data is loaded
@@ -832,6 +842,46 @@ pub fn App(
         set_lines.set(snapshot.lines);
     };
 
+    // Listen for sync events from other windows (must be after undo_manager + restore_snapshot)
+    let sync_my_label = window_label.clone();
+    spawn_local(async move {
+        let my_label = sync_my_label;
+        let _ = sync::listen(move |envelope: SyncEnvelope| {
+            if envelope.source_window == my_label {
+                return;
+            }
+            let shared = SharedWriteSignals {
+                set_lines, set_folders, set_graph, set_legend, set_settings,
+                set_viewport_states, set_views, set_current_project,
+            };
+            handle_sync_event(
+                envelope, set_is_applying_remote, shared,
+                set_incoming_drag_tab, set_window_tabs, set_active_tab,
+                views, is_primary, set_is_primary,
+                // on_remote_undo
+                move || {
+                    if !undo_manager.get_value().can_undo() { return; }
+                    set_is_performing_undo_redo.set(true);
+                    let current = UndoSnapshot::new(graph.get_untracked(), lines.get_untracked());
+                    let snap = std::cell::RefCell::new(None);
+                    undo_manager.update_value(|m| { *snap.borrow_mut() = m.undo(current); });
+                    if let Some(s) = snap.into_inner() { restore_snapshot(s); }
+                    set_is_performing_undo_redo.set(false);
+                },
+                // on_remote_redo
+                move || {
+                    if !undo_manager.get_value().can_redo() { return; }
+                    set_is_performing_undo_redo.set(true);
+                    let current = UndoSnapshot::new(graph.get_untracked(), lines.get_untracked());
+                    let snap = std::cell::RefCell::new(None);
+                    undo_manager.update_value(|m| { *snap.borrow_mut() = m.redo(current); });
+                    if let Some(s) = snap.into_inner() { restore_snapshot(s); }
+                    set_is_performing_undo_redo.set(false);
+                },
+            );
+        }).await;
+    });
+
     // Setup undo/redo keyboard shortcuts
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
         // Don't handle shortcuts when capturing in the shortcuts editor
@@ -849,6 +899,17 @@ pub fn App(
 
         // Ignore repeat events
         if ev.repeat() {
+            return;
+        }
+
+        // New window: Cmd+Shift+N (Mac) or Ctrl+Shift+N
+        if ev.shift_key() && (ev.meta_key() || ev.ctrl_key()) && ev.code() == "KeyN" {
+            ev.prevent_default();
+            spawn_local(async {
+                if let Err(e) = crate::tauri_bridge::create_main_window(None).await {
+                    leptos::logging::error!("Failed to create new window: {e}");
+                }
+            });
             return;
         }
 
@@ -1041,6 +1102,7 @@ pub fn App(
                                                     .unwrap_or_default();
                                                 let is_dragging = move || dragged_view_id.get() == Some(view_id);
                                                 let is_drag_over = move || drag_over_view_id.get() == Some(view_id);
+                                                let tab_id_for_dragstart = tab_id_for_drag.clone();
                                                 let tab_id_for_tearoff = tab_id_for_drag.clone();
 
                                                 view! {
@@ -1096,10 +1158,9 @@ pub fn App(
                                                                 let _ = dt.set_data("text/plain", &view_id.to_string());
                                                                 dt.set_effect_allowed("move");
                                                             }
-                                                            // Broadcast to other windows
                                                             let my_label = crate::tauri_bridge::get_current_window_label()
                                                                 .unwrap_or_default();
-                                                            sync::broadcast_tab_drag_start(&my_label, &tab_id_for_tearoff);
+                                                            sync::broadcast_tab_drag_start(&my_label, &tab_id_for_dragstart);
                                                         }
                                                         on:dragover=move |ev| {
                                                             if dragged_view_id.get().is_some() {
@@ -1136,17 +1197,29 @@ pub fn App(
                                                             set_drag_over_view_id.set(None);
                                                         }
                                                         on:dragend=move |ev| {
-                                                            let _ = ev;
+                                                            let drop_effect = ev.data_transfer()
+                                                                .map(|dt| dt.drop_effect())
+                                                                .unwrap_or_default();
                                                             set_dragged_view_id.set(None);
                                                             set_drag_over_view_id.set(None);
                                                             if let Some(timer_id) = drag_timer_id.get() {
                                                                 web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
                                                                 set_drag_timer_id.set(None);
                                                             }
-                                                            // Broadcast drag cancel in case other windows are showing drop indicators
                                                             let my_label = crate::tauri_bridge::get_current_window_label()
                                                                 .unwrap_or_default();
                                                             sync::broadcast_tab_drag_cancel(&my_label);
+
+                                                            // Tear-off: if drag ended with no drop, open tab in new window
+                                                            if drop_effect == "none" && window_tabs.get_untracked().len() > 1 {
+                                                                let tid = tab_id_for_tearoff.clone();
+                                                                on_close_tab(tid.clone());
+                                                                spawn_local(async move {
+                                                                    if let Err(e) = crate::tauri_bridge::create_main_window(Some(&tid)).await {
+                                                                        leptos::logging::error!("Failed to create tear-off window: {e}");
+                                                                    }
+                                                                });
+                                                            }
                                                         }
                                                         on:dblclick=move |e| {
                                                             e.stop_propagation();

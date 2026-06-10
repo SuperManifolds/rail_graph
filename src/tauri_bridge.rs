@@ -314,6 +314,22 @@ pub fn get_current_window_label() -> Option<String> {
     label.as_string()
 }
 
+/// Create a new main window with the given initial tab.
+///
+/// # Errors
+/// Returns an error if window creation fails.
+pub async fn create_main_window(initial_tab: Option<&str>) -> Result<String, String> {
+    let window_id = uuid::Uuid::new_v4().to_string();
+    let label = format!("main-{window_id}");
+    let mut url = format!("/?main_window=true&window_id={window_id}");
+    if let Some(tab) = initial_tab {
+        use std::fmt::Write;
+        let _ = write!(url, "&initial_tab={tab}");
+    }
+    create_native_window(&label, &url, "RailGraph", (1400, 900)).await?;
+    Ok(label)
+}
+
 // --- Native Window Management ---
 
 fn get_tauri_module(module: &str) -> Result<JsValue, String> {
