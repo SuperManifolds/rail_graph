@@ -133,6 +133,26 @@ body {
     }
 }
 
+.tab-add-select {
+    background-color: transparent;
+    border: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+    padding: var(--spacing-sm) var(--spacing-md);
+    font-size: var(--font-size-md);
+    flex-shrink: 0;
+    align-self: center;
+
+    &:hover {
+        color: var(--color-text-tertiary);
+    }
+
+    option {
+        background-color: var(--color-bg-secondary);
+        color: var(--color-text-primary);
+    }
+}
+
 .tab-close-button {
     position: absolute;
     right: var(--spacing-xs);

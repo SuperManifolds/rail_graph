@@ -81,11 +81,13 @@ fn handle_sync_event(
     set_is_applying_remote: WriteSignal<bool>,
     shared: SharedWriteSignals,
     set_incoming_drag_tab: WriteSignal<Option<(String, String)>>,
+    set_drag_was_dropped: WriteSignal<bool>,
     set_window_tabs: WriteSignal<Vec<String>>,
     set_active_tab: WriteSignal<AppTab>,
     views: leptos::ReadSignal<Vec<GraphView>>,
     is_primary: leptos::ReadSignal<bool>,
     set_is_primary: WriteSignal<bool>,
+    remote_layouts: leptos::StoredValue<HashMap<String, crate::models::WindowLayout>>,
     on_remote_undo: impl Fn(),
     on_remote_redo: impl Fn(),
 ) {
@@ -109,7 +111,11 @@ fn handle_sync_event(
                     }
                 });
                 restore_active_tab(&tab_id, &views.get_untracked(), set_active_tab);
+            } else {
+                // We're the source — remove the tab that was dropped elsewhere
+                set_window_tabs.update(|tabs| tabs.retain(|t| *t != tab_id));
             }
+            set_drag_was_dropped.set(true);
             set_incoming_drag_tab.set(None);
         }
         SyncKind::WindowClosing { is_primary: true } => {
@@ -128,8 +134,22 @@ fn handle_sync_event(
                 on_remote_redo();
             }
         }
-        SyncKind::WindowClosing { is_primary: false }
-        | SyncKind::LayoutUpdate { .. } => {}
+        SyncKind::LayoutUpdate { window_id, tab_ids, active_tab_id, bounds } => {
+            remote_layouts.update_value(|layouts| {
+                layouts.insert(window_id.clone(), crate::models::WindowLayout {
+                    window_id: Uuid::parse_str(&window_id).unwrap_or_else(|_| Uuid::new_v4()),
+                    tab_ids,
+                    active_tab_id,
+                    bounds,
+                });
+            });
+        }
+        SyncKind::WindowClosing { is_primary: false } => {
+            // Remove this window's layout from the collected set
+            remote_layouts.update_value(|layouts| {
+                layouts.remove(&envelope.source_window);
+            });
+        }
     }
 }
 
@@ -177,6 +197,14 @@ fn apply_remote_project(
         s.set_current_project.set(project);
     });
     set_is_applying_remote.set(false);
+}
+
+async fn update_primary_bounds(proj: &mut Project) {
+    if let Some(bounds) = crate::tauri_bridge::get_window_bounds().await {
+        if let Some(layout) = proj.window_layouts.first_mut() {
+            layout.bounds = Some(bounds);
+        }
+    }
 }
 
 async fn save_and_cache_project(bytes: Vec<u8>, project_id: String) {
@@ -423,9 +451,14 @@ pub fn App(
             set_views.set(project_views.clone());
 
             // Populate per-window tabs
+            let my_wid = window_id_stored.get_value();
             let tabs = if is_secondary_mount {
-                // Secondary window: show only the initial_tab (or Infrastructure)
-                if let Some(ref tab_id) = initial_tab_val {
+                // Secondary: check for saved layout matching our window_id
+                let saved = project.window_layouts.iter()
+                    .find(|l| l.window_id.to_string() == my_wid);
+                if let Some(layout) = saved {
+                    layout.tab_ids.clone()
+                } else if let Some(ref tab_id) = initial_tab_val {
                     vec![tab_id.clone()]
                 } else {
                     vec!["infrastructure".to_string()]
@@ -446,7 +479,10 @@ pub fn App(
 
             // Restore active tab
             if is_secondary_mount {
-                if let Some(ref tab_id) = initial_tab_val {
+                let saved_active = project.window_layouts.iter()
+                    .find(|l| l.window_id.to_string() == my_wid)
+                    .and_then(|l| l.active_tab_id.clone());
+                if let Some(ref tab_id) = saved_active.or(initial_tab_val) {
                     restore_active_tab(tab_id, &project_views, set_active_tab);
                 }
             } else {
@@ -528,6 +564,9 @@ pub fn App(
         (node_count, edge_count)
     });
 
+    // Collected layouts from other windows (primary uses this during auto-save)
+    let remote_layouts = store_value(HashMap::<String, crate::models::WindowLayout>::new());
+
     // Broadcast shared state to other windows when it changes (debounced)
     let sync_window_label = window_label.clone();
     let debounced_broadcast_sync = store_value(leptos::leptos_dom::helpers::debounce(
@@ -583,15 +622,19 @@ pub fn App(
             proj.active_tab_id.clone_from(&active_tab_id);
             proj.infrastructure_viewport = current_infrastructure_viewport;
 
-            // Persist this window's tab layout
+            // Persist all window layouts (this window + collected from others)
             let current_tabs = window_tabs.get_untracked();
-            let layout = crate::models::WindowLayout {
+            let my_layout = crate::models::WindowLayout {
                 window_id: Uuid::parse_str(&window_id_stored.get_value()).unwrap_or_else(|_| Uuid::new_v4()),
                 tab_ids: current_tabs,
                 active_tab_id,
-                bounds: None,
+                bounds: None, // filled async below
             };
-            proj.window_layouts = vec![layout];
+            let mut all_layouts = vec![my_layout];
+            remote_layouts.with_value(|r| {
+                all_layouts.extend(r.values().cloned());
+            });
+            proj.window_layouts = all_layouts;
 
             proj.touch_updated_at();
 
@@ -613,7 +656,13 @@ pub fn App(
 
             if is_primary.get_untracked() {
                 let project_id = proj.metadata.id.clone();
-                spawn_local(save_and_cache_project(bytes, project_id));
+                let mut proj_for_save = proj;
+                spawn_local(async move {
+                    update_primary_bounds(&mut proj_for_save).await;
+                    let final_bytes = serialize_project_to_bytes(&proj_for_save)
+                        .unwrap_or(bytes);
+                    save_and_cache_project(final_bytes, project_id).await;
+                });
             }
         }
     });
@@ -624,6 +673,54 @@ pub fn App(
     let close_label = window_label.clone();
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::beforeunload, move |_| {
         sync::broadcast_window_closing(&close_label, is_primary.get_untracked());
+    });
+
+    // Broadcast layout to other windows whenever tabs or active tab change
+    let layout_label = window_label.clone();
+    let layout_wid = window_id_stored;
+    create_effect(move |_| {
+        let tabs = window_tabs.get();
+        let current_tab = active_tab.get();
+        if !initial_load_complete.get_untracked() {
+            return;
+        }
+        let active = match current_tab {
+            AppTab::Infrastructure => Some("infrastructure".to_string()),
+            AppTab::GraphView(uuid) => Some(uuid.to_string()),
+        };
+        sync::broadcast_layout_update(
+            &layout_label,
+            &layout_wid.get_value(),
+            &tabs,
+            active.as_deref(),
+        );
+    });
+
+    // Primary: restore secondary windows from saved layouts on launch
+    let is_primary_for_restore = !is_secondary;
+    create_effect(move |ran: Option<bool>| {
+        if ran.is_some() || !initial_load_complete.get() {
+            return true;
+        }
+        if !is_primary_for_restore {
+            return true;
+        }
+        let proj = current_project.get_untracked();
+        // Skip the first layout (that's this window); open the rest
+        for layout in proj.window_layouts.iter().skip(1) {
+            let wid = layout.window_id.to_string();
+            let bounds = layout.bounds.clone();
+            spawn_local(async move {
+                if let Err(e) = crate::tauri_bridge::create_main_window(
+                    None,
+                    Some(&wid),
+                    bounds.as_ref(),
+                ).await {
+                    leptos::logging::error!("Failed to restore window: {e}");
+                }
+            });
+        }
+        true
     });
 
     // Mark loading complete once initial data is loaded
@@ -857,8 +954,9 @@ pub fn App(
             };
             handle_sync_event(
                 envelope, set_is_applying_remote, shared,
-                set_incoming_drag_tab, set_window_tabs, set_active_tab,
-                views, is_primary, set_is_primary,
+                set_incoming_drag_tab, set_drag_was_dropped,
+                set_window_tabs, set_active_tab,
+                views, is_primary, set_is_primary, remote_layouts,
                 // on_remote_undo
                 move || {
                     if !undo_manager.get_value().can_undo() { return; }
@@ -907,7 +1005,7 @@ pub fn App(
         if ev.shift_key() && (ev.meta_key() || ev.ctrl_key()) && ev.code() == "KeyN" {
             ev.prevent_default();
             spawn_local(async {
-                if let Err(e) = crate::tauri_bridge::create_main_window(None).await {
+                if let Err(e) = crate::tauri_bridge::create_main_window(None, None, None).await {
                     leptos::logging::error!("Failed to create new window: {e}");
                 }
             });
@@ -1173,23 +1271,23 @@ pub fn App(
                                                             set_drag_over_view_id.set(None);
                                                         }
                                                         on:dragend=move |_| {
-                                                            let was_dropped = drag_was_dropped.get_untracked();
                                                             set_dragged_view_id.set(None);
                                                             set_drag_over_view_id.set(None);
                                                             let my_label = crate::tauri_bridge::get_current_window_label()
                                                                 .unwrap_or_default();
                                                             sync::broadcast_tab_drag_cancel(&my_label);
 
-                                                            // Tear-off: if no drop target accepted, open tab in new window
-                                                            if !was_dropped && window_tabs.get_untracked().len() > 1 {
-                                                                let tid = tab_id_for_tearoff.clone();
-                                                                on_close_tab(tid.clone());
-                                                                spawn_local(async move {
-                                                                    if let Err(e) = crate::tauri_bridge::create_main_window(Some(&tid)).await {
+                                                            // Delay tear-off check to allow cross-window TabDrop events to arrive
+                                                            let tid = tab_id_for_tearoff.clone();
+                                                            spawn_local(async move {
+                                                                gloo_timers::future::TimeoutFuture::new(200).await;
+                                                                if !drag_was_dropped.get_untracked() && window_tabs.get_untracked().len() > 1 {
+                                                                    on_close_tab(tid.clone());
+                                                                    if let Err(e) = crate::tauri_bridge::create_main_window(Some(&tid), None, None).await {
                                                                         leptos::logging::error!("Failed to create tear-off window: {e}");
                                                                     }
-                                                                });
-                                                            }
+                                                                }
+                                                            });
                                                         }
                                                         on:dblclick=move |e| {
                                                             e.stop_propagation();
@@ -1220,6 +1318,54 @@ pub fn App(
                                 }.into_view()
                             }
                         }).collect::<Vec<_>>()
+                    }}
+                    // "+" button to open a view that isn't in this window's tabs
+                    {move || {
+                        let tabs = window_tabs.get();
+                        let all_views = views.get();
+                        // Views not currently shown in this window
+                        let available: Vec<_> = all_views.iter()
+                            .filter(|v| !tabs.contains(&v.id.to_string()))
+                            .map(|v| (v.id, v.name.clone()))
+                            .collect();
+                        let has_infra = tabs.contains(&"infrastructure".to_string());
+                        if available.is_empty() && has_infra {
+                            return view! { <span /> }.into_view();
+                        }
+                        view! {
+                            <select
+                                class="tab-add-select"
+                                on:change=move |ev| {
+                                    let val = event_target_value(&ev);
+                                    if !val.is_empty() {
+                                        set_window_tabs.update(|tabs| {
+                                            if !tabs.contains(&val) {
+                                                tabs.push(val.clone());
+                                            }
+                                        });
+                                        restore_active_tab(&val, &views.get_untracked(), set_active_tab);
+                                        // Reset select to placeholder
+                                        if let Some(target) = ev.target() {
+                                            use wasm_bindgen::JsCast;
+                                            if let Ok(sel) = target.dyn_into::<web_sys::HtmlSelectElement>() {
+                                                sel.set_value("");
+                                            }
+                                        }
+                                    }
+                                }
+                            >
+                                <option value="" selected disabled>"+"</option>
+                                {if has_infra {
+                                    None
+                                } else {
+                                    Some(view! { <option value="infrastructure">"Infrastructure"</option> })
+                                }}
+                                {available.into_iter().map(|(id, name)| {
+                                    let val = id.to_string();
+                                    view! { <option value=val>{name}</option> }
+                                }).collect::<Vec<_>>()}
+                            </select>
+                        }.into_view()
                     }}
                     </div>
                     <div class="app-header-actions">

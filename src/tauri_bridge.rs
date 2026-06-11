@@ -314,20 +314,104 @@ pub fn get_current_window_label() -> Option<String> {
     label.as_string()
 }
 
+/// Get the current window's position and size.
+pub async fn get_window_bounds() -> Option<crate::models::WindowBounds> {
+    let window = web_sys::window()?;
+    let tauri = js_sys::Reflect::get(&window, &"__TAURI__".into()).ok()?;
+    let ww_module = js_sys::Reflect::get(&tauri, &"webviewWindow".into()).ok()?;
+    let get_current = js_sys::Reflect::get(&ww_module, &"getCurrentWebviewWindow".into()).ok()?;
+    let get_current: js_sys::Function = get_current.dyn_into().ok()?;
+    let current = get_current.call0(&JsValue::NULL).ok()?;
+
+    let outer_pos_fn: js_sys::Function = js_sys::Reflect::get(&current, &"outerPosition".into())
+        .ok()?.dyn_into().ok()?;
+    let outer_size_fn: js_sys::Function = js_sys::Reflect::get(&current, &"outerSize".into())
+        .ok()?.dyn_into().ok()?;
+
+    let pos_promise = outer_pos_fn.call0(&current).ok()?;
+    let size_promise = outer_size_fn.call0(&current).ok()?;
+
+    let pos = JsFuture::from(js_sys::Promise::from(pos_promise)).await.ok()?;
+    let size = JsFuture::from(js_sys::Promise::from(size_promise)).await.ok()?;
+
+    let x = js_sys::Reflect::get(&pos, &"x".into()).ok()?.as_f64()?;
+    let y = js_sys::Reflect::get(&pos, &"y".into()).ok()?.as_f64()?;
+    let width = js_sys::Reflect::get(&size, &"width".into()).ok()?.as_f64()?;
+    let height = js_sys::Reflect::get(&size, &"height".into()).ok()?.as_f64()?;
+
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Some(crate::models::WindowBounds {
+        x: x as i32,
+        y: y as i32,
+        width: width as u32,
+        height: height as u32,
+    })
+}
+
 /// Create a new main window with the given initial tab.
+/// If `saved_window_id` is provided, the window will look up its layout from saved state.
 ///
 /// # Errors
 /// Returns an error if window creation fails.
-pub async fn create_main_window(initial_tab: Option<&str>) -> Result<String, String> {
-    let window_id = uuid::Uuid::new_v4().to_string();
+pub async fn create_main_window(
+    initial_tab: Option<&str>,
+    saved_window_id: Option<&str>,
+    bounds: Option<&crate::models::WindowBounds>,
+) -> Result<String, String> {
+    let window_id = saved_window_id
+        .map_or_else(|| uuid::Uuid::new_v4().to_string(), String::from);
     let label = format!("main-{window_id}");
     let mut url = format!("/?main_window=true&window_id={window_id}");
     if let Some(tab) = initial_tab {
         use std::fmt::Write;
         let _ = write!(url, "&initial_tab={tab}");
     }
-    create_native_window(&label, &url, "RailGraph", (1400, 900)).await?;
+    let size = bounds
+        .map_or((1400, 900), |b| (b.width.max(400), b.height.max(300)));
+    create_native_window(&label, &url, "RailGraph", size).await?;
+
+    if let Some(b) = bounds {
+        if let Err(e) = set_window_position(&label, b.x, b.y).await {
+            leptos::logging::warn!("Failed to restore window position: {e}");
+        }
+    }
     Ok(label)
+}
+
+/// Set a window's position.
+async fn set_window_position(label: &str, x: i32, y: i32) -> Result<(), String> {
+    let ww_module = get_tauri_module("webviewWindow")?;
+    let ww_class = js_sys::Reflect::get(&ww_module, &"WebviewWindow".into())
+        .map_err(|_| "WebviewWindow class not found")?;
+    let get_by_label: js_sys::Function = js_sys::Reflect::get(&ww_class, &"getByLabel".into())
+        .map_err(|_| "getByLabel not found")?
+        .dyn_into().map_err(|_| "not a function")?;
+    let instance = get_by_label.call1(&ww_class, &label.into())
+        .map_err(|e| format!("getByLabel failed: {e:?}"))?;
+    if instance.is_null() || instance.is_undefined() {
+        return Err("Window not found".into());
+    }
+
+    let set_pos_fn: js_sys::Function = js_sys::Reflect::get(&instance, &"setPosition".into())
+        .map_err(|_| "setPosition not found")?
+        .dyn_into().map_err(|_| "not a function")?;
+
+    let pos_module = get_tauri_module("dpi")?;
+    let physical_pos_class: js_sys::Function = js_sys::Reflect::get(&pos_module, &"PhysicalPosition".into())
+        .map_err(|_| "PhysicalPosition not found")?
+        .dyn_into().map_err(|_| "not a constructor")?;
+
+    let args = js_sys::Array::new();
+    args.push(&JsValue::from_f64(f64::from(x)));
+    args.push(&JsValue::from_f64(f64::from(y)));
+    let pos = js_sys::Reflect::construct(&physical_pos_class, &args)
+        .map_err(|e| format!("Failed to construct PhysicalPosition: {e:?}"))?;
+
+    let promise = set_pos_fn.call1(&instance, &pos)
+        .map_err(|e| format!("setPosition failed: {e:?}"))?;
+    JsFuture::from(js_sys::Promise::from(promise)).await
+        .map_err(|e| format!("setPosition rejected: {e:?}"))?;
+    Ok(())
 }
 
 // --- Native Window Management ---

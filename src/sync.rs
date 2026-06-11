@@ -40,6 +40,7 @@ pub enum SyncKind {
         window_id: String,
         tab_ids: Vec<String>,
         active_tab_id: Option<String>,
+        bounds: Option<crate::models::WindowBounds>,
     },
 }
 
@@ -154,19 +155,38 @@ pub fn broadcast_redo_request(source_window: &str) {
     });
 }
 
-/// Broadcast a layout update for this window.
+/// Broadcast a layout update for this window (async to fetch bounds).
 pub fn broadcast_layout_update(
     source_window: &str,
     window_id: &str,
     tab_ids: &[String],
     active_tab_id: Option<&str>,
 ) {
-    broadcast(&SyncEnvelope {
+    let envelope_base = SyncEnvelope {
         source_window: source_window.to_string(),
         kind: SyncKind::LayoutUpdate {
             window_id: window_id.to_string(),
             tab_ids: tab_ids.to_vec(),
             active_tab_id: active_tab_id.map(String::from),
+            bounds: None,
         },
+    };
+    // Fetch bounds asynchronously and broadcast with them
+    leptos::spawn_local(async move {
+        let bounds = crate::tauri_bridge::get_window_bounds().await;
+        let mut envelope = envelope_base;
+        if let SyncKind::LayoutUpdate { bounds: ref mut saved_bounds, .. } = envelope.kind {
+            *saved_bounds = bounds;
+        }
+        let json = match serde_json::to_string(&envelope) {
+            Ok(j) => j,
+            Err(e) => {
+                leptos::logging::error!("Failed to serialize sync envelope: {e}");
+                return;
+            }
+        };
+        if let Err(e) = crate::tauri_bridge::emit_event(SYNC_EVENT, &json).await {
+            leptos::logging::error!("Failed to broadcast sync: {e}");
+        }
     });
 }
