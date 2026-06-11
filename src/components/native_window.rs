@@ -94,7 +94,7 @@ pub fn NativeWindow(
         if currently_open && !was_open {
             let session = uuid::Uuid::new_v4().to_string();
             set_current_session.set(Some(session.clone()));
-            let label = format!("child-{label_base}");
+            let label = format!("child-{label_base}-{}", &session[..8]);
             let current_title = title.get();
             let current_init_data = init_data.get();
 
@@ -111,14 +111,14 @@ pub fn NativeWindow(
                 size,
             ));
         } else if !currently_open && was_open {
-            if let Some(session) = current_session.get() {
-                clear_init_data(&session);
+            if let Some(ref session) = current_session.get() {
+                clear_init_data(session);
+                let label = format!("child-{label_base}-{}", &session[..8]);
+                leptos::spawn_local(async move {
+                    let _ = tauri_bridge::close_native_window(&label).await;
+                });
             }
             set_current_session.set(None);
-            let label = format!("child-{label_base}");
-            leptos::spawn_local(async move {
-                let _ = tauri_bridge::close_native_window(&label).await;
-            });
         }
 
         currently_open
