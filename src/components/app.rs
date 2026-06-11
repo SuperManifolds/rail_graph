@@ -754,6 +754,8 @@ pub fn App(
     // State for drag-and-drop reordering (within same window)
     let (dragged_view_id, set_dragged_view_id) = create_signal(None::<Uuid>);
     let (drag_over_view_id, set_drag_over_view_id) = create_signal(None::<Uuid>);
+    // Tracks whether a drop was accepted during the current drag; false at dragend means tear-off
+    let (drag_was_dropped, set_drag_was_dropped) = create_signal(false);
 
     // Callback for renaming a view
     let on_rename_view = move |view_id: Uuid, new_name: String| {
@@ -1017,6 +1019,7 @@ pub fn App(
                         }
                         on:drop=move |ev| {
                             ev.prevent_default();
+                            set_drag_was_dropped.set(true);
                             if let Some((tab_id, _source)) = incoming_drag_tab.get() {
                                 let my_label = crate::tauri_bridge::get_current_window_label()
                                     .unwrap_or_default();
@@ -1125,6 +1128,7 @@ pub fn App(
                                                         }
                                                         on:dragstart=move |ev| {
                                                             set_dragged_view_id.set(Some(view_id));
+                                                            set_drag_was_dropped.set(false);
                                                             if let Some(dt) = ev.data_transfer() {
                                                                 let _ = dt.set_data("text/plain", &view_id.to_string());
                                                                 dt.set_effect_allowed("move");
@@ -1148,6 +1152,7 @@ pub fn App(
                                                         on:drop=move |ev| {
                                                             ev.prevent_default();
                                                             ev.stop_propagation();
+                                                            set_drag_was_dropped.set(true);
 
                                                             if let Some(dragged_id) = dragged_view_id.get() {
                                                                 if dragged_id != view_id {
@@ -1167,18 +1172,16 @@ pub fn App(
                                                             set_dragged_view_id.set(None);
                                                             set_drag_over_view_id.set(None);
                                                         }
-                                                        on:dragend=move |ev| {
-                                                            let drop_effect = ev.data_transfer()
-                                                                .map(|dt| dt.drop_effect())
-                                                                .unwrap_or_default();
+                                                        on:dragend=move |_| {
+                                                            let was_dropped = drag_was_dropped.get_untracked();
                                                             set_dragged_view_id.set(None);
                                                             set_drag_over_view_id.set(None);
                                                             let my_label = crate::tauri_bridge::get_current_window_label()
                                                                 .unwrap_or_default();
                                                             sync::broadcast_tab_drag_cancel(&my_label);
 
-                                                            // Tear-off: if drag ended with no drop, open tab in new window
-                                                            if drop_effect == "none" && window_tabs.get_untracked().len() > 1 {
+                                                            // Tear-off: if no drop target accepted, open tab in new window
+                                                            if !was_dropped && window_tabs.get_untracked().len() > 1 {
                                                                 let tid = tab_id_for_tearoff.clone();
                                                                 on_close_tab(tid.clone());
                                                                 spawn_local(async move {
