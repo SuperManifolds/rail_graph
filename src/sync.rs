@@ -2,6 +2,19 @@ use crate::tauri_bridge;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
+/// Per-field version counters for conflict-free concurrent sync.
+/// Each window increments a field's generation when it changes locally.
+/// On receive, only fields with a higher remote generation are applied.
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct FieldGenerations {
+    pub graph: u64,
+    pub lines: u64,
+    pub views: u64,
+    pub folders: u64,
+    pub settings: u64,
+    pub legend: u64,
+}
+
 /// Envelope wrapping sync payloads with source window identification.
 #[derive(Serialize, Deserialize)]
 pub struct SyncEnvelope {
@@ -12,8 +25,12 @@ pub struct SyncEnvelope {
 /// The kind of sync message being broadcast.
 #[derive(Serialize, Deserialize)]
 pub enum SyncKind {
-    /// Full shared state snapshot (project bytes excluding per-window state).
-    ProjectSync(Vec<u8>),
+    /// Full shared state snapshot with per-field generation counters.
+    /// Receiver applies only fields whose remote generation exceeds local.
+    ProjectSync {
+        data: Vec<u8>,
+        generations: FieldGenerations,
+    },
     /// Tab drag started in a window.
     TabDragStart {
         tab_id: String,
@@ -80,11 +97,18 @@ pub async fn listen(
     .await
 }
 
-/// Broadcast a project state sync.
-pub fn broadcast_project_sync(source_window: &str, project_bytes: Vec<u8>) {
+/// Broadcast a project state sync with generation counters.
+pub fn broadcast_project_sync(
+    source_window: &str,
+    project_bytes: Vec<u8>,
+    generations: FieldGenerations,
+) {
     broadcast(&SyncEnvelope {
         source_window: source_window.to_string(),
-        kind: SyncKind::ProjectSync(project_bytes),
+        kind: SyncKind::ProjectSync {
+            data: project_bytes,
+            generations,
+        },
     });
 }
 

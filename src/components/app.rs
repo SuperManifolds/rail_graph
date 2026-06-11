@@ -88,12 +88,15 @@ fn handle_sync_event(
     is_primary: leptos::ReadSignal<bool>,
     set_is_primary: WriteSignal<bool>,
     remote_layouts: leptos::StoredValue<HashMap<String, crate::models::WindowLayout>>,
+    local_gens: leptos::StoredValue<sync::FieldGenerations>,
     on_remote_undo: impl Fn(),
     on_remote_redo: impl Fn(),
 ) {
     match envelope.kind {
-        SyncKind::ProjectSync(bytes) => {
-            apply_remote_project(&bytes, set_is_applying_remote, shared);
+        SyncKind::ProjectSync { data, generations } => {
+            apply_remote_project(
+                &data, &generations, set_is_applying_remote, shared, local_gens,
+            );
         }
         SyncKind::TabDragStart { tab_id } => {
             set_incoming_drag_tab.set(Some((tab_id, envelope.source_window.clone())));
@@ -168,8 +171,10 @@ struct SharedWriteSignals {
 
 fn apply_remote_project(
     bytes: &[u8],
+    remote_gens: &sync::FieldGenerations,
     set_is_applying_remote: WriteSignal<bool>,
     s: SharedWriteSignals,
+    local_gens: leptos::StoredValue<sync::FieldGenerations>,
 ) {
     let Ok(project) = Project::from_bytes(bytes) else {
         leptos::logging::error!("Failed to deserialize sync payload");
@@ -177,24 +182,43 @@ fn apply_remote_project(
     };
 
     set_is_applying_remote.set(true);
-    leptos::batch(move || {
-        s.set_lines.set(project.lines.clone());
-        s.set_folders.set(project.folders.clone());
-        s.set_graph.set(project.graph.clone());
-        s.set_legend.set(project.legend.clone());
-        s.set_settings.set(project.settings.clone());
-
-        let mut project_views = project.views.clone();
-        if project_views.is_empty() {
-            project_views.push(GraphView::default_main_line(&project.graph));
-        }
-        let viewports: HashMap<Uuid, ViewportState> = project_views
-            .iter()
-            .map(|v| (v.id, v.viewport_state.clone()))
-            .collect();
-        s.set_viewport_states.set(viewports);
-        s.set_views.set(project_views);
-        s.set_current_project.set(project);
+    local_gens.update_value(|local| {
+        leptos::batch(|| {
+            if remote_gens.graph > local.graph {
+                s.set_graph.set(project.graph.clone());
+                local.graph = remote_gens.graph;
+            }
+            if remote_gens.lines > local.lines {
+                s.set_lines.set(project.lines.clone());
+                local.lines = remote_gens.lines;
+            }
+            if remote_gens.views > local.views {
+                let mut project_views = project.views.clone();
+                if project_views.is_empty() {
+                    project_views.push(GraphView::default_main_line(&project.graph));
+                }
+                let viewports: HashMap<Uuid, ViewportState> = project_views
+                    .iter()
+                    .map(|v| (v.id, v.viewport_state.clone()))
+                    .collect();
+                s.set_viewport_states.set(viewports);
+                s.set_views.set(project_views);
+                local.views = remote_gens.views;
+            }
+            if remote_gens.folders > local.folders {
+                s.set_folders.set(project.folders.clone());
+                local.folders = remote_gens.folders;
+            }
+            if remote_gens.settings > local.settings {
+                s.set_settings.set(project.settings.clone());
+                local.settings = remote_gens.settings;
+            }
+            if remote_gens.legend > local.legend {
+                s.set_legend.set(project.legend.clone());
+                local.legend = remote_gens.legend;
+            }
+            s.set_current_project.set(project);
+        });
     });
     set_is_applying_remote.set(false);
 }
@@ -566,13 +590,36 @@ pub fn App(
 
     // Collected layouts from other windows (primary uses this during auto-save)
     let remote_layouts = store_value(HashMap::<String, crate::models::WindowLayout>::new());
+    // Per-field generation counters for conflict-free sync
+    let field_gens = store_value(sync::FieldGenerations::default());
+
+    // Track local generation increments per field for conflict-free sync.
+    // Each effect fires when its signal changes; if the change was local
+    // (not from a remote sync), the field's generation counter increments.
+    macro_rules! track_field_gen {
+        ($signal:expr, $field:ident) => {
+            create_effect(move |ran: Option<bool>| {
+                let _ = $signal.get();
+                if ran.is_some() && !is_applying_remote.get_untracked() {
+                    field_gens.update_value(|g| g.$field += 1);
+                }
+                true
+            });
+        };
+    }
+    track_field_gen!(graph, graph);
+    track_field_gen!(lines, lines);
+    track_field_gen!(views, views);
+    track_field_gen!(folders, folders);
+    track_field_gen!(settings, settings);
+    track_field_gen!(legend, legend);
 
     // Broadcast shared state to other windows when it changes (debounced)
     let sync_window_label = window_label.clone();
     let debounced_broadcast_sync = store_value(leptos::leptos_dom::helpers::debounce(
         std::time::Duration::from_millis(50),
-        move |bytes: Vec<u8>| {
-            sync::broadcast_project_sync(&sync_window_label, bytes);
+        move |(bytes, gens): (Vec<u8>, sync::FieldGenerations)| {
+            sync::broadcast_project_sync(&sync_window_label, bytes, gens);
         },
     ));
 
@@ -650,9 +697,10 @@ pub fn App(
                 }
             };
 
-            // Broadcast to other windows
+            // Broadcast to other windows with current generation counters
             let sync_bytes = bytes.clone();
-            debounced_broadcast_sync.update_value(|f| f(sync_bytes));
+            let gens = field_gens.get_value();
+            debounced_broadcast_sync.update_value(|f| f((sync_bytes, gens)));
 
             if is_primary.get_untracked() {
                 let project_id = proj.metadata.id.clone();
@@ -956,7 +1004,7 @@ pub fn App(
                 envelope, set_is_applying_remote, shared,
                 set_incoming_drag_tab, set_drag_was_dropped,
                 set_window_tabs, set_active_tab,
-                views, is_primary, set_is_primary, remote_layouts,
+                views, is_primary, set_is_primary, remote_layouts, field_gens,
                 // on_remote_undo
                 move || {
                     if !undo_manager.get_value().can_undo() { return; }
