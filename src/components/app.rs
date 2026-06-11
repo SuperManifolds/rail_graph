@@ -754,7 +754,6 @@ pub fn App(
     // State for drag-and-drop reordering (within same window)
     let (dragged_view_id, set_dragged_view_id) = create_signal(None::<Uuid>);
     let (drag_over_view_id, set_drag_over_view_id) = create_signal(None::<Uuid>);
-    let (drag_timer_id, set_drag_timer_id) = create_signal(None::<i32>);
 
     // Callback for renaming a view
     let on_rename_view = move |view_id: Uuid, new_name: String| {
@@ -1120,40 +1119,12 @@ pub fn App(
                                                             }
                                                             classes.join(" ")
                                                         }
-                                                        draggable="false"
-                                                        on:mousedown=move |_| {
-                                                            let window = web_sys::window().expect("window");
-                                                            let set_draggable = move || {
-                                                                set_dragged_view_id.set(Some(view_id));
-                                                            };
-                                                            let closure = wasm_bindgen::closure::Closure::wrap(Box::new(set_draggable) as Box<dyn FnMut()>);
-                                                            let timer_id = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-                                                                closure.as_ref().unchecked_ref(),
-                                                                300
-                                                            ).expect("set_timeout");
-                                                            closure.forget();
-                                                            set_drag_timer_id.set(Some(timer_id));
-                                                        }
-                                                        on:mouseup=move |_| {
-                                                            if let Some(timer_id) = drag_timer_id.get() {
-                                                                web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
-                                                                set_drag_timer_id.set(None);
-                                                            }
-                                                            set_dragged_view_id.set(None);
-                                                            set_drag_over_view_id.set(None);
-                                                        }
-                                                        on:mouseleave=move |_| {
-                                                            if let Some(timer_id) = drag_timer_id.get() {
-                                                                web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
-                                                                set_drag_timer_id.set(None);
-                                                            }
-                                                        }
+                                                        draggable="true"
                                                         on:click=move |_| {
-                                                            if dragged_view_id.get().is_none() {
-                                                                set_active_tab.set(AppTab::GraphView(view_id));
-                                                            }
+                                                            set_active_tab.set(AppTab::GraphView(view_id));
                                                         }
                                                         on:dragstart=move |ev| {
+                                                            set_dragged_view_id.set(Some(view_id));
                                                             if let Some(dt) = ev.data_transfer() {
                                                                 let _ = dt.set_data("text/plain", &view_id.to_string());
                                                                 dt.set_effect_allowed("move");
@@ -1202,10 +1173,6 @@ pub fn App(
                                                                 .unwrap_or_default();
                                                             set_dragged_view_id.set(None);
                                                             set_drag_over_view_id.set(None);
-                                                            if let Some(timer_id) = drag_timer_id.get() {
-                                                                web_sys::window().expect("window").clear_timeout_with_handle(timer_id);
-                                                                set_drag_timer_id.set(None);
-                                                            }
                                                             let my_label = crate::tauri_bridge::get_current_window_label()
                                                                 .unwrap_or_default();
                                                             sync::broadcast_tab_drag_cancel(&my_label);
@@ -1230,7 +1197,6 @@ pub fn App(
                                                             set_edit_name_value.set(name);
                                                             set_editing_view_id.set(Some(view_id));
                                                         }
-                                                        prop:draggable=move || dragged_view_id.get() == Some(view_id)
                                                     >
                                                         {current_name}
                                                     </button>
