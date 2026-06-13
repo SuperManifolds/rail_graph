@@ -6,7 +6,7 @@ use railgraph_core::conflict::{detect_line_conflicts, SerializableConflictContex
 use railgraph_core::models::{Project, ProjectMetadata};
 use railgraph_core::train_journey::TrainJourney;
 use tauri::ipc::{InvokeBody, Request, Response};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// Get the projects directory, creating it if needed.
 fn projects_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -160,40 +160,14 @@ pub fn set_current_project_id(app: tauri::AppHandle, id: String) -> Result<(), S
     save_config(&app, &config)
 }
 
-// --- Project State Cache (for multi-window sync) ---
+// --- Helpers exposed for main.rs startup ---
 
-/// Cache the current project state in memory so secondary windows can read it on startup.
-#[allow(clippy::needless_pass_by_value)]
-#[tauri::command]
-pub fn cache_project_state(
-    state: tauri::State<'_, crate::AppState>,
-    request: Request<'_>,
-) -> Result<(), String> {
-    let InvokeBody::Raw(bytes) = request.body() else {
-        return Err("Expected raw binary body".into());
-    };
-    let mut cache = state
-        .project_cache
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {e}"))?;
-    *cache = Some(bytes.clone());
-    Ok(())
+pub fn projects_dir_internal(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    projects_dir(app)
 }
 
-/// Get the cached project state. Returns None if no state has been cached yet.
-#[allow(clippy::needless_pass_by_value)]
-#[tauri::command]
-pub fn get_cached_project_state(
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<Response, String> {
-    let cache = state
-        .project_cache
-        .lock()
-        .map_err(|e| format!("Lock poisoned: {e}"))?;
-    match cache.as_ref() {
-        Some(bytes) => Ok(Response::new(bytes.clone())),
-        None => Err("No cached project state".into()),
-    }
+pub fn get_current_project_id_internal(app: &tauri::AppHandle) -> Option<String> {
+    load_config(app).current_project_id
 }
 
 // --- Compute Commands ---
@@ -404,4 +378,292 @@ pub async fn compute_auto_layout(request: Request<'_>) -> Result<Response, Strin
     .map_err(|e| format!("Task join error: {e}"))??;
 
     Ok(Response::new(result))
+}
+
+// --- Backend-Managed Project State ---
+
+use base64::Engine;
+use railgraph_core::models::UndoSnapshot;
+
+fn emit_field(
+    app: &tauri::AppHandle,
+    field: &str,
+    data: &[u8],
+    source: &str,
+) -> Result<(), String> {
+    let payload = serde_json::json!({
+        "field": field,
+        "data": base64::engine::general_purpose::STANDARD.encode(data),
+        "source": source,
+    });
+    app.emit("field-updated", payload)
+        .map_err(|e| format!("Emit failed: {e}"))
+}
+
+fn queue_debounced_save(app: &tauri::AppHandle, state: &crate::AppState) {
+    let bytes = {
+        let project = state.project.lock().expect("project lock");
+        match project.serialize_to_bytes() {
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("Failed to serialize project for save: {e}");
+                return;
+            }
+        }
+    };
+
+    let id = state
+        .project
+        .lock()
+        .expect("project lock")
+        .metadata
+        .id
+        .clone();
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let dir = match projects_dir(&app) {
+            Ok(d) => d,
+            Err(e) => {
+                log::error!("Failed to get projects dir: {e}");
+                return;
+            }
+        };
+        let path = dir.join(format!("{id}.rgproject"));
+        if let Err(e) = std::fs::write(&path, &bytes) {
+            log::error!("Failed to save project: {e}");
+        }
+    });
+}
+
+/// Update a single field of the canonical project state.
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn update_field(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    request: Request<'_>,
+) -> Result<(), String> {
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Expected raw binary body".into());
+    };
+    let field = request
+        .headers()
+        .get("field")
+        .and_then(|v| v.to_str().ok())
+        .ok_or("Missing field header")?;
+    let source = request
+        .headers()
+        .get("source")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+
+    let mut project = state
+        .project
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {e}"))?;
+
+    if field == "graph" || field == "lines" {
+        let snapshot = UndoSnapshot::new(project.graph.clone(), project.lines.clone());
+        if let Ok(mut mgr) = state.undo_manager.lock() {
+            mgr.push_snapshot(snapshot);
+        }
+    }
+
+    match field {
+        "graph" => {
+            project.graph = rmp_serde::from_slice(bytes)
+                .map_err(|e| format!("Deserialize graph: {e}"))?;
+        }
+        "lines" => {
+            project.lines = rmp_serde::from_slice(bytes)
+                .map_err(|e| format!("Deserialize lines: {e}"))?;
+        }
+        "views" => {
+            project.views = rmp_serde::from_slice(bytes)
+                .map_err(|e| format!("Deserialize views: {e}"))?;
+        }
+        "folders" => {
+            project.folders = rmp_serde::from_slice(bytes)
+                .map_err(|e| format!("Deserialize folders: {e}"))?;
+        }
+        "settings" => {
+            project.settings = rmp_serde::from_slice(bytes)
+                .map_err(|e| format!("Deserialize settings: {e}"))?;
+        }
+        "legend" => {
+            project.legend = rmp_serde::from_slice(bytes)
+                .map_err(|e| format!("Deserialize legend: {e}"))?;
+        }
+        _ => return Err(format!("Unknown field: {field}")),
+    }
+
+    project.touch_updated_at();
+    drop(project);
+
+    emit_field(&app, field, bytes, source)?;
+    queue_debounced_save(&app, &state);
+    Ok(())
+}
+
+/// Return the full serialized project state for window initialization.
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn load_project_state(
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<Response, String> {
+    let project = state
+        .project
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {e}"))?;
+    let bytes = project
+        .serialize_to_bytes()
+        .map_err(|e| format!("Serialize: {e}"))?;
+    Ok(Response::new(bytes))
+}
+
+/// Replace the entire project (for project load/import).
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn replace_project(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+    request: Request<'_>,
+) -> Result<(), String> {
+    let InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Expected raw binary body".into());
+    };
+    let new_project = Project::from_bytes(bytes)
+        .map_err(|e| format!("Deserialize: {e}"))?;
+
+    let id = new_project.metadata.id.clone();
+
+    let mut project = state
+        .project
+        .lock()
+        .map_err(|e| format!("Lock poisoned: {e}"))?;
+    *project = new_project;
+    drop(project);
+
+    if let Ok(mut mgr) = state.undo_manager.lock() {
+        mgr.clear();
+    }
+
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    let payload = serde_json::json!({ "data": encoded });
+    app.emit("project-replaced", payload)
+        .map_err(|e| format!("Emit: {e}"))?;
+
+    let mut config = load_config(&app);
+    config.current_project_id = Some(id);
+    save_config(&app, &config)?;
+    queue_debounced_save(&app, &state);
+    Ok(())
+}
+
+/// Undo the last graph/lines change.
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn undo(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<bool, String> {
+    let mut project = state
+        .project
+        .lock()
+        .map_err(|e| format!("Lock: {e}"))?;
+    let mut mgr = state
+        .undo_manager
+        .lock()
+        .map_err(|e| format!("Lock: {e}"))?;
+
+    let current = UndoSnapshot::new(project.graph.clone(), project.lines.clone());
+    let Some(snapshot) = mgr.undo(current) else {
+        return Ok(false);
+    };
+
+    project.graph = snapshot.graph;
+    project.lines = snapshot.lines;
+    project.touch_updated_at();
+
+    let graph_bytes = rmp_serde::to_vec(&project.graph)
+        .map_err(|e| format!("Serialize graph: {e}"))?;
+    let lines_bytes = rmp_serde::to_vec(&project.lines)
+        .map_err(|e| format!("Serialize lines: {e}"))?;
+    drop(project);
+    drop(mgr);
+
+    emit_field(&app, "graph", &graph_bytes, "backend")?;
+    emit_field(&app, "lines", &lines_bytes, "backend")?;
+    queue_debounced_save(&app, &state);
+    Ok(true)
+}
+
+/// Redo the last undone graph/lines change.
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn redo(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<bool, String> {
+    let mut project = state
+        .project
+        .lock()
+        .map_err(|e| format!("Lock: {e}"))?;
+    let mut mgr = state
+        .undo_manager
+        .lock()
+        .map_err(|e| format!("Lock: {e}"))?;
+
+    let current = UndoSnapshot::new(project.graph.clone(), project.lines.clone());
+    let Some(snapshot) = mgr.redo(current) else {
+        return Ok(false);
+    };
+
+    project.graph = snapshot.graph;
+    project.lines = snapshot.lines;
+    project.touch_updated_at();
+
+    let graph_bytes = rmp_serde::to_vec(&project.graph)
+        .map_err(|e| format!("Serialize graph: {e}"))?;
+    let lines_bytes = rmp_serde::to_vec(&project.lines)
+        .map_err(|e| format!("Serialize lines: {e}"))?;
+    drop(project);
+    drop(mgr);
+
+    emit_field(&app, "graph", &graph_bytes, "backend")?;
+    emit_field(&app, "lines", &lines_bytes, "backend")?;
+    queue_debounced_save(&app, &state);
+    Ok(true)
+}
+
+/// Save per-window metadata (viewport states, window layouts) into the project.
+#[allow(clippy::needless_pass_by_value)]
+#[tauri::command]
+pub fn save_window_metadata(
+    state: tauri::State<'_, crate::AppState>,
+    window_layouts: String,
+    viewport_states: String,
+) -> Result<(), String> {
+    let layouts: Vec<railgraph_core::models::WindowLayout> =
+        serde_json::from_str(&window_layouts)
+            .map_err(|e| format!("Deserialize layouts: {e}"))?;
+    let viewports: HashMap<String, railgraph_core::models::ViewportState> =
+        serde_json::from_str(&viewport_states)
+            .map_err(|e| format!("Deserialize viewports: {e}"))?;
+
+    let mut project = state
+        .project
+        .lock()
+        .map_err(|e| format!("Lock: {e}"))?;
+
+    project.window_layouts = layouts;
+
+    for view in &mut project.views {
+        if let Some(vp) = viewports.get(&view.id.to_string()) {
+            view.viewport_state = vp.clone();
+        }
+    }
+
+    Ok(())
 }
