@@ -279,26 +279,168 @@ pub async fn compute_auto_layout(
         .map_err(|e| format!("Failed to deserialize layout positions: {e}"))
 }
 
-// --- Project State Cache (multi-window sync) ---
+// --- Backend-Managed Project State ---
 
-/// Cache the project state in the Tauri backend for secondary windows to read.
+/// Send a per-field update to the backend. The backend applies it to canonical
+/// state, broadcasts to all windows, and queues a disk save.
 ///
 /// # Errors
 /// Returns an error if the Tauri command fails.
-pub async fn cache_project_state(bytes: &[u8]) -> Result<(), String> {
-    invoke_binary("cache_project_state", bytes, &[]).await?;
+pub async fn update_field(field: &str, bytes: &[u8], source_window: &str) -> Result<(), String> {
+    invoke_binary("update_field", bytes, &[("field", field), ("source", source_window)]).await?;
     Ok(())
 }
 
-/// Get the cached project state from the Tauri backend.
-/// Returns None if no state has been cached yet.
+/// Load the full project state from the backend (for window initialization).
 ///
 /// # Errors
 /// Returns an error if the Tauri command fails.
-pub async fn get_cached_project_state() -> Result<Vec<u8>, String> {
-    let result = invoke_json("get_cached_project_state", &JsValue::UNDEFINED).await?;
+pub async fn load_project_state() -> Result<Vec<u8>, String> {
+    let result = invoke_json("load_project_state", &JsValue::UNDEFINED).await?;
     let array = js_sys::Uint8Array::new(&result);
     Ok(array.to_vec())
+}
+
+/// Replace the entire project in the backend (for project load/import).
+///
+/// # Errors
+/// Returns an error if the Tauri command fails.
+pub async fn replace_project(bytes: &[u8]) -> Result<(), String> {
+    invoke_binary("replace_project", bytes, &[]).await?;
+    Ok(())
+}
+
+/// Request an undo from the backend. Returns true if undo was performed.
+///
+/// # Errors
+/// Returns an error if the Tauri command fails.
+pub async fn backend_undo() -> Result<bool, String> {
+    let result = invoke_json("undo", &JsValue::UNDEFINED).await?;
+    Ok(result.as_bool().unwrap_or(false))
+}
+
+/// Request a redo from the backend. Returns true if redo was performed.
+///
+/// # Errors
+/// Returns an error if the Tauri command fails.
+pub async fn backend_redo() -> Result<bool, String> {
+    let result = invoke_json("redo", &JsValue::UNDEFINED).await?;
+    Ok(result.as_bool().unwrap_or(false))
+}
+
+/// Save per-window metadata (viewport states, window layouts) to the backend.
+///
+/// # Errors
+/// Returns an error if the Tauri command fails.
+pub async fn save_window_metadata(layouts_json: &str, viewports_json: &str) -> Result<(), String> {
+    let args = js_sys::Object::new();
+    js_sys::Reflect::set(&args, &"windowLayouts".into(), &layouts_json.into())
+        .map_err(|_| "Failed to set windowLayouts")?;
+    js_sys::Reflect::set(&args, &"viewportStates".into(), &viewports_json.into())
+        .map_err(|_| "Failed to set viewportStates")?;
+    invoke_json("save_window_metadata", &args.into()).await?;
+    Ok(())
+}
+
+/// Listen for a Tauri event where the payload is a JS object (from backend emit).
+/// Converts the object to a JSON string for the callback.
+async fn listen_event_object(
+    event_name: &str,
+    callback: impl Fn(String) + 'static,
+) -> Result<JsValue, String> {
+    let event_module = get_tauri_module("event")?;
+    let listen_fn: js_sys::Function = js_sys::Reflect::get(&event_module, &"listen".into())
+        .map_err(|_| "listen not found")?
+        .dyn_into()
+        .map_err(|_| "listen is not a function")?;
+
+    let closure = Closure::wrap(Box::new(move |event: JsValue| {
+        let payload = js_sys::Reflect::get(&event, &"payload".into()).ok();
+        let json_str = payload
+            .as_ref()
+            .and_then(|v| v.as_string())
+            .or_else(|| {
+                payload.as_ref().and_then(|v| {
+                    js_sys::JSON::stringify(v).ok().and_then(|s| s.as_string())
+                })
+            })
+            .unwrap_or_default();
+        callback(json_str);
+    }) as Box<dyn FnMut(JsValue)>);
+
+    let promise = listen_fn
+        .call2(
+            &JsValue::NULL,
+            &event_name.into(),
+            closure.as_ref().unchecked_ref(),
+        )
+        .map_err(|e| format!("listen failed: {e:?}"))?;
+    closure.forget();
+
+    JsFuture::from(js_sys::Promise::from(promise))
+        .await
+        .map_err(|e| format!("listen rejected: {e:?}"))
+}
+
+/// Listen for `field-updated` events from the backend.
+/// Callback receives (field_name, decoded_bytes, source_window).
+///
+/// # Errors
+/// Returns an error if the listener cannot be registered.
+pub async fn listen_field_updated(
+    callback: impl Fn(String, Vec<u8>, String) + 'static,
+) -> Result<JsValue, String> {
+    listen_event_object("field-updated", move |json| {
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) else {
+            return;
+        };
+        let Some(field) = parsed.get("field").and_then(|v| v.as_str()) else {
+            return;
+        };
+        let Some(data_b64) = parsed.get("data").and_then(|v| v.as_str()) else {
+            return;
+        };
+        let source = parsed
+            .get("source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+
+        use base64::Engine;
+        let Ok(data) = base64::engine::general_purpose::STANDARD.decode(data_b64) else {
+            leptos::logging::error!("Failed to decode base64 field data");
+            return;
+        };
+
+        callback(field.to_string(), data, source.to_string());
+    })
+    .await
+}
+
+/// Listen for `project-replaced` events from the backend.
+/// Callback receives decoded project bytes.
+///
+/// # Errors
+/// Returns an error if the listener cannot be registered.
+pub async fn listen_project_replaced(
+    callback: impl Fn(Vec<u8>) + 'static,
+) -> Result<JsValue, String> {
+    listen_event_object("project-replaced", move |json| {
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) else {
+            return;
+        };
+        let Some(data_b64) = parsed.get("data").and_then(|v| v.as_str()) else {
+            return;
+        };
+
+        use base64::Engine;
+        let Ok(data) = base64::engine::general_purpose::STANDARD.decode(data_b64) else {
+            leptos::logging::error!("Failed to decode base64 project data");
+            return;
+        };
+
+        callback(data);
+    })
+    .await
 }
 
 /// Get the current Tauri window's label.
