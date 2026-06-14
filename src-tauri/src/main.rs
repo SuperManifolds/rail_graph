@@ -6,6 +6,8 @@ use tauri::Manager;
 pub struct AppState {
     pub project: std::sync::Mutex<Project>,
     pub undo_manager: std::sync::Mutex<UndoManager>,
+    pub last_snapshot_time: std::sync::Mutex<std::time::Instant>,
+    pub last_snapshot_field: std::sync::Mutex<String>,
 }
 
 fn load_initial_project(app: &tauri::AppHandle) -> Project {
@@ -37,6 +39,8 @@ fn main() {
             app.manage(AppState {
                 project: std::sync::Mutex::new(project),
                 undo_manager: std::sync::Mutex::new(UndoManager::default()),
+                last_snapshot_time: std::sync::Mutex::new(std::time::Instant::now()),
+                last_snapshot_field: std::sync::Mutex::new(String::new()),
             });
             Ok(())
         })

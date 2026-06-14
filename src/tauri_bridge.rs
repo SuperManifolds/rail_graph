@@ -305,8 +305,8 @@ pub async fn load_project_state() -> Result<Vec<u8>, String> {
 ///
 /// # Errors
 /// Returns an error if the Tauri command fails.
-pub async fn replace_project(bytes: &[u8]) -> Result<(), String> {
-    invoke_binary("replace_project", bytes, &[]).await?;
+pub async fn replace_project(bytes: &[u8], source_window: &str) -> Result<(), String> {
+    invoke_binary("replace_project", bytes, &[("source", source_window)]).await?;
     Ok(())
 }
 
@@ -418,12 +418,12 @@ pub async fn listen_field_updated(
 }
 
 /// Listen for `project-replaced` events from the backend.
-/// Callback receives decoded project bytes.
+/// Callback receives (decoded project bytes, source window label).
 ///
 /// # Errors
 /// Returns an error if the listener cannot be registered.
 pub async fn listen_project_replaced(
-    callback: impl Fn(Vec<u8>) + 'static,
+    callback: impl Fn(Vec<u8>, String) + 'static,
 ) -> Result<JsValue, String> {
     use base64::Engine;
 
@@ -434,13 +434,18 @@ pub async fn listen_project_replaced(
         let Some(data_b64) = parsed.get("data").and_then(|v| v.as_str()) else {
             return;
         };
+        let source = parsed
+            .get("source")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
 
         let Ok(data) = base64::engine::general_purpose::STANDARD.decode(data_b64) else {
             leptos::logging::error!("Failed to decode base64 project data");
             return;
         };
 
-        callback(data);
+        callback(data, source);
     })
     .await
 }

@@ -139,6 +139,23 @@ fn update_view(
     }
 }
 
+async fn save_metadata_snapshot(
+    window_id: String,
+    tabs: Vec<String>,
+    active_tab: Option<String>,
+) {
+    let wid = uuid::Uuid::parse_str(&window_id).unwrap_or_else(|_| Uuid::new_v4());
+    let layout = crate::models::WindowLayout {
+        window_id: wid,
+        tab_ids: tabs,
+        active_tab_id: active_tab,
+        bounds: crate::tauri_bridge::get_window_bounds().await,
+    };
+    let layouts_json = serde_json::to_string(&vec![layout]).unwrap_or_default();
+    let viewports_json = String::from("{}");
+    let _ = crate::tauri_bridge::save_window_metadata(&layouts_json, &viewports_json).await;
+}
+
 #[component]
 #[must_use]
 #[allow(clippy::too_many_lines)]
@@ -335,6 +352,29 @@ pub fn App(
     intercept_field!(settings, "settings", window_label);
     intercept_field!(legend, "legend", window_label);
 
+    // Keep current_project in sync with individual field signals
+    create_effect(move |_| {
+        let current_graph = graph.get();
+        let current_lines = lines.get();
+        let current_views = views.get();
+        let current_folders = folders.get();
+        let current_settings = settings.get();
+        let current_legend = legend.get();
+
+        if !initial_load_complete.get_untracked() {
+            return;
+        }
+
+        let mut proj = current_project.get_untracked();
+        proj.graph = current_graph;
+        proj.lines = current_lines;
+        proj.views = current_views;
+        proj.folders = current_folders;
+        proj.settings = current_settings;
+        proj.legend = current_legend;
+        set_current_project.set(proj);
+    });
+
     // Listen for backend field-updated events
     let field_listener_label = window_label.clone();
     spawn_local(async move {
@@ -377,13 +417,18 @@ pub fn App(
                 }
                 _ => {}
             }
-            set_is_from_backend.set(false);
+            leptos::spawn_local(async move { set_is_from_backend.set(false); });
         }).await;
     });
 
     // Listen for backend project-replaced events
+    let replaced_listener_label = window_label.clone();
     spawn_local(async move {
-        let _ = crate::tauri_bridge::listen_project_replaced(move |data| {
+        let my_label = replaced_listener_label;
+        let _ = crate::tauri_bridge::listen_project_replaced(move |data, source| {
+            if source == my_label {
+                return;
+            }
             let Ok(project) = Project::from_bytes(&data) else {
                 leptos::logging::error!("Failed to deserialize project-replaced payload");
                 return;
@@ -409,7 +454,7 @@ pub fn App(
                 set_views.set(project_views);
                 set_current_project.set(project);
             });
-            set_is_from_backend.set(false);
+            leptos::spawn_local(async move { set_is_from_backend.set(false); });
         }).await;
     });
 
@@ -499,6 +544,13 @@ pub fn App(
             &tabs,
             active.as_deref(),
         );
+
+        let wid = layout_wid.get_value();
+        let active_clone = active.clone();
+        let tabs_clone = tabs.clone();
+        spawn_local(async move {
+            save_metadata_snapshot(wid, tabs_clone, active_clone).await;
+        });
     });
 
     // Restore secondary windows from saved layouts on launch
@@ -665,6 +717,7 @@ pub fn App(
         });
     };
 
+    let replace_label = window_label.clone();
     let on_load_project = Callback::new(move |project: Project| {
         let bytes = match project.serialize_to_bytes() {
             Ok(b) => b,
@@ -673,8 +726,9 @@ pub fn App(
                 return;
             }
         };
+        let source = replace_label.clone();
         spawn_local(async move {
-            if let Err(e) = crate::tauri_bridge::replace_project(&bytes).await {
+            if let Err(e) = crate::tauri_bridge::replace_project(&bytes, &source).await {
                 leptos::logging::error!("Replace project failed: {e}");
             }
         });

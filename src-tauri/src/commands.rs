@@ -385,6 +385,11 @@ pub async fn compute_auto_layout(request: Request<'_>) -> Result<Response, Strin
 use base64::Engine;
 use railgraph_core::models::UndoSnapshot;
 
+static SAVE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+const DEBOUNCE_SAVE_MS: u64 = 500;
+const UNDO_COALESCE_MS: u128 = 300;
+
 fn emit_field(
     app: &tauri::AppHandle,
     field: &str,
@@ -401,27 +406,27 @@ fn emit_field(
 }
 
 fn queue_debounced_save(app: &tauri::AppHandle, state: &crate::AppState) {
-    let bytes = {
+    let gen = SAVE_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+
+    let (id, bytes) = {
         let project = state.project.lock().expect("project lock");
-        match project.serialize_to_bytes() {
+        let id = project.metadata.id.clone();
+        let bytes = match project.serialize_to_bytes() {
             Ok(b) => b,
             Err(e) => {
                 log::error!("Failed to serialize project for save: {e}");
                 return;
             }
-        }
+        };
+        (id, bytes)
     };
 
-    let id = state
-        .project
-        .lock()
-        .expect("project lock")
-        .metadata
-        .id
-        .clone();
     let app = app.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        std::thread::sleep(std::time::Duration::from_millis(DEBOUNCE_SAVE_MS));
+        if SAVE_GENERATION.load(std::sync::atomic::Ordering::SeqCst) != gen {
+            return;
+        }
         let dir = match projects_dir(&app) {
             Ok(d) => d,
             Err(e) => {
@@ -464,9 +469,22 @@ pub fn update_field(
         .map_err(|e| format!("Lock poisoned: {e}"))?;
 
     if field == "graph" || field == "lines" {
-        let snapshot = UndoSnapshot::new(project.graph.clone(), project.lines.clone());
-        if let Ok(mut mgr) = state.undo_manager.lock() {
-            mgr.push_snapshot(snapshot);
+        let should_coalesce = {
+            let mut last_time = state.last_snapshot_time.lock().map_err(|e| format!("Lock: {e}"))?;
+            let mut last_field = state.last_snapshot_field.lock().map_err(|e| format!("Lock: {e}"))?;
+            let now = std::time::Instant::now();
+            let elapsed = now.duration_since(*last_time);
+            let same_field = *last_field == field;
+            *last_time = now;
+            *last_field = field.to_string();
+            same_field && elapsed.as_millis() < UNDO_COALESCE_MS
+        };
+
+        if !should_coalesce {
+            let snapshot = UndoSnapshot::new(project.graph.clone(), project.lines.clone());
+            if let Ok(mut mgr) = state.undo_manager.lock() {
+                mgr.push_snapshot(snapshot);
+            }
         }
     }
 
@@ -533,6 +551,12 @@ pub fn replace_project(
     let InvokeBody::Raw(bytes) = request.body() else {
         return Err("Expected raw binary body".into());
     };
+    let source = request
+        .headers()
+        .get("source")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+
     let new_project = Project::from_bytes(bytes)
         .map_err(|e| format!("Deserialize: {e}"))?;
 
@@ -550,7 +574,7 @@ pub fn replace_project(
     }
 
     let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
-    let payload = serde_json::json!({ "data": encoded });
+    let payload = serde_json::json!({ "data": encoded, "source": source });
     app.emit("project-replaced", payload)
         .map_err(|e| format!("Emit: {e}"))?;
 
