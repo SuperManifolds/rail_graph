@@ -358,7 +358,7 @@ async fn listen_event_object(
         let payload = js_sys::Reflect::get(&event, &"payload".into()).ok();
         let json_str = payload
             .as_ref()
-            .and_then(|v| v.as_string())
+            .and_then(wasm_bindgen::JsValue::as_string)
             .or_else(|| {
                 payload.as_ref().and_then(|v| {
                     js_sys::JSON::stringify(v).ok().and_then(|s| s.as_string())
@@ -383,13 +383,15 @@ async fn listen_event_object(
 }
 
 /// Listen for `field-updated` events from the backend.
-/// Callback receives (field_name, decoded_bytes, source_window).
+/// Callback receives (`field_name`, `decoded_bytes`, `source_window`).
 ///
 /// # Errors
 /// Returns an error if the listener cannot be registered.
 pub async fn listen_field_updated(
     callback: impl Fn(String, Vec<u8>, String) + 'static,
 ) -> Result<JsValue, String> {
+    use base64::Engine;
+
     listen_event_object("field-updated", move |json| {
         let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) else {
             return;
@@ -405,7 +407,6 @@ pub async fn listen_field_updated(
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
 
-        use base64::Engine;
         let Ok(data) = base64::engine::general_purpose::STANDARD.decode(data_b64) else {
             leptos::logging::error!("Failed to decode base64 field data");
             return;
@@ -424,6 +425,8 @@ pub async fn listen_field_updated(
 pub async fn listen_project_replaced(
     callback: impl Fn(Vec<u8>) + 'static,
 ) -> Result<JsValue, String> {
+    use base64::Engine;
+
     listen_event_object("project-replaced", move |json| {
         let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) else {
             return;
@@ -432,7 +435,6 @@ pub async fn listen_project_replaced(
             return;
         };
 
-        use base64::Engine;
         let Ok(data) = base64::engine::general_purpose::STANDARD.decode(data_b64) else {
             leptos::logging::error!("Failed to decode base64 project data");
             return;

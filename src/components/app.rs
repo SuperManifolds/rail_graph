@@ -9,7 +9,7 @@ use crate::components::toast::{Toast, ToastNotification};
 use crate::conflict::Conflict;
 #[allow(unused_imports)]
 use crate::logging::log;
-use crate::models::{GraphView, Legend, Project, RailwayGraph, Routes, ViewportState, UndoManager, UndoSnapshot};
+use crate::models::{GraphView, Legend, Project, RailwayGraph, Routes, ViewportState};
 use crate::user_settings_ext::UserSettingsStorage;
 use crate::storage::serialize_project_to_bytes;
 use crate::sync::{self, SyncEnvelope, SyncKind};
@@ -51,53 +51,21 @@ fn restore_active_tab(tab_id: &str, views: &[GraphView], set_active_tab: WriteSi
         return;
     };
 
-    // Verify the view still exists
     if views.iter().any(|v| v.id == uuid) {
         set_active_tab.set(AppTab::GraphView(uuid));
     }
 }
 
-/// Load a project from disk via the Tauri backend.
-async fn load_project_from_disk() -> Project {
-    let project_id = crate::tauri_bridge::get_current_project_id().await.ok().flatten();
-
-    if let Some(id) = project_id {
-        match crate::tauri_bridge::load_project(&id).await
-            .and_then(|bytes| Project::from_bytes(&bytes))
-        {
-            Ok(p) => return p,
-            Err(e) => {
-                web_sys::console::error_1(&format!("Failed to load project: {e}").into());
-            }
-        }
-    }
-
-    Project::empty()
-}
-
-#[allow(clippy::too_many_arguments)]
 fn handle_sync_event(
     envelope: SyncEnvelope,
-    set_is_applying_remote: WriteSignal<bool>,
-    shared: SharedWriteSignals,
     set_incoming_drag_tab: WriteSignal<Option<(String, String)>>,
     set_drag_was_dropped: WriteSignal<bool>,
     set_window_tabs: WriteSignal<Vec<String>>,
     set_active_tab: WriteSignal<AppTab>,
     views: leptos::ReadSignal<Vec<GraphView>>,
-    is_primary: leptos::ReadSignal<bool>,
-    set_is_primary: WriteSignal<bool>,
     remote_layouts: leptos::StoredValue<HashMap<String, crate::models::WindowLayout>>,
-    local_gens: leptos::StoredValue<sync::FieldGenerations>,
-    on_remote_undo: impl Fn(),
-    on_remote_redo: impl Fn(),
 ) {
     match envelope.kind {
-        SyncKind::ProjectSync { data, generations } => {
-            apply_remote_project(
-                &data, &generations, set_is_applying_remote, shared, local_gens,
-            );
-        }
         SyncKind::TabDragStart { tab_id } => {
             set_incoming_drag_tab.set(Some((tab_id, envelope.source_window.clone())));
         }
@@ -115,27 +83,15 @@ fn handle_sync_event(
                 });
                 restore_active_tab(&tab_id, &views.get_untracked(), set_active_tab);
             } else {
-                // We're the source — remove the tab that was dropped elsewhere
                 set_window_tabs.update(|tabs| tabs.retain(|t| *t != tab_id));
             }
             set_drag_was_dropped.set(true);
             set_incoming_drag_tab.set(None);
         }
-        SyncKind::WindowClosing { is_primary: true } => {
-            claim_primary_after_delay(set_is_primary);
-        }
-        SyncKind::PrimaryClaim => {
-            set_is_primary.set(false);
-        }
-        SyncKind::UndoRequest => {
-            if is_primary.get_untracked() {
-                on_remote_undo();
-            }
-        }
-        SyncKind::RedoRequest => {
-            if is_primary.get_untracked() {
-                on_remote_redo();
-            }
+        SyncKind::WindowClosing => {
+            remote_layouts.update_value(|layouts| {
+                layouts.remove(&envelope.source_window);
+            });
         }
         SyncKind::LayoutUpdate { window_id, tab_ids, active_tab_id, bounds } => {
             remote_layouts.update_value(|layouts| {
@@ -147,118 +103,7 @@ fn handle_sync_event(
                 });
             });
         }
-        SyncKind::WindowClosing { is_primary: false } => {
-            // Remove this window's layout from the collected set
-            remote_layouts.update_value(|layouts| {
-                layouts.remove(&envelope.source_window);
-            });
-        }
     }
-}
-
-#[derive(Clone, Copy)]
-#[allow(clippy::struct_field_names)]
-struct SharedWriteSignals {
-    set_lines: WriteSignal<Vec<crate::models::Line>>,
-    set_folders: WriteSignal<Vec<crate::models::LineFolder>>,
-    set_graph: WriteSignal<RailwayGraph>,
-    set_legend: WriteSignal<Legend>,
-    set_settings: WriteSignal<crate::models::ProjectSettings>,
-    set_viewport_states: WriteSignal<HashMap<Uuid, ViewportState>>,
-    set_views: WriteSignal<Vec<GraphView>>,
-    set_current_project: WriteSignal<Project>,
-}
-
-fn apply_remote_project(
-    bytes: &[u8],
-    remote_gens: &sync::FieldGenerations,
-    set_is_applying_remote: WriteSignal<bool>,
-    s: SharedWriteSignals,
-    local_gens: leptos::StoredValue<sync::FieldGenerations>,
-) {
-    let Ok(project) = Project::from_bytes(bytes) else {
-        leptos::logging::error!("Failed to deserialize sync payload");
-        return;
-    };
-
-    set_is_applying_remote.set(true);
-    local_gens.update_value(|local| {
-        leptos::batch(|| {
-            if remote_gens.graph > local.graph {
-                s.set_graph.set(project.graph.clone());
-                local.graph = remote_gens.graph;
-            }
-            if remote_gens.lines > local.lines {
-                s.set_lines.set(project.lines.clone());
-                local.lines = remote_gens.lines;
-            }
-            if remote_gens.views > local.views {
-                let mut project_views = project.views.clone();
-                if project_views.is_empty() {
-                    project_views.push(GraphView::default_main_line(&project.graph));
-                }
-                let viewports: HashMap<Uuid, ViewportState> = project_views
-                    .iter()
-                    .map(|v| (v.id, v.viewport_state.clone()))
-                    .collect();
-                s.set_viewport_states.set(viewports);
-                s.set_views.set(project_views);
-                local.views = remote_gens.views;
-            }
-            if remote_gens.folders > local.folders {
-                s.set_folders.set(project.folders.clone());
-                local.folders = remote_gens.folders;
-            }
-            if remote_gens.settings > local.settings {
-                s.set_settings.set(project.settings.clone());
-                local.settings = remote_gens.settings;
-            }
-            if remote_gens.legend > local.legend {
-                s.set_legend.set(project.legend.clone());
-                local.legend = remote_gens.legend;
-            }
-            s.set_current_project.set(project);
-        });
-    });
-    set_is_applying_remote.set(false);
-}
-
-async fn update_primary_bounds(proj: &mut Project) {
-    if let Some(bounds) = crate::tauri_bridge::get_window_bounds().await {
-        if let Some(layout) = proj.window_layouts.first_mut() {
-            layout.bounds = Some(bounds);
-        }
-    }
-}
-
-async fn save_and_cache_project(bytes: Vec<u8>, project_id: String) {
-    let _ = crate::tauri_bridge::cache_project_state(&bytes).await;
-    if let Err(e) = crate::tauri_bridge::save_project(&bytes, &project_id).await {
-        web_sys::console::error_1(&format!("Auto-save failed: {e}").into());
-        return;
-    }
-    if let Err(e) = crate::tauri_bridge::set_current_project_id(&project_id).await {
-        web_sys::console::error_1(
-            &format!("Failed to set current project ID: {e}").into(),
-        );
-    }
-}
-
-fn claim_primary_after_delay(set_is_primary: WriteSignal<bool>) {
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let delay = (js_sys::Math::random() * 100.0) as i32;
-    let label = crate::tauri_bridge::get_current_window_label().unwrap_or_default();
-    let closure = wasm_bindgen::closure::Closure::once(move || {
-        sync::broadcast_primary_claim(&label);
-        set_is_primary.set(true);
-    });
-    let _ = web_sys::window()
-        .expect("window")
-        .set_timeout_with_callback_and_timeout_and_arguments_0(
-            closure.as_ref().unchecked_ref(),
-            delay,
-        );
-    closure.forget();
 }
 
 /// Update a single view based on its type and current state
@@ -268,7 +113,6 @@ fn update_view(
     current_lines: &[crate::models::Line],
     current_graph: &RailwayGraph,
 ) {
-    // Line-based view: update from current line data
     if let Some(source_line_id) = view.source_line_id {
         let Some(source_line) = current_lines.iter().find(|line| line.id == source_line_id) else {
             return;
@@ -277,7 +121,6 @@ fn update_view(
         return;
     }
 
-    // Non-line, non-main-line view: recalculate edge_path from station_range when infrastructure changes
     if !infrastructure_changed || view.name == "Main Line" {
         return;
     }
@@ -310,16 +153,12 @@ pub fn App(
         .unwrap_or_else(|| "main".to_string());
     let window_id_stored = store_value(window_id.unwrap_or_else(|| Uuid::new_v4().to_string()));
 
-    let (is_primary, set_is_primary) = create_signal(!is_secondary);
-    let (is_applying_remote, set_is_applying_remote) = create_signal(false);
-    // Per-window tab list: "infrastructure" or view UUID strings
+    let (is_from_backend, set_is_from_backend) = create_signal(false);
     let (window_tabs, set_window_tabs) = create_signal(Vec::<String>::new());
-    // Cross-window tab drag state (tab_id, source_window_label)
     let (incoming_drag_tab, set_incoming_drag_tab) = create_signal(None::<(String, String)>);
 
     let (active_tab, set_active_tab) = create_signal(AppTab::Infrastructure);
 
-    // Shared graph, lines, and views state
     let (lines, set_lines) = create_signal(Vec::new());
     let (folders, set_folders) = create_signal(Vec::new());
     let (graph, set_graph) = create_signal(RailwayGraph::new());
@@ -329,41 +168,31 @@ pub fn App(
     let (is_loading, set_is_loading) = create_signal(true);
     let (initial_load_complete, set_initial_load_complete) = create_signal(false);
 
-    // Store viewport states separately to avoid triggering view updates
-    let (viewport_states, set_viewport_states) =
+    let (_, set_viewport_states) =
         create_signal(HashMap::<Uuid, ViewportState>::new());
     let (infrastructure_viewport, set_infrastructure_viewport) =
         create_signal(ViewportState::default());
 
-    // Compute train journeys at app level
     let (train_journeys, set_train_journeys) =
         create_signal(std::collections::HashMap::<uuid::Uuid, TrainJourney>::new());
     let (selected_day, set_selected_day) = create_signal(None::<chrono::Weekday>);
 
-    // Project manager state
     let (show_project_manager, set_show_project_manager) = create_signal(false);
     let (current_project, set_current_project) = create_signal(Project::empty());
 
-    // Sidebar visibility (global across all views)
     let (sidebar_visible, set_sidebar_visible) = create_signal(true);
 
-    // User settings (persists across projects)
     let (user_settings, set_user_settings) = create_signal(crate::models::UserSettings::default());
 
-    // Track when we're capturing keyboard shortcuts in the editor
     let (is_capturing_shortcut, set_is_capturing_shortcut) = create_signal(false);
 
-    // Signal for manually opening changelog from About button
     let (manual_open_changelog, set_manual_open_changelog) = create_signal(false);
 
-    // Toast notification
     let (toast, set_toast) = create_signal(Toast::default());
 
-    // Helper to show toast with auto-hide
     let show_toast = move |message: String| {
         set_toast.set(Toast::new(message));
 
-        // Hide after 2 seconds
         if let Some(window) = web_sys::window() {
             let callback = wasm_bindgen::closure::Closure::once(move || {
                 set_toast.update(|t| t.visible = false);
@@ -376,45 +205,6 @@ pub fn App(
         }
     };
 
-    // Undo/redo management
-    let undo_manager = store_value(UndoManager::default());
-    let (is_performing_undo_redo, set_is_performing_undo_redo) = create_signal(false);
-
-    // Create debounced function for capturing snapshots
-    let record_snapshot = store_value(leptos::leptos_dom::helpers::debounce(
-        std::time::Duration::from_millis(300),
-        move |snapshot: UndoSnapshot| {
-            // Check flag again when the debounced callback actually fires
-            // in case an undo/redo happened while we were waiting
-            if is_performing_undo_redo.get_untracked() || is_applying_remote.get_untracked() {
-                return;
-            }
-
-            undo_manager.update_value(|manager| {
-                manager.push_snapshot(snapshot);
-            });
-        },
-    ));
-
-    // Record state changes for undo with debouncing
-    create_effect(move |_| {
-        let current_graph = graph.get();
-        let current_lines = lines.get();
-
-        // Skip during initial load
-        if !initial_load_complete.get() {
-            return;
-        }
-
-        // Skip during undo/redo operations or remote state application
-        if is_performing_undo_redo.get_untracked() || is_applying_remote.get_untracked() {
-            return;
-        }
-
-        let snapshot = UndoSnapshot::new(current_graph, current_lines);
-        record_snapshot.update_value(|f| f(snapshot));
-    });
-
     // Load user settings on mount
     create_effect(move |_| {
         match crate::models::UserSettings::load() {
@@ -423,30 +213,23 @@ pub fn App(
             }
             Err(e) => {
                 leptos::logging::warn!("Failed to load user settings: {}", e);
-                // Use defaults
             }
         }
     });
 
-    // Auto-load saved project on component mount
-    let is_secondary_mount = is_secondary;
+    // Load project from backend on mount
     let initial_tab_mount = initial_tab.clone();
     create_effect(move |_| {
         let initial_tab_val = initial_tab_mount.clone();
         spawn_local(async move {
-            let project = if is_secondary_mount {
-                // Secondary window: load from backend cache
-                match crate::tauri_bridge::get_cached_project_state().await
-                    .and_then(|bytes| Project::from_bytes(&bytes))
-                {
-                    Ok(p) => p,
-                    Err(e) => {
-                        log!("Failed to load cached state, falling back to disk: {}", e);
-                        load_project_from_disk().await
-                    }
+            let project = match crate::tauri_bridge::load_project_state().await
+                .and_then(|bytes| Project::from_bytes(&bytes))
+            {
+                Ok(p) => p,
+                Err(e) => {
+                    log!("Failed to load project state from backend: {}", e);
+                    Project::empty()
                 }
-            } else {
-                load_project_from_disk().await
             };
 
             let empty_graph = project.graph.clone();
@@ -458,13 +241,11 @@ pub fn App(
             set_legend.set(project.legend.clone());
             set_settings.set(project.settings.clone());
 
-            // Ensure we have at least one view (create default "Main Line" view)
             let mut project_views = project.views.clone();
             if project_views.is_empty() {
                 project_views.push(GraphView::default_main_line(&empty_graph));
             }
 
-            // Extract viewport states into separate signal
             let viewports: HashMap<Uuid, ViewportState> = project_views
                 .iter()
                 .map(|v| (v.id, v.viewport_state.clone()))
@@ -476,8 +257,7 @@ pub fn App(
 
             // Populate per-window tabs
             let my_wid = window_id_stored.get_value();
-            let tabs = if is_secondary_mount {
-                // Secondary: check for saved layout matching our window_id
+            let tabs = if is_secondary {
                 let saved = project.window_layouts.iter()
                     .find(|l| l.window_id.to_string() == my_wid);
                 if let Some(layout) = saved {
@@ -488,12 +268,10 @@ pub fn App(
                     vec!["infrastructure".to_string()]
                 }
             } else {
-                // Primary window: restore from saved window_layouts or default to all tabs
                 let saved_layout = project.window_layouts.first();
                 if let Some(layout) = saved_layout {
                     layout.tab_ids.clone()
                 } else {
-                    // Legacy: build tab list from active_tab_id + all views
                     let mut tabs: Vec<String> = vec!["infrastructure".to_string()];
                     tabs.extend(project_views.iter().map(|v| v.id.to_string()));
                     tabs
@@ -502,7 +280,7 @@ pub fn App(
             set_window_tabs.set(tabs);
 
             // Restore active tab
-            if is_secondary_mount {
+            if is_secondary {
                 let saved_active = project.window_layouts.iter()
                     .find(|l| l.window_id.to_string() == my_wid)
                     .and_then(|l| l.active_tab_id.clone());
@@ -524,13 +302,123 @@ pub fn App(
         });
     });
 
-    // Regenerate "Main Line" view when infrastructure changes (after initial load)
+    // Per-field debounced interceptor effects
+    macro_rules! intercept_field {
+        ($signal:expr, $field_name:expr, $label:expr) => {{
+            let label_owned = $label.clone();
+            let debounced = store_value(leptos::leptos_dom::helpers::debounce(
+                std::time::Duration::from_millis(16),
+                move |bytes: Vec<u8>| {
+                    let label = label_owned.clone();
+                    let field = $field_name;
+                    spawn_local(async move {
+                        let _ = crate::tauri_bridge::update_field(field, &bytes, &label).await;
+                    });
+                },
+            ));
+            create_effect(move |ran: Option<bool>| {
+                let value = $signal.get();
+                if ran.is_none() || is_from_backend.get_untracked() {
+                    return true;
+                }
+                if let Ok(bytes) = rmp_serde::to_vec(&value) {
+                    debounced.update_value(|f| f(bytes));
+                }
+                true
+            });
+        }};
+    }
+    intercept_field!(graph, "graph", window_label);
+    intercept_field!(lines, "lines", window_label);
+    intercept_field!(views, "views", window_label);
+    intercept_field!(folders, "folders", window_label);
+    intercept_field!(settings, "settings", window_label);
+    intercept_field!(legend, "legend", window_label);
+
+    // Listen for backend field-updated events
+    let field_listener_label = window_label.clone();
+    spawn_local(async move {
+        let my_label = field_listener_label;
+        let _ = crate::tauri_bridge::listen_field_updated(move |field, data, source| {
+            if source == my_label {
+                return;
+            }
+            set_is_from_backend.set(true);
+            match field.as_str() {
+                "graph" => {
+                    if let Ok(g) = rmp_serde::from_slice(&data) {
+                        set_graph.set(g);
+                    }
+                }
+                "lines" => {
+                    if let Ok(l) = rmp_serde::from_slice(&data) {
+                        set_lines.set(l);
+                    }
+                }
+                "views" => {
+                    if let Ok(v) = rmp_serde::from_slice(&data) {
+                        set_views.set(v);
+                    }
+                }
+                "folders" => {
+                    if let Ok(f) = rmp_serde::from_slice(&data) {
+                        set_folders.set(f);
+                    }
+                }
+                "settings" => {
+                    if let Ok(s) = rmp_serde::from_slice(&data) {
+                        set_settings.set(s);
+                    }
+                }
+                "legend" => {
+                    if let Ok(l) = rmp_serde::from_slice(&data) {
+                        set_legend.set(l);
+                    }
+                }
+                _ => {}
+            }
+            set_is_from_backend.set(false);
+        }).await;
+    });
+
+    // Listen for backend project-replaced events
+    spawn_local(async move {
+        let _ = crate::tauri_bridge::listen_project_replaced(move |data| {
+            let Ok(project) = Project::from_bytes(&data) else {
+                leptos::logging::error!("Failed to deserialize project-replaced payload");
+                return;
+            };
+            set_is_from_backend.set(true);
+            leptos::batch(move || {
+                set_graph.set(project.graph.clone());
+                set_lines.set(project.lines.clone());
+                set_folders.set(project.folders.clone());
+                set_legend.set(project.legend.clone());
+                set_settings.set(project.settings.clone());
+
+                let mut project_views = project.views.clone();
+                if project_views.is_empty() {
+                    project_views.push(GraphView::default_main_line(&project.graph));
+                }
+                let viewports: HashMap<Uuid, ViewportState> = project_views
+                    .iter()
+                    .map(|v| (v.id, v.viewport_state.clone()))
+                    .collect();
+                set_viewport_states.set(viewports);
+                set_infrastructure_viewport.set(project.infrastructure_viewport.clone());
+                set_views.set(project_views);
+                set_current_project.set(project);
+            });
+            set_is_from_backend.set(false);
+        }).await;
+    });
+
+    // Regenerate "Main Line" view when infrastructure changes
     create_effect(move |prev_counts: Option<(usize, usize)>| {
         let current_graph = graph.get();
         let node_count = current_graph.graph.node_count();
         let edge_count = current_graph.graph.edge_count();
 
-        // Skip during initial load
         if !initial_load_complete.get() {
             return (node_count, edge_count);
         }
@@ -539,19 +427,16 @@ pub fn App(
             node_count != prev_nodes || edge_count != prev_edges
         });
 
-        // Only regenerate if node or edge count changed (new station/junction/track added)
         if !counts_changed {
             return (node_count, edge_count);
         }
 
         set_views.update(|v| {
-            // Find and regenerate the Main Line view
             for view in v.iter_mut() {
                 if view.name != "Main Line" {
                     continue;
                 }
                 let regenerated = GraphView::default_main_line(&current_graph);
-                // Preserve the view ID and viewport state
                 view.station_range = regenerated.station_range;
                 view.edge_path = regenerated.edge_path;
                 break;
@@ -567,7 +452,6 @@ pub fn App(
         let node_count = current_graph.graph.node_count();
         let edge_count = current_graph.graph.edge_count();
 
-        // Skip during initial load
         if !initial_load_complete.get() {
             return (node_count, edge_count);
         }
@@ -588,139 +472,12 @@ pub fn App(
         (node_count, edge_count)
     });
 
-    // Collected layouts from other windows (primary uses this during auto-save)
     let remote_layouts = store_value(HashMap::<String, crate::models::WindowLayout>::new());
-    // Per-field generation counters for conflict-free sync
-    let field_gens = store_value(sync::FieldGenerations::default());
-
-    // Track local generation increments per field for conflict-free sync.
-    // Each effect fires when its signal changes; if the change was local
-    // (not from a remote sync), the field's generation counter increments.
-    macro_rules! track_field_gen {
-        ($signal:expr, $field:ident) => {
-            create_effect(move |ran: Option<bool>| {
-                let _ = $signal.get();
-                if ran.is_some() && !is_applying_remote.get_untracked() {
-                    field_gens.update_value(|g| g.$field += 1);
-                }
-                true
-            });
-        };
-    }
-    track_field_gen!(graph, graph);
-    track_field_gen!(lines, lines);
-    track_field_gen!(views, views);
-    track_field_gen!(folders, folders);
-    track_field_gen!(settings, settings);
-    track_field_gen!(legend, legend);
-
-    // Broadcast shared state to other windows when it changes (debounced)
-    let sync_window_label = window_label.clone();
-    let debounced_broadcast_sync = store_value(leptos::leptos_dom::helpers::debounce(
-        std::time::Duration::from_millis(50),
-        move |(bytes, gens): (Vec<u8>, sync::FieldGenerations)| {
-            sync::broadcast_project_sync(&sync_window_label, bytes, gens);
-        },
-    ));
-
-    // Auto-save project whenever shared state changes (primary only) + broadcast sync
-    create_effect(move |_| {
-        let current_lines = lines.get();
-        let current_folders = folders.get();
-        let current_graph = graph.get();
-        let current_legend = legend.get();
-        let current_settings = settings.get();
-        let current_views = views.get();
-        let current_viewports = viewport_states.get();
-        let current_infrastructure_viewport = infrastructure_viewport.get();
-        let current_tab = active_tab.get();
-        let mut proj = current_project.get();
-
-        // Skip during remote state application to avoid re-broadcast loops
-        if is_applying_remote.get_untracked() {
-            return;
-        }
-
-        if !current_lines.is_empty() || current_graph.graph.node_count() > 0 {
-            // Convert active tab to string ID
-            let active_tab_id = match current_tab {
-                AppTab::Infrastructure => Some("infrastructure".to_string()),
-                AppTab::GraphView(uuid) => Some(uuid.to_string()),
-            };
-
-            // Merge viewport states back into views for saving
-            let views_with_viewports: Vec<GraphView> = current_views
-                .into_iter()
-                .map(|mut v| {
-                    if let Some(viewport) = current_viewports.get(&v.id) {
-                        v.viewport_state = viewport.clone();
-                    }
-                    v
-                })
-                .collect();
-
-            // Update project with current data, preserving metadata
-            proj.lines = current_lines;
-            proj.folders = current_folders;
-            proj.graph = current_graph;
-            proj.legend = current_legend;
-            proj.settings = current_settings;
-            proj.views = views_with_viewports;
-            proj.active_tab_id.clone_from(&active_tab_id);
-            proj.infrastructure_viewport = current_infrastructure_viewport;
-
-            // Persist all window layouts (this window + collected from others)
-            let current_tabs = window_tabs.get_untracked();
-            let my_layout = crate::models::WindowLayout {
-                window_id: Uuid::parse_str(&window_id_stored.get_value()).unwrap_or_else(|_| Uuid::new_v4()),
-                tab_ids: current_tabs,
-                active_tab_id,
-                bounds: None, // filled async below
-            };
-            let mut all_layouts = vec![my_layout];
-            remote_layouts.with_value(|r| {
-                all_layouts.extend(r.values().cloned());
-            });
-            proj.window_layouts = all_layouts;
-
-            proj.touch_updated_at();
-
-            // Update current_project signal to keep it synchronized
-            set_current_project.set(proj.clone());
-
-            // Serialize for saving and syncing
-            let bytes = match serialize_project_to_bytes(&proj) {
-                Ok(b) => b,
-                Err(e) => {
-                    web_sys::console::error_1(&format!("Serialization failed: {e}").into());
-                    return;
-                }
-            };
-
-            // Broadcast to other windows with current generation counters
-            let sync_bytes = bytes.clone();
-            let gens = field_gens.get_value();
-            debounced_broadcast_sync.update_value(|f| f((sync_bytes, gens)));
-
-            if is_primary.get_untracked() {
-                let project_id = proj.metadata.id.clone();
-                let mut proj_for_save = proj;
-                spawn_local(async move {
-                    update_primary_bounds(&mut proj_for_save).await;
-                    let final_bytes = serialize_project_to_bytes(&proj_for_save)
-                        .unwrap_or(bytes);
-                    save_and_cache_project(final_bytes, project_id).await;
-                });
-            }
-        }
-    });
-
-    // Sync listener is set up below, after undo_manager is available
 
     // Broadcast window-closing when this window is about to close
     let close_label = window_label.clone();
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::beforeunload, move |_| {
-        sync::broadcast_window_closing(&close_label, is_primary.get_untracked());
+        sync::broadcast_window_closing(&close_label);
     });
 
     // Broadcast layout to other windows whenever tabs or active tab change
@@ -744,7 +501,7 @@ pub fn App(
         );
     });
 
-    // Primary: restore secondary windows from saved layouts on launch
+    // Restore secondary windows from saved layouts on launch
     let is_primary_for_restore = !is_secondary;
     create_effect(move |ran: Option<bool>| {
         if ran.is_some() || !initial_load_complete.get() {
@@ -754,7 +511,6 @@ pub fn App(
             return true;
         }
         let proj = current_project.get_untracked();
-        // Skip the first layout (that's this window); open the rest
         for layout in proj.window_layouts.iter().skip(1) {
             let wid = layout.window_id.to_string();
             let bounds = layout.bounds.clone();
@@ -784,25 +540,22 @@ pub fn App(
         let current_graph = graph.get();
         let day_filter = selected_day.get();
 
-        // Filter to only visible lines
         let visible_lines: Vec<_> = current_lines
             .into_iter()
             .filter(|line| line.visible)
             .collect();
 
-        // Generate journeys for the full day
         let new_journeys =
             TrainJourney::generate_journeys(&visible_lines, &current_graph, day_filter);
         set_train_journeys.set(new_journeys);
     });
 
-    // Compute conflicts at app level using worker
+    // Compute conflicts at app level
     let (conflicts, set_conflicts) = create_signal(Vec::new());
     let (is_calculating_conflicts, set_is_calculating_conflicts) = create_signal(false);
 
     let detector = store_value(ConflictDetector::new(set_conflicts, set_is_calculating_conflicts));
 
-    // Create debounced conflict detection to avoid excessive recomputation
     let debounced_detect_conflicts = store_value(leptos::leptos_dom::helpers::debounce(
         std::time::Duration::from_millis(300),
         move |(project_bytes, visible_lines, current_settings, day_filter, view_edge_filter): ConflictDetectArgs| {
@@ -836,7 +589,6 @@ pub fn App(
             .filter(|line| line.visible)
             .collect();
 
-        // Serialize project to bytes for conflict detection
         let proj = current_project.get_untracked();
         let project_bytes = match serialize_project_to_bytes(&proj) {
             Ok(b) => b,
@@ -853,7 +605,6 @@ pub fn App(
 
     let raw_conflicts: Signal<Vec<Conflict>> = conflicts.into();
 
-    // Callback for creating a new view
     let on_create_view = Callback::new(move |new_view: GraphView| {
         let view_id = new_view.id;
         let viewport = new_view.viewport_state.clone();
@@ -861,7 +612,6 @@ pub fn App(
             vs.insert(view_id, viewport);
         });
         set_views.update(|v| v.push(new_view));
-        // Add to this window's tabs and activate
         let tab_id = view_id.to_string();
         set_window_tabs.update(|tabs| {
             if !tabs.contains(&tab_id) {
@@ -871,7 +621,6 @@ pub fn App(
         set_active_tab.set(AppTab::GraphView(view_id));
     });
 
-    // Close a tab from this window (does NOT delete the view)
     let on_close_tab = move |tab_id: String| {
         let is_active = match active_tab.get() {
             AppTab::Infrastructure => tab_id == "infrastructure",
@@ -892,17 +641,13 @@ pub fn App(
         }
     };
 
-    // State for renaming views
     let (editing_view_id, set_editing_view_id) = create_signal(None::<Uuid>);
     let (edit_name_value, set_edit_name_value) = create_signal(String::new());
 
-    // State for drag-and-drop reordering (within same window)
     let (dragged_view_id, set_dragged_view_id) = create_signal(None::<Uuid>);
     let (drag_over_view_id, set_drag_over_view_id) = create_signal(None::<Uuid>);
-    // Tracks whether a drop was accepted during the current drag; false at dragend means tear-off
     let (drag_was_dropped, set_drag_was_dropped) = create_signal(false);
 
-    // Callback for renaming a view
     let on_rename_view = move |view_id: Uuid, new_name: String| {
         if !new_name.trim().is_empty() {
             set_views.update(|v| {
@@ -914,81 +659,37 @@ pub fn App(
         set_editing_view_id.set(None);
     };
 
-    // Callback for updating viewport state of a view
-    // Update separate viewport signal to avoid triggering view updates and re-rendering TimeGraph
     let on_viewport_change = move |view_id: Uuid, viewport_state: ViewportState| {
         set_viewport_states.update(|vs| {
             vs.insert(view_id, viewport_state);
         });
     };
 
-    // Callback for loading a project from project manager
     let on_load_project = Callback::new(move |project: Project| {
-        let project_id = project.metadata.id.clone();
-
-        // Handle views
-        let mut project_views = project.views.clone();
-        if project_views.is_empty() {
-            project_views.push(GraphView::default_main_line(&project.graph));
-        }
-
-        // Extract viewport states
-        let viewports: HashMap<Uuid, ViewportState> = project_views
-            .iter()
-            .map(|v| (v.id, v.viewport_state.clone()))
-            .collect();
-
-        // Batch all signal updates to prevent auto-save from triggering with partial state
-        leptos::batch(move || {
-            set_current_project.set(project.clone());
-            set_lines.set(project.lines.clone());
-            set_folders.set(project.folders.clone());
-            set_graph.set(project.graph.clone());
-            set_legend.set(project.legend.clone());
-            set_settings.set(project.settings.clone());
-            set_viewport_states.set(viewports);
-            set_infrastructure_viewport.set(project.infrastructure_viewport.clone());
-            set_views.set(project_views.clone());
-
-            // Set window tabs to all views + infrastructure
-            let mut tabs: Vec<String> = vec!["infrastructure".to_string()];
-            tabs.extend(project_views.iter().map(|v| v.id.to_string()));
-            set_window_tabs.set(tabs);
-
-            // Set active tab
-            if let Some(tab_id) = &project.active_tab_id {
-                restore_active_tab(tab_id, &project_views, set_active_tab);
-            } else if let Some(first_view) = project_views.first() {
-                set_active_tab.set(AppTab::GraphView(first_view.id));
+        let bytes = match project.serialize_to_bytes() {
+            Ok(b) => b,
+            Err(e) => {
+                leptos::logging::error!("Serialize failed: {e}");
+                return;
             }
-        });
-
-        // Set this as the current project
+        };
         spawn_local(async move {
-            if let Err(e) = crate::tauri_bridge::set_current_project_id(&project_id).await {
-                web_sys::console::error_1(&format!("Failed to set current project ID: {e}").into());
+            if let Err(e) = crate::tauri_bridge::replace_project(&bytes).await {
+                leptos::logging::error!("Replace project failed: {e}");
             }
         });
     });
 
-    // Provide user settings via context
     provide_context((user_settings, set_user_settings));
     provide_context((is_capturing_shortcut, set_is_capturing_shortcut));
 
-    // Setup tab switching keyboard shortcuts
     crate::components::tab_shortcuts::setup_tab_switching(
         is_capturing_shortcut,
         views,
         set_active_tab,
     );
 
-    // Helper to restore snapshot state
-    let restore_snapshot = move |snapshot: UndoSnapshot| {
-        set_graph.set(snapshot.graph);
-        set_lines.set(snapshot.lines);
-    };
-
-    // Listen for sync events from other windows (must be after undo_manager + restore_snapshot)
+    // Listen for sync events from other windows
     let sync_my_label = window_label.clone();
     spawn_local(async move {
         let my_label = sync_my_label;
@@ -996,47 +697,21 @@ pub fn App(
             if envelope.source_window == my_label {
                 return;
             }
-            let shared = SharedWriteSignals {
-                set_lines, set_folders, set_graph, set_legend, set_settings,
-                set_viewport_states, set_views, set_current_project,
-            };
             handle_sync_event(
-                envelope, set_is_applying_remote, shared,
+                envelope,
                 set_incoming_drag_tab, set_drag_was_dropped,
                 set_window_tabs, set_active_tab,
-                views, is_primary, set_is_primary, remote_layouts, field_gens,
-                // on_remote_undo
-                move || {
-                    if !undo_manager.get_value().can_undo() { return; }
-                    set_is_performing_undo_redo.set(true);
-                    let current = UndoSnapshot::new(graph.get_untracked(), lines.get_untracked());
-                    let snap = std::cell::RefCell::new(None);
-                    undo_manager.update_value(|m| { *snap.borrow_mut() = m.undo(current); });
-                    if let Some(s) = snap.into_inner() { restore_snapshot(s); }
-                    set_is_performing_undo_redo.set(false);
-                },
-                // on_remote_redo
-                move || {
-                    if !undo_manager.get_value().can_redo() { return; }
-                    set_is_performing_undo_redo.set(true);
-                    let current = UndoSnapshot::new(graph.get_untracked(), lines.get_untracked());
-                    let snap = std::cell::RefCell::new(None);
-                    undo_manager.update_value(|m| { *snap.borrow_mut() = m.redo(current); });
-                    if let Some(s) = snap.into_inner() { restore_snapshot(s); }
-                    set_is_performing_undo_redo.set(false);
-                },
+                views, remote_layouts,
             );
         }).await;
     });
 
-    // Setup undo/redo keyboard shortcuts
+    // Keyboard shortcuts
     leptos::leptos_dom::helpers::window_event_listener(leptos::ev::keydown, move |ev| {
-        // Don't handle shortcuts when capturing in the shortcuts editor
         if is_capturing_shortcut.get() {
             return;
         }
 
-        // Don't handle keyboard shortcuts when typing in input fields
         let Some(target) = ev.target() else { return };
         let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() else { return };
         let tag_name = element.tag_name().to_lowercase();
@@ -1044,7 +719,6 @@ pub fn App(
             return;
         }
 
-        // Ignore repeat events
         if ev.repeat() {
             return;
         }
@@ -1060,7 +734,6 @@ pub fn App(
             return;
         }
 
-        // Find matching action
         let current_shortcuts = user_settings.get().keyboard_shortcuts;
         let action = current_shortcuts.find_action(
             &ev.code(),
@@ -1073,77 +746,22 @@ pub fn App(
         match action {
             Some("undo") => {
                 ev.prevent_default();
-
-                if !is_primary.get_untracked() {
-                    let label = crate::tauri_bridge::get_current_window_label()
-                        .unwrap_or_default();
-                    sync::broadcast_undo_request(&label);
-                    return;
-                }
-
-                if !undo_manager.get_value().can_undo() {
-                    show_toast("Nothing to undo".to_string());
-                    return;
-                }
-
-                set_is_performing_undo_redo.set(true);
-
                 spawn_local(async move {
-                    let current_snapshot = UndoSnapshot::new(
-                        graph.get_untracked(),
-                        lines.get_untracked(),
-                    );
-
-                    let snapshot_opt = std::cell::RefCell::new(None);
-                    undo_manager.update_value(|manager| {
-                        *snapshot_opt.borrow_mut() = manager.undo(current_snapshot);
-                    });
-
-                    if let Some(snapshot) = snapshot_opt.into_inner() {
-                        restore_snapshot(snapshot);
-                        show_toast("Undoing last change".to_string());
-
-                        gloo_timers::future::TimeoutFuture::new(400).await;
+                    match crate::tauri_bridge::backend_undo().await {
+                        Ok(true) => show_toast("Undoing last change".to_string()),
+                        Ok(false) => show_toast("Nothing to undo".to_string()),
+                        Err(e) => leptos::logging::error!("Undo failed: {e}"),
                     }
-
-                    set_is_performing_undo_redo.set(false);
                 });
             }
             Some("redo") => {
                 ev.prevent_default();
-
-                if !is_primary.get_untracked() {
-                    let label = crate::tauri_bridge::get_current_window_label()
-                        .unwrap_or_default();
-                    sync::broadcast_redo_request(&label);
-                    return;
-                }
-
-                if !undo_manager.get_value().can_redo() {
-                    show_toast("Nothing to redo".to_string());
-                    return;
-                }
-
-                set_is_performing_undo_redo.set(true);
-
                 spawn_local(async move {
-                    let current_snapshot = UndoSnapshot::new(
-                        graph.get_untracked(),
-                        lines.get_untracked(),
-                    );
-
-                    let snapshot_opt = std::cell::RefCell::new(None);
-                    undo_manager.update_value(|manager| {
-                        *snapshot_opt.borrow_mut() = manager.redo(current_snapshot);
-                    });
-
-                    if let Some(snapshot) = snapshot_opt.into_inner() {
-                        restore_snapshot(snapshot);
-                        show_toast("Redoing last change".to_string());
-
-                        gloo_timers::future::TimeoutFuture::new(400).await;
+                    match crate::tauri_bridge::backend_redo().await {
+                        Ok(true) => show_toast("Redoing last change".to_string()),
+                        Ok(false) => show_toast("Nothing to redo".to_string()),
+                        Err(e) => leptos::logging::error!("Redo failed: {e}"),
                     }
-                    set_is_performing_undo_redo.set(false);
                 });
             }
             _ => {}
@@ -1158,7 +776,6 @@ pub fn App(
                 <div class="app-header-content">
                     <div class="app-tabs"
                         on:dragover=move |ev| {
-                            // Accept drops from cross-window tab drags
                             if incoming_drag_tab.get().is_some() {
                                 ev.prevent_default();
                             }
@@ -1172,7 +789,6 @@ pub fn App(
                                 let tabs = window_tabs.get();
                                 let insert_idx = tabs.len();
                                 sync::broadcast_tab_drop(&my_label, &tab_id, &my_label, insert_idx);
-                                // Add the tab to this window
                                 set_window_tabs.update(|tabs| {
                                     if !tabs.contains(&tab_id) {
                                         tabs.push(tab_id.clone());
@@ -1217,7 +833,6 @@ pub fn App(
                                 let tab_id_for_close = tab_id.clone();
                                 let tab_id_for_drag = tab_id.clone();
 
-                                // Check if this view exists
                                 if !current_views.iter().any(|v| v.id == view_id) {
                                     return view! { <div /> }.into_view();
                                 }
@@ -1325,7 +940,6 @@ pub fn App(
                                                                 .unwrap_or_default();
                                                             sync::broadcast_tab_drag_cancel(&my_label);
 
-                                                            // Delay tear-off check to allow cross-window TabDrop events to arrive
                                                             let tid = tab_id_for_tearoff.clone();
                                                             spawn_local(async move {
                                                                 gloo_timers::future::TimeoutFuture::new(200).await;
@@ -1367,11 +981,9 @@ pub fn App(
                             }
                         }).collect::<Vec<_>>()
                     }}
-                    // "+" button to open a view that isn't in this window's tabs
                     {move || {
                         let tabs = window_tabs.get();
                         let all_views = views.get();
-                        // Views not currently shown in this window
                         let available: Vec<_> = all_views.iter()
                             .filter(|v| !tabs.contains(&v.id.to_string()))
                             .map(|v| (v.id, v.name.clone()))
@@ -1392,7 +1004,6 @@ pub fn App(
                                             }
                                         });
                                         restore_active_tab(&val, &views.get_untracked(), set_active_tab);
-                                        // Reset select to placeholder
                                         if let Some(target) = ev.target() {
                                             use wasm_bindgen::JsCast;
                                             if let Ok(sel) = target.dyn_into::<web_sys::HtmlSelectElement>() {
@@ -1462,7 +1073,6 @@ pub fn App(
                         />
                     }.into_view(),
                     AppTab::GraphView(view_id) => {
-                        // Find the view with matching ID
                         if let Some(view) = views.get().iter().find(|v| v.id == view_id).cloned() {
                             view! {
                                 <TimeGraph
@@ -1496,7 +1106,6 @@ pub fn App(
                                 />
                             }.into_view()
                         } else {
-                            // View not found, switch back to Infrastructure
                             set_active_tab.set(AppTab::Infrastructure);
                             view! {
                                 <div>"View not found"</div>
@@ -1522,4 +1131,3 @@ pub fn App(
         </div>
     }
 }
-
