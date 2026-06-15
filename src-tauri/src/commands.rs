@@ -681,7 +681,18 @@ pub fn save_window_metadata(
         .lock()
         .map_err(|e| format!("Lock: {e}"))?;
 
-    project.window_layouts = layouts;
+    // Merge layouts by window_id (upsert, don't replace)
+    for incoming in layouts {
+        if let Some(existing) = project
+            .window_layouts
+            .iter_mut()
+            .find(|l| l.window_id == incoming.window_id)
+        {
+            *existing = incoming;
+        } else {
+            project.window_layouts.push(incoming);
+        }
+    }
 
     for view in &mut project.views {
         if let Some(vp) = viewports.get(&view.id.to_string()) {

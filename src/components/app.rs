@@ -143,8 +143,9 @@ async fn save_metadata_snapshot(
     window_id: String,
     tabs: Vec<String>,
     active_tab: Option<String>,
+    viewports: HashMap<Uuid, ViewportState>,
 ) {
-    let wid = uuid::Uuid::parse_str(&window_id).unwrap_or_else(|_| Uuid::new_v4());
+    let wid = Uuid::parse_str(&window_id).unwrap_or_else(|_| Uuid::new_v4());
     let layout = crate::models::WindowLayout {
         window_id: wid,
         tab_ids: tabs,
@@ -152,7 +153,11 @@ async fn save_metadata_snapshot(
         bounds: crate::tauri_bridge::get_window_bounds().await,
     };
     let layouts_json = serde_json::to_string(&vec![layout]).unwrap_or_default();
-    let viewports_json = String::from("{}");
+    let viewports_map: HashMap<String, &ViewportState> = viewports
+        .iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+    let viewports_json = serde_json::to_string(&viewports_map).unwrap_or_default();
     let _ = crate::tauri_bridge::save_window_metadata(&layouts_json, &viewports_json).await;
 }
 
@@ -185,7 +190,7 @@ pub fn App(
     let (is_loading, set_is_loading) = create_signal(true);
     let (initial_load_complete, set_initial_load_complete) = create_signal(false);
 
-    let (_, set_viewport_states) =
+    let (viewport_states, set_viewport_states) =
         create_signal(HashMap::<Uuid, ViewportState>::new());
     let (infrastructure_viewport, set_infrastructure_viewport) =
         create_signal(ViewportState::default());
@@ -352,7 +357,8 @@ pub fn App(
     intercept_field!(settings, "settings", window_label);
     intercept_field!(legend, "legend", window_label);
 
-    // Keep current_project in sync with individual field signals
+    // Keep current_project in sync with individual field signals.
+    // Skips during backend events (project-replaced already sets current_project).
     create_effect(move |_| {
         let current_graph = graph.get();
         let current_lines = lines.get();
@@ -361,7 +367,7 @@ pub fn App(
         let current_settings = settings.get();
         let current_legend = legend.get();
 
-        if !initial_load_complete.get_untracked() {
+        if !initial_load_complete.get_untracked() || is_from_backend.get_untracked() {
             return;
         }
 
@@ -548,8 +554,9 @@ pub fn App(
         let wid = layout_wid.get_value();
         let active_clone = active.clone();
         let tabs_clone = tabs.clone();
+        let vp = viewport_states.get_untracked();
         spawn_local(async move {
-            save_metadata_snapshot(wid, tabs_clone, active_clone).await;
+            save_metadata_snapshot(wid, tabs_clone, active_clone, vp).await;
         });
     });
 
