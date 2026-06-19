@@ -91,14 +91,25 @@ fn handle_sync_event(
         }
         SyncKind::TabDragEnd { tab_id, screen_x, screen_y } => {
             set_incoming_drag_tab.set(None);
+            if screen_x == 0 && screen_y == 0 {
+                return;
+            }
             leptos::spawn_local(async move {
                 let Some(bounds) = crate::tauri_bridge::get_window_bounds().await else {
                     return;
                 };
+                // screenX/screenY are CSS (logical) pixels; bounds are physical.
+                // Scale logical → physical for comparison.
+                let scale = web_sys::window()
+                    .map_or(1.0, |w| w.device_pixel_ratio());
+                #[allow(clippy::cast_possible_truncation)]
+                let phys_x = (f64::from(screen_x) * scale) as i32;
+                #[allow(clippy::cast_possible_truncation)]
+                let phys_y = (f64::from(screen_y) * scale) as i32;
                 #[allow(clippy::cast_possible_wrap)]
-                let in_x = screen_x >= bounds.x && screen_x <= bounds.x + bounds.width as i32;
+                let in_x = phys_x >= bounds.x && phys_x <= bounds.x + bounds.width as i32;
                 #[allow(clippy::cast_possible_wrap)]
-                let in_y = screen_y >= bounds.y && screen_y <= bounds.y + bounds.height as i32;
+                let in_y = phys_y >= bounds.y && phys_y <= bounds.y + bounds.height as i32;
                 if !in_x || !in_y {
                     return;
                 }

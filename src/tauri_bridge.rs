@@ -463,7 +463,7 @@ pub fn get_current_window_label() -> Option<String> {
     label.as_string()
 }
 
-/// Get the current window's position and size.
+/// Get the current window's position and size in physical pixels.
 pub async fn get_window_bounds() -> Option<crate::models::WindowBounds> {
     let window = web_sys::window()?;
     let tauri = js_sys::Reflect::get(&window, &"__TAURI__".into()).ok()?;
