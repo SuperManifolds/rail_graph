@@ -60,6 +60,7 @@ fn handle_sync_event(
     envelope: SyncEnvelope,
     set_incoming_drag_tab: WriteSignal<Option<(String, String)>>,
     set_drag_was_dropped: WriteSignal<bool>,
+    window_tabs: leptos::ReadSignal<Vec<String>>,
     set_window_tabs: WriteSignal<Vec<String>>,
     set_active_tab: WriteSignal<AppTab>,
     views: leptos::ReadSignal<Vec<GraphView>>,
@@ -87,6 +88,31 @@ fn handle_sync_event(
             }
             set_drag_was_dropped.set(true);
             set_incoming_drag_tab.set(None);
+        }
+        SyncKind::TabDragEnd { tab_id, screen_x, screen_y } => {
+            set_incoming_drag_tab.set(None);
+            leptos::spawn_local(async move {
+                let Some(bounds) = crate::tauri_bridge::get_window_bounds().await else {
+                    return;
+                };
+                #[allow(clippy::cast_possible_wrap)]
+                let in_x = screen_x >= bounds.x && screen_x <= bounds.x + bounds.width as i32;
+                #[allow(clippy::cast_possible_wrap)]
+                let in_y = screen_y >= bounds.y && screen_y <= bounds.y + bounds.height as i32;
+                if !in_x || !in_y {
+                    return;
+                }
+                let my_label = crate::tauri_bridge::get_current_window_label()
+                    .unwrap_or_default();
+                let insert_idx = window_tabs.get_untracked().len();
+                sync::broadcast_tab_drop(&my_label, &tab_id, &my_label, insert_idx);
+                set_window_tabs.update(|tabs| {
+                    if !tabs.contains(&tab_id) {
+                        tabs.push(tab_id.clone());
+                    }
+                });
+                restore_active_tab(&tab_id, &views.get_untracked(), set_active_tab);
+            });
         }
         SyncKind::WindowClosing => {
             remote_layouts.update_value(|layouts| {
@@ -761,7 +787,7 @@ pub fn App(
             handle_sync_event(
                 envelope,
                 set_incoming_drag_tab, set_drag_was_dropped,
-                set_window_tabs, set_active_tab,
+                window_tabs, set_window_tabs, set_active_tab,
                 views, remote_layouts,
             );
         }).await;
@@ -994,23 +1020,29 @@ pub fn App(
                                                             set_dragged_view_id.set(None);
                                                             set_drag_over_view_id.set(None);
                                                         }
-                                                        on:dragend=move |_| {
+                                                        on:dragend=move |ev| {
                                                             set_dragged_view_id.set(None);
                                                             set_drag_over_view_id.set(None);
                                                             let my_label = crate::tauri_bridge::get_current_window_label()
                                                                 .unwrap_or_default();
-                                                            sync::broadcast_tab_drag_cancel(&my_label);
 
-                                                            let tid = tab_id_for_tearoff.clone();
-                                                            spawn_local(async move {
-                                                                gloo_timers::future::TimeoutFuture::new(200).await;
-                                                                if !drag_was_dropped.get_untracked() && window_tabs.get_untracked().len() > 1 {
-                                                                    on_close_tab(tid.clone());
-                                                                    if let Err(e) = crate::tauri_bridge::create_main_window(Some(&tid), None, None).await {
-                                                                        leptos::logging::error!("Failed to create tear-off window: {e}");
+                                                            if drag_was_dropped.get_untracked() {
+                                                                sync::broadcast_tab_drag_cancel(&my_label);
+                                                            } else {
+                                                                let (sx, sy) = (ev.screen_x(), ev.screen_y());
+                                                                let tid = tab_id_for_tearoff.clone();
+                                                                sync::broadcast_tab_drag_end(&my_label, &tid, sx, sy);
+
+                                                                spawn_local(async move {
+                                                                    gloo_timers::future::TimeoutFuture::new(300).await;
+                                                                    if !drag_was_dropped.get_untracked() && window_tabs.get_untracked().len() > 1 {
+                                                                        on_close_tab(tid.clone());
+                                                                        if let Err(e) = crate::tauri_bridge::create_main_window(Some(&tid), None, None).await {
+                                                                            leptos::logging::error!("Failed to create tear-off window: {e}");
+                                                                        }
                                                                     }
-                                                                }
-                                                            });
+                                                                });
+                                                            }
                                                         }
                                                         on:dblclick=move |e| {
                                                             e.stop_propagation();

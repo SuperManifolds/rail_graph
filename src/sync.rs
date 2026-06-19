@@ -18,6 +18,12 @@ pub enum SyncKind {
     },
     /// Tab drag cancelled.
     TabDragCancel,
+    /// Tab drag ended at screen coordinates (for cross-window hit-testing).
+    TabDragEnd {
+        tab_id: String,
+        screen_x: i32,
+        screen_y: i32,
+    },
     /// Tab was dropped on a window's tab bar.
     TabDrop {
         tab_id: String,
@@ -86,6 +92,18 @@ pub fn broadcast_tab_drag_cancel(source_window: &str) {
     broadcast(&SyncEnvelope {
         source_window: source_window.to_string(),
         kind: SyncKind::TabDragCancel,
+    });
+}
+
+/// Broadcast tab drag end with screen coordinates for cross-window hit-testing.
+pub fn broadcast_tab_drag_end(source_window: &str, tab_id: &str, screen_x: i32, screen_y: i32) {
+    broadcast(&SyncEnvelope {
+        source_window: source_window.to_string(),
+        kind: SyncKind::TabDragEnd {
+            tab_id: tab_id.to_string(),
+            screen_x,
+            screen_y,
+        },
     });
 }
 
