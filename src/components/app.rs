@@ -1044,11 +1044,20 @@ pub fn App(
                                                                 let tid = tab_id_for_tearoff.clone();
                                                                 sync::broadcast_tab_drag_end(&my_label, &tid, sx, sy);
 
+                                                                let scale = web_sys::window()
+                                                                    .map_or(1.0, |w| w.device_pixel_ratio());
+                                                                #[allow(clippy::cast_possible_truncation)]
+                                                                let drop_bounds = crate::models::WindowBounds {
+                                                                    x: (f64::from(sx) * scale) as i32,
+                                                                    y: (f64::from(sy) * scale) as i32,
+                                                                    width: 1000,
+                                                                    height: 700,
+                                                                };
                                                                 spawn_local(async move {
                                                                     gloo_timers::future::TimeoutFuture::new(300).await;
                                                                     if !drag_was_dropped.get_untracked() && window_tabs.get_untracked().len() > 1 {
                                                                         on_close_tab(tid.clone());
-                                                                        if let Err(e) = crate::tauri_bridge::create_main_window(Some(&tid), None, None).await {
+                                                                        if let Err(e) = crate::tauri_bridge::create_main_window(Some(&tid), None, Some(&drop_bounds)).await {
                                                                             leptos::logging::error!("Failed to create tear-off window: {e}");
                                                                         }
                                                                     }
