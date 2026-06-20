@@ -1044,12 +1044,9 @@ pub fn App(
                                                                 let tid = tab_id_for_tearoff.clone();
                                                                 sync::broadcast_tab_drag_end(&my_label, &tid, sx, sy);
 
-                                                                let scale = web_sys::window()
-                                                                    .map_or(1.0, |w| w.device_pixel_ratio());
-                                                                #[allow(clippy::cast_possible_truncation)]
                                                                 let drop_bounds = crate::models::WindowBounds {
-                                                                    x: (f64::from(sx) * scale) as i32,
-                                                                    y: (f64::from(sy) * scale) as i32,
+                                                                    x: sx,
+                                                                    y: sy,
                                                                     width: 1000,
                                                                     height: 700,
                                                                 };
