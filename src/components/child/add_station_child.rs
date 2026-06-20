@@ -115,13 +115,13 @@ pub fn AddStationChild(init: AddStationInit, session: String) -> impl IntoView {
 
     let handle_cancel = move |_| {
         leptos::spawn_local(async move {
-            let _ = crate::tauri_bridge::close_native_window("child-add-station").await;
+            crate::tauri_bridge::close_current_window().await;
         });
     };
 
     let on_close_for_quick = Rc::new(move || {
         leptos::spawn_local(async move {
-            let _ = crate::tauri_bridge::close_native_window("child-add-station").await;
+            crate::tauri_bridge::close_current_window().await;
         });
     });
 

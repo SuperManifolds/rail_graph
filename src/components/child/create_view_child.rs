@@ -73,7 +73,7 @@ pub fn CreateViewChild(init: CreateViewInit, session: String) -> impl IntoView {
 
     let on_close = Rc::new(move || {
         leptos::spawn_local(async move {
-            let _ = crate::tauri_bridge::close_native_window("child-create-view").await;
+            crate::tauri_bridge::close_current_window().await;
         });
     });
 

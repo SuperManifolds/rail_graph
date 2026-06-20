@@ -904,12 +904,13 @@ pub fn App(
                             let tab_id = tab_id.clone();
                             if tab_id == "infrastructure" {
                                 view! {
-                                    <div class="tab-button-container">
+                                    <div class="tab-button-container tab-pinned">
                                         <button
-                                            class=move || if active_tab.get() == AppTab::Infrastructure { "tab-button active" } else { "tab-button" }
+                                            class=move || if active_tab.get() == AppTab::Infrastructure { "tab-button tab-button-pinned active" } else { "tab-button tab-button-pinned" }
                                             on:click=move |_| set_active_tab.set(AppTab::Infrastructure)
+                                            title="Infrastructure"
                                         >
-                                            "Infrastructure"
+                                            <i class="fa-solid fa-diagram-project"></i>
                                         </button>
                                         <button
                                             class="tab-close-button"

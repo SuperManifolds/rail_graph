@@ -149,7 +149,7 @@ pub fn EditStationChild(init: EditStationInit, session: String) -> impl IntoView
 
     let handle_cancel = move |_| {
         leptos::spawn_local(async move {
-            let _ = crate::tauri_bridge::close_native_window("child-edit-station").await;
+            crate::tauri_bridge::close_current_window().await;
         });
     };
 

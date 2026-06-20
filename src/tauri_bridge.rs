@@ -497,6 +497,18 @@ pub async fn get_window_bounds() -> Option<crate::models::WindowBounds> {
     })
 }
 
+/// Close the current window.
+pub async fn close_current_window() {
+    let Ok(ww_module) = get_tauri_module("webviewWindow") else { return };
+    let Ok(get_current) = js_sys::Reflect::get(&ww_module, &"getCurrentWebviewWindow".into()) else { return };
+    let Ok(get_current): Result<js_sys::Function, _> = get_current.dyn_into() else { return };
+    let Ok(current) = get_current.call0(&JsValue::NULL) else { return };
+    let Ok(close_fn) = js_sys::Reflect::get(&current, &"close".into()) else { return };
+    let Ok(close_fn): Result<js_sys::Function, _> = close_fn.dyn_into() else { return };
+    let Ok(promise) = close_fn.call0(&current) else { return };
+    let _ = JsFuture::from(js_sys::Promise::from(promise)).await;
+}
+
 /// Create a new main window with the given initial tab.
 /// If `saved_window_id` is provided, the window will look up its layout from saved state.
 ///

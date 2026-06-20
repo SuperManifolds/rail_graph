@@ -21,7 +21,7 @@ pub fn CsvMapperChild(init: ImporterCsvInit, session: String) -> impl IntoView {
 
     let handle_cancel = move |()| {
         leptos::spawn_local(async move {
-            let _ = crate::tauri_bridge::close_native_window("child-importer-csv").await;
+            crate::tauri_bridge::close_current_window().await;
         });
     };
 

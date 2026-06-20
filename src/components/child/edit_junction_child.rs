@@ -60,7 +60,7 @@ pub fn EditJunctionChild(init: EditJunctionInit, session: String) -> impl IntoVi
 
     let handle_cancel = move |_| {
         leptos::spawn_local(async move {
-            let _ = crate::tauri_bridge::close_native_window("child-edit-junction").await;
+            crate::tauri_bridge::close_current_window().await;
         });
     };
 

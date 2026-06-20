@@ -133,6 +133,17 @@ body {
     }
 }
 
+.tab-pinned {
+    .tab-close-button {
+        display: none;
+    }
+}
+
+.tab-button-pinned {
+    padding: var(--spacing-xs) var(--spacing-md);
+    font-size: var(--font-size-sm);
+}
+
 .tab-add-select {
     background-color: transparent;
     border: none;
