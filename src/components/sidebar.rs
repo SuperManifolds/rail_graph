@@ -143,10 +143,6 @@ pub fn Sidebar(
             on:mouseleave=handle_sidebar_mouseleave
         >
             <div class="sidebar-header">
-                <h2>
-                    <img src="/static/railgraph.svg" alt="RailGraph" class="logo-icon" />
-                    "railgraph.app"
-                </h2>
                 {header_children.as_ref().map(|f| f())}
             </div>
             <LineControls
