@@ -989,7 +989,7 @@ pub fn App(
                                                             set_dragged_view_id.set(Some(view_id));
                                                             set_drag_was_dropped.set(false);
                                                             if let Some(dt) = ev.data_transfer() {
-                                                                let _ = dt.set_data("text/plain", &view_id.to_string());
+                                                                let _ = dt.set_data("application/x-railgraph-tab", &view_id.to_string());
                                                                 dt.set_effect_allowed("move");
                                                             }
                                                             let my_label = crate::tauri_bridge::get_current_window_label()
