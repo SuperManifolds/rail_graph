@@ -560,6 +560,8 @@ pub async fn create_native_window(
         .map_err(|_| "Failed to set resizable")?;
     js_sys::Reflect::set(&options, &"decorations".into(), &JsValue::TRUE)
         .map_err(|_| "Failed to set decorations")?;
+    js_sys::Reflect::set(&options, &"shadow".into(), &JsValue::TRUE)
+        .map_err(|_| "Failed to set shadow")?;
     if let Some((x, y)) = position {
         js_sys::Reflect::set(&options, &"x".into(), &JsValue::from_f64(f64::from(x)))
             .map_err(|_| "Failed to set x")?;
