@@ -16,6 +16,19 @@ body {
     overflow: hidden;
 }
 
+.child-window-root {
+    height: 100vh;
+    background-color: var(--color-bg-primary);
+    overflow: hidden;
+}
+
+.child-window-content {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
 .app {
     min-height: 100vh;
     display: flex;
