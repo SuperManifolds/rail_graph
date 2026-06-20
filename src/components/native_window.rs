@@ -46,7 +46,7 @@ async fn open_native_window(
 
     // Create the native window — init data is already in localStorage
     let url = format!("/?window={window_type_str}&session={session}");
-    if let Err(e) = tauri_bridge::create_native_window(&label, &url, &title, size).await {
+    if let Err(e) = tauri_bridge::create_native_window(&label, &url, &title, size, None).await {
         leptos::logging::error!("Failed to create window: {e}");
         on_close.with_value(|f| f());
         return;

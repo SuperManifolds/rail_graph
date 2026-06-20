@@ -517,50 +517,9 @@ pub async fn create_main_window(
     }
     let size = bounds
         .map_or((1400, 900), |b| (b.width.max(400), b.height.max(300)));
-    create_native_window(&label, &url, "RailGraph", size).await?;
-
-    if let Some(b) = bounds {
-        if let Err(e) = set_window_position(&label, b.x, b.y).await {
-            leptos::logging::warn!("Failed to restore window position: {e}");
-        }
-    }
+    let position = bounds.map(|b| (b.x, b.y));
+    create_native_window(&label, &url, "RailGraph", size, position).await?;
     Ok(label)
-}
-
-/// Set a window's position.
-async fn set_window_position(label: &str, x: i32, y: i32) -> Result<(), String> {
-    let ww_module = get_tauri_module("webviewWindow")?;
-    let ww_class = js_sys::Reflect::get(&ww_module, &"WebviewWindow".into())
-        .map_err(|_| "WebviewWindow class not found")?;
-    let get_by_label: js_sys::Function = js_sys::Reflect::get(&ww_class, &"getByLabel".into())
-        .map_err(|_| "getByLabel not found")?
-        .dyn_into().map_err(|_| "not a function")?;
-    let instance = get_by_label.call1(&ww_class, &label.into())
-        .map_err(|e| format!("getByLabel failed: {e:?}"))?;
-    if instance.is_null() || instance.is_undefined() {
-        return Err("Window not found".into());
-    }
-
-    let set_pos_fn: js_sys::Function = js_sys::Reflect::get(&instance, &"setPosition".into())
-        .map_err(|_| "setPosition not found")?
-        .dyn_into().map_err(|_| "not a function")?;
-
-    let pos_module = get_tauri_module("dpi")?;
-    let physical_pos_class: js_sys::Function = js_sys::Reflect::get(&pos_module, &"PhysicalPosition".into())
-        .map_err(|_| "PhysicalPosition not found")?
-        .dyn_into().map_err(|_| "not a constructor")?;
-
-    let args = js_sys::Array::new();
-    args.push(&JsValue::from_f64(f64::from(x)));
-    args.push(&JsValue::from_f64(f64::from(y)));
-    let pos = js_sys::Reflect::construct(&physical_pos_class, &args)
-        .map_err(|e| format!("Failed to construct PhysicalPosition: {e:?}"))?;
-
-    let promise = set_pos_fn.call1(&instance, &pos)
-        .map_err(|e| format!("setPosition failed: {e:?}"))?;
-    JsFuture::from(js_sys::Promise::from(promise)).await
-        .map_err(|e| format!("setPosition rejected: {e:?}"))?;
-    Ok(())
 }
 
 // --- Native Window Management ---
@@ -582,6 +541,7 @@ pub async fn create_native_window(
     url: &str,
     title: &str,
     size: (u32, u32),
+    position: Option<(i32, i32)>,
 ) -> Result<(), String> {
     let ww_module = get_tauri_module("webviewWindow")?;
     let ww_class = js_sys::Reflect::get(&ww_module, &"WebviewWindow".into())
@@ -598,8 +558,15 @@ pub async fn create_native_window(
         .map_err(|_| "Failed to set height")?;
     js_sys::Reflect::set(&options, &"resizable".into(), &JsValue::TRUE)
         .map_err(|_| "Failed to set resizable")?;
-    js_sys::Reflect::set(&options, &"center".into(), &JsValue::TRUE)
-        .map_err(|_| "Failed to set center")?;
+    if let Some((x, y)) = position {
+        js_sys::Reflect::set(&options, &"x".into(), &JsValue::from_f64(f64::from(x)))
+            .map_err(|_| "Failed to set x")?;
+        js_sys::Reflect::set(&options, &"y".into(), &JsValue::from_f64(f64::from(y)))
+            .map_err(|_| "Failed to set y")?;
+    } else {
+        js_sys::Reflect::set(&options, &"center".into(), &JsValue::TRUE)
+            .map_err(|_| "Failed to set center")?;
+    }
 
     // new WebviewWindow(label, options)
     let constructor: js_sys::Function = ww_class.dyn_into()
