@@ -100,15 +100,15 @@ body {
     background-color: transparent;
     border: none;
     color: var(--color-text-muted);
-    padding: var(--spacing-md) var(--spacing-2xl);
-    font-size: var(--font-size-md);
+    padding: var(--spacing-xs) var(--spacing-lg);
+    font-size: var(--font-size-sm);
     cursor: pointer;
     border-bottom: 2px solid transparent;
     transition: all var(--transition-base) var(--transition-ease);
     white-space: nowrap;
 
     .tab-button-container & {
-        padding-right: calc(var(--spacing-lg) + 24px);
+        padding-right: calc(var(--spacing-md) + 18px);
     }
 
     &:hover {
@@ -129,7 +129,7 @@ body {
 
     &.drag-over {
         border-left: 3px solid var(--color-accent);
-        padding-left: calc(var(--spacing-2xl) - 3px);
+        padding-left: calc(var(--spacing-lg) - 3px);
     }
 }
 
@@ -138,8 +138,8 @@ body {
     border: none;
     color: var(--color-text-muted);
     cursor: pointer;
-    padding: var(--spacing-sm) var(--spacing-md);
-    font-size: var(--font-size-md);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: var(--font-size-sm);
     flex-shrink: 0;
     align-self: center;
 
@@ -162,15 +162,15 @@ body {
     border: none;
     color: var(--color-text-muted);
     cursor: pointer;
-    padding: var(--spacing-xs);
+    padding: 2px;
     opacity: 0.6;
     transition: all var(--transition-base) var(--transition-ease);
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: var(--radius-sm);
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     z-index: 1;
 
     &:hover {
