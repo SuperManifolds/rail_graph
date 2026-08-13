@@ -37,7 +37,9 @@ jobs:
           # It is never deleted, so it stays visible and downloadable while a new
           # build runs; each platform's assets are replaced as its build finishes,
           # and the tag is moved to this commit at the end (publish-prerelease).
-          id=$(gh api "repos/${{ github.repository }}/releases/tags/nightly" --jq '.id' 2>/dev/null || true)
+          # gh release view (not gh api): on a missing release, gh api prints the
+          # 404 JSON body to stdout, which would be captured as the id.
+          id=$(gh release view nightly --repo "${{ github.repository }}" --json databaseId --jq '.databaseId' 2>/dev/null || true)
           if [ -z "$id" ]; then
             id=$(gh api "repos/${{ github.repository }}/releases" \
               --method POST \
