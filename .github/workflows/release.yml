@@ -49,7 +49,10 @@ jobs:
             args: ""
             rust_target: ""
           - platform: windows
-            runner: windows-latest
+            # Pinned off windows-latest: its VS18 image breaks link.exe under
+            # the vcvars environment set up by msvc-dev-cmd (needed for the
+            # HiGHS cmake build). Same pin as Turnout's workflows.
+            runner: windows-2022
             args: ""
             rust_target: ""
 
