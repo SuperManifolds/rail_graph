@@ -88,6 +88,12 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev xdg-utils
 
+      # highs-sys (the HiGHS solver in railgraph-core) builds C++ via cmake,
+      # which needs the MSVC environment (vcvars) to pick a generator.
+      - name: Set up MSVC environment (Windows)
+        if: matrix.platform == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Install Trunk
         shell: bash
         run: which trunk || cargo install trunk --locked
