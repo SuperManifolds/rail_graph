@@ -97,8 +97,10 @@ jobs:
         if: matrix.platform == 'windows'
         uses: ilammy/msvc-dev-cmd@v1
 
+      # No shell override: on Windows this must run under pwsh, not Git Bash —
+      # bash puts /usr/bin first, where coreutils' `link` shadows MSVC's
+      # link.exe once the vcvars environment is active.
       - name: Install Trunk
-        shell: bash
         run: which trunk || cargo install trunk --locked
 
       - name: Build and upload
