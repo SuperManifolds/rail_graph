@@ -1,0 +1,7 @@
+# Pin the exact toolchain so local builds and CI run the same rustc/clippy.
+# Without this, a newer clippy on either side produces warnings the other
+# doesn't see, and CI's -D warnings gate fails unpredictably.
+[toolchain]
+channel = "1.97.1"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]

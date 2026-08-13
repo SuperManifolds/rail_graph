@@ -1,0 +1,3 @@
+# Force LF so hashFiles('**/Cargo.lock') produces identical cache keys
+# on Windows and Unix CI runners.
+Cargo.lock text eol=lf
