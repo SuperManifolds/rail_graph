@@ -1,0 +1,188 @@
+name: Prerelease
+
+# Builds unsigned desktop test binaries on every push to 2.0 and publishes them
+# to a rolling "nightly" pre-release, so the latest build can be downloaded
+# without cutting a version tag. Can also be run manually via workflow_dispatch.
+
+on:
+  push:
+    branches: [ "2.0" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# A newer commit supersedes an in-flight nightly build.
+concurrency:
+  group: prerelease
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-prerelease:
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.create.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure rolling nightly release exists
+        id: create
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Reuse the existing published nightly if present, otherwise create it.
+          # It is never deleted, so it stays visible and downloadable while a new
+          # build runs; each platform's assets are replaced as its build finishes,
+          # and the tag is moved to this commit at the end (publish-prerelease).
+          id=$(gh api "repos/${{ github.repository }}/releases/tags/nightly" --jq '.id' 2>/dev/null || true)
+          if [ -z "$id" ]; then
+            id=$(gh api "repos/${{ github.repository }}/releases" \
+              --method POST \
+              -f tag_name="nightly" \
+              -f target_commitish="${{ github.sha }}" \
+              -f name="Nightly (2.0)" \
+              -f body="Automated, unsigned pre-release test build from the latest commit on 2.0. macOS: \`xattr -dr com.apple.quarantine\` the app after downloading; Windows: SmartScreen may warn on the unsigned installer." \
+              -F draft=false \
+              -F prerelease=true \
+              --jq '.id')
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: create-prerelease
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-aarch64
+            runner: macos-latest
+          - platform: linux-x86
+            runner: ubuntu-22.04
+          - platform: windows
+            # Pinned off windows-latest: its VS18 image breaks link.exe under
+            # the vcvars environment from msvc-dev-cmd. See release.yml.
+            runner: windows-2022
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev xdg-utils
+
+      # highs-sys (the HiGHS solver in railgraph-core) builds C++ via cmake,
+      # which needs the MSVC environment (vcvars) to pick a generator.
+      - name: Set up MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # Keyed on matrix.platform (not runner.os) so it shares the cache with
+      # release.yml's host-native platforms (windows, linux-x86), which build
+      # the same target/release. release.yml's --target arches build into
+      # target/<triple>/ and keep their own lanes.
+      - name: Cache cargo + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+            target
+          key: ${{ matrix.platform }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ matrix.platform }}-cargo-release-
+
+      # No shell override: on Windows this must run under pwsh, not Git Bash —
+      # bash puts /usr/bin first, where coreutils' `link` shadows MSVC's
+      # link.exe once the vcvars environment is active.
+      - name: Install Trunk
+        run: which trunk || cargo install trunk --locked
+
+      - name: Build and upload
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Crash reporting: baked into the binary at build time via option_env!,
+          # so nightly testers' crashes report too (tagged "nightly", separate
+          # from shipped-version stats). Unset secret → empty → compiles out.
+          RAILGRAPH_SENTRY_DSN: ${{ secrets.RAILGRAPH_SENTRY_DSN }}
+          RAILGRAPH_SENTRY_ENVIRONMENT: nightly
+        with:
+          releaseId: ${{ needs.create-prerelease.outputs.release_id }}
+          assetNamePattern: "[name]_[arch][_setup][ext]"
+          # Nightlies are unsigned test builds, so skip updater artifacts — their
+          # signature needs TAURI_SIGNING_PRIVATE_KEY (only the tagged release
+          # workflow uses it), and the auto-updater tracks tagged releases, not
+          # this rolling pre-release.
+          args: '--config {"bundle":{"createUpdaterArtifacts":false}}'
+
+      # Upload native debug symbols so nightly crash minidumps symbolicate too
+      # (matched by debug-id, independent of the tagged release). All three
+      # lanes build host-native, so the debug files live in target/release.
+      # Token-gated and best-effort: never fails the build.
+      - name: Upload debug symbols to Sentry
+        continue-on-error: true
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: sorlie
+          SENTRY_PROJECT: railgraph
+          SENTRY_URL: https://de.sentry.io
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "SENTRY_AUTH_TOKEN not set — skipping debug symbol upload"
+            exit 0
+          fi
+          npm install -g @sentry/cli
+          sentry-cli debug-files upload --include-sources target/release
+
+      # Nightly counterpart of the release frontend upload: JS source context +
+      # the wasm as a debug file (DWARF line tables + injected build_id), so
+      # frontend frames resolve to Rust function + file:line.
+      - name: Upload frontend JS + wasm debug info to Sentry
+        continue-on-error: true
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: sorlie
+          SENTRY_PROJECT: railgraph
+          SENTRY_URL: https://de.sentry.io
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "SENTRY_AUTH_TOKEN not set — skipping frontend upload"
+            exit 0
+          fi
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          REL="railgraph@${VERSION}"
+          sentry-cli sourcemaps upload --release "$REL" dist
+          sentry-cli debug-files upload --include-sources dist
+
+  publish-prerelease:
+    needs: [create-prerelease, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Point the nightly at this commit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # All platform assets are uploaded. Move the rolling nightly tag to
+          # this commit and refresh the notes. The release was already
+          # published, so this never toggles visibility — a cancelled run just
+          # leaves the tag on the prior commit with the release still live.
+          gh api "repos/${{ github.repository }}/git/refs/tags/nightly" \
+            --method PATCH -f sha="${{ github.sha }}" -F force=true >/dev/null
+          gh api "repos/${{ github.repository }}/releases/${{ needs.create-prerelease.outputs.release_id }}" \
+            --method PATCH \
+            -f body="Automated, unsigned pre-release test build from 2.0 (\`${{ github.sha }}\`). macOS: \`xattr -dr com.apple.quarantine\` the app after downloading; Windows: SmartScreen may warn on the unsigned installer." \
+            -F draft=false >/dev/null
