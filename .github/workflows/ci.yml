@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "2.0" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "2.0" ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -75,40 +75,45 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets -- -D warnings
 
-  docker:
-    name: Docker Build
+  tauri:
+    name: Tauri Backend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          context: .
-          push: false
-          load: true
-          tags: rail-graph:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          components: clippy
 
-      - name: Test Docker container
+      - name: Install Tauri system dependencies
         run: |
-          docker run -d -p 8080:8080 --name rail-graph-test rail-graph:test
-          echo "Waiting for static server to start..."
-          for i in {1..10}; do
-            if curl -f http://localhost:8080 2>/dev/null; then
-              echo "Server is ready!"
-              break
-            fi
-            if [ $i -eq 10 ]; then
-              echo "Server failed to start after 20 seconds"
-              docker logs rail-graph-test
-              exit 1
-            fi
-            echo "Attempt $i/10 - waiting 2 seconds..."
-            sleep 2
-          done
-          docker stop rail-graph-test
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-tauri-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-tauri-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-tauri-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run cargo check
+        working-directory: src-tauri
+        run: cargo check --all-targets
+
+      - name: Run clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
