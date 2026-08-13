@@ -14,6 +14,9 @@
     "core:window:allow-center",
     "core:event:default",
     "dialog:default",
-    "opener:default"
+    "opener:default",
+    "store:default",
+    "updater:default",
+    "sentry:default"
   ]
 }

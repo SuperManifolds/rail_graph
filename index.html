@@ -12,8 +12,19 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Vendored @sentry/wasm must load before sentry_bridge.js (which uses
+         window.__SentryWasm) and before the wasm module instantiates (it patches
+         WebAssembly so the module registers as a debug image). Both are no-ops
+         outside the packaged app. -->
+    <script src="/static/sentry_wasm.min.js"></script>
+    <script src="/static/sentry_bridge.js"></script>
     <link data-trunk rel="scss" href="style/main.scss">
-    <link data-trunk rel="rust" data-target-name="nimby_graph" data-wasm-opt="z">
+    <!-- data-keep-debug keeps the DWARF line tables (profile.release =
+         line-tables-only) + the name section so @sentry/wasm and the uploaded
+         debug file can symbolicate wasm frames to Rust file:line. wasm-opt is
+         off (data-wasm-opt="0"): `wasm-opt -Oz` SIGABRTs on this DWARF, and it
+         would shift code offsets away from the uploaded file. -->
+    <link data-trunk rel="rust" data-target-name="nimby_graph" data-wasm-opt="0" data-keep-debug>
     <link data-trunk rel="copy-dir" href="static">
   </head>
   <body>

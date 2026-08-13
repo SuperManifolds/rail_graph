@@ -3,26 +3,40 @@ name = "railgraph-backend"
 version = "2.0.0"
 edition = "2021"
 
-[lints.clippy]
-complexity = "warn"
-perf = "warn"
-style = "warn"
-suspicious = "warn"
-pedantic = "warn"
-unwrap_used = { level = "warn", priority = 1 }
-implicit_hasher = { level = "allow", priority = 1 }
+[lints]
+workspace = true
 
 [dependencies]
 railgraph-core = { path = "../core", features = ["solver"] }
-tauri = { version = "2", features = ["devtools"] }
+# Devtools are automatic in debug builds; no feature needed. Adding the
+# "devtools" feature would force them into release builds too.
+tauri = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-store = "2"
+tauri-plugin-updater = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 log = "0.4"
-env_logger = "0.11"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# rustls-only so no OpenSSL system dependency; matches a rustls-only app.
+sentry = { version = "0.42", default-features = false, features = [
+    "backtrace",
+    "contexts",
+    "debug-images",
+    "panic",
+    "reqwest",
+    "rustls",
+    "release-health",
+    "tracing",
+    "logs",
+] }
+tauri-plugin-sentry = "0.5"
+dirs-next = "2"
 rmp-serde = "1.3"
 base64 = "0.22"
 petgraph = { version = "0.6", features = ["serde-1"] }

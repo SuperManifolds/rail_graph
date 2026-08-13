@@ -544,6 +544,57 @@ fn get_tauri_module(module: &str) -> Result<JsValue, String> {
         .map_err(|e| format!("Tauri module '{module}' not available: {e:?}"))
 }
 
+// --- Settings Store (tauri-plugin-store) ---
+
+/// Name of the store file shared with the backend (`updates.rs`, `crash_reporting.rs`).
+const SETTINGS_STORE: &str = "settings.json";
+
+/// Call a method on a JS object, awaiting the returned promise.
+async fn call_js_method(target: &JsValue, method: &str, args: &[JsValue]) -> Result<JsValue, String> {
+    let func: js_sys::Function = js_sys::Reflect::get(target, &method.into())
+        .map_err(|_| format!("{method} not found"))?
+        .dyn_into()
+        .map_err(|_| format!("{method} is not a function"))?;
+    let args_array = js_sys::Array::new();
+    for arg in args {
+        args_array.push(arg);
+    }
+    let promise = js_sys::Reflect::apply(&func, target, &args_array)
+        .map_err(|e| format!("{method} failed: {e:?}"))?;
+    JsFuture::from(js_sys::Promise::from(promise))
+        .await
+        .map_err(|e| format!("{method} rejected: {e:?}"))
+}
+
+async fn load_settings_store() -> Result<JsValue, String> {
+    let store_module = get_tauri_module("store")?;
+    call_js_method(&store_module, "load", &[SETTINGS_STORE.into()]).await
+}
+
+/// Read a boolean from the shared settings store, falling back to `default`
+/// when the store or key is unavailable.
+pub async fn settings_store_get_bool(key: &str, default: bool) -> bool {
+    let Ok(store) = load_settings_store().await else {
+        return default;
+    };
+    call_js_method(&store, "get", &[key.into()])
+        .await
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(default)
+}
+
+/// Write a boolean to the shared settings store and persist it to disk.
+///
+/// # Errors
+/// Returns an error if the store cannot be loaded or saved.
+pub async fn settings_store_set_bool(key: &str, value: bool) -> Result<(), String> {
+    let store = load_settings_store().await?;
+    call_js_method(&store, "set", &[key.into(), JsValue::from_bool(value)]).await?;
+    call_js_method(&store, "save", &[]).await?;
+    Ok(())
+}
+
 /// Create a new native Tauri window.
 ///
 /// # Errors

@@ -1,8 +1,26 @@
-use nimby_graph::App;
 use nimby_graph::components::child_window_router::ChildWindowRouter;
+use nimby_graph::App;
+use wasm_bindgen::prelude::wasm_bindgen;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_name = __railgraph_report_panic)]
+    fn report_panic(msg: &str);
+}
+
+/// Installs a panic hook that keeps the standard console output and
+/// additionally forwards the panic (message plus `file:line` location) to
+/// Sentry. The Sentry forwarding is a no-op when the plugin global is absent
+/// (see `static/sentry_bridge.js`).
+fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        console_error_panic_hook::hook(info);
+        report_panic(&info.to_string());
+    }));
+}
 
 fn main() {
-    console_error_panic_hook::set_once();
+    install_panic_hook();
 
     let window = web_sys::window().expect("no global window");
     let search = window.location().search().unwrap_or_default();

@@ -5,7 +5,7 @@
   "identifier": "com.railgraph.app",
   "build": {
     "beforeDevCommand": { "script": "trunk serve --port 1420", "cwd": ".." },
-    "beforeBuildCommand": { "script": "trunk build --release", "cwd": ".." },
+    "beforeBuildCommand": { "script": "trunk build --release && node scripts/inject-wasm-build-id.mjs dist", "cwd": ".." },
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -28,6 +28,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,5 +36,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/SuperManifolds/rail_graph/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlFN0Q2MjI2RDBGNjgwOApSV1FJYUE5dEl0Ym5DVWQ5S3UzN1JYVTczSXlsTlVEKzFUaElVemJpODh1S1B3VEN5bjV3ZC96ZAo="
+    }
   }
 }

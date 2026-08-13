@@ -6,7 +6,79 @@ use crate::window_protocol::{SettingsInit, SettingsResult};
 use chrono::Duration;
 use leptos::{
     component, create_rw_signal, create_signal, view, IntoView, Signal, SignalGet, SignalSet,
+    WriteSignal,
 };
+
+/// Store key gating the startup update check (read by the backend).
+const CHECK_FOR_UPDATES_KEY: &str = "check_for_updates";
+/// Store key gating crash reporting (read by the backend before Tauri starts).
+const CRASH_REPORTING_KEY: &str = "crash_reporting";
+
+/// Persist an application toggle to the shared settings store.
+fn save_app_toggle(key: &'static str, setter: WriteSignal<bool>, checked: bool) {
+    setter.set(checked);
+    leptos::spawn_local(async move {
+        if let Err(e) = crate::tauri_bridge::settings_store_set_bool(key, checked).await {
+            leptos::logging::error!("failed to save {key}: {e}");
+        }
+    });
+}
+
+/// Application-level settings backed by the Tauri store (not project data).
+#[component]
+fn ApplicationSettings() -> impl IntoView {
+    let (check_updates, set_check_updates) = create_signal(true);
+    let (crash_reports, set_crash_reports) = create_signal(true);
+
+    leptos::spawn_local(async move {
+        set_check_updates
+            .set(crate::tauri_bridge::settings_store_get_bool(CHECK_FOR_UPDATES_KEY, true).await);
+        set_crash_reports
+            .set(crate::tauri_bridge::settings_store_get_bool(CRASH_REPORTING_KEY, true).await);
+    });
+
+    view! {
+        <div class="settings-content">
+            <div class="settings-section">
+                <h3>"Updates"</h3>
+                <label class="checkbox-label">
+                    <input
+                        type="checkbox"
+                        checked=move || check_updates.get()
+                        on:change=move |ev| save_app_toggle(
+                            CHECK_FOR_UPDATES_KEY,
+                            set_check_updates,
+                            leptos::event_target_checked(&ev),
+                        )
+                    />
+                    <span>"Check for updates on launch"</span>
+                </label>
+                <p class="help-text">
+                    "You can always check manually via RailGraph → Check for Updates."
+                </p>
+            </div>
+
+            <div class="settings-section">
+                <h3>"Privacy"</h3>
+                <label class="checkbox-label">
+                    <input
+                        type="checkbox"
+                        checked=move || crash_reports.get()
+                        on:change=move |ev| save_app_toggle(
+                            CRASH_REPORTING_KEY,
+                            set_crash_reports,
+                            leptos::event_target_checked(&ev),
+                        )
+                    />
+                    <span>"Send automatic crash reports"</span>
+                </label>
+                <p class="help-text">
+                    "Crash diagnostics only — no personal data or project contents. Takes effect on next launch."
+                </p>
+            </div>
+        </div>
+    }
+}
 
 #[component]
 #[must_use]
@@ -105,6 +177,10 @@ pub fn SettingsChild(init: SettingsInit, session: String) -> impl IntoView {
         Tab {
             id: "shortcuts".to_string(),
             label: "Keyboard Shortcuts".to_string(),
+        },
+        Tab {
+            id: "application".to_string(),
+            label: "Application".to_string(),
         },
     ];
 
@@ -244,6 +320,10 @@ pub fn SettingsChild(init: SettingsInit, session: String) -> impl IntoView {
 
                 <TabPanel when=Signal::derive(move || active_tab.get() == "shortcuts")>
                     <KeyboardShortcutsEditor />
+                </TabPanel>
+
+                <TabPanel when=Signal::derive(move || active_tab.get() == "application")>
+                    <ApplicationSettings />
                 </TabPanel>
             </TabView>
         </div>
