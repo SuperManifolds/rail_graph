@@ -1,7 +1,7 @@
 mod commands;
 
 use railgraph_core::models::{Project, UndoManager};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 pub struct AppState {
     pub project: std::sync::Mutex<Project>,
@@ -43,6 +43,14 @@ fn main() {
                 last_snapshot_field: std::sync::Mutex::new(String::new()),
             });
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                let label = window.label();
+                let _ = window
+                    .app_handle()
+                    .emit(&format!("window-closed:{label}"), ());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::save_project,

@@ -1,7 +1,4 @@
-use leptos::{
-    component, create_signal, view, IntoView,
-    provide_context,
-};
+use leptos::{component, create_signal, provide_context, view, IntoView};
 
 use crate::models::UserSettings;
 use crate::user_settings_ext::UserSettingsStorage;
@@ -62,74 +59,95 @@ fn render_child_content(window_type: &str, session: &str, init_data: &str) -> le
 
     match window_type {
         "edit-track" => {
-            let Ok(init) = serde_json::from_str::<crate::window_protocol::EditTrackInit>(init_data) else {
+            let Ok(init) = serde_json::from_str::<crate::window_protocol::EditTrackInit>(init_data)
+            else {
                 leptos::logging::error!("Failed to deserialize EditTrackInit");
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
             leptos::view! { <EditTrackChild init=init session=session.to_string() /> }.into_view()
         }
         "edit-junction" => {
-            let Ok(init) = serde_json::from_str::<crate::window_protocol::EditJunctionInit>(init_data) else {
+            let Ok(init) =
+                serde_json::from_str::<crate::window_protocol::EditJunctionInit>(init_data)
+            else {
                 leptos::logging::error!("Failed to deserialize EditJunctionInit");
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
-            leptos::view! { <EditJunctionChild init=init session=session.to_string() /> }.into_view()
+            leptos::view! { <EditJunctionChild init=init session=session.to_string() /> }
+                .into_view()
         }
         "edit-station" => {
-            let Ok(init) = serde_json::from_str::<crate::window_protocol::EditStationInit>(init_data) else {
+            let Ok(init) =
+                serde_json::from_str::<crate::window_protocol::EditStationInit>(init_data)
+            else {
                 leptos::logging::error!("Failed to deserialize EditStationInit");
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
             leptos::view! { <EditStationChild init=init session=session.to_string() /> }.into_view()
         }
         "line-editor" => {
-            let Ok(init) = serde_json::from_str::<crate::window_protocol::LineEditorInit>(init_data) else {
+            let Ok(init) =
+                serde_json::from_str::<crate::window_protocol::LineEditorInit>(init_data)
+            else {
                 leptos::logging::error!("Failed to deserialize LineEditorInit");
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
             leptos::view! { <LineEditorChild init=init session=session.to_string() /> }.into_view()
         }
         "settings" => {
-            let Ok(init) = serde_json::from_str::<crate::window_protocol::SettingsInit>(init_data) else {
+            let Ok(init) = serde_json::from_str::<crate::window_protocol::SettingsInit>(init_data)
+            else {
                 leptos::logging::error!("Failed to deserialize SettingsInit");
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
             leptos::view! { <SettingsChild init=init session=session.to_string() /> }.into_view()
         }
         "importer-csv" => {
-            let Ok(init) = serde_json::from_str::<crate::window_protocol::ImporterCsvInit>(init_data) else {
+            let Ok(init) =
+                serde_json::from_str::<crate::window_protocol::ImporterCsvInit>(init_data)
+            else {
                 leptos::logging::error!("Failed to deserialize ImporterCsvInit");
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
             leptos::view! { <CsvMapperChild init=init session=session.to_string() /> }.into_view()
         }
         "importer-nimby" => {
-            let Ok(init) = serde_json::from_str::<crate::window_protocol::ImporterNimbyInit>(init_data) else {
+            let Ok(init) =
+                serde_json::from_str::<crate::window_protocol::ImporterNimbyInit>(init_data)
+            else {
                 leptos::logging::error!("Failed to deserialize ImporterNimbyInit");
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
-            leptos::view! { <NimbySelectorChild init=init session=session.to_string() /> }.into_view()
+            leptos::view! { <NimbySelectorChild init=init session=session.to_string() /> }
+                .into_view()
         }
         "add-station" => {
-            let Ok(init) = serde_json::from_str::<crate::window_protocol::AddStationInit>(init_data) else {
+            let Ok(init) =
+                serde_json::from_str::<crate::window_protocol::AddStationInit>(init_data)
+            else {
                 leptos::logging::error!("Failed to deserialize AddStationInit");
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
             leptos::view! { <AddStationChild init=init session=session.to_string() /> }.into_view()
         }
         "create-view" => {
-            let Ok(init) = serde_json::from_str::<crate::window_protocol::CreateViewInit>(init_data) else {
+            let Ok(init) =
+                serde_json::from_str::<crate::window_protocol::CreateViewInit>(init_data)
+            else {
                 leptos::logging::error!("Failed to deserialize CreateViewInit");
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
             leptos::view! { <CreateViewChild init=init session=session.to_string() /> }.into_view()
         }
         "project-manager" => {
-            let Ok(init) = serde_json::from_str::<crate::window_protocol::ProjectManagerInit>(init_data) else {
+            let Ok(init) =
+                serde_json::from_str::<crate::window_protocol::ProjectManagerInit>(init_data)
+            else {
                 leptos::logging::error!("Failed to deserialize ProjectManagerInit");
                 return leptos::view! { <div>"Failed to load data"</div> }.into_view();
             };
-            leptos::view! { <ProjectManagerChild init=init session=session.to_string() /> }.into_view()
+            leptos::view! { <ProjectManagerChild init=init session=session.to_string() /> }
+                .into_view()
         }
         _ => {
             leptos::logging::error!("Unknown child window type: {}", window_type);

@@ -756,7 +756,8 @@ pub async fn listen_event(
     Ok(unlisten)
 }
 
-/// Listen for a native window close event.
+/// Listen for a child window closing. The backend emits a `window-closed:{label}`
+/// event when the window is destroyed (see `on_window_event` in the Tauri backend).
 ///
 /// # Errors
 /// Returns an error if the listener cannot be registered.
@@ -764,34 +765,11 @@ pub fn listen_window_close(
     label: &str,
     callback: impl Fn() + 'static,
 ) -> Result<(), String> {
-    let ww_module = get_tauri_module("webviewWindow")?;
-    let ww_class = js_sys::Reflect::get(&ww_module, &"WebviewWindow".into())
-        .map_err(|_| "WebviewWindow class not found")?;
-
-    let get_by_label = js_sys::Reflect::get(&ww_class, &"getByLabel".into())
-        .map_err(|_| "getByLabel not found")?;
-    let get_by_label: js_sys::Function = get_by_label.dyn_into()
-        .map_err(|_| "getByLabel is not a function")?;
-
-    let instance = get_by_label.call1(&ww_class, &label.into())
-        .map_err(|e| format!("getByLabel failed: {e:?}"))?;
-
-    if instance.is_null() || instance.is_undefined() {
-        return Err("Window not found".into());
-    }
-
-    let once_fn = js_sys::Reflect::get(&instance, &"once".into())
-        .map_err(|_| "once not found")?;
-    let once_fn: js_sys::Function = once_fn.dyn_into()
-        .map_err(|_| "once is not a function")?;
-
-    let closure = Closure::wrap(Box::new(move |_: JsValue| {
-        callback();
-    }) as Box<dyn FnMut(JsValue)>);
-
-    once_fn.call2(&instance, &"tauri://close-requested".into(), closure.as_ref().unchecked_ref())
-        .map_err(|e| format!("once failed: {e:?}"))?;
-    closure.forget();
-
+    let event_name = format!("window-closed:{label}");
+    leptos::spawn_local(async move {
+        let _ = listen_event_once(&event_name, move |_| {
+            callback();
+        }).await;
+    });
     Ok(())
 }
