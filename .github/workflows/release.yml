@@ -1,0 +1,193 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.create.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create draft release
+        id: create
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          id=$(gh api repos/${{ github.repository }}/releases \
+            --method POST \
+            -f tag_name="${{ github.ref_name }}" \
+            -f name="RailGraph ${{ github.ref_name }}" \
+            -F draft=true \
+            -F generate_release_notes=true \
+            --jq '.id')
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-aarch64
+            runner: macos-latest
+            args: --target aarch64-apple-darwin
+            rust_target: aarch64-apple-darwin
+          - platform: macos-x86
+            runner: macos-latest
+            args: --target x86_64-apple-darwin
+            rust_target: x86_64-apple-darwin
+          - platform: linux-x86
+            runner: ubuntu-22.04
+            args: ""
+            rust_target: ""
+          - platform: windows
+            runner: windows-latest
+            args: ""
+            rust_target: ""
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the toolchain; this only ensures rustup itself
+      # is present and adds the cross-compile target where the lane needs one.
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Add cross-compile target
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
+
+      - name: Cache cargo + target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+            target
+          key: ${{ matrix.platform }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ matrix.platform }}-cargo-release-
+
+      - name: Install system dependencies (Linux)
+        if: startsWith(matrix.platform, 'linux')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev xdg-utils
+
+      - name: Install Trunk
+        shell: bash
+        run: which trunk || cargo install trunk --locked
+
+      - name: Build and upload
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS code signing (lanes build unsigned until these secrets exist)
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # macOS notarization
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Tauri updater signing
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Crash reporting: baked into the binary at build time via option_env!.
+          # Unset secret → empty → crash reporting compiles out.
+          RAILGRAPH_SENTRY_DSN: ${{ secrets.RAILGRAPH_SENTRY_DSN }}
+          RAILGRAPH_SENTRY_ENVIRONMENT: production
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+          assetNamePattern: "[name]_[arch][_setup][ext]"
+
+      # Upload native debug symbols so Sentry can symbolicate crashes to
+      # function + file:line. Token-gated and best-effort: never fails the build.
+      - name: Upload debug symbols to Sentry
+        continue-on-error: true
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: sorlie
+          SENTRY_PROJECT: railgraph
+          SENTRY_URL: https://de.sentry.io
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "SENTRY_AUTH_TOKEN not set — skipping debug symbol upload"
+            exit 0
+          fi
+          npm install -g @sentry/cli
+          if [ -n "${{ matrix.rust_target }}" ]; then
+            DIR="target/${{ matrix.rust_target }}/release"
+          else
+            DIR="target/release"
+          fi
+          sentry-cli debug-files upload --include-sources "$DIR"
+
+      # Upload the shipped frontend (dist/) so JS and wasm frames symbolicate.
+      # Idempotent per matrix lane; token-gated and best-effort.
+      - name: Upload frontend JS + wasm debug info to Sentry
+        continue-on-error: true
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: sorlie
+          SENTRY_PROJECT: railgraph
+          SENTRY_URL: https://de.sentry.io
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "SENTRY_AUTH_TOKEN not set — skipping frontend upload"
+            exit 0
+          fi
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          REL="railgraph@${VERSION}"
+          sentry-cli sourcemaps upload --release "$REL" dist
+          sentry-cli debug-files upload --include-sources dist
+
+  # Associate the Sentry release with its commit range so crashes can be
+  # attributed to a suspect commit. No-ops without the token.
+  sentry-release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # set-commits --auto walks history for the commit range
+
+      - name: Create Sentry release + set commits
+        continue-on-error: true
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: sorlie
+          SENTRY_PROJECT: railgraph
+          SENTRY_URL: https://de.sentry.io
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "SENTRY_AUTH_TOKEN not set — skipping Sentry release"
+            exit 0
+          fi
+          npm install -g @sentry/cli
+          # Derive the release name from the crate version — the same source the
+          # SDK reports — so it always matches even if the tag drifts.
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
+          REL="railgraph@${VERSION}"
+          sentry-cli releases new "$REL"
+          sentry-cli releases set-commits "$REL" --auto
+          sentry-cli releases finalize "$REL"
+          sentry-cli releases deploys "$REL" new -e production
