@@ -3118,7 +3118,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nimby_graph"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "base64 0.22.1",
  "bitflags 2.9.4",
@@ -4070,7 +4070,7 @@ checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
 name = "railgraph-backend"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -4090,7 +4090,7 @@ dependencies = [
 
 [[package]]
 name = "railgraph-core"
-version = "0.1.0"
+version = "2.0.0"
 dependencies = [
  "bincode",
  "bitflags 2.9.4",
