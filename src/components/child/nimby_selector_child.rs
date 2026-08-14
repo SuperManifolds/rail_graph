@@ -1,7 +1,7 @@
 use crate::components::nimby_line_selector::NimbyLineSelector;
 use crate::import::nimby::NimbyImportConfig;
-use crate::window_protocol::{ImporterNimbyInit, ImporterNimbyResult};
-use leptos::{component, create_signal, view, Callback, IntoView, Signal, SignalGet};
+use crate::window_protocol::{ImporterNimbyInit, ImporterNimbyResult, ImporterNimbyUpdate};
+use leptos::{component, create_signal, view, Callback, IntoView, Signal, SignalGet, SignalSet};
 
 #[component]
 #[must_use]
@@ -9,7 +9,25 @@ pub fn NimbySelectorChild(init: ImporterNimbyInit, session: String) -> impl Into
     let (data, _) = create_signal(init.data);
     let (handedness, _) = create_signal(init.handedness);
     let station_spacing = init.station_spacing;
-    let (import_error, _) = create_signal(None::<String>);
+    let (import_error, set_import_error) = create_signal(init.error);
+
+    // Listen for update-data events carrying import errors raised by the parent.
+    {
+        let session_for_listen = session.clone();
+        leptos::spawn_local(async move {
+            let event_name = format!("update-data:{session_for_listen}");
+            match crate::tauri_bridge::listen_event(&event_name, move |payload| {
+                if let Ok(update) = serde_json::from_str::<ImporterNimbyUpdate>(&payload) {
+                    set_import_error.set(update.error);
+                }
+            })
+            .await
+            {
+                Ok(unlisten) => std::mem::forget(unlisten),
+                Err(e) => leptos::logging::error!("Failed to listen for update-data: {}", e),
+            }
+        });
+    }
 
     let session_import = session.clone();
     let handle_import = move |cfg: NimbyImportConfig| {
