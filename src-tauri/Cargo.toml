@@ -10,7 +10,7 @@ workspace = true
 railgraph-core = { path = "../core", features = ["solver"] }
 # Devtools are automatic in debug builds; no feature needed. Adding the
 # "devtools" feature would force them into release builds too.
-tauri = "2"
+tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
