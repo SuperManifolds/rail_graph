@@ -31,7 +31,7 @@ fn run_nimby_import() {
     let mut graph = RailwayGraph::default();
     let config = NimbyImportConfig {
         create_infrastructure: true,
-        selected_line_ids: oslo_lines,
+        selected_line_ids: Some(oslo_lines),
         handedness: TrackHandedness::RightHand,
         station_spacing: 100.0,
         ..Default::default()

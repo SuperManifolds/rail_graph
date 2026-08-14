@@ -10,8 +10,8 @@ use std::collections::HashMap;
 use crate::auto_layout::{self, GeographicHints};
 use crate::constants::BASE_MIDNIGHT;
 use crate::models::{
-    Line, Node, ProjectSettings, RailwayGraph, RouteSegment, Routes, ScheduleMode, StationNode, Stations,
-    TrackHandedness, Tracks,
+    Line, Node, ProjectSettings, RailwayGraph, RouteSegment, Routes, ScheduleMode, StationNode,
+    Stations, TrackHandedness, Tracks,
 };
 
 /// Raw NIMBY Rails station from JSON
@@ -75,6 +75,11 @@ pub struct NimbySchedule {
     pub id: String,
     pub name: String,
     pub shifts: Vec<NimbyShift>,
+    /// Timezone offset in seconds applied to all run times in this schedule.
+    /// NIMBY run times are stored as week-relative UTC seconds; adding this offset
+    /// yields in-game local time.
+    #[serde(default)]
+    pub tz_delta_s: i64,
 }
 
 /// Tagged enum for parsing any NIMBY JSON record
@@ -103,6 +108,8 @@ pub enum NimbyRecord {
         id: String,
         name: String,
         shifts: Vec<NimbyShift>,
+        #[serde(default)]
+        tz_delta_s: i64,
     },
     #[serde(other)]
     Other,
@@ -158,8 +165,10 @@ impl NimbyImportData {
             .filter(|line| line.stops.len() >= 2)
             .filter(|line| !line.code.starts_with("D-"))
             .map(|line| {
-                let station_count = line.stops.iter()
-                    .filter(|s| s.station_id != "0x0")
+                let station_count = line
+                    .stops
+                    .iter()
+                    .filter(|s| s.station_id != "0x0" && !is_depot(self, &s.station_id))
                     .count();
                 let color = parse_nimby_color(&line.color);
                 let text_color = calculate_text_color(&color);
@@ -182,8 +191,8 @@ impl NimbyImportData {
 /// # Errors
 /// Returns an error if JSON parsing fails
 pub fn parse_nimby_json(content: &str) -> Result<NimbyImportData, String> {
-    let records: Vec<NimbyRecord> = serde_json::from_str(content)
-        .map_err(|e| format!("JSON parse error: {e}"))?;
+    let records: Vec<NimbyRecord> =
+        serde_json::from_str(content).map_err(|e| format!("JSON parse error: {e}"))?;
 
     let mut data = NimbyImportData::default();
 
@@ -193,13 +202,36 @@ pub fn parse_nimby_json(content: &str) -> Result<NimbyImportData, String> {
                 data.company_name = company_name;
             }
             NimbyRecord::Station { id, name, lonlat } => {
-                data.stations.insert(id.clone(), NimbyStation { id, name, lonlat });
+                data.stations
+                    .insert(id.clone(), NimbyStation { id, name, lonlat });
             }
-            NimbyRecord::Line { id, name, code, color, stops } => {
-                data.lines.push(NimbyLine { id, name, code, color, stops });
+            NimbyRecord::Line {
+                id,
+                name,
+                code,
+                color,
+                stops,
+            } => {
+                data.lines.push(NimbyLine {
+                    id,
+                    name,
+                    code,
+                    color,
+                    stops,
+                });
             }
-            NimbyRecord::Schedule { id, name, shifts } => {
-                data.schedules.push(NimbySchedule { id, name, shifts });
+            NimbyRecord::Schedule {
+                id,
+                name,
+                shifts,
+                tz_delta_s,
+            } => {
+                data.schedules.push(NimbySchedule {
+                    id,
+                    name,
+                    shifts,
+                    tz_delta_s,
+                });
             }
             NimbyRecord::Other => {}
         }
@@ -228,8 +260,9 @@ pub fn parse_nimby_color(color: &str) -> String {
 pub struct NimbyImportConfig {
     /// Create new stations/tracks vs use existing infrastructure
     pub create_infrastructure: bool,
-    /// IDs of lines to import (empty = all)
-    pub selected_line_ids: Vec<String>,
+    /// IDs of lines to import. `None` imports all lines; `Some(ids)` imports
+    /// only the listed lines (an empty list imports nothing).
+    pub selected_line_ids: Option<Vec<String>>,
     /// Track handedness setting
     pub handedness: TrackHandedness,
     /// Station spacing in pixels (from `ProjectSettings`)
@@ -242,7 +275,7 @@ impl Default for NimbyImportConfig {
     fn default() -> Self {
         Self {
             create_infrastructure: true,
-            selected_line_ids: Vec::new(),
+            selected_line_ids: None,
             handedness: TrackHandedness::RightHand,
             station_spacing: 2.0 * GRID_SIZE, // default 2 grid squares
             update_existing: false,
@@ -280,7 +313,9 @@ fn build_edge_usage_map(
             let to = window[1];
 
             // Find edge between these nodes
-            if let Some(edge) = graph.graph.find_edge(from, to)
+            if let Some(edge) = graph
+                .graph
+                .find_edge(from, to)
                 .or_else(|| graph.graph.find_edge(to, from))
             {
                 *edge_usage.entry(edge).or_insert(0) += 1;
@@ -317,14 +352,11 @@ pub fn import_nimby_lines(
     existing_line_count: usize,
     mut existing_lines: Option<&mut Vec<Line>>,
 ) -> Result<Vec<Line>, String> {
-    // Filter lines to import (exclude short lines and deadhead runs)
-    let lines_to_import: Vec<&NimbyLine> = if config.selected_line_ids.is_empty() {
-        data.lines.iter().collect()
-    } else {
-        data.lines
-            .iter()
-            .filter(|l| config.selected_line_ids.contains(&l.id))
-            .collect()
+    // Filter lines to import (exclude short lines and deadhead runs).
+    // `None` imports all lines; `Some(ids)` imports only the listed ids.
+    let lines_to_import: Vec<&NimbyLine> = match &config.selected_line_ids {
+        None => data.lines.iter().collect(),
+        Some(ids) => data.lines.iter().filter(|l| ids.contains(&l.id)).collect(),
     };
 
     let valid_lines: Vec<&NimbyLine> = lines_to_import
@@ -339,7 +371,9 @@ pub fn import_nimby_lines(
             .graph
             .node_indices()
             .filter(|&idx| {
-                graph.graph.node_weight(idx)
+                graph
+                    .graph
+                    .node_weight(idx)
                     .and_then(|n| n.as_station())
                     .and_then(|s| s.position)
                     .is_some_and(|(x, y)| x != 0.0 || y != 0.0)
@@ -369,7 +403,10 @@ pub fn import_nimby_lines(
                 }
             }
         }
-        log::info!("NIMBY import: created {} stations", station_id_to_node.len());
+        log::info!(
+            "NIMBY import: created {} stations",
+            station_id_to_node.len()
+        );
 
         // Phase 3: Create infrastructure using densest paths
         // Process each unique consecutive station pair across all lines
@@ -391,9 +428,7 @@ pub fn import_nimby_lines(
             data,
         );
         if consecutive_count > 0 {
-            log::info!(
-                "NIMBY import: created {consecutive_count} additional consecutive edges"
-            );
+            log::info!("NIMBY import: created {consecutive_count} additional consecutive edges");
         }
 
         // Phase 4: Detect and create passing loops using segment map
@@ -404,14 +439,15 @@ pub fn import_nimby_lines(
             config.handedness,
         );
         if passing_loop_count > 0 {
-            log::info!(
-                "NIMBY import: created {passing_loop_count} passing loops"
-            );
+            log::info!("NIMBY import: created {passing_loop_count} passing loops");
         }
 
         // Apply geographic-aware layout only to new nodes (preserve existing positions)
         let geo_hints = build_geographic_hints(graph, data);
-        log::info!("NIMBY import: built geographic hints for {} stations", geo_hints.len());
+        log::info!(
+            "NIMBY import: built geographic hints for {} stations",
+            geo_hints.len()
+        );
 
         let settings = ProjectSettings {
             default_node_distance_grid_squares: config.station_spacing / GRID_SIZE,
@@ -420,7 +456,10 @@ pub fn import_nimby_lines(
 
         // Build edge usage map for spine detection (uses ALL lines, not just selected)
         let edge_usage = build_edge_usage_map(data, &station_id_to_node, graph);
-        log::info!("NIMBY import: built edge usage map with {} edges", edge_usage.len());
+        log::info!(
+            "NIMBY import: built edge usage map with {} edges",
+            edge_usage.len()
+        );
 
         auto_layout::apply_layout_with_edge_weights(
             graph,
@@ -451,7 +490,14 @@ pub fn import_nimby_lines(
             if let Some(ref mut lines) = existing_lines.as_deref_mut() {
                 if let Some(existing_line) = lines.iter_mut().find(|l| l.code == *nimby_code) {
                     log::info!("Updating existing line: {nimby_code}");
-                    update_existing_line(existing_line, nimby_line, data, config, graph, &mut edge_map)?;
+                    update_existing_line(
+                        existing_line,
+                        nimby_line,
+                        data,
+                        config,
+                        graph,
+                        &mut edge_map,
+                    )?;
                     continue;
                 }
             }
@@ -559,7 +605,10 @@ fn create_infrastructure_from_segments(
         }
     }
 
-    log::info!("NIMBY import: created {} track segments", created_edges.len());
+    log::info!(
+        "NIMBY import: created {} track segments",
+        created_edges.len()
+    );
 }
 
 /// Create edges for consecutive station pairs, using the segment map to determine
@@ -635,9 +684,9 @@ fn create_consecutive_edges(
 
                 // If a direct (consecutive) path exists at matching distance, any intermediate
                 // path at that distance is from the same corridor, not a different local route
-                let has_direct_at_distance = all_paths
-                    .iter()
-                    .any(|p| p.intermediates.is_empty() && distances_match(p.total_distance, total_distance));
+                let has_direct_at_distance = all_paths.iter().any(|p| {
+                    p.intermediates.is_empty() && distances_match(p.total_distance, total_distance)
+                });
 
                 let has_matching_intermediate_path = !has_direct_at_distance
                     && all_paths
@@ -650,7 +699,11 @@ fn create_consecutive_edges(
             }
 
             let tracks = super::shared::create_tracks_with_count(1, handedness);
-            let distance = if total_distance > 0.0 { Some(total_distance / METERS_PER_KM) } else { None };
+            let distance = if total_distance > 0.0 {
+                Some(total_distance / METERS_PER_KM)
+            } else {
+                None
+            };
             graph.add_track(from_node, to_node, tracks, distance);
             created_edges.insert((from_node, to_node));
         }
@@ -681,7 +734,8 @@ fn create_passing_loops_from_segment_map(
 ) -> usize {
     // Find passing loop candidates by comparing A→B with B→A segments
     let mut candidates: Vec<PassingLoopCandidate> = Vec::new();
-    let mut processed: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut processed: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
 
     for ((from_id, to_id), forward_paths) in segment_map {
         // Skip if already processed this pair
@@ -701,8 +755,12 @@ fn create_passing_loops_from_segment_map(
         processed.insert((to_id.clone(), from_id.clone()));
 
         // Get the path with waypoints (consecutive pairs have waypoint data)
-        let forward_path = forward_paths.iter().find(|p| !p.waypoint_distances.is_empty());
-        let reverse_path = reverse_paths.iter().find(|p| !p.waypoint_distances.is_empty());
+        let forward_path = forward_paths
+            .iter()
+            .find(|p| !p.waypoint_distances.is_empty());
+        let reverse_path = reverse_paths
+            .iter()
+            .find(|p| !p.waypoint_distances.is_empty());
 
         let (Some(fwd), Some(rev)) = (forward_path, reverse_path) else {
             continue;
@@ -807,10 +865,13 @@ fn create_passing_loops_from_segment_map(
         } else {
             candidate.distance_ratio
         };
-        loops_by_segment.entry(canonical).or_default().push(NormalizedCandidate {
-            candidate,
-            normalized_ratio,
-        });
+        loops_by_segment
+            .entry(canonical)
+            .or_default()
+            .push(NormalizedCandidate {
+                candidate,
+                normalized_ratio,
+            });
     }
 
     let mut loop_count = 0;
@@ -918,8 +979,12 @@ fn create_passing_loops_from_segment_map(
                 position: None,
                 passing_loop: true,
                 platforms: vec![
-                    crate::models::Platform { name: "1".to_string() },
-                    crate::models::Platform { name: "2".to_string() },
+                    crate::models::Platform {
+                        name: "1".to_string(),
+                    },
+                    crate::models::Platform {
+                        name: "2".to_string(),
+                    },
                 ],
                 label_position: None,
             };
@@ -998,8 +1063,9 @@ fn import_single_line(
         )?;
 
         // Add platform to station if present in stop data and get its index
-        let platform_idx = get_platform_from_stop(stop)
-            .map_or(0, |name| super::shared::get_or_add_platform(graph, station_idx, &name));
+        let platform_idx = get_platform_from_stop(stop, Direction::Forward).map_or(0, |name| {
+            super::shared::get_or_add_platform(graph, station_idx, &name)
+        });
 
         // Capture first stop wait time
         if prev_station.is_none() {
@@ -1008,13 +1074,9 @@ fn import_single_line(
 
         // Create edge(s) and route segment(s) if we have a previous station
         if let Some((prev_idx, prev_stop, prev_platform_idx)) = prev_station {
-            let Some(edges) = get_or_create_edges(
-                graph,
-                edge_map,
-                prev_idx,
-                station_idx,
-                total_leg_distance,
-            ) else {
+            let Some(edges) =
+                get_or_create_edges(graph, edge_map, prev_idx, station_idx, total_leg_distance)
+            else {
                 // No path found - skip this line
                 log::warn!(
                     "NIMBY import: No path from {:?} to {:?} for line '{}', skipping",
@@ -1036,7 +1098,8 @@ fn import_single_line(
             let wait_duration = Duration::seconds((stop.departure - stop.arrival).max(0));
 
             // Distribute travel time proportionally across edges based on distance
-            let total_distance: f64 = edges.iter()
+            let total_distance: f64 = edges
+                .iter()
                 .filter_map(|&e| graph.graph.edge_weight(e))
                 .filter_map(|seg| seg.distance)
                 .sum();
@@ -1044,7 +1107,10 @@ fn import_single_line(
             // Set distance on new single edge if we have distance data and it's not already set
             let should_set_distance = edges.len() == 1
                 && total_leg_distance > 0.0
-                && graph.graph.edge_weight(edges[0]).is_some_and(|s| s.distance.is_none());
+                && graph
+                    .graph
+                    .edge_weight(edges[0])
+                    .is_some_and(|s| s.distance.is_none());
             if should_set_distance {
                 if let Some(track_segment) = graph.graph.edge_weight_mut(edges[0]) {
                     track_segment.distance = Some(total_leg_distance / METERS_PER_KM);
@@ -1067,7 +1133,9 @@ fn import_single_line(
                     Duration::seconds(remaining_secs)
                 } else if total_distance > 0.0 {
                     // Distribute proportionally by distance
-                    let edge_dist = graph.graph.edge_weight(edge_idx)
+                    let edge_dist = graph
+                        .graph
+                        .edge_weight(edge_idx)
                         .and_then(|s| s.distance)
                         .unwrap_or(1.0);
                     #[allow(clippy::cast_possible_truncation)]
@@ -1084,7 +1152,9 @@ fn import_single_line(
 
                 // Determine if we're traveling backward relative to the edge orientation
                 // (i.e., from target to source instead of source to target)
-                let (edge_source, edge_target) = graph.graph.edge_endpoints(edge_idx)
+                let (edge_source, edge_target) = graph
+                    .graph
+                    .edge_endpoints(edge_idx)
                     .expect("edge should exist");
                 let traveling_backward = prev_idx == edge_target && station_idx == edge_source;
                 let track_index = graph.select_track_for_direction(edge_idx, traveling_backward);
@@ -1095,7 +1165,11 @@ fn import_single_line(
                     origin_platform: prev_platform_idx,
                     destination_platform: platform_idx,
                     duration: Some(edge_duration),
-                    wait_time: if is_last { wait_duration } else { Duration::zero() },
+                    wait_time: if is_last {
+                        wait_duration
+                    } else {
+                        Duration::zero()
+                    },
                 });
             }
         }
@@ -1173,6 +1247,59 @@ fn import_single_line(
     Ok(Some(line))
 }
 
+/// Record wait times from an existing route, keyed by station name, into
+/// `wait_time_map`.
+///
+/// Two strategies, chosen per route by comparing the segment count to the number
+/// of real NIMBY stops:
+///
+/// * When the route has one segment per real stop (no passing-loop segments yet),
+///   map segment `i` to NIMBY stop `i + 1` positionally. This is reliable and
+///   avoids the ambiguity of reused edge indices after an out-of-band edge split.
+/// * Otherwise the route already contains passing-loop segments, so segment count
+///   no longer equals stop count. Key each segment by its live edge endpoint,
+///   skipping passing-loop destinations (they carry no meaningful wait time).
+fn collect_segment_wait_times(
+    route: &[RouteSegment],
+    nimby_stops: &[&NimbyStop],
+    data: &NimbyImportData,
+    graph: &RailwayGraph,
+    wait_time_map: &mut HashMap<String, Duration>,
+) {
+    if route.is_empty() {
+        return;
+    }
+
+    let real_stop_count = nimby_stops.len();
+    let has_loop_segments = route.len() + 1 != real_stop_count;
+
+    if has_loop_segments {
+        for segment in route {
+            let Some((_, to)) = graph
+                .graph
+                .edge_endpoints(EdgeIndex::new(segment.edge_index))
+            else {
+                continue;
+            };
+            if is_passing_loop(graph, to) {
+                continue;
+            }
+            wait_time_map.insert(graph.graph[to].display_name(), segment.wait_time);
+        }
+        return;
+    }
+
+    for (seg_idx, segment) in route.iter().enumerate() {
+        let stop_idx = seg_idx + 1;
+        let Some(stop) = nimby_stops.get(stop_idx) else {
+            continue;
+        };
+        if let Some(station) = data.stations.get(&stop.station_id) {
+            wait_time_map.insert(station.name.clone(), segment.wait_time);
+        }
+    }
+}
+
 /// Update an existing line's routes with new stops and timing from NIMBY data,
 /// while preserving the existing wait times at stations.
 #[allow(clippy::too_many_lines)]
@@ -1185,47 +1312,40 @@ fn update_existing_line(
     edge_map: &mut HashMap<(NodeIndex, NodeIndex), Vec<EdgeIndex>>,
 ) -> Result<(), String> {
     // Build a map of station name -> wait_time from existing routes.
-    // We use station names instead of node indices because edges may have been
-    // modified (e.g., passing loops added) which invalidates old edge indices.
     //
-    // We use two approaches:
-    // 1. Look up edge endpoints if the edge still exists
-    // 2. Use NIMBY stop order to match segments to station names (for removed edges)
+    // We key by the segment's actual destination station (the edge's endpoint),
+    // not by positional index. Positional mapping breaks when a previous import
+    // inserted passing-loop segments: the segment count no longer equals the stop
+    // count, so wait times after the first loop would attach to the wrong station.
     let mut wait_time_map: HashMap<String, Duration> = HashMap::new();
 
-    // First, try to get station names by matching segment index to NIMBY stop order.
-    // This works even if edges have been removed.
-    let nimby_stops: Vec<_> = nimby_line.stops.iter()
+    let forward_stops: Vec<&NimbyStop> = nimby_line
+        .stops
+        .iter()
         .filter(|s| s.station_id != "0x0" && !is_depot(data, &s.station_id))
         .collect();
+    collect_segment_wait_times(
+        &existing_line.forward_route,
+        &forward_stops,
+        data,
+        graph,
+        &mut wait_time_map,
+    );
 
-    // Each segment ends at a stop (segments map 1:1 with stops after the first)
-    for (seg_idx, segment) in existing_line.forward_route.iter().enumerate() {
-        // seg_idx 0 -> stop 1, seg_idx 1 -> stop 2, etc.
-        let stop_idx = seg_idx + 1;
-        if stop_idx < nimby_stops.len() {
-            if let Some(station) = data.stations.get(&nimby_stops[stop_idx].station_id) {
-                wait_time_map.insert(station.name.clone(), segment.wait_time);
-            }
-        }
-    }
-
-    // Do the same for return route if it exists
-    let turnaround_idx_for_map = detect_turnaround(&nimby_line.stops, data);
-    if let Some(turnaround) = turnaround_idx_for_map {
-        let return_stops: Vec<_> = nimby_line.stops.iter()
+    if let Some(turnaround) = detect_turnaround(&nimby_line.stops, data) {
+        let return_stops: Vec<&NimbyStop> = nimby_line
+            .stops
+            .iter()
             .skip(turnaround)
             .filter(|s| s.station_id != "0x0" && !is_depot(data, &s.station_id))
             .collect();
-
-        for (seg_idx, segment) in existing_line.return_route.iter().enumerate() {
-            let stop_idx = seg_idx + 1;
-            if stop_idx < return_stops.len() {
-                if let Some(station) = data.stations.get(&return_stops[stop_idx].station_id) {
-                    wait_time_map.insert(station.name.clone(), segment.wait_time);
-                }
-            }
-        }
+        collect_segment_wait_times(
+            &existing_line.return_route,
+            &return_stops,
+            data,
+            graph,
+            &mut wait_time_map,
+        );
     }
 
     // Build new routes using the same logic as import_single_line
@@ -1263,21 +1383,18 @@ fn update_existing_line(
             connection.as_ref(),
         )?;
 
-        let platform_idx = get_platform_from_stop(stop)
-            .map_or(0, |name| super::shared::get_or_add_platform(graph, station_idx, &name));
+        let platform_idx = get_platform_from_stop(stop, Direction::Forward).map_or(0, |name| {
+            super::shared::get_or_add_platform(graph, station_idx, &name)
+        });
 
         if prev_station.is_none() {
             first_stop_wait_time = Duration::seconds((stop.departure - stop.arrival).max(0));
         }
 
         if let Some((prev_idx, prev_stop, prev_platform_idx)) = prev_station {
-            let Some(edges) = get_or_create_edges(
-                graph,
-                edge_map,
-                prev_idx,
-                station_idx,
-                total_leg_distance,
-            ) else {
+            let Some(edges) =
+                get_or_create_edges(graph, edge_map, prev_idx, station_idx, total_leg_distance)
+            else {
                 return Err(format!(
                     "No path from {:?} to {:?} for line '{}'",
                     graph.graph[prev_idx].display_name(),
@@ -1295,9 +1412,13 @@ fn update_existing_line(
             // Use preserved wait time if available, otherwise use NIMBY timing
             let nimby_wait = Duration::seconds((stop.departure - stop.arrival).max(0));
             let station_name = graph.graph[station_idx].display_name();
-            let wait_duration = wait_time_map.get(&station_name).copied().unwrap_or(nimby_wait);
+            let wait_duration = wait_time_map
+                .get(&station_name)
+                .copied()
+                .unwrap_or(nimby_wait);
 
-            let total_distance: f64 = edges.iter()
+            let total_distance: f64 = edges
+                .iter()
                 .filter_map(|&e| graph.graph.edge_weight(e))
                 .filter_map(|seg| seg.distance)
                 .sum();
@@ -1313,7 +1434,9 @@ fn update_existing_line(
                 } else if is_last {
                     Duration::seconds(remaining_secs)
                 } else if total_distance > 0.0 {
-                    let edge_dist = graph.graph.edge_weight(edge_idx)
+                    let edge_dist = graph
+                        .graph
+                        .edge_weight(edge_idx)
                         .and_then(|s| s.distance)
                         .unwrap_or(1.0);
                     #[allow(clippy::cast_possible_truncation)]
@@ -1327,7 +1450,9 @@ fn update_existing_line(
                     Duration::seconds(secs)
                 };
 
-                let (edge_source, edge_target) = graph.graph.edge_endpoints(edge_idx)
+                let (edge_source, edge_target) = graph
+                    .graph
+                    .edge_endpoints(edge_idx)
                     .expect("edge should exist");
                 let traveling_backward = prev_idx == edge_target && station_idx == edge_source;
                 let track_index = graph.select_track_for_direction(edge_idx, traveling_backward);
@@ -1338,7 +1463,11 @@ fn update_existing_line(
                     origin_platform: prev_platform_idx,
                     destination_platform: platform_idx,
                     duration: Some(edge_duration),
-                    wait_time: if is_last { wait_duration } else { Duration::zero() },
+                    wait_time: if is_last {
+                        wait_duration
+                    } else {
+                        Duration::zero()
+                    },
                 });
             }
         }
@@ -1351,16 +1480,23 @@ fn update_existing_line(
     }
 
     if forward_route.is_empty() {
-        return Err(format!("No valid route built for line '{}'", nimby_line.name));
+        return Err(format!(
+            "No valid route built for line '{}'",
+            nimby_line.name
+        ));
     }
 
     // Build return route if there's a turnaround
     let (return_route, return_route_first_wait) = if let Some(turnaround) = turnaround_idx {
-        let (mut route, first_wait) = build_return_route(&nimby_line.stops, turnaround, data, config, graph, edge_map)?;
+        let (mut route, first_wait) =
+            build_return_route(&nimby_line.stops, turnaround, data, config, graph, edge_map)?;
 
         // Apply preserved wait times to return route
         for segment in &mut route {
-            if let Some((_, to)) = graph.graph.edge_endpoints(EdgeIndex::new(segment.edge_index)) {
+            if let Some((_, to)) = graph
+                .graph
+                .edge_endpoints(EdgeIndex::new(segment.edge_index))
+            {
                 let station_name = graph.graph[to].display_name();
                 if let Some(&preserved_wait) = wait_time_map.get(&station_name) {
                     segment.wait_time = preserved_wait;
@@ -1413,7 +1549,9 @@ fn find_or_create_station(
     }
 
     // Get station data from NIMBY
-    let nimby_station = data.stations.get(nimby_id)
+    let nimby_station = data
+        .stations
+        .get(nimby_id)
         .ok_or_else(|| format!("Station ID {nimby_id} not found in NIMBY data"))?;
 
     // Only try name matching in schedules mode (create_if_missing=false)
@@ -1483,11 +1621,25 @@ fn normalize_platform_name(name: &str) -> String {
     name.to_string()
 }
 
-/// Extract the first platform name from a stop's areas
-fn get_platform_from_stop(stop: &NimbyStop) -> Option<String> {
-    stop.areas.iter()
-        .flatten()
-        .next()
+/// Direction of travel through a stop, used to select the matching platform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Direction {
+    Forward,
+    Return,
+}
+
+/// Extract the platform name for the given direction from a stop's areas.
+///
+/// `stop.areas` is a list of per-direction area-lists (typically 2: forward and
+/// return). The forward direction uses the first list, the return direction the
+/// second. When only one area-list exists, both directions fall back to it.
+fn get_platform_from_stop(stop: &NimbyStop, direction: Direction) -> Option<String> {
+    let area_list = match direction {
+        Direction::Forward => stop.areas.first(),
+        Direction::Return => stop.areas.get(1).or_else(|| stop.areas.first()),
+    };
+    area_list?
+        .first()
         .map(|area| normalize_platform_name(&area.platform_name))
 }
 
@@ -1522,7 +1674,8 @@ fn find_existing_passing_loops(
     // BFS to find a path through passing loops
     let mut visited = std::collections::HashSet::new();
     let mut queue = std::collections::VecDeque::new();
-    let mut parent: std::collections::HashMap<NodeIndex, NodeIndex> = std::collections::HashMap::new();
+    let mut parent: std::collections::HashMap<NodeIndex, NodeIndex> =
+        std::collections::HashMap::new();
 
     visited.insert(from_node);
     queue.push_back(from_node);
@@ -1589,10 +1742,7 @@ fn reconstruct_loop_path(
         let to = window[1];
         cumulative_distance += get_edge_distance(graph, from, to);
 
-        if graph.graph[to]
-            .as_station()
-            .is_some_and(|s| s.passing_loop)
-        {
+        if graph.graph[to].as_station().is_some_and(|s| s.passing_loop) {
             loops_with_distances.push((to, cumulative_distance));
         }
     }
@@ -1644,7 +1794,10 @@ fn edge_distance_matches(
     to: NodeIndex,
     expected_distance: f64,
 ) -> bool {
-    let edge = graph.graph.find_edge(from, to).or_else(|| graph.graph.find_edge(to, from));
+    let edge = graph
+        .graph
+        .find_edge(from, to)
+        .or_else(|| graph.graph.find_edge(to, from));
     if let Some(edge_idx) = edge {
         if let Some(segment) = graph.graph.edge_weight(edge_idx) {
             if let Some(distance) = segment.distance {
@@ -1737,7 +1890,9 @@ fn build_segment_map(lines: &[&NimbyLine], data: &NimbyImportData) -> SegmentMap
 
     for line in lines {
         // Get all actual station stops (exclude waypoints and depots)
-        let stations: Vec<(usize, &NimbyStop)> = line.stops.iter()
+        let stations: Vec<(usize, &NimbyStop)> = line
+            .stops
+            .iter()
             .enumerate()
             .filter(|(_, s)| s.station_id != "0x0" && !is_depot(data, &s.station_id))
             .collect();
@@ -1817,14 +1972,15 @@ fn build_segment_map(lines: &[&NimbyLine], data: &NimbyImportData) -> SegmentMap
 
 /// Build geographic hints from NIMBY lonlat data for use with `auto_layout`
 #[must_use]
-pub fn build_geographic_hints(
-    graph: &RailwayGraph,
-    data: &NimbyImportData,
-) -> GeographicHints {
+pub fn build_geographic_hints(graph: &RailwayGraph, data: &NimbyImportData) -> GeographicHints {
     let mut lonlat_map = HashMap::new();
 
     for node_idx in graph.graph.node_indices() {
-        if let Some(station) = graph.graph.node_weight(node_idx).and_then(|n| n.as_station()) {
+        if let Some(station) = graph
+            .graph
+            .node_weight(node_idx)
+            .and_then(|n| n.as_station())
+        {
             if let Some(ext_id) = &station.external_id {
                 if let Some(nimby_station) = data.stations.get(ext_id) {
                     lonlat_map.insert(node_idx, nimby_station.lonlat);
@@ -1844,7 +2000,8 @@ fn distance_matches(existing_km: Option<f64>, nimby_distance: f64) -> bool {
             // Convert existing km to meters for comparison
             let existing_meters = d * METERS_PER_KM;
             let diff = (existing_meters - nimby_distance).abs();
-            let tolerance = (nimby_distance * DISTANCE_TOLERANCE_PERCENT).max(DISTANCE_TOLERANCE_MIN_METERS);
+            let tolerance =
+                (nimby_distance * DISTANCE_TOLERANCE_PERCENT).max(DISTANCE_TOLERANCE_MIN_METERS);
             diff < tolerance
         }
         _ => false,
@@ -1884,9 +2041,14 @@ fn get_or_create_edges(
         }
 
         // Distance doesn't match - check if there's a direct edge that matches better
-        let direct_edge = graph.graph.find_edge(from, to).or_else(|| graph.graph.find_edge(to, from));
+        let direct_edge = graph
+            .graph
+            .find_edge(from, to)
+            .or_else(|| graph.graph.find_edge(to, from));
         if let Some(edge) = direct_edge {
-            let direct_matches = graph.graph.edge_weight(edge)
+            let direct_matches = graph
+                .graph
+                .edge_weight(edge)
                 .is_some_and(|seg| distance_matches(seg.distance, leg_distance));
             if direct_matches {
                 let result = vec![edge];
@@ -1901,7 +2063,10 @@ fn get_or_create_edges(
     }
 
     // No path found - check for direct edge
-    let direct_edge = graph.graph.find_edge(from, to).or_else(|| graph.graph.find_edge(to, from));
+    let direct_edge = graph
+        .graph
+        .find_edge(from, to)
+        .or_else(|| graph.graph.find_edge(to, from));
     if let Some(edge) = direct_edge {
         let result = vec![edge];
         edge_map.insert((from, to), result.clone());
@@ -1975,8 +2140,7 @@ fn build_return_route(
 
     // Get the turnaround station ID - we need to find the LAST occurrence before
     // the actual return route starts (after depot area)
-    let turnaround_station_id = stops.get(turnaround_idx)
-        .map(|s| s.station_id.as_str());
+    let turnaround_station_id = stops.get(turnaround_idx).map(|s| s.station_id.as_str());
 
     // Find the last occurrence of the turnaround station in the return portion
     // This handles cases like: Drammen → [Depot] → Drammen → Oslo → ...
@@ -2039,17 +2203,14 @@ fn build_return_route(
         )?;
 
         // Add platform to station if present in stop data and get its index
-        let platform_idx = get_platform_from_stop(stop)
-            .map_or(0, |name| super::shared::get_or_add_platform(graph, station_idx, &name));
+        let platform_idx = get_platform_from_stop(stop, Direction::Return).map_or(0, |name| {
+            super::shared::get_or_add_platform(graph, station_idx, &name)
+        });
 
         if let Some((prev_idx, prev_stop, prev_platform_idx)) = prev_station {
-            let Some(edges) = get_or_create_edges(
-                graph,
-                edge_map,
-                prev_idx,
-                station_idx,
-                total_leg_distance,
-            ) else {
+            let Some(edges) =
+                get_or_create_edges(graph, edge_map, prev_idx, station_idx, total_leg_distance)
+            else {
                 return Err(format!(
                     "No path from {} to {} in return route",
                     graph.graph[prev_idx].display_name(),
@@ -2067,7 +2228,8 @@ fn build_return_route(
             let wait_duration = Duration::seconds((stop.departure - stop.arrival).max(0));
 
             // Distribute travel time proportionally across edges based on distance
-            let total_distance: f64 = edges.iter()
+            let total_distance: f64 = edges
+                .iter()
                 .filter_map(|&e| graph.graph.edge_weight(e))
                 .filter_map(|seg| seg.distance)
                 .sum();
@@ -2088,7 +2250,9 @@ fn build_return_route(
                     Duration::seconds(remaining_secs)
                 } else if total_distance > 0.0 {
                     // Distribute proportionally by distance
-                    let edge_dist = graph.graph.edge_weight(edge_idx)
+                    let edge_dist = graph
+                        .graph
+                        .edge_weight(edge_idx)
                         .and_then(|s| s.distance)
                         .unwrap_or(1.0);
                     #[allow(clippy::cast_possible_truncation)]
@@ -2105,7 +2269,9 @@ fn build_return_route(
 
                 // Determine if we're traveling backward relative to the edge orientation
                 // (i.e., from target to source instead of source to target)
-                let (edge_source, edge_target) = graph.graph.edge_endpoints(edge_idx)
+                let (edge_source, edge_target) = graph
+                    .graph
+                    .edge_endpoints(edge_idx)
                     .expect("edge should exist");
                 let traveling_backward = prev_idx == edge_target && station_idx == edge_source;
                 let track_index = graph.select_track_for_direction(edge_idx, traveling_backward);
@@ -2116,7 +2282,11 @@ fn build_return_route(
                     origin_platform: prev_platform_idx,
                     destination_platform: platform_idx,
                     duration: Some(edge_duration),
-                    wait_time: if is_last { wait_duration } else { Duration::zero() },
+                    wait_time: if is_last {
+                        wait_duration
+                    } else {
+                        Duration::zero()
+                    },
                 });
             }
         }
@@ -2130,6 +2300,17 @@ fn build_return_route(
 // ============================================================================
 // Schedule Import Functions
 // ============================================================================
+
+/// Number of seconds in a day.
+const SECONDS_PER_DAY: i64 = 86_400;
+/// Number of seconds in a week. NIMBY run times are week-relative.
+const SECONDS_PER_WEEK: i64 = 7 * SECONDS_PER_DAY;
+
+/// Apply a schedule's timezone offset to a week-relative run time, wrapping at
+/// the week boundary so weekday rollover is preserved.
+fn apply_tz_delta(raw_time: i64, tz_delta_s: i64) -> i64 {
+    (raw_time + tz_delta_s).rem_euclid(SECONDS_PER_WEEK)
+}
 
 /// Classification of a run based on its stop range relative to the line's turnaround point
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -2156,10 +2337,10 @@ fn classify_run(run: &NimbyRun, turnaround_idx: Option<usize>, max_stop_idx: usi
     };
 
     // Check if the exit/enter is near the turnaround (within ±2 stops for depot areas)
-    let is_near_turnaround_exit = run.exit_stop_idx >= turnaround.saturating_sub(2)
-        && run.exit_stop_idx <= turnaround + 2;
-    let is_near_turnaround_enter = run.enter_stop_idx >= turnaround.saturating_sub(2)
-        && run.enter_stop_idx <= turnaround + 2;
+    let is_near_turnaround_exit =
+        run.exit_stop_idx >= turnaround.saturating_sub(2) && run.exit_stop_idx <= turnaround + 2;
+    let is_near_turnaround_enter =
+        run.enter_stop_idx >= turnaround.saturating_sub(2) && run.enter_stop_idx <= turnaround + 2;
 
     if run.enter_stop_idx == 0 && run.exit_stop_idx == max_stop_idx {
         RunType::FullLoop
@@ -2190,7 +2371,7 @@ fn detect_frequency(departures: &[i64]) -> Option<Duration> {
     }
 
     // Round gaps to nearest minute for grouping
-    let rounded_gaps: Vec<i64> = gaps.iter().map(|&g| (g / 60) * 60).collect();
+    let rounded_gaps: Vec<i64> = gaps.iter().map(|&g| ((g + 30) / 60) * 60).collect();
 
     // Count occurrences of each gap
     let mut gap_counts: HashMap<i64, usize> = HashMap::new();
@@ -2296,8 +2477,8 @@ impl DirectionSchedule {
         // Build map from normalized time to days it appears on
         for &raw_time in &self.raw_departures {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let day_idx = (raw_time / 86400) as usize;
-            let time_of_day = raw_time % 86400;
+            let day_idx = (raw_time / SECONDS_PER_DAY) as usize;
+            let time_of_day = raw_time % SECONDS_PER_DAY;
 
             if let Some(day_flag) = DaysOfWeek::from_index(day_idx) {
                 self.departure_days
@@ -2320,14 +2501,27 @@ impl DirectionSchedule {
         } else {
             normalized.first().copied()
         };
-        self.last_departure = normalized.last().copied();
+
+        // Derive last_departure from the departures that fit the auto pattern, so
+        // the generated window does not extend past the real pattern. Off-pattern
+        // departures are emitted purely as manual departures elsewhere; including
+        // them here would represent the final trip twice (auto window + manual).
+        self.last_departure = match (self.first_departure, self.frequency) {
+            (Some(first), Some(freq)) => normalized
+                .iter()
+                .rev()
+                .find(|&&dep| fits_frequency_pattern(dep, first, freq.num_seconds()))
+                .or_else(|| normalized.last())
+                .copied(),
+            _ => normalized.last().copied(),
+        };
 
         // Calculate overall days_of_week as the union of all departures' days
         // This represents the days the schedule operates on
-        self.days_of_week = self.departure_days.values().fold(
-            DaysOfWeek::empty(),
-            |acc, days| acc | *days,
-        );
+        self.days_of_week = self
+            .departure_days
+            .values()
+            .fold(DaysOfWeek::empty(), |acc, days| acc | *days);
 
         self.departures = normalized;
     }
@@ -2373,10 +2567,7 @@ fn get_forward_route_endpoints(
 /// Get the origin and destination stations for the return direction
 /// Uses the station path - return goes from last station back to first
 /// Skips passing loops to find actual terminal stations
-fn get_return_route_endpoints(
-    line: &Line,
-    graph: &RailwayGraph,
-) -> Option<(NodeIndex, NodeIndex)> {
+fn get_return_route_endpoints(line: &Line, graph: &RailwayGraph) -> Option<(NodeIndex, NodeIndex)> {
     let station_path = line.get_station_path(graph);
     // Return is the reverse of forward
     // Find last non-passing-loop station (origin of return)
@@ -2489,34 +2680,55 @@ struct RunProcessingContext<'a> {
     data: &'a NimbyImportData,
 }
 
-/// Process a single run and add to appropriate schedule
+/// A partial (short-turn/express) run paired with its shift and the owning
+/// schedule's timezone offset, deferred for manual-departure conversion.
+struct PartialRun<'a> {
+    run: &'a NimbyRun,
+    shift: &'a NimbyShift,
+    tz_delta_s: i64,
+}
+
+/// Process a single run and add to appropriate schedule.
+/// `tz_delta_s` is the owning schedule's timezone offset, applied so all
+/// collected times are in-game local time.
 fn process_run<'a>(
     run: &'a NimbyRun,
     shift: &'a NimbyShift,
+    tz_delta_s: i64,
     ctx: &RunProcessingContext<'_>,
     forward_schedule: &mut DirectionSchedule,
     return_schedule: &mut DirectionSchedule,
-    partial_runs: &mut Vec<(&'a NimbyRun, &'a NimbyShift)>,
+    partial_runs: &mut Vec<PartialRun<'a>>,
 ) {
     let departure_time = run.arrival_departure.get(1).copied().unwrap_or(0);
     let run_type = classify_run(run, ctx.turnaround_idx, ctx.max_stop_idx);
 
     match run_type {
         RunType::FullLoop => {
-            forward_schedule.add_departure(departure_time);
+            forward_schedule.add_departure(apply_tz_delta(departure_time, tz_delta_s));
             if let Some(return_dep) = get_return_departure_from_full_loop(
-                run, ctx.turnaround_idx, ctx.nimby_line, ctx.data
+                run,
+                ctx.turnaround_idx,
+                ctx.nimby_line,
+                ctx.data,
             ) {
-                return_schedule.add_departure(return_dep);
+                return_schedule.add_departure(apply_tz_delta(return_dep, tz_delta_s));
             }
         }
-        RunType::ForwardOnly => forward_schedule.add_departure(departure_time),
+        RunType::ForwardOnly => {
+            forward_schedule.add_departure(apply_tz_delta(departure_time, tz_delta_s));
+        }
         RunType::ReturnOnly => {
-            if let Some(dep) = get_return_departure_from_return_only(run, ctx.nimby_line, ctx.data) {
-                return_schedule.add_departure(dep);
+            if let Some(dep) = get_return_departure_from_return_only(run, ctx.nimby_line, ctx.data)
+            {
+                return_schedule.add_departure(apply_tz_delta(dep, tz_delta_s));
             }
         }
-        RunType::Partial => partial_runs.push((run, shift)),
+        RunType::Partial => partial_runs.push(PartialRun {
+            run,
+            shift,
+            tz_delta_s,
+        }),
     }
 }
 
@@ -2526,7 +2738,7 @@ fn collect_runs_for_line<'a>(
     nimby_line: &'a NimbyLine,
     turnaround_idx: Option<usize>,
     max_stop_idx: usize,
-) -> (DirectionSchedule, DirectionSchedule, Vec<(&'a NimbyRun, &'a NimbyShift)>) {
+) -> (DirectionSchedule, DirectionSchedule, Vec<PartialRun<'a>>) {
     let mut forward_schedule = DirectionSchedule::new();
     let mut return_schedule = DirectionSchedule::new();
     let mut partial_runs = Vec::new();
@@ -2538,15 +2750,27 @@ fn collect_runs_for_line<'a>(
         data,
     };
 
-    let matching_runs = data.schedules.iter()
-        .flat_map(|s| s.shifts.iter())
-        .flat_map(|shift| shift.runs.iter().map(move |run| (run, shift)))
-        .filter(|(run, _)| run.line_id == nimby_line.id);
+    let matching_runs = data
+        .schedules
+        .iter()
+        .flat_map(|schedule| {
+            schedule
+                .shifts
+                .iter()
+                .flat_map(move |shift| shift.runs.iter().map(move |run| (run, shift)))
+                .map(move |(run, shift)| (run, shift, schedule.tz_delta_s))
+        })
+        .filter(|(run, _, _)| run.line_id == nimby_line.id);
 
-    for (run, shift) in matching_runs {
+    for (run, shift, tz_delta_s) in matching_runs {
         process_run(
-            run, shift, &ctx,
-            &mut forward_schedule, &mut return_schedule, &mut partial_runs,
+            run,
+            shift,
+            tz_delta_s,
+            &ctx,
+            &mut forward_schedule,
+            &mut return_schedule,
+            &mut partial_runs,
         );
     }
 
@@ -2566,7 +2790,11 @@ fn add_irregular_departures(
         if !fits_frequency_pattern(dep, first_departure, freq_secs) {
             let days = schedule.get_days_for_departure(dep);
             line.manual_departures.push(create_manual_departure(
-                dep, origin, destination, None, days,
+                dep,
+                origin,
+                destination,
+                None,
+                days,
             ));
         }
     }
@@ -2582,7 +2810,11 @@ fn add_all_as_manual(
     for &dep in &schedule.departures {
         let days = schedule.get_days_for_departure(dep);
         line.manual_departures.push(create_manual_departure(
-            dep, origin, destination, None, days,
+            dep,
+            origin,
+            destination,
+            None,
+            days,
         ));
     }
 }
@@ -2646,28 +2878,14 @@ fn import_schedule_for_line(
         if let (Some(first_fwd), Some((origin, dest))) =
             (forward_schedule.first_departure, forward_endpoints)
         {
-            add_irregular_departures(
-                line,
-                &forward_schedule,
-                first_fwd,
-                freq_secs,
-                origin,
-                dest,
-            );
+            add_irregular_departures(line, &forward_schedule, first_fwd, freq_secs, origin, dest);
         }
 
         // Add irregular return departures
         if let (Some(first_ret), Some((origin, dest))) =
             (return_schedule.first_departure, return_endpoints)
         {
-            add_irregular_departures(
-                line,
-                &return_schedule,
-                first_ret,
-                freq_secs,
-                origin,
-                dest,
-            );
+            add_irregular_departures(line, &return_schedule, first_ret, freq_secs, origin, dest);
         }
     } else {
         // No consistent frequency - all manual
@@ -2686,7 +2904,7 @@ fn import_schedule_for_line(
 
     // Add partial runs as manual departures
     // Group by normalized time to track days
-    add_partial_runs_as_manual(line, &partial_runs, graph);
+    add_partial_runs_as_manual(line, &partial_runs, nimby_line, data, graph);
 }
 
 /// Data for a partial run grouped by departure time
@@ -2697,28 +2915,101 @@ struct PartialRunData {
     train_number: Option<String>,
 }
 
-/// Add partial runs as manual departures, grouping by time to track days
+/// Build a lookup from NIMBY station id to the project node it was imported as.
+/// Stations imported from NIMBY carry the station id in `external_id`.
+fn build_station_id_to_node(graph: &RailwayGraph) -> HashMap<String, NodeIndex> {
+    graph
+        .get_all_stations_ordered()
+        .into_iter()
+        .filter_map(|(idx, station)| station.external_id.map(|id| (id, idx)))
+        .collect()
+}
+
+/// Resolve a NIMBY stop index to a project node, walking inward toward `toward`
+/// past waypoints ("0x0") and depots until a real, mapped station is found.
+/// `toward` is the run's opposite endpoint, so walking inward stays within the
+/// run's covered stop range.
+fn resolve_stop_to_node(
+    stop_idx: usize,
+    toward: usize,
+    nimby_line: &NimbyLine,
+    data: &NimbyImportData,
+    station_id_to_node: &HashMap<String, NodeIndex>,
+) -> Option<NodeIndex> {
+    let mut cursor = stop_idx;
+
+    loop {
+        let stop = nimby_line.stops.get(cursor)?;
+        let is_waypoint_or_depot = stop.station_id == "0x0" || is_depot(data, &stop.station_id);
+        if !is_waypoint_or_depot {
+            if let Some(&node) = station_id_to_node.get(&stop.station_id) {
+                return Some(node);
+            }
+        }
+        if cursor == toward {
+            return None;
+        }
+        cursor = if toward > cursor {
+            cursor + 1
+        } else {
+            cursor - 1
+        };
+    }
+}
+
+/// Add partial runs as manual departures, grouping by time to track days.
+/// From/to stations are resolved from the NIMBY line's stop list (enter/exit
+/// indices are NIMBY stop indices, not route-segment indices), which keeps the
+/// direction correct: return-half stops appear later in the list, so their nodes
+/// map back to the return direction naturally.
 fn add_partial_runs_as_manual(
     line: &mut Line,
-    partial_runs: &[(&NimbyRun, &NimbyShift)],
+    partial_runs: &[PartialRun<'_>],
+    nimby_line: &NimbyLine,
+    data: &NimbyImportData,
     graph: &RailwayGraph,
 ) {
+    let station_id_to_node = build_station_id_to_node(graph);
+
     let mut partial_by_time: std::collections::HashMap<i64, PartialRunData> =
         std::collections::HashMap::new();
 
-    for (run, shift) in partial_runs {
-        let departure_time = run.arrival_departure.get(1).copied().unwrap_or(0);
+    for PartialRun {
+        run,
+        shift,
+        tz_delta_s,
+    } in partial_runs
+    {
+        let raw_departure = run.arrival_departure.get(1).copied().unwrap_or(0);
+        let departure_time = apply_tz_delta(raw_departure, *tz_delta_s);
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let day_idx = (departure_time / 86400) as usize;
-        let normalized = departure_time % 86400;
+        let day_idx = (departure_time / SECONDS_PER_DAY) as usize;
+        let normalized = departure_time % SECONDS_PER_DAY;
 
-        let from_station = line.forward_route.get(run.enter_stop_idx)
-            .and_then(|seg| graph.graph.edge_endpoints(EdgeIndex::new(seg.edge_index)))
-            .map(|(from, _)| from);
+        let from_station = resolve_stop_to_node(
+            run.enter_stop_idx,
+            run.exit_stop_idx,
+            nimby_line,
+            data,
+            &station_id_to_node,
+        );
+        let to_station = resolve_stop_to_node(
+            run.exit_stop_idx,
+            run.enter_stop_idx,
+            nimby_line,
+            data,
+            &station_id_to_node,
+        );
 
-        let to_station = line.forward_route.get(run.exit_stop_idx.saturating_sub(1))
-            .and_then(|seg| graph.graph.edge_endpoints(EdgeIndex::new(seg.edge_index)))
-            .map(|(_, to)| to);
+        if from_station.is_none() || to_station.is_none() {
+            log::warn!(
+                "NIMBY import: dropping partial run on line '{}' (enter={}, exit={}): could not resolve endpoints to stations",
+                nimby_line.name,
+                run.enter_stop_idx,
+                run.exit_stop_idx,
+            );
+            continue;
+        }
 
         let day_flag = crate::models::DaysOfWeek::from_index(day_idx)
             .unwrap_or(crate::models::DaysOfWeek::ALL_DAYS);
@@ -2737,7 +3028,11 @@ fn add_partial_runs_as_manual(
     for (time, data) in partial_by_time {
         if let (Some(from_station), Some(to_station)) = (data.from_station, data.to_station) {
             line.manual_departures.push(create_manual_departure(
-                time, from_station, to_station, data.train_number, data.days,
+                time,
+                from_station,
+                to_station,
+                data.train_number,
+                data.days,
             ));
         }
     }
@@ -2808,16 +3103,39 @@ mod tests {
         assert_eq!(summaries[0].color, "#332211"); // ABGR 0xff112233 -> RGB #332211
     }
 
+    /// Environment variable pointing at a real NIMBY Rails export used by the
+    /// integration-style tests below. When unset, those tests skip so clean
+    /// checkouts (and CI) stay green without the large local fixture.
+    const TIMETABLE_ENV: &str = "NIMBY_TIMETABLE_JSON";
+
+    /// Read the real timetable export named by `TIMETABLE_ENV`, or `None` when
+    /// the variable is unset or the file is missing.
+    fn load_real_timetable() -> Option<String> {
+        let Ok(path) = std::env::var(TIMETABLE_ENV) else {
+            eprintln!("skipping: set {TIMETABLE_ENV} to a NIMBY export to run this test");
+            return None;
+        };
+        match std::fs::read_to_string(&path) {
+            Ok(json) => Some(json),
+            Err(e) => {
+                eprintln!("skipping: could not read {path}: {e}");
+                None
+            }
+        }
+    }
+
     #[test]
     fn test_r14_schedule_import() {
-        // Load the actual timetable.json file
-        let json = std::fs::read_to_string("timetable.json")
-            .expect("Could not read timetable.json");
+        let Some(json) = load_real_timetable() else {
+            return;
+        };
 
         let data = parse_nimby_json(&json).unwrap();
 
         // Find R14 line
-        let r14 = data.lines.iter()
+        let r14 = data
+            .lines
+            .iter()
             .find(|l| l.name == "R14 Kongsvinger - Drammen")
             .expect("R14 not found");
 
@@ -2828,17 +3146,21 @@ mod tests {
         let mut graph = RailwayGraph::default();
         let infra_config = NimbyImportConfig {
             create_infrastructure: true,
-            selected_line_ids: Vec::new(), // Import all for infrastructure
+            selected_line_ids: None, // Import all for infrastructure
             ..Default::default()
         };
         let _ = import_nimby_lines(&data, &infra_config, &mut graph, 0, None).unwrap();
 
-        println!("Graph has {} nodes and {} edges", graph.graph.node_count(), graph.graph.edge_count());
+        println!(
+            "Graph has {} nodes and {} edges",
+            graph.graph.node_count(),
+            graph.graph.edge_count()
+        );
 
         // Now import just R14 as a line (using existing infrastructure)
         let config = NimbyImportConfig {
             create_infrastructure: false,
-            selected_line_ids: vec![r14.id.clone()],
+            selected_line_ids: Some(vec![r14.id.clone()]),
             ..Default::default()
         };
         let lines = import_nimby_lines(&data, &config, &mut graph, 0, None).unwrap();
@@ -2852,113 +3174,392 @@ mod tests {
         println!("Return route length: {}", line.return_route.len());
         println!("Schedule Mode: {:?}", line.schedule_mode);
         println!("Days of Week: {}", line.days_of_week.to_display_string());
-        println!("Frequency: {} seconds ({} min)", line.frequency.num_seconds(), line.frequency.num_minutes());
+        println!(
+            "Frequency: {} seconds ({} min)",
+            line.frequency.num_seconds(),
+            line.frequency.num_minutes()
+        );
         println!("First Departure: {}", line.first_departure.format("%H:%M"));
         println!("Last Departure: {}", line.last_departure.format("%H:%M"));
-        println!("Return First Departure: {}", line.return_first_departure.format("%H:%M"));
-        println!("Return Last Departure: {}", line.return_last_departure.format("%H:%M"));
+        println!(
+            "Return First Departure: {}",
+            line.return_first_departure.format("%H:%M")
+        );
+        println!(
+            "Return Last Departure: {}",
+            line.return_last_departure.format("%H:%M")
+        );
         println!("Manual Departures: {}", line.manual_departures.len());
 
         // Show all manual departures with station names
         for (i, dep) in line.manual_departures.iter().enumerate() {
             let from_name = graph.get_station_name(dep.from_station).unwrap_or("?");
             let to_name = graph.get_station_name(dep.to_station).unwrap_or("?");
-            println!("  Manual {}: {} days={} from={} to={} train={:?}",
-                i, dep.time.format("%H:%M"), dep.days_of_week.to_display_string(),
-                from_name, to_name, dep.train_number);
+            println!(
+                "  Manual {}: {} days={} from={} to={} train={:?}",
+                i,
+                dep.time.format("%H:%M"),
+                dep.days_of_week.to_display_string(),
+                from_name,
+                to_name,
+                dep.train_number
+            );
         }
 
         // Basic sanity checks
-        assert!(line.frequency.num_seconds() > 0, "Should have detected a frequency");
+        assert!(
+            line.frequency.num_seconds() > 0,
+            "Should have detected a frequency"
+        );
+        assert_eq!(line.frequency.num_minutes(), 60);
+
+        // Departure times are in-game local time, i.e. include the schedule's
+        // tz_delta_s (3600s for R14). The forward pattern base departs at :09;
+        // with the +1h timezone offset applied this is 00:09 local (raw 23:09).
+        assert_eq!(
+            line.first_departure.format("%H:%M").to_string(),
+            "00:09",
+            "forward first departure should reflect tz_delta_s (+1h)"
+        );
+        assert_eq!(
+            line.return_first_departure.format("%H:%M").to_string(),
+            "06:30",
+            "return first departure should reflect tz_delta_s (+1h)"
+        );
+    }
+
+    #[test]
+    fn test_find_station_prefers_external_id_over_duplicate_name() {
+        use crate::models::{Node, StationNode};
+
+        // Two nodes share the name "Sinsen" but have different external ids.
+        let mut graph = RailwayGraph::default();
+        let make = |name: &str, ext: &str| {
+            Node::Station(StationNode {
+                name: name.to_string(),
+                external_id: Some(ext.to_string()),
+                position: Some((0.0, 0.0)),
+                passing_loop: false,
+                platforms: vec![],
+                label_position: None,
+            })
+        };
+        let sinsen_rail = graph.graph.add_node(make("Sinsen", "0x10"));
+        let sinsen_metro = graph.graph.add_node(make("Sinsen", "0x20"));
+
+        let data = NimbyImportData {
+            company_name: "T".to_string(),
+            stations: [
+                (
+                    "0x10".to_string(),
+                    NimbyStation {
+                        id: "0x10".to_string(),
+                        name: "Sinsen".to_string(),
+                        lonlat: (0.0, 0.0),
+                    },
+                ),
+                (
+                    "0x20".to_string(),
+                    NimbyStation {
+                        id: "0x20".to_string(),
+                        name: "Sinsen".to_string(),
+                        lonlat: (0.0, 0.0),
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            lines: Vec::new(),
+            schedules: Vec::new(),
+        };
+
+        // Schedules mode (create_if_missing=false): binding "0x20" must resolve
+        // to the metro node, not the first name match (rail).
+        let idx = find_or_create_station(&mut graph, "0x20", &data, false, None).unwrap();
+        assert_eq!(idx, sinsen_metro);
+        assert_ne!(idx, sinsen_rail);
+    }
+
+    #[test]
+    fn test_platform_direction_selection() {
+        // A stop with two per-direction area lists: forward platform "2", return "1".
+        let stop = NimbyStop {
+            idx: 0,
+            leg_distance: 0.0,
+            station_id: "0x1".to_string(),
+            arrival: 0,
+            departure: 0,
+            areas: vec![
+                vec![NimbyTrackArea {
+                    platform_name: "2".to_string(),
+                }],
+                vec![NimbyTrackArea {
+                    platform_name: "1".to_string(),
+                }],
+            ],
+        };
+        assert_eq!(
+            get_platform_from_stop(&stop, Direction::Forward).as_deref(),
+            Some("2")
+        );
+        assert_eq!(
+            get_platform_from_stop(&stop, Direction::Return).as_deref(),
+            Some("1")
+        );
+
+        // With only one area list, both directions fall back to it.
+        let single = NimbyStop {
+            areas: vec![vec![NimbyTrackArea {
+                platform_name: "3".to_string(),
+            }]],
+            ..stop.clone()
+        };
+        assert_eq!(
+            get_platform_from_stop(&single, Direction::Forward).as_deref(),
+            Some("3")
+        );
+        assert_eq!(
+            get_platform_from_stop(&single, Direction::Return).as_deref(),
+            Some("3")
+        );
+    }
+
+    #[test]
+    fn test_detect_frequency_rounds_to_nearest_minute() {
+        // A 3599s gap must round to 3600 (60 min), not floor to 3540.
+        let departures = vec![0, 3599, 7198];
+        let freq = detect_frequency(&departures).expect("frequency detected");
+        assert_eq!(freq.num_seconds(), 3600);
+    }
+
+    #[test]
+    fn test_station_count_excludes_depots() {
+        let json = r#"[
+            {"class":"Station", "id":"0x1", "name":"A", "lonlat":[10.0, 59.0]},
+            {"class":"Station", "id":"0x2", "name":"B [DEP]", "lonlat":[10.0, 59.0]},
+            {"class":"Station", "id":"0x3", "name":"C", "lonlat":[11.0, 60.0]},
+            {"class":"Line", "id":"0x100", "name":"Test", "code":"T1", "color":"0xff112233", "stops":[
+                {"class":"Stop", "idx":0, "leg_distance":0, "station_id":"0x1", "arrival":0, "departure":60},
+                {"class":"Stop", "idx":1, "leg_distance":1000, "station_id":"0x2", "arrival":120, "departure":120},
+                {"class":"Stop", "idx":2, "leg_distance":1000, "station_id":"0x3", "arrival":240, "departure":300}
+            ]}
+        ]"#;
+
+        let data = parse_nimby_json(json).unwrap();
+        let summaries = data.get_line_summaries();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].stop_count, 3);
+        // Depot stop (B [DEP]) is excluded from the station count.
+        assert_eq!(summaries[0].station_count, 2);
+    }
+
+    #[test]
+    fn test_selected_line_ids_none_vs_empty() {
+        let json = r#"[
+            {"class":"Station", "id":"0x1", "name":"A", "lonlat":[10.0, 59.0]},
+            {"class":"Station", "id":"0x2", "name":"B", "lonlat":[11.0, 60.0]},
+            {"class":"Line", "id":"0x100", "name":"L1", "code":"L1", "color":"0xff112233", "stops":[
+                {"class":"Stop", "idx":0, "leg_distance":0, "station_id":"0x1", "arrival":0, "departure":60},
+                {"class":"Stop", "idx":1, "leg_distance":1000, "station_id":"0x2", "arrival":120, "departure":180}
+            ]}
+        ]"#;
+        let data = parse_nimby_json(json).unwrap();
+
+        // Empty selection imports nothing (infrastructure mode creates no nodes).
+        let mut graph_empty = RailwayGraph::default();
+        let cfg_empty = NimbyImportConfig {
+            create_infrastructure: true,
+            selected_line_ids: Some(Vec::new()),
+            ..Default::default()
+        };
+        import_nimby_lines(&data, &cfg_empty, &mut graph_empty, 0, None).unwrap();
+        assert_eq!(
+            graph_empty.graph.node_count(),
+            0,
+            "empty selection must import nothing"
+        );
+
+        // None imports all lines.
+        let mut graph_all = RailwayGraph::default();
+        let cfg_all = NimbyImportConfig {
+            create_infrastructure: true,
+            selected_line_ids: None,
+            ..Default::default()
+        };
+        import_nimby_lines(&data, &cfg_all, &mut graph_all, 0, None).unwrap();
+        assert!(
+            graph_all.graph.node_count() >= 2,
+            "None must import all lines"
+        );
+    }
+
+    #[test]
+    fn test_last_departure_excludes_off_pattern() {
+        // Hourly pattern at :00 for 05:00..=08:00, plus a single off-pattern
+        // departure at 08:37 (well outside the 2-minute tolerance).
+        let base = 5 * 3600;
+        let mut schedule = DirectionSchedule::new();
+        for hour in 0..=3 {
+            schedule.add_departure(base + hour * 3600);
+        }
+        let off_pattern = base + 3 * 3600 + 37 * 60; // 08:37
+        schedule.add_departure(off_pattern);
+
+        schedule.finalize();
+
+        let freq = schedule.frequency.expect("hourly frequency detected");
+        assert_eq!(freq.num_seconds(), 3600);
+
+        let first = schedule.first_departure.expect("first departure");
+        let last = schedule.last_departure.expect("last departure");
+
+        // last_departure is the last ON-pattern departure (08:00), not 08:37.
+        assert_eq!(last, base + 3 * 3600, "last_departure must ignore 08:37");
+        assert!(
+            !fits_frequency_pattern(off_pattern, first, freq.num_seconds()),
+            "08:37 is off-pattern and would be emitted as a manual departure only"
+        );
+        assert!(
+            fits_frequency_pattern(last, first, freq.num_seconds()),
+            "last_departure itself must fit the pattern"
+        );
+    }
+
+    /// NIMBY data for a 3-station line A -> B -> C used by the update tests.
+    fn three_station_nimby_data() -> NimbyImportData {
+        let nimby_station = |id: &str, name: &str| {
+            (
+                id.to_string(),
+                NimbyStation {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    lonlat: (0.0, 0.0),
+                },
+            )
+        };
+        let nimby_stop = |idx: usize, id: &str, leg: f64, arr: i64| NimbyStop {
+            idx,
+            leg_distance: leg,
+            station_id: id.to_string(),
+            arrival: arr,
+            departure: arr + 60,
+            areas: Vec::new(),
+        };
+        NimbyImportData {
+            company_name: "Test".to_string(),
+            stations: [
+                nimby_station("0x1", "Station A"),
+                nimby_station("0x2", "Station B"),
+                nimby_station("0x3", "Station C"),
+            ]
+            .into_iter()
+            .collect(),
+            schedules: Vec::new(),
+            lines: vec![NimbyLine {
+                id: "0x100".to_string(),
+                name: "Test Line".to_string(),
+                code: "T1".to_string(),
+                color: "0xffff0000".to_string(),
+                stops: vec![
+                    nimby_stop(0, "0x1", 0.0, 0),
+                    nimby_stop(1, "0x2", 10000.0, 360),
+                    nimby_stop(2, "0x3", 10000.0, 720),
+                ],
+            }],
+        }
+    }
+
+    /// The destination station name of a route segment (via its edge endpoint).
+    fn dest_name(graph: &RailwayGraph, seg: &RouteSegment) -> String {
+        let (_, to) = graph
+            .graph
+            .edge_endpoints(EdgeIndex::new(seg.edge_index))
+            .unwrap();
+        graph.graph[to].display_name()
+    }
+
+    /// A stop's forward and return platforms both resolve and differ.
+    fn stop_has_directional_platforms(stop: &NimbyStop) -> bool {
+        if stop.areas.len() < 2 {
+            return false;
+        }
+        let fwd = get_platform_from_stop(stop, Direction::Forward);
+        let ret = get_platform_from_stop(stop, Direction::Return);
+        matches!((fwd, ret), (Some(f), Some(r)) if f != r)
+    }
+
+    #[test]
+    fn test_real_data_forward_return_platforms_differ() {
+        let Some(json) = load_real_timetable() else {
+            return;
+        };
+        let data = parse_nimby_json(&json).unwrap();
+
+        // At least one real stop must expose different forward/return platforms,
+        // proving direction is threaded through platform selection.
+        let found = data
+            .lines
+            .iter()
+            .flat_map(|line| &line.stops)
+            .any(stop_has_directional_platforms);
+        assert!(
+            found,
+            "real export should contain a stop whose forward/return platforms differ"
+        );
     }
 
     #[test]
     fn test_update_existing_line_with_passing_loop() {
-        use crate::models::{Line, RouteSegment, Node, Track, TrackDirection, StationNode, Platform};
+        use crate::models::{
+            Line, Node, Platform, RouteSegment, StationNode, Track, TrackDirection,
+        };
         use chrono::Duration;
 
         // Create a simple graph: A -- B -- C
         let mut graph = RailwayGraph::default();
 
-        let station_a = graph.graph.add_node(Node::Station(StationNode {
-            name: "Station A".to_string(),
-            external_id: Some("0x1".to_string()),
-            position: Some((0.0, 0.0)),
-            passing_loop: false,
-            platforms: vec![],
-            label_position: None,
-        }));
-
-        let station_b = graph.graph.add_node(Node::Station(StationNode {
-            name: "Station B".to_string(),
-            external_id: Some("0x2".to_string()),
-            position: Some((100.0, 0.0)),
-            passing_loop: false,
-            platforms: vec![],
-            label_position: None,
-        }));
-
-        let station_c = graph.graph.add_node(Node::Station(StationNode {
-            name: "Station C".to_string(),
-            external_id: Some("0x3".to_string()),
-            position: Some((200.0, 0.0)),
-            passing_loop: false,
-            platforms: vec![],
-            label_position: None,
-        }));
+        let mut station = |name: &str, ext: &str, x: f64| {
+            graph.graph.add_node(Node::Station(StationNode {
+                name: name.to_string(),
+                external_id: Some(ext.to_string()),
+                position: Some((x, 0.0)),
+                passing_loop: false,
+                platforms: vec![],
+                label_position: None,
+            }))
+        };
+        let station_a = station("Station A", "0x1", 0.0);
+        let station_b = station("Station B", "0x2", 100.0);
+        let station_c = station("Station C", "0x3", 200.0);
 
         // Create edges A-B and B-C
-        let tracks = vec![Track { direction: TrackDirection::Bidirectional }];
+        let tracks = vec![Track {
+            direction: TrackDirection::Bidirectional,
+        }];
         let edge_ab = graph.add_track(station_a, station_b, tracks.clone(), Some(10.0));
         let edge_bc = graph.add_track(station_b, station_c, tracks.clone(), Some(10.0));
 
-        // Create an existing line A -> B -> C with custom wait times
-        let mut existing_line = Line {
-            id: uuid::Uuid::new_v4(),
-            name: "Test Line".to_string(),
-            code: "T1".to_string(),
-            color: "#FF0000".to_string(),
-            frequency: Duration::minutes(30),
-            thickness: 2.0,
-            first_departure: chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap().and_hms_opt(6, 0, 0).unwrap(),
-            return_first_departure: chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap().and_hms_opt(6, 0, 0).unwrap(),
-            last_departure: chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap().and_hms_opt(22, 0, 0).unwrap(),
-            return_last_departure: chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap().and_hms_opt(22, 0, 0).unwrap(),
-            visible: true,
-            schedule_mode: crate::models::ScheduleMode::Auto,
-            days_of_week: crate::models::DaysOfWeek::default(),
-            manual_departures: Vec::new(),
-            forward_route: vec![
-                RouteSegment {
-                    edge_index: edge_ab.index(),
-                    track_index: 0,
-                    origin_platform: 0,
-                    destination_platform: 0,
-                    duration: Some(Duration::minutes(5)),
-                    wait_time: Duration::minutes(2), // Custom wait time at B
-                },
-                RouteSegment {
-                    edge_index: edge_bc.index(),
-                    track_index: 0,
-                    origin_platform: 0,
-                    destination_platform: 0,
-                    duration: Some(Duration::minutes(5)),
-                    wait_time: Duration::minutes(3), // Custom wait time at C
-                },
-            ],
-            return_route: Vec::new(),
-            sync_routes: false,
-            auto_train_number_format: "{line} {seq:04}".to_string(),
-            default_wait_time: Duration::seconds(30),
-            first_stop_wait_time: Duration::zero(),
-            return_first_stop_wait_time: Duration::zero(),
-            sort_index: None,
-            sync_departure_offsets: false,
-            folder_id: None,
-            style: crate::models::LineStyle::default(),
-            forward_turnaround: false,
-            return_turnaround: false,
+        // Build a route segment referencing `edge` with the given wait time.
+        let segment = |edge: EdgeIndex, wait_min: i64| RouteSegment {
+            edge_index: edge.index(),
+            track_index: 0,
+            origin_platform: 0,
+            destination_platform: 0,
+            duration: Some(Duration::minutes(5)),
+            wait_time: Duration::minutes(wait_min),
         };
+
+        // Create an existing line A -> B -> C with custom wait times
+        let mut existing_line = Line::create_from_ids(&["Test Line".to_string()], 0)
+            .into_iter()
+            .next()
+            .unwrap();
+        existing_line.code = "T1".to_string();
+        existing_line.sync_routes = false;
+        existing_line.forward_route = vec![
+            segment(edge_ab, 2), // Custom wait time at B
+            segment(edge_bc, 3), // Custom wait time at C
+        ];
 
         // Verify initial state
         assert_eq!(existing_line.forward_route.len(), 2);
@@ -2972,8 +3573,12 @@ mod tests {
             position: Some((50.0, 0.0)),
             passing_loop: true,
             platforms: vec![
-                Platform { name: "1".to_string() },
-                Platform { name: "2".to_string() },
+                Platform {
+                    name: "1".to_string(),
+                },
+                Platform {
+                    name: "2".to_string(),
+                },
             ],
             label_position: None,
         }));
@@ -2986,27 +3591,7 @@ mod tests {
         // Now the graph is: A -- PassingLoop -- B -- C
         // The line's route still references the old edge_ab which is now invalid
 
-        // Create minimal NIMBY data for update
-        let nimby_data = NimbyImportData {
-            company_name: "Test".to_string(),
-            stations: [
-                ("0x1".to_string(), NimbyStation { id: "0x1".to_string(), name: "Station A".to_string(), lonlat: (0.0, 0.0) }),
-                ("0x2".to_string(), NimbyStation { id: "0x2".to_string(), name: "Station B".to_string(), lonlat: (0.0, 0.0) }),
-                ("0x3".to_string(), NimbyStation { id: "0x3".to_string(), name: "Station C".to_string(), lonlat: (0.0, 0.0) }),
-            ].into_iter().collect(),
-            schedules: Vec::new(),
-            lines: vec![NimbyLine {
-                id: "0x100".to_string(),
-                name: "Test Line".to_string(),
-                code: "T1".to_string(),
-                color: "0xffff0000".to_string(),
-                stops: vec![
-                    NimbyStop { idx: 0, leg_distance: 0.0, station_id: "0x1".to_string(), arrival: 0, departure: 60, areas: Vec::new() },
-                    NimbyStop { idx: 1, leg_distance: 10000.0, station_id: "0x2".to_string(), arrival: 360, departure: 420, areas: Vec::new() },
-                    NimbyStop { idx: 2, leg_distance: 10000.0, station_id: "0x3".to_string(), arrival: 720, departure: 780, areas: Vec::new() },
-                ],
-            }],
-        };
+        let nimby_data = three_station_nimby_data();
 
         let config = NimbyImportConfig {
             create_infrastructure: false,
@@ -3028,36 +3613,67 @@ mod tests {
 
         assert!(result.is_ok(), "Update should succeed: {result:?}");
 
-        // Verify the route now goes through the passing loop (3 segments: A->Loop, Loop->B, B->C)
-        println!("Forward route after update: {} segments", existing_line.forward_route.len());
-        for (i, seg) in existing_line.forward_route.iter().enumerate() {
-            let endpoints = graph.graph.edge_endpoints(EdgeIndex::new(seg.edge_index));
-            let (from, to) = endpoints.unwrap();
-            let from_name = graph.graph[from].display_name();
-            let to_name = graph.graph[to].display_name();
-            println!("  Segment {}: {} -> {}, wait_time: {}s", i, from_name, to_name, seg.wait_time.num_seconds());
-        }
+        // Route now goes through the passing loop: A->Loop, Loop->B, B->C
+        assert_eq!(
+            existing_line.forward_route.len(),
+            3,
+            "Should have 3 segments (A->Loop, Loop->B, B->C)"
+        );
 
-        assert_eq!(existing_line.forward_route.len(), 3, "Should have 3 segments (A->Loop, Loop->B, B->C)");
-
-        // Verify wait times are preserved for B and C
-        // The segment ending at B should have preserved wait time of 2 minutes
+        // Wait times are preserved for B and C; the new A->Loop segment is not.
         let seg_to_b = &existing_line.forward_route[1]; // Loop -> B
-        let (_, to_b) = graph.graph.edge_endpoints(EdgeIndex::new(seg_to_b.edge_index)).unwrap();
-        assert_eq!(graph.graph[to_b].display_name(), "Station B");
-        assert_eq!(seg_to_b.wait_time.num_minutes(), 2, "Wait time at B should be preserved");
+        assert_eq!(dest_name(&graph, seg_to_b), "Station B");
+        assert_eq!(
+            seg_to_b.wait_time.num_minutes(),
+            2,
+            "Wait time at B should be preserved"
+        );
 
-        // The segment ending at C should have preserved wait time of 3 minutes
         let seg_to_c = &existing_line.forward_route[2]; // B -> C
-        let (_, to_c) = graph.graph.edge_endpoints(EdgeIndex::new(seg_to_c.edge_index)).unwrap();
-        assert_eq!(graph.graph[to_c].display_name(), "Station C");
-        assert_eq!(seg_to_c.wait_time.num_minutes(), 3, "Wait time at C should be preserved");
+        assert_eq!(dest_name(&graph, seg_to_c), "Station C");
+        assert_eq!(
+            seg_to_c.wait_time.num_minutes(),
+            3,
+            "Wait time at C should be preserved"
+        );
 
-        // The new passing loop segment should have NIMBY timing (not preserved, since it's new)
         let seg_to_loop = &existing_line.forward_route[0]; // A -> Loop
-        let (_, to_loop) = graph.graph.edge_endpoints(EdgeIndex::new(seg_to_loop.edge_index)).unwrap();
-        assert_eq!(graph.graph[to_loop].display_name(), "Passing Loop");
-        // Passing loop wait time comes from NIMBY or default (0 since it's intermediate)
-        println!("Passing loop wait time: {}s", seg_to_loop.wait_time.num_seconds());
+        assert_eq!(dest_name(&graph, seg_to_loop), "Passing Loop");
+
+        // Second update pass: the route now already contains the passing-loop
+        // segment (A->Loop, Loop->B, B->C), so segment count no longer equals
+        // stop count. Positional mapping would attach C's wait to B here; the
+        // endpoint-based mapping must keep wait times on the correct stations.
+        let result2 = update_existing_line(
+            &mut existing_line,
+            &nimby_data.lines[0],
+            &nimby_data,
+            &config,
+            &mut graph,
+            &mut edge_map,
+        );
+        assert!(result2.is_ok(), "Second update should succeed: {result2:?}");
+
+        assert_eq!(
+            existing_line.forward_route.len(),
+            3,
+            "Route should still have 3 segments after the second pass"
+        );
+
+        let seg_to_b = &existing_line.forward_route[1];
+        assert_eq!(dest_name(&graph, seg_to_b), "Station B");
+        assert_eq!(
+            seg_to_b.wait_time.num_minutes(),
+            2,
+            "Wait time at B must stay 2 after the second pass (not shifted from C)"
+        );
+
+        let seg_to_c = &existing_line.forward_route[2];
+        assert_eq!(dest_name(&graph, seg_to_c), "Station C");
+        assert_eq!(
+            seg_to_c.wait_time.num_minutes(),
+            3,
+            "Wait time at C must stay 3 after the second pass"
+        );
     }
 }

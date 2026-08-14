@@ -284,7 +284,7 @@ fn test_merged_import(data: &nimby_graph::import::nimby::NimbyImportData) {
     // Import infrastructure for both
     let infra_config = NimbyImportConfig {
         create_infrastructure: true,
-        selected_line_ids: vec![r12_id.clone(), r13_id.clone()],
+        selected_line_ids: Some(vec![r12_id.clone(), r13_id.clone()]),
         handedness: TrackHandedness::RightHand,
         station_spacing: 100.0,
         ..Default::default()
@@ -298,7 +298,7 @@ fn test_merged_import(data: &nimby_graph::import::nimby::NimbyImportData) {
     // Import schedules for R13 only
     let schedule_config = NimbyImportConfig {
         create_infrastructure: false,
-        selected_line_ids: vec![r13_id],
+        selected_line_ids: Some(vec![r13_id]),
         handedness: TrackHandedness::RightHand,
         station_spacing: 100.0,
         ..Default::default()
@@ -342,7 +342,7 @@ fn test_line_schedule_import(data: &nimby_graph::import::nimby::NimbyImportData,
     // Import infrastructure first
     let infra_config = NimbyImportConfig {
         create_infrastructure: true,
-        selected_line_ids: vec![line_id.clone()],
+        selected_line_ids: Some(vec![line_id.clone()]),
         handedness: TrackHandedness::RightHand,
         station_spacing: 100.0,
         ..Default::default()
@@ -356,7 +356,7 @@ fn test_line_schedule_import(data: &nimby_graph::import::nimby::NimbyImportData,
     // Now import schedules
     let schedule_config = NimbyImportConfig {
         create_infrastructure: false,
-        selected_line_ids: vec![line_id],
+        selected_line_ids: Some(vec![line_id]),
         handedness: TrackHandedness::RightHand,
         station_spacing: 100.0,
         ..Default::default()
@@ -455,7 +455,7 @@ fn main() {
     let mut graph = RailwayGraph::default();
     let config = NimbyImportConfig {
         create_infrastructure: true,
-        selected_line_ids: oslo_lines.clone(),
+        selected_line_ids: Some(oslo_lines.clone()),
         handedness: TrackHandedness::RightHand,
         station_spacing: 100.0,
         ..Default::default()
