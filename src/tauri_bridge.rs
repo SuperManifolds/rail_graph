@@ -595,6 +595,37 @@ pub async fn settings_store_set_bool(key: &str, value: bool) -> Result<(), Strin
     Ok(())
 }
 
+/// Resize the current window to a new inner size in logical pixels.
+///
+/// # Errors
+/// Returns an error if the Tauri API is unavailable or the resize fails.
+pub async fn set_current_window_logical_size(width: f64, height: f64) -> Result<(), String> {
+    let ww_module = get_tauri_module("webviewWindow")?;
+    let get_fn: js_sys::Function =
+        js_sys::Reflect::get(&ww_module, &"getCurrentWebviewWindow".into())
+            .map_err(|_| "getCurrentWebviewWindow not found")?
+            .dyn_into()
+            .map_err(|_| "getCurrentWebviewWindow is not a function")?;
+    let current = get_fn
+        .call0(&JsValue::NULL)
+        .map_err(|e| format!("getCurrentWebviewWindow failed: {e:?}"))?;
+
+    // setSize requires a LogicalSize/PhysicalSize instance, not a plain object.
+    let dpi_module = get_tauri_module("dpi")?;
+    let logical_size: js_sys::Function = js_sys::Reflect::get(&dpi_module, &"LogicalSize".into())
+        .map_err(|_| "LogicalSize not found")?
+        .dyn_into()
+        .map_err(|_| "LogicalSize is not a constructor")?;
+    let size = js_sys::Reflect::construct(
+        &logical_size,
+        &js_sys::Array::of2(&width.into(), &height.into()),
+    )
+    .map_err(|e| format!("LogicalSize construction failed: {e:?}"))?;
+
+    call_js_method(&current, "setSize", &[size]).await?;
+    Ok(())
+}
+
 /// Create a new native Tauri window.
 ///
 /// # Errors
