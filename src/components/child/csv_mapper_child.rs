@@ -1,13 +1,31 @@
 use crate::components::csv_column_mapper::CsvColumnMapper;
 use crate::import::csv::CsvImportConfig;
-use crate::window_protocol::{ImporterCsvInit, ImporterCsvResult};
-use leptos::{component, create_signal, view, Callback, IntoView, Signal, SignalGet};
+use crate::window_protocol::{ImporterCsvInit, ImporterCsvResult, ImporterCsvUpdate};
+use leptos::{component, create_signal, view, Callback, IntoView, Signal, SignalGet, SignalSet};
 
 #[component]
 #[must_use]
 pub fn CsvMapperChild(init: ImporterCsvInit, session: String) -> impl IntoView {
     let (config, _) = create_signal(Some(init.config));
-    let (import_error, _) = create_signal(None::<String>);
+    let (import_error, set_import_error) = create_signal(init.error);
+
+    // Listen for update-data events carrying import errors raised by the parent.
+    {
+        let session_for_listen = session.clone();
+        leptos::spawn_local(async move {
+            let event_name = format!("update-data:{session_for_listen}");
+            match crate::tauri_bridge::listen_event(&event_name, move |payload| {
+                if let Ok(update) = serde_json::from_str::<ImporterCsvUpdate>(&payload) {
+                    set_import_error.set(update.error);
+                }
+            })
+            .await
+            {
+                Ok(unlisten) => std::mem::forget(unlisten),
+                Err(e) => leptos::logging::error!("Failed to listen for update-data: {}", e),
+            }
+        });
+    }
 
     let session_import = session.clone();
     let handle_import = move |cfg: CsvImportConfig| {
