@@ -9,7 +9,7 @@
 ///
 /// # Examples
 /// ```
-/// use nimby_graph::geometry::angle_difference;
+/// use railgraph_core::geometry::angle_difference;
 /// use std::f64::consts::PI;
 ///
 /// // Angles close together
@@ -41,8 +41,8 @@ pub fn angle_difference(a1: f64, a2: f64) -> f64 {
 /// * `point` - Point to test
 #[must_use]
 pub fn cross_product_2d(line_start: (f64, f64), line_end: (f64, f64), point: (f64, f64)) -> f64 {
-    (line_end.0 - line_start.0) * (point.1 - line_start.1) -
-    (line_end.1 - line_start.1) * (point.0 - line_start.0)
+    (line_end.0 - line_start.0) * (point.1 - line_start.1)
+        - (line_end.1 - line_start.1) * (point.0 - line_start.0)
 }
 
 /// Checks if two line segments intersect.
@@ -85,7 +85,11 @@ pub fn line_segments_intersect(
 /// * `seg_start` - Starting point of the line segment
 /// * `seg_end` - Ending point of the line segment
 #[must_use]
-pub fn point_to_line_segment_distance(point: (f64, f64), seg_start: (f64, f64), seg_end: (f64, f64)) -> f64 {
+pub fn point_to_line_segment_distance(
+    point: (f64, f64),
+    seg_start: (f64, f64),
+    seg_end: (f64, f64),
+) -> f64 {
     let dx = seg_end.0 - seg_start.0;
     let dy = seg_end.1 - seg_start.1;
     let len_sq = dx * dx + dy * dy;

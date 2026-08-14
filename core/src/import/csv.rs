@@ -1451,6 +1451,15 @@ mod tests {
     use super::*;
     use petgraph::visit::EdgeRef;
 
+    /// Resolve a `test-data` fixture path relative to the workspace root so tests
+    /// pass regardless of the process working directory.
+    fn fixture_path(name: &str) -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("test-data")
+            .join(name)
+    }
+
     #[test]
     fn test_is_time_format() {
         assert!(is_time_format("0:00:00"));
@@ -1543,7 +1552,7 @@ mod tests {
 
     #[test]
     fn test_infrastructure_only_import() {
-        let csv_content = std::fs::read_to_string("test-data/infra.csv")
+        let csv_content = std::fs::read_to_string(fixture_path("infra.csv"))
             .expect("Failed to read test-data/infra.csv");
 
         let config = analyze_csv(&csv_content, None).expect("Should parse infra.csv");
@@ -1637,7 +1646,7 @@ mod tests {
         use crate::train_journey::TrainJourney;
         use crate::constants::BASE_DATE;
 
-        let csv_content = std::fs::read_to_string("test-data/R70.csv")
+        let csv_content = std::fs::read_to_string(fixture_path("R70.csv"))
             .expect("Failed to read test-data/R70.csv");
 
         let config = analyze_csv(&csv_content, Some("R70".to_string())).expect("Should parse R70.csv");

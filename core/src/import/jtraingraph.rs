@@ -711,9 +711,18 @@ pub fn import_jtraingraph(
 mod tests {
     use super::*;
 
+    /// Resolve a `test-data` fixture path relative to the workspace root so tests
+    /// pass regardless of the process working directory.
+    fn fixture_path(name: &str) -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("test-data")
+            .join(name)
+    }
+
     #[test]
     fn test_parse_test_fpl() {
-        let xml_content = std::fs::read_to_string("test-data/test.fpl")
+        let xml_content = std::fs::read_to_string(fixture_path("test.fpl"))
             .expect("Failed to read test.fpl");
 
         let result = parse_jtraingraph(&xml_content);
@@ -729,7 +738,7 @@ mod tests {
 
     #[test]
     fn test_import_dortmund_fpl() {
-        let xml_content = std::fs::read_to_string("test-data/dortmund.fpl")
+        let xml_content = std::fs::read_to_string(fixture_path("dortmund.fpl"))
             .expect("Failed to read dortmund.fpl");
 
         let timetable = parse_jtraingraph(&xml_content)
@@ -751,7 +760,7 @@ mod tests {
 
     #[test]
     fn test_import_test_fpl() {
-        let xml_content = std::fs::read_to_string("test-data/test.fpl")
+        let xml_content = std::fs::read_to_string(fixture_path("test.fpl"))
             .expect("Failed to read test.fpl");
 
         let timetable = parse_jtraingraph(&xml_content)
@@ -774,7 +783,7 @@ mod tests {
 
     #[test]
     fn test_platform_assignments_for_specific_trains() {
-        let xml_content = std::fs::read_to_string("test-data/dortmund.fpl")
+        let xml_content = std::fs::read_to_string(fixture_path("dortmund.fpl"))
             .expect("Failed to read dortmund.fpl");
 
         let timetable = parse_jtraingraph(&xml_content)
@@ -819,7 +828,7 @@ mod tests {
 
     #[test]
     fn test_return_train_creates_line() {
-        let xml_content = std::fs::read_to_string("test-data/dortmund.fpl")
+        let xml_content = std::fs::read_to_string(fixture_path("dortmund.fpl"))
             .expect("Failed to read dortmund.fpl");
 
         let timetable = parse_jtraingraph(&xml_content)
@@ -887,7 +896,7 @@ mod tests {
     #[test]
     #[allow(clippy::excessive_nesting)]
     fn test_pattern_grouping_with_platforms() {
-        let xml_content = std::fs::read_to_string("test-data/dortmund.fpl")
+        let xml_content = std::fs::read_to_string(fixture_path("dortmund.fpl"))
             .expect("Failed to read dortmund.fpl");
 
         let timetable = parse_jtraingraph(&xml_content)
@@ -922,7 +931,7 @@ mod tests {
 
     #[test]
     fn test_track_distances_imported() {
-        let xml_content = std::fs::read_to_string("test-data/dortmund.fpl")
+        let xml_content = std::fs::read_to_string(fixture_path("dortmund.fpl"))
             .expect("Failed to read dortmund.fpl");
 
         let timetable = parse_jtraingraph(&xml_content)
