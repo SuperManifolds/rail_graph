@@ -1247,22 +1247,44 @@ fn import_single_line(
     Ok(Some(line))
 }
 
-/// Record wait times from an existing route, keyed by station name, into
-/// `wait_time_map`.
+/// Stable key identifying a station for wait-time preservation.
+///
+/// Prefers the node's `external_id` (the NIMBY station id, unique per physical
+/// station). Falls back to a `NodeIndex`-derived key so distinct nodes that share
+/// a display name (e.g. two stations both named "Nygård") never collide, which a
+/// name-based key would.
+fn station_wait_key(graph: &RailwayGraph, node: NodeIndex) -> String {
+    let external_id = match &graph.graph[node] {
+        Node::Station(s) => s.external_id.as_deref(),
+        Node::Junction(j) => j.external_id.as_deref(),
+    };
+    external_id.map_or_else(|| format!("__node_{}", node.index()), str::to_owned)
+}
+
+/// Stable key for a NIMBY stop, matching `station_wait_key` for the same station.
+///
+/// The stop's `station_id` is the value stored as the node's `external_id` on
+/// import, so keying by it lines up with the node-derived key on lookup.
+fn stop_wait_key(stop: &NimbyStop) -> String {
+    stop.station_id.clone()
+}
+
+/// Record wait times from an existing route into `wait_time_map`, keyed by stable
+/// station identity (see [`station_wait_key`]).
 ///
 /// Two strategies, chosen per route by comparing the segment count to the number
 /// of real NIMBY stops:
 ///
 /// * When the route has one segment per real stop (no passing-loop segments yet),
-///   map segment `i` to NIMBY stop `i + 1` positionally. This is reliable and
-///   avoids the ambiguity of reused edge indices after an out-of-band edge split.
+///   map segment `i` to NIMBY stop `i + 1` positionally and key by the stop's
+///   station id. This is reliable and avoids the ambiguity of reused edge indices
+///   after an out-of-band edge split.
 /// * Otherwise the route already contains passing-loop segments, so segment count
 ///   no longer equals stop count. Key each segment by its live edge endpoint,
 ///   skipping passing-loop destinations (they carry no meaningful wait time).
 fn collect_segment_wait_times(
     route: &[RouteSegment],
     nimby_stops: &[&NimbyStop],
-    data: &NimbyImportData,
     graph: &RailwayGraph,
     wait_time_map: &mut HashMap<String, Duration>,
 ) {
@@ -1279,12 +1301,20 @@ fn collect_segment_wait_times(
                 .graph
                 .edge_endpoints(EdgeIndex::new(segment.edge_index))
             else {
+                // petgraph reuses freed edge slots, so a stored index can fail to
+                // resolve after a prior import removed an edge. Skip rather than
+                // attach the wait time to an unrelated station.
+                log::warn!(
+                    "NIMBY update: route segment edge index {} no longer resolves; \
+                     dropping its preserved wait time",
+                    segment.edge_index
+                );
                 continue;
             };
             if is_passing_loop(graph, to) {
                 continue;
             }
-            wait_time_map.insert(graph.graph[to].display_name(), segment.wait_time);
+            wait_time_map.insert(station_wait_key(graph, to), segment.wait_time);
         }
         return;
     }
@@ -1294,9 +1324,7 @@ fn collect_segment_wait_times(
         let Some(stop) = nimby_stops.get(stop_idx) else {
             continue;
         };
-        if let Some(station) = data.stations.get(&stop.station_id) {
-            wait_time_map.insert(station.name.clone(), segment.wait_time);
-        }
+        wait_time_map.insert(stop_wait_key(stop), segment.wait_time);
     }
 }
 
@@ -1311,12 +1339,12 @@ fn update_existing_line(
     graph: &mut RailwayGraph,
     edge_map: &mut HashMap<(NodeIndex, NodeIndex), Vec<EdgeIndex>>,
 ) -> Result<(), String> {
-    // Build a map of station name -> wait_time from existing routes.
+    // Build a map of stable station key -> wait_time from existing routes.
     //
-    // We key by the segment's actual destination station (the edge's endpoint),
-    // not by positional index. Positional mapping breaks when a previous import
-    // inserted passing-loop segments: the segment count no longer equals the stop
-    // count, so wait times after the first loop would attach to the wrong station.
+    // The key is the station's external id (falling back to a node-derived key),
+    // so stations that share a display name keep distinct wait times. Once passing
+    // loops are present the segment count no longer equals the stop count, so the
+    // destination is read from the live edge endpoint rather than positionally.
     let mut wait_time_map: HashMap<String, Duration> = HashMap::new();
 
     let forward_stops: Vec<&NimbyStop> = nimby_line
@@ -1327,7 +1355,6 @@ fn update_existing_line(
     collect_segment_wait_times(
         &existing_line.forward_route,
         &forward_stops,
-        data,
         graph,
         &mut wait_time_map,
     );
@@ -1342,7 +1369,6 @@ fn update_existing_line(
         collect_segment_wait_times(
             &existing_line.return_route,
             &return_stops,
-            data,
             graph,
             &mut wait_time_map,
         );
@@ -1411,9 +1437,8 @@ fn update_existing_line(
 
             // Use preserved wait time if available, otherwise use NIMBY timing
             let nimby_wait = Duration::seconds((stop.departure - stop.arrival).max(0));
-            let station_name = graph.graph[station_idx].display_name();
             let wait_duration = wait_time_map
-                .get(&station_name)
+                .get(&station_wait_key(graph, station_idx))
                 .copied()
                 .unwrap_or(nimby_wait);
 
@@ -2309,7 +2334,11 @@ const SECONDS_PER_WEEK: i64 = 7 * SECONDS_PER_DAY;
 /// Apply a schedule's timezone offset to a week-relative run time, wrapping at
 /// the week boundary so weekday rollover is preserved.
 fn apply_tz_delta(raw_time: i64, tz_delta_s: i64) -> i64 {
-    (raw_time + tz_delta_s).rem_euclid(SECONDS_PER_WEEK)
+    // Saturate rather than panic on hostile i64 values from untrusted JSON; the
+    // result is folded back into `[0, SECONDS_PER_WEEK)` either way.
+    raw_time
+        .saturating_add(tz_delta_s)
+        .rem_euclid(SECONDS_PER_WEEK)
 }
 
 /// Classification of a run based on its stop range relative to the line's turnaround point
@@ -3674,6 +3703,259 @@ mod tests {
             seg_to_c.wait_time.num_minutes(),
             3,
             "Wait time at C must stay 3 after the second pass"
+        );
+    }
+
+    #[test]
+    fn test_update_preserves_wait_times_for_duplicate_station_names() {
+        use crate::models::{Line, Node, RouteSegment, StationNode, Track, TrackDirection};
+        use chrono::Duration;
+
+        // Two distinct stations share the display name "Nygård" (the real Bybanen 1
+        // case). A name key would collide; the external-id key must not.
+        let mut graph = RailwayGraph::default();
+        let mut station = |name: &str, ext: &str, x: f64| {
+            graph.graph.add_node(Node::Station(StationNode {
+                name: name.to_string(),
+                external_id: Some(ext.to_string()),
+                position: Some((x, 0.0)),
+                passing_loop: false,
+                platforms: vec![],
+                label_position: None,
+            }))
+        };
+        let start = station("Start", "0x1", 0.0);
+        let nygard_a = station("Nygård", "0x2", 100.0);
+        let nygard_b = station("Nygård", "0x3", 200.0);
+
+        let tracks = vec![Track {
+            direction: TrackDirection::Bidirectional,
+        }];
+        let edge_1 = graph.add_track(start, nygard_a, tracks.clone(), Some(10.0));
+        let edge_2 = graph.add_track(nygard_a, nygard_b, tracks.clone(), Some(10.0));
+
+        let segment = |edge: EdgeIndex, wait_min: i64| RouteSegment {
+            edge_index: edge.index(),
+            track_index: 0,
+            origin_platform: 0,
+            destination_platform: 0,
+            duration: Some(Duration::minutes(5)),
+            wait_time: Duration::minutes(wait_min),
+        };
+
+        let mut existing_line = Line::create_from_ids(&["Bybanen 1".to_string()], 0)
+            .into_iter()
+            .next()
+            .unwrap();
+        existing_line.code = "B1".to_string();
+        existing_line.sync_routes = false;
+        // Two different custom wait times at the two same-named Nygård stops.
+        existing_line.forward_route = vec![segment(edge_1, 2), segment(edge_2, 4)];
+
+        let nimby_station = |id: &str, name: &str| {
+            (
+                id.to_string(),
+                NimbyStation {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    lonlat: (0.0, 0.0),
+                },
+            )
+        };
+        let nimby_stop = |idx: usize, id: &str, leg: f64, arr: i64| NimbyStop {
+            idx,
+            leg_distance: leg,
+            station_id: id.to_string(),
+            arrival: arr,
+            departure: arr + 60,
+            areas: Vec::new(),
+        };
+        let nimby_data = NimbyImportData {
+            company_name: "Test".to_string(),
+            stations: [
+                nimby_station("0x1", "Start"),
+                nimby_station("0x2", "Nygård"),
+                nimby_station("0x3", "Nygård"),
+            ]
+            .into_iter()
+            .collect(),
+            schedules: Vec::new(),
+            lines: vec![NimbyLine {
+                id: "0x100".to_string(),
+                name: "Bybanen 1".to_string(),
+                code: "B1".to_string(),
+                color: "0xffff0000".to_string(),
+                stops: vec![
+                    nimby_stop(0, "0x1", 0.0, 0),
+                    nimby_stop(1, "0x2", 10000.0, 360),
+                    nimby_stop(2, "0x3", 10000.0, 720),
+                ],
+            }],
+        };
+
+        let config = NimbyImportConfig {
+            create_infrastructure: false,
+            update_existing: true,
+            ..Default::default()
+        };
+        let mut edge_map = HashMap::new();
+
+        let result = update_existing_line(
+            &mut existing_line,
+            &nimby_data.lines[0],
+            &nimby_data,
+            &config,
+            &mut graph,
+            &mut edge_map,
+        );
+        assert!(result.is_ok(), "Update should succeed: {result:?}");
+
+        assert_eq!(existing_line.forward_route.len(), 2);
+
+        // Both same-named stations keep their own wait time; neither overwrites
+        // the other.
+        let (_, first_dest) = graph
+            .graph
+            .edge_endpoints(EdgeIndex::new(existing_line.forward_route[0].edge_index))
+            .unwrap();
+        let (_, second_dest) = graph
+            .graph
+            .edge_endpoints(EdgeIndex::new(existing_line.forward_route[1].edge_index))
+            .unwrap();
+        assert_eq!(first_dest, nygard_a);
+        assert_eq!(second_dest, nygard_b);
+        assert_eq!(
+            existing_line.forward_route[0].wait_time.num_minutes(),
+            2,
+            "First Nygård (0x2) must keep its 2-minute wait time"
+        );
+        assert_eq!(
+            existing_line.forward_route[1].wait_time.num_minutes(),
+            4,
+            "Second Nygård (0x3) must keep its 4-minute wait time, not be overwritten"
+        );
+    }
+
+    #[test]
+    fn test_apply_tz_delta_no_panic_on_extreme_values() {
+        // Hostile i64 inputs from untrusted JSON must not overflow/panic.
+        let out = apply_tz_delta(i64::MAX, i64::MAX);
+        assert!((0..SECONDS_PER_WEEK).contains(&out));
+        let out = apply_tz_delta(i64::MIN, i64::MIN);
+        assert!((0..SECONDS_PER_WEEK).contains(&out));
+    }
+
+    #[test]
+    fn test_apply_tz_delta_normal_offsets() {
+        // Positive offset within the week.
+        assert_eq!(apply_tz_delta(0, 3600), 3600);
+        // Zero offset is identity within range.
+        assert_eq!(apply_tz_delta(3600, 0), 3600);
+        // Negative offset crossing the week start wraps via rem_euclid.
+        assert_eq!(apply_tz_delta(0, -3600), SECONDS_PER_WEEK - 3600);
+        // Offset larger than a week folds back into range.
+        assert_eq!(apply_tz_delta(0, SECONDS_PER_WEEK + 100), 100);
+    }
+
+    #[test]
+    fn test_detect_frequency_rejects_sub_five_minute_gaps() {
+        // A dominant gap under 300s (4 minutes here) must be rejected as too short.
+        let departures = vec![0, 240, 480, 720];
+        assert!(detect_frequency(&departures).is_none());
+    }
+
+    #[test]
+    fn test_resolve_stop_to_node() {
+        use crate::models::{Node, StationNode};
+
+        // NIMBY line: waypoint, real station, depot, real station.
+        let nimby_station = |id: &str, name: &str| {
+            (
+                id.to_string(),
+                NimbyStation {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    lonlat: (0.0, 0.0),
+                },
+            )
+        };
+        let nimby_stop = |idx: usize, id: &str| NimbyStop {
+            idx,
+            leg_distance: 0.0,
+            station_id: id.to_string(),
+            arrival: 0,
+            departure: 0,
+            areas: Vec::new(),
+        };
+        let data = NimbyImportData {
+            company_name: "Test".to_string(),
+            stations: [
+                nimby_station("0x10", "Real A"),
+                nimby_station("0x20", "Depot [DEP]"),
+                nimby_station("0x30", "Real B"),
+            ]
+            .into_iter()
+            .collect(),
+            schedules: Vec::new(),
+            lines: Vec::new(),
+        };
+        let nimby_line = NimbyLine {
+            id: "0x100".to_string(),
+            name: "L".to_string(),
+            code: "L".to_string(),
+            color: "0xffff0000".to_string(),
+            stops: vec![
+                nimby_stop(0, "0x0"),  // waypoint
+                nimby_stop(1, "0x10"), // real A
+                nimby_stop(2, "0x20"), // depot
+                nimby_stop(3, "0x30"), // real B
+            ],
+        };
+
+        let mut graph = RailwayGraph::default();
+        let mut station = |ext: &str, name: &str| {
+            graph.graph.add_node(Node::Station(StationNode {
+                name: name.to_string(),
+                external_id: Some(ext.to_string()),
+                position: Some((0.0, 0.0)),
+                passing_loop: false,
+                platforms: vec![],
+                label_position: None,
+            }))
+        };
+        let node_a = station("0x10", "Real A");
+        let node_b = station("0x30", "Real B");
+        let station_id_to_node = build_station_id_to_node(&graph);
+
+        // Waypoint at index 0, walking inward (toward the far end) reaches Real A.
+        assert_eq!(
+            resolve_stop_to_node(0, 3, &nimby_line, &data, &station_id_to_node),
+            Some(node_a)
+        );
+        // Depot at index 2 is skipped; walking inward toward index 0 reaches Real A.
+        assert_eq!(
+            resolve_stop_to_node(2, 0, &nimby_line, &data, &station_id_to_node),
+            Some(node_a)
+        );
+        // Depot at index 2 walking outward toward the end reaches Real B.
+        assert_eq!(
+            resolve_stop_to_node(2, 3, &nimby_line, &data, &station_id_to_node),
+            Some(node_b)
+        );
+        // enter == exit on a waypoint yields None (nothing real to walk to).
+        assert_eq!(
+            resolve_stop_to_node(0, 0, &nimby_line, &data, &station_id_to_node),
+            None
+        );
+        // enter == exit on a real station yields that station.
+        assert_eq!(
+            resolve_stop_to_node(1, 1, &nimby_line, &data, &station_id_to_node),
+            Some(node_a)
+        );
+        // Out-of-range start index yields None.
+        assert_eq!(
+            resolve_stop_to_node(99, 99, &nimby_line, &data, &station_id_to_node),
+            None
         );
     }
 }
