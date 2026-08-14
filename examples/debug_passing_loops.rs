@@ -27,7 +27,7 @@ fn main() {
     let mut graph = RailwayGraph::default();
     let config = NimbyImportConfig {
         create_infrastructure: true,
-        selected_line_ids: vec![r14_id],
+        selected_line_ids: Some(vec![r14_id]),
         handedness: TrackHandedness::RightHand,
         station_spacing: 100.0,
         ..Default::default()

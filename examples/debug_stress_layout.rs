@@ -154,7 +154,7 @@ fn main() {
     let mut graph = RailwayGraph::default();
     let config = NimbyImportConfig {
         create_infrastructure: true,
-        selected_line_ids: selected,
+        selected_line_ids: Some(selected),
         handedness: TrackHandedness::RightHand,
         station_spacing: 60.0,
         ..Default::default()

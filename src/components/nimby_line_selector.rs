@@ -1,8 +1,11 @@
 //! NIMBY Rails line selector component
 
-use leptos::{component, view, IntoView, Signal, SignalGet, SignalSet, SignalUpdate, create_signal, For, Callback, Callable, Show, ReadSignal};
-use crate::import::nimby::{NimbyImportData, NimbyImportConfig, NimbyLineSummary};
+use crate::import::nimby::{NimbyImportConfig, NimbyImportData, NimbyLineSummary};
 use crate::models::TrackHandedness;
+use leptos::{
+    component, create_signal, view, Callable, Callback, For, IntoView, ReadSignal, Show, Signal,
+    SignalGet, SignalSet, SignalUpdate,
+};
 
 #[component]
 #[must_use]
@@ -47,7 +50,7 @@ pub fn NimbyLineSelector(
     let handle_import = move |_| {
         let config = NimbyImportConfig {
             create_infrastructure: create_infrastructure.get(),
-            selected_line_ids: selected_ids.get(),
+            selected_line_ids: Some(selected_ids.get()),
             handedness: handedness.get(),
             station_spacing: station_spacing.get(),
             update_existing: update_existing.get(),
