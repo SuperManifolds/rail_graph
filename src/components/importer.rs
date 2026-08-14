@@ -4,7 +4,7 @@ use crate::models::{Line, RailwayGraph, Stations};
 use crate::components::button::Button;
 use crate::components::native_window::NativeWindow;
 use crate::import::csv::{analyze_csv, parse_csv_with_mapping, parse_csv_with_existing_infrastructure, CsvImportConfig};
-use crate::window_protocol::{ImporterCsvInit, ImporterCsvResult, ImporterNimbyInit, ImporterNimbyResult};
+use crate::window_protocol::{ImporterCsvInit, ImporterCsvResult, ImporterNimbyInit, ImporterNimbyResult, ImporterNimbyUpdate};
 use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, SignalGetUntracked, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback};
 
 const GRID_SIZE: f64 = 30.0;
@@ -130,7 +130,7 @@ pub fn Importer(
     let (show_mapper, set_show_mapper) = create_signal(false);
     let (file_content, set_file_content) = create_signal(String::new());
     let (csv_config, set_csv_config) = create_signal(None::<CsvImportConfig>);
-    let (_, set_import_error) = create_signal(None::<String>);
+    let (import_error, set_import_error) = create_signal(None::<String>);
 
     // NIMBY Rails import state
     let (nimby_data, set_nimby_data) = create_signal(None::<NimbyImportData>);
@@ -188,6 +188,9 @@ pub fn Importer(
                         }
                         Err(e) => {
                             leptos::logging::error!("Failed to parse NIMBY JSON: {}", e);
+                            // Open the selector with empty data so the error banner is visible.
+                            set_nimby_data.set(Some(NimbyImportData::default()));
+                            set_show_nimby_selector.set(true);
                             set_import_error.set(Some(e));
                         }
                     }
@@ -268,7 +271,9 @@ pub fn Importer(
                 Ok(new_lines) => {
                     leptos::logging::log!("Updated lines, {} new lines created", new_lines.len());
 
-                    trigger_mip_layout(&current_graph, &data, settings.get(), set_graph);
+                    if config.create_infrastructure {
+                        trigger_mip_layout(&current_graph, &data, settings.get(), set_graph);
+                    }
                     set_graph.set(current_graph);
                     current_lines.extend(new_lines);
                     set_lines.set(current_lines);
@@ -288,7 +293,9 @@ pub fn Importer(
                 Ok(imported_lines) => {
                     leptos::logging::log!("Imported {} lines from NIMBY JSON", imported_lines.len());
 
-                    trigger_mip_layout(&current_graph, &data, settings.get(), set_graph);
+                    if config.create_infrastructure {
+                        trigger_mip_layout(&current_graph, &data, settings.get(), set_graph);
+                    }
                     set_graph.set(current_graph);
                     set_lines.update(|existing| existing.extend(imported_lines));
                     set_show_nimby_selector.set(false);
@@ -398,9 +405,15 @@ pub fn Importer(
                     data,
                     handedness,
                     station_spacing,
+                    error: import_error.get(),
                 }).unwrap_or_default()
             })
             on_result=nimby_result_handler
+            update_data=Signal::derive(move || {
+                serde_json::to_string(&ImporterNimbyUpdate {
+                    error: import_error.get(),
+                }).unwrap_or_default()
+            })
             size=(600, 500)
             position_key="importer-nimby"
         />

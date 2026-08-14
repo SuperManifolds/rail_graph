@@ -18,7 +18,7 @@ mod types;
 pub use constants::GRID_SIZE;
 pub use geographic_hints::GeographicHints;
 
-use crate::models::{ProjectSettings, RailwayGraph, Stations};
+use crate::models::{Node, ProjectSettings, RailwayGraph, Stations};
 use petgraph::stable_graph::{EdgeIndex, NodeIndex};
 use std::collections::{HashMap, HashSet};
 
@@ -30,14 +30,35 @@ pub fn snap_to_grid(x: f64, y: f64) -> (f64, f64) {
     (snapped_x, snapped_y)
 }
 
-/// Apply automatic layout to the graph
+/// Apply automatic layout to the graph.
+///
+/// Nodes that already have a non-origin position are treated as pinned so
+/// user-arranged stations keep their positions, matching the behavior of the
+/// NIMBY infrastructure import path.
 pub fn apply_layout(
     graph: &mut RailwayGraph,
     height: f64,
     settings: &ProjectSettings,
     geo_hints: Option<&GeographicHints>,
 ) {
-    solver::compute_and_apply_layout(graph, height, settings, geo_hints, &HashSet::new(), None);
+    let pinned_nodes = positioned_nodes(graph);
+    solver::compute_and_apply_layout(graph, height, settings, geo_hints, &pinned_nodes, None);
+}
+
+/// Collect nodes that already have a non-origin position, to preserve them
+/// during layout.
+fn positioned_nodes(graph: &RailwayGraph) -> HashSet<NodeIndex> {
+    graph
+        .graph
+        .node_indices()
+        .filter(|&idx| {
+            graph
+                .graph
+                .node_weight(idx)
+                .and_then(Node::position)
+                .is_some_and(|(x, y)| x != 0.0 || y != 0.0)
+        })
+        .collect()
 }
 
 /// Apply automatic layout, preserving positions of pinned nodes

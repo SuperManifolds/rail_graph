@@ -4,7 +4,9 @@
 
 use crate::import::csv::CsvImportConfig;
 use crate::import::nimby::{NimbyImportConfig, NimbyImportData};
-use crate::models::{Line, Platform, ProjectSettings, RailwayGraph, RoutingRule, Track, TrackHandedness};
+use crate::models::{
+    Line, Platform, ProjectSettings, RailwayGraph, RoutingRule, Track, TrackHandedness,
+};
 use serde::{Deserialize, Serialize};
 
 // --- Edit Track ---
@@ -133,12 +135,21 @@ pub struct ImporterNimbyInit {
     pub data: NimbyImportData,
     pub handedness: TrackHandedness,
     pub station_spacing: f64,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub enum ImporterNimbyResult {
     Import(NimbyImportConfig),
     Cancel,
+}
+
+/// Update pushed from the parent window to the open NIMBY selector,
+/// currently used to surface import errors raised during execution.
+#[derive(Serialize, Deserialize)]
+pub struct ImporterNimbyUpdate {
+    pub error: Option<String>,
 }
 
 // --- Add Station ---
@@ -186,10 +197,7 @@ pub struct CreateViewInit {
 
 #[derive(Serialize, Deserialize)]
 pub enum CreateViewResult {
-    Create {
-        name: String,
-        waypoints: Vec<usize>,
-    },
+    Create { name: String, waypoints: Vec<usize> },
 }
 
 // --- Create View Update (from map click) ---
