@@ -4,7 +4,7 @@ use crate::models::{Line, RailwayGraph, Stations};
 use crate::components::button::Button;
 use crate::components::native_window::NativeWindow;
 use crate::import::csv::{analyze_csv, parse_csv_with_mapping, parse_csv_with_existing_infrastructure, CsvImportConfig};
-use crate::window_protocol::{ImporterCsvInit, ImporterCsvResult, ImporterNimbyInit, ImporterNimbyResult, ImporterNimbyUpdate};
+use crate::window_protocol::{ImporterCsvInit, ImporterCsvResult, ImporterCsvUpdate, ImporterNimbyInit, ImporterNimbyResult, ImporterNimbyUpdate};
 use leptos::{component, view, WriteSignal, ReadSignal, IntoView, create_node_ref, create_signal, SignalGet, SignalGetUntracked, web_sys, spawn_local, SignalSet, Signal, SignalUpdate, Callback};
 
 const GRID_SIZE: f64 = 30.0;
@@ -379,9 +379,17 @@ pub fn Importer(
                 let Some(config) = csv_config.get() else {
                     return String::new();
                 };
-                serde_json::to_string(&ImporterCsvInit { config }).unwrap_or_default()
+                serde_json::to_string(&ImporterCsvInit {
+                    config,
+                    error: import_error.get(),
+                }).unwrap_or_default()
             })
             on_result=csv_result_handler
+            update_data=Signal::derive(move || {
+                serde_json::to_string(&ImporterCsvUpdate {
+                    error: import_error.get(),
+                }).unwrap_or_default()
+            })
             size=(700, 500)
             position_key="importer-csv"
         />

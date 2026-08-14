@@ -120,12 +120,21 @@ pub struct SettingsResult {
 #[derive(Serialize, Deserialize)]
 pub struct ImporterCsvInit {
     pub config: CsvImportConfig,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub enum ImporterCsvResult {
     Import(CsvImportConfig),
     Cancel,
+}
+
+/// Update pushed from the parent window to the open CSV mapper,
+/// currently used to surface import errors raised during execution.
+#[derive(Serialize, Deserialize)]
+pub struct ImporterCsvUpdate {
+    pub error: Option<String>,
 }
 
 // --- NIMBY Line Selector ---
